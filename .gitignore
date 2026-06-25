@@ -1,0 +1,21 @@
+# Secrets & hardware-bound artifacts — never commit
+pull-secret.json
+auth.json
+*.der
+*.pem
+adminPrivateKey
+publicKey
+vcek-bundle/
+rvps-*.yaml
+initdata-*.toml
+*.tmp
+
+# Terraform
+infra/**/.terraform/
+infra/**/terraform.tfvars
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/crash.log
+infra/**/.env
+.env
+infra/latitude/IPMI-ACCESS.md

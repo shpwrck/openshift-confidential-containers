@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Customer multi-node confidential workers (air-gapped). Driven by mirrored ArgoCD.
+resources:
+  - ../../base/operators
+  - ../../base/kataconfig
+  - ../../base/workloads
+# Customer specifics (patches to add): node selectors for the SNP worker pool, replicas,
+# mirror-registry image rewrites (ImageDigestMirrorSet), external Trustee KBS URL in initdata.

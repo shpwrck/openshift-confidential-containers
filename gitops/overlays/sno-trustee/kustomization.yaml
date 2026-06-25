@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Secondary rig Trustee cluster (stood up once node-0 SNP host is proven).
+resources:
+  - ../../base/trustee
+# Rig Trustee: self-signed certs, OfflineStore seeded from the rig's own VCEK.

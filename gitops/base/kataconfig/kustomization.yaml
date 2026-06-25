@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# KataConfig (TEE type derived from NFD labels) + runtimeclasses kata / kata-cc.
+# Populate from onboarding guide Gate 3.
+resources: []
+  # - kataconfig.yaml
