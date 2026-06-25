@@ -1,0 +1,33 @@
+---
+# Operator namespaces. Install order is NFD -> cert-manager -> OSC -> Trustee;
+# the namespaces themselves can all be created up front.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-nfd
+  labels:
+    # NFD is a core operator; let the operator own its workloads.
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  # cert-manager Operator for Red Hat OpenShift installs into this fixed namespace.
+  name: cert-manager-operator
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-sandboxed-containers-operator
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  # Trustee operator namespace (per trustee-operator v1.1 templates).
+  name: trustee-operator-system
+  labels:
+    openshift.io/cluster-monitoring: "true"

@@ -1,0 +1,28 @@
+---
+# KataConfig — installs the kata runtime + the Confidential Containers (CoCo) variant.
+#
+# OSC 1.12 on bare-metal SEV-SNP host path (NOT peer-pods):
+#   - enablePeerPods: false  -> bare-metal Kata; the RHCOS worker kernel is the SNP
+#     hypervisor host (design §2). Peer-pods would attest a cloud CVM guest instead.
+#   - CoCo / TEE is enabled via the feature gate below. OSC 1.12 gates the confidential
+#     runtime behind `confidentialCompute` (a.k.a. CoCo feature gate). The TEE *type*
+#     (SEV-SNP) is auto-detected from the NFD label
+#     `feature.node.kubernetes.io/cpu-cpuid.SEV_SNP=true` (Gate 2) — do NOT hardcode it.
+#
+# Outcome (Gate 3) — the operator creates two RuntimeClasses:
+#   - `kata`     : plain Kata (Step 1, non-confidential isolation).
+#   - `kata-cc`  : Confidential Containers; on SNP its handler resolves to `kata-snp`
+#                  (would be `kata-tdx` on Intel TDX). Workloads use runtimeClassName: kata-cc.
+apiVersion: kataconfiguration.openshift.io/v1
+kind: KataConfig
+metadata:
+  name: cluster-kataconfig
+spec:
+  enablePeerPods: false
+  # Enable the Confidential Containers runtime (kata-cc / kata-snp).
+  # VERIFY: field name against the OSC 1.12 KataConfig CRD on the mirrored cluster
+  #   `oc explain kataconfig.spec` — in 1.12 this is `enableConfidentialCompute`.
+  enableConfidentialCompute: true
+  # kataConfigPoolSelector: # FILL (per overlay): on multi-node, pin Kata to the SNP worker
+  #   matchLabels:          #   pool so plain workers are untouched. SNO collapses to one node,
+  #     node-role.kubernetes.io/kata-oc: ""  #   so the base leaves this unset.

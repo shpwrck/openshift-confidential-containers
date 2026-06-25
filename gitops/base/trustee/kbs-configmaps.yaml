@@ -1,0 +1,112 @@
+---
+# kbs-config.toml — the KBS runtime config, mounted by the KBS pod (onboarding guide Step 3).
+#
+# Editing behavior = edit this ConfigMap + restart the KBS pod (design note: KbsConfig itself
+# rarely changes; behavior lives in the ConfigMaps).
+#
+# Air-gap / SEV-SNP: vcek_sources = [{ type = "OfflineStore" }] with KDS omitted, so the
+# verifier NEVER reaches out to the AMD Key Distribution Service. VCEK .der files are mounted
+# from secrets via KbsConfig.spec.kbsLocalCertCacheSpec at
+#   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-lowercase>/vcek.der
+# (design §4). Removing one VCEK / wrong-case HWID => attestation fails (proves the cache is
+# load-bearing, not silently hitting a reachable KDS).
+#
+# This base starts PERMISSIVE (insecure_http for early rungs). Production switches the KBS to
+# HTTPS using the cert-manager issuer (issuers.yaml) — flip in the customer-trustee overlay.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kbs-config
+  namespace: trustee-operator-system
+data:
+  kbs-config.toml: |
+    # --- KBS server ------------------------------------------------------------
+    [http_server]
+    sockets = ["0.0.0.0:8080"]
+    # PERMISSIVE for early rungs (Step 3, ClusterIP/insecure). Production: set false and
+    # configure private_key / certificate from the cert-manager Secret (tls.key / tls.crt).
+    insecure_http = true
+    # private_key  = "/etc/https-key/tls.key"   # VERIFY path the operator mounts the cert at.
+    # certificate  = "/etc/https-cert/tls.crt"
+
+    # --- Admin / auth ----------------------------------------------------------
+    [admin]
+    # ed25519 admin public key used to authenticate resource-registration calls.
+    # Secret kbs-auth-public-key is created out-of-band (see secret-stubs.example.yaml).
+    auth_public_key = "/etc/auth-secret/publicKey"
+
+    # --- Attestation token signer ---------------------------------------------
+    [attestation_token]
+    # FILL/VERIFY: attestation token signer config against trustee-operator v1.1 templates
+    #   https://github.com/openshift/trustee-operator/tree/v1.1.0/config/templates
+
+    # --- Attestation service (CoCo AS, built in) ------------------------------
+    [attestation_service]
+    type = "coco_as_builtin"
+    work_dir = "/opt/confidential-containers/attestation-service"
+
+    [attestation_service.attestation_token_broker]
+    type = "Ear"
+    # Permissive policy id in the base; Step 5 (Veritas) swaps to the restrictive EAR policy.
+    policy_dir = "/opt/confidential-containers/attestation-service/policies"
+
+    [attestation_service.rvps_config]
+    type = "BuiltIn"
+    [attestation_service.rvps_config.storage]
+    type = "LocalFs"
+
+    # --- SEV-SNP verifier: VCEK from the OfflineStore only (no KDS) ------------
+    # One per element; KDS intentionally omitted for the air-gap (design §4).
+    [[attestation_service.verifier.snp.vcek_sources]]
+    type = "OfflineStore"
+    # No `url`/KDS fallback: fully offline.
+---
+# RVPS reference values — empty/permissive in the base. Step 5 replaces this with the Veritas
+# output for the specific hardware config (coco-tools:1.12 veritas --tee snp). An empty
+# reference-value set means the EAR broker has nothing to fail against yet — paired with the
+# permissive policy below, attestation succeeds (rung a happy path) before hardening.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rvps-reference-values
+  namespace: trustee-operator-system
+data:
+  reference-values.json: |
+    []
+---
+# Resource policy (Rego) — gates which registered resources a given attestation may read.
+# PERMISSIVE in the base (allow all) so rung a proves the release path. The RESTRICTED
+# version lives in Step 5/6; switch via overlay once RVPS reference values exist.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resource-policy
+  namespace: trustee-operator-system
+data:
+  policy.rego: |
+    package policy
+
+    # PERMISSIVE: release every requested resource. Restrict in production (Step 6) by
+    # asserting on the EAR attestation result before `default allow := true`.
+    default allow := true
+---
+# Attestation policy (Rego) — the EAR appraisal policy. PERMISSIVE in the base.
+# Step 5 swaps to the restrictive EAR policy that fails on
+#   hardware_failing / configuration_failing / executable_failing
+# and requires the affirming range 2-31. Comment kept so the restricted target is obvious.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: attestation-policy
+  namespace: trustee-operator-system
+data:
+  default.rego: |
+    package policy
+
+    # PERMISSIVE: accept any attestation. DO NOT ship to production.
+    # Restricted version (Step 5) asserts the SNP EAR claims, e.g.:
+    #   default executables := 33   # executable_failing
+    #   default hardware    := 97   # hardware_failing
+    #   default configuration := 36 # configuration_failing
+    # and only affirms within the trustworthiness range 2..31.
+    default allow := true

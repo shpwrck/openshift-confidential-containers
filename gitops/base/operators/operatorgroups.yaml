@@ -1,0 +1,43 @@
+---
+# OperatorGroups. NFD, cert-manager, and OSC live in their own namespaces with a
+# single-namespace OperatorGroup (targeting their own namespace). Trustee likewise.
+#
+# Note: cert-manager Operator for Red Hat OpenShift ships its own OperatorGroup
+# expectation (AllNamespaces / empty selector in cert-manager-operator). We declare it
+# explicitly here so `kustomize build` is self-contained; if the cluster already has one
+# from a console install, drop this object in the overlay to avoid a duplicate.
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-nfd
+  namespace: openshift-nfd
+spec:
+  targetNamespaces:
+    - openshift-nfd
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: cert-manager-operator
+  namespace: cert-manager-operator
+spec:
+  # cert-manager operator is cluster-scoped (AllNamespaces). Empty spec == AllNamespaces.
+  upgradeStrategy: Default
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-sandboxed-containers-operator
+  namespace: openshift-sandboxed-containers-operator
+spec:
+  targetNamespaces:
+    - openshift-sandboxed-containers-operator
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: trustee-operator-group
+  namespace: trustee-operator-system
+spec:
+  targetNamespaces:
+    - trustee-operator-system

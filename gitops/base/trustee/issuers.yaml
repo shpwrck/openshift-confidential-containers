@@ -1,0 +1,46 @@
+---
+# cert-manager self-signed Issuers for Trustee (onboarding guide Step 3).
+# Two independent issuers:
+#   1. kbs-https-issuer       -> serves the KBS HTTPS endpoint (production TLS).
+#   2. kbs-attestation-issuer -> signs attestation tokens / the attestation service identity.
+#
+# Both are SelfSigned in the base. Customer overlays may replace these with a real CA
+# (intermediate Issuer) — see overlays/customer-trustee.
+#
+# GOTCHA (defects/): cert-manager writes `tls.key` / `tls.crt` into the issued Secret, which
+# differ from the upstream KBS template keys `privateKey` / `certificate`. The KbsConfig /
+# kbs-config.toml must reference the cert-manager key names. Do not copy upstream template
+# key names verbatim.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: kbs-https-issuer
+  namespace: trustee-operator-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: kbs-attestation-issuer
+  namespace: trustee-operator-system
+spec:
+  selfSigned: {}
+---
+# Example Certificate driven off the HTTPS issuer. The Trustee operator can also be told to
+# manage KBS TLS directly; if so, drop this and wire the issuer into KbsConfig instead.
+# Kept here as the explicit, GitOps-visible path. dnsNames are environment-bound (the KBS
+# Service / Route hostname) -> set per overlay.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kbs-https-cert
+  namespace: trustee-operator-system
+spec:
+  secretName: kbs-https-cert # cert-manager fills tls.crt / tls.key here.
+  issuerRef:
+    name: kbs-https-issuer
+    kind: Issuer
+  dnsNames:
+    - kbs-service.trustee-operator-system.svc # FILL (per overlay): add the external Route host.
+  # duration / renewBefore: defaults are fine for the rig; tune for production.

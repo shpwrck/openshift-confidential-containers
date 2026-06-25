@@ -1,0 +1,58 @@
+# Agent-based installer install-config — DISCONNECTED Single Node OpenShift (SNO).
+#
+# Template: copy to install-config.yaml in your generated assets dir and replace every
+# `# FILL:` marker. The Agent-based installer CONSUMES this file (moves it) at
+# `openshift-install agent create image`, so keep this .tmpl as the source of truth.
+#
+# SNO = 1 control-plane replica, 0 compute replicas, platform: none.
+apiVersion: v1
+baseDomain: example.com            # FILL: cluster base domain (e.g. coco.lab.example.com -> baseDomain example.com)
+metadata:
+  name: sno-coco                   # FILL: cluster name; cluster FQDN = <name>.<baseDomain>
+
+controlPlane:
+  name: master
+  replicas: 1                      # SNO: exactly one control-plane node
+  architecture: amd64
+compute:
+  - name: worker
+    replicas: 0                    # SNO: workloads run on the single control-plane node
+
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: 192.168.1.0/24         # FILL: the node's L2 subnet (must contain rendezvousIP + node IP)
+
+platform:
+  none: {}                         # bare metal, no platform integration (matches infra/latitude rig)
+
+# --- DISCONNECTED / AIR-GAP ESSENTIALS -------------------------------------------------
+# Point both OCP release repos at the bastion mirror. These must match what oc-mirror v2
+# wrote (and what IDMS/imageDigestSources the cluster will also carry post-install).
+imageDigestSources:
+  - source: quay.io/openshift-release-dev/ocp-release
+    mirrors:
+      - MIRROR_REGISTRY/openshift-release-dev/ocp-release   # FILL: e.g. bastion.example.com:8443/openshift-release-dev/ocp-release
+  - source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+    mirrors:
+      - MIRROR_REGISTRY/openshift-release-dev/ocp-v4.0-art-dev   # FILL: same mirror host/path prefix
+
+# CA that signs the bastion mirror registry's TLS cert. Paste the PEM, indented under the
+# block scalar (keep the leading two-space indent on every line).
+additionalTrustBundle: |         # FILL: mirror registry CA chain (PEM)
+  -----BEGIN CERTIFICATE-----
+  # FILL: mirror CA cert here
+  -----END CERTIFICATE-----
+
+# Pull secret for the MIRROR registry creds (NOT the cloud.redhat.com secret — the node is
+# air-gapped and only pulls from the bastion). Single-line JSON.
+pullSecret: '{"auths":{"MIRROR_REGISTRY":{"auth":"BASE64_USER_COLON_PASS","email":"noreply@example.com"}}}'   # FILL
+
+# Public SSH key for debugging the node (core@ over SSH / serial console).
+sshKey: |                        # FILL: contents of your ~/.ssh/<key>.pub
+  ssh-ed25519 AAAA... # FILL

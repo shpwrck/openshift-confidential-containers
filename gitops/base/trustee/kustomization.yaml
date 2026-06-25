@@ -3,8 +3,9 @@ kind: Kustomization
 # Trustee / KBS: cert-manager issuers + certs, KBS ConfigMaps (kbs-config.toml with
 # vcek_sources=[{OfflineStore}]), resource/attestation Rego policies, KbsConfig CR
 # (kbsLocalCertCacheSpec for air-gap VCEK). Populate from onboarding guide Step 3 + Appendix A.
-resources: []
-  # - issuers.yaml
-  # - kbs-config-cm.yaml
-  # - policies.yaml
-  # - kbsconfig.yaml
+resources:
+  - issuers.yaml
+  - kbs-configmaps.yaml
+  - kbsconfig.yaml
+# secret-stubs.example.yaml is intentionally NOT listed: it documents the out-of-band Secrets
+# (kbs-auth-public-key, attestation-cert, regcred, vcek-certs, sample). Never commit real keys.
