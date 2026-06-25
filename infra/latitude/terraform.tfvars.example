@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+project          = "proj_xxxxxxxx"
+plan             = "FILL_ME"          # Genoa SKU from `lsh plans list`
+site             = "FILL_ME"          # metro with Genoa stock
+operating_system = "ubuntu_24_04_x64_lts"
+ssh_key_ids      = ["ssh_xxxxxxxx"]   # or set create_ssh_key=true + ssh_public_key_path
+# auth_token: prefer `export LATITUDESH_AUTH_TOKEN=...` instead of putting it here

@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Customer's separate Trustee cluster (verifier off the confidential workers, air-gapped).
+resources:
+  - ../../base/trustee
+# Customer specifics (patches to add): real CA / route TLS, OfflineStore VCEK secrets keyed by
+# the customer's chip HWIDs (collect-vcek.sh), RVPS from Veritas on customer metal.
