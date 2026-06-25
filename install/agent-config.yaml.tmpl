@@ -1,0 +1,52 @@
+# Agent-based installer agent-config — DISCONNECTED Single Node OpenShift (SNO).
+#
+# Template: copy to agent-config.yaml alongside install-config.yaml in the assets dir and
+# replace every `# FILL:`. Like install-config, the installer consumes this at
+# `openshift-install agent create image`; keep this .tmpl as source of truth.
+apiVersion: v1beta1
+kind: AgentConfig
+metadata:
+  name: sno-coco                   # FILL: match metadata.name in install-config.yaml.tmpl
+
+# For SNO there is exactly one host, so rendezvousIP == that host's IP.
+rendezvousIP: 192.168.1.10         # FILL: the node's static IPv4 (inside machineNetwork)
+
+hosts:
+  - hostname: sno-coco-node        # FILL: node hostname
+    role: master
+
+    # Pin the install target disk. Root device TBD tomorrow on the Latitude node — confirm
+    # with `lsblk`/`ls -l /dev/disk/by-path` on the booted node before locking this in.
+    rootDeviceHints:
+      deviceName: /dev/nvme0n1      # FILL: /dev/nvme0n1 or /dev/sda (confirm on the actual node)
+
+    # NIC the installer matches this host config to. Must be the boot/data interface MAC.
+    interfaces:
+      - name: eno1                  # FILL: interface name as seen by RHCOS (e.g. eno1, ens1f0)
+        macAddress: 00:00:00:00:00:00   # FILL: real NIC MAC (do NOT guess — read from BIOS/IPMI/`ip link`)
+
+    # Static networking as nmstate. Every address/route/DNS below is a placeholder.
+    networkConfig:
+      interfaces:
+        - name: eno1                # FILL: must match interfaces[].name above
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: 192.168.1.10    # FILL: == rendezvousIP
+                prefix-length: 24   # FILL: match machineNetwork prefix
+          ipv6:
+            enabled: false
+      dns-resolver:
+        config:
+          server:
+            - 192.168.1.2           # FILL: DNS that resolves the cluster + mirror host (often the bastion)
+          # search:
+          #   - example.com         # VERIFY: add search domain(s) if your DNS needs them
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: 192.168.1.1   # FILL: default gateway
+            next-hop-interface: eno1        # FILL: match interface name

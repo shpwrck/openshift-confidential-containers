@@ -1,0 +1,41 @@
+---
+# KbsConfig — the low-level Trustee CR (design note: use KbsConfig, NOT TrusteeConfig, because
+# the enterprise needs params TrusteeConfig doesn't expose: VCEK sources, proxy, detailed
+# policy). It wires the ConfigMaps (kbs-configmaps.yaml) and Secrets (created out-of-band, see
+# secret-stubs.example.yaml) into the KBS deployment.
+apiVersion: confidentialcontainers.org/v1alpha1
+kind: KbsConfig
+metadata:
+  name: kbsconfig
+  namespace: trustee-operator-system
+spec:
+  # VERIFY all field names against the trustee-operator v1.1 KbsConfig CRD:
+  #   `oc explain kbsconfig.spec` / config/templates @ v1.1.0.
+  kbsConfigMapName: kbs-config
+  kbsAuthSecretName: kbs-auth-public-key
+  kbsServiceType: ClusterIP # rig/early rungs; customer overlay may use a Route + HTTPS.
+
+  # Policies + reference values from kbs-configmaps.yaml.
+  kbsRvpsRefValuesConfigMapName: rvps-reference-values
+  kbsResourcePolicyConfigMapName: resource-policy
+  kbsAttestationPolicyConfigMapName: attestation-policy
+
+  # Secret-backed resources served to attested clients. NB (defects/): KBS resource names must
+  # NOT contain dots — registry pull secret is named `regcred`, not `.dockerconfigjson`.
+  kbsSecretResources:
+    - regcred         # mirror-registry pull secret (rung c image pulls).
+    - attestation-cert
+    - sample          # the rung-a demo secret released via cdh/resource/default/...
+  # All of the above Secrets are created out-of-band; see secret-stubs.example.yaml.
+
+  # --- Air-gap VCEK OfflineStore (design §4) --------------------------------------------
+  # Mounts per-chip VCEK .der secrets into the KBS pod at the kds-store path the SNP verifier
+  # reads. Commented in the base because the secret names are keyed by the *environment's*
+  # chip HWIDs (lowercase) — collected by scripts/collect-vcek.sh on the customer/rig metal
+  # and filled in per overlay. Wrong-case HWID or a missing entry => attestation fails.
+  #
+  # kbsLocalCertCacheSpec:
+  #   # VERIFY field names against the v1.1 CRD (`oc explain kbsconfig.spec.kbsLocalCertCacheSpec`).
+  #   secretName: vcek-certs            # Secret holding vcek.der keyed by <hwid-lowercase>.
+  #   # mountPath the operator targets:
+  #   #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid>/vcek.der

@@ -1,0 +1,42 @@
+# oc-mirror v2 ImageSetConfiguration — disconnected SNO + OSC 1.12 + Trustee 1.1 (SEV-SNP).
+#
+# Drives `oc-mirror --v2 -c install/imageset-config.yaml ...` (see scripts/mirror.sh).
+# v2 has NO `storageConfig` block (that was v1); the workspace is a CLI flag now.
+#
+# EVERY version / channel / digest below that is not yet replay-verified carries a
+# `# VERIFY` marker. Do NOT trust an operator channel string until confirmed against the
+# package's `oc-mirror list operators --catalog ... --package <name>` output.
+apiVersion: mirror.openshift.io/v2alpha1
+kind: ImageSetConfiguration
+mirror:
+  platform:
+    architectures:
+      - amd64
+    channels:
+      # Pinned to the engagement target. Alt fallback is 4.19.28 on channel stable-4.19.
+      - name: stable-4.20
+        minVersion: 4.20.18   # VERIFY: exact z-stream exists in stable-4.20
+        maxVersion: 4.20.18   # pin to a single release for a reproducible SNO mirror
+        type: ocp
+    # graph: true   # VERIFY: enable if you need the OSUS update graph image mirrored too
+  operators:
+    - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.20
+      packages:
+        # OSC 1.12. Install order (per design doc): NFD -> cert-manager -> OSC -> Trustee.
+        - name: sandboxed-containers-operator
+          channels:
+            - name: stable   # VERIFY channel: `oc-mirror list operators --package sandboxed-containers-operator`
+        - name: trustee-operator
+          channels:
+            - name: stable   # VERIFY channel for Trustee 1.1 (may be e.g. trustee-1.1 / stable)
+        - name: nfd
+          channels:
+            - name: stable   # VERIFY: NFD channel must match OCP 4.20 (e.g. stable / 4.20)
+        - name: openshift-cert-manager-operator
+          channels:
+            - name: stable-v1   # VERIFY: cert-manager channel (often stable-v1)
+  additionalImages:
+    # coco-tools provides veritas (RVPS) + snphost helpers; pinned to the OSC train.
+    - name: quay.io/openshift_sandboxed_containers/coco-tools:1.12
+    # ubi-minimal used as a CoCo workload base in the runbook steps.
+    - name: registry.access.redhat.com/ubi9/ubi-minimal:latest   # VERIFY: pin to a digest for air-gap reproducibility
