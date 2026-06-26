@@ -32,26 +32,51 @@ packages:
   - dnsmasq # serves the mirror DNS name over the VLAN (RHCOS can't use /etc/hosts at install time)
 
 write_files:
-  # --- VLAN L3: NetworkManager keyfile for the tagged sub-interface on the rig network -----
-  - path: /etc/NetworkManager/system-connections/rigvlan.nmconnection
-    permissions: "0600"
-    owner: "root:root"
+  # --- VLAN L3 setup: AUTO-DETECT the parent NIC, then write the NM keyfile + dnsmasq iface ---
+  # The parent interface is hardware-bound and varies by Latitude plan (e.g. m4-metal-small has
+  # NO bond0 — it is eno1[public]/eno2[private]). With vlan_parent_interface="auto" (default) we
+  # pick the cabled, un-addressed, physical, non-USB NIC (= the private/VLAN port). Set the var to
+  # an explicit name to override. (Discovered on metal 2026-06-26: hardcoding bond0 cascaded into
+  # dnsmasq + mirror-registry failures because the VLAN never came up.)
+  - path: /usr/local/bin/setup-rig-vlan.sh
+    permissions: "0755"
     content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      PARENT="${vlan_parent_interface}"
+      VID="${vlan_vid}"
+      if [ "$PARENT" = "auto" ] || [ -z "$PARENT" ]; then
+        for i in $(ls /sys/class/net); do
+          [ "$i" = lo ] && continue
+          [ -e "/sys/class/net/$i/device" ] || continue                     # physical only
+          readlink -f "/sys/class/net/$i/device" | grep -q usb && continue  # skip BMC (usb NIC)
+          ip -4 addr show "$i" | grep -q 'inet ' && continue                # skip the addressed (public) NIC
+          [ "$(cat /sys/class/net/$i/carrier 2>/dev/null)" = 1 ] || continue # require carrier
+          PARENT="$i"; break
+        done
+      fi
+      [ -n "$PARENT" ] && [ "$PARENT" != "auto" ] || { echo "FATAL: no VLAN parent NIC detected"; exit 1; }
+      IFACE="$PARENT.$VID"
+      echo "rig VLAN: parent=$PARENT iface=$IFACE"
+      cat > /etc/NetworkManager/system-connections/rigvlan.nmconnection <<EOF
       [connection]
       id=rigvlan
       type=vlan
-      interface-name=${vlan_parent_interface}.${vlan_vid}
-
+      interface-name=$IFACE
       [vlan]
-      parent=${vlan_parent_interface}
-      id=${vlan_vid}
-
+      parent=$PARENT
+      id=$VID
       [ipv4]
       method=manual
       address1=${bastion_vlan_ip}/${vlan_prefix}
-
       [ipv6]
       method=ignore
+      EOF
+      chmod 600 /etc/NetworkManager/system-connections/rigvlan.nmconnection
+      # dnsmasq must bind the SAME detected VLAN iface
+      printf 'interface=%s\nbind-interfaces\nno-dhcp-interface=%s\n' "$IFACE" "$IFACE" > /etc/dnsmasq.d/rig-iface.conf
+      nmcli connection reload
+      nmcli connection up rigvlan
 
   # --- NTP: serve time to the air-gapped node over the VLAN --------------------------------
   - path: /etc/chrony.d/rig.conf
@@ -63,12 +88,10 @@ write_files:
 
   # --- DNS: resolve the mirror name to the bastion's PRIVATE IP over the VLAN --------------
   # RHCOS can't use /etc/hosts at install time; the agent-config points dns-resolver here.
+  # The interface= binding is written by setup-rig-vlan.sh (rig-iface.conf) from the detected NIC.
   - path: /etc/dnsmasq.d/rig.conf
     permissions: "0644"
     content: |
-      interface=${vlan_parent_interface}.${vlan_vid}
-      bind-interfaces
-      no-dhcp-interface=${vlan_parent_interface}.${vlan_vid}
       address=/${registry_dns_name}/${bastion_vlan_ip}
       # add cluster records here too if the bastion is the node's DNS, e.g.:
       # address=/apps.<cluster>.<basedomain>/<node_vlan_ip>
@@ -111,11 +134,25 @@ write_files:
       fi
       mkdir -p /opt/mirror-registry && tar -xzf mirror-registry.tar.gz -C /opt/mirror-registry
 
+      # mirror-registry installs quay via ANSIBLE over SSH to the target host. Rocky images have
+      # no root SSH by default, so set up passwordless root self-SSH (else: "root@<host> UNREACHABLE,
+      # Permission denied"). We target localhost explicitly to dodge hostname-resolution quirks.
+      install -d -m700 /root/.ssh
+      [ -f /root/.ssh/id_rsa ] || ssh-keygen -t rsa -b 3072 -N '' -f /root/.ssh/id_rsa -q
+      grep -qf /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys 2>/dev/null || cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+      chmod 600 /root/.ssh/authorized_keys
+      sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+      grep -q '^PermitRootLogin' /etc/ssh/sshd_config || echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config
+      systemctl restart sshd
+
       # quayHostname = the DNS name (cert SAN); password read from the 0600 file. Install output
       # is captured to a 0600 sink (it can echo the credential), NOT the world-readable tee log.
       /opt/mirror-registry/mirror-registry install \
         --quayHostname "${registry_dns_name}" \
         --quayRoot "$QUAY_ROOT" \
+        --targetHostname localhost \
+        --targetUsername root \
+        -k /root/.ssh/id_rsa \
         --initUser "${init_user}" \
         --initPassword "$(cat "$PW_FILE")" \
         > "$MIRROR_ROOT/install.log" 2>&1
@@ -131,9 +168,8 @@ write_files:
       date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_READY"
 
 runcmd:
-  # bring up the private VLAN (NetworkManager); the public default route is untouched.
-  - [ nmcli, connection, reload ]
-  - [ bash, -lc, "nmcli connection up rigvlan || nmcli device reapply ${vlan_parent_interface} || true" ]
+  # detect the VLAN parent NIC + bring up the private VLAN (public default route untouched).
+  - [ bash, -lc, "/usr/local/bin/setup-rig-vlan.sh" ]
   # NTP + DNS services for the node over the VLAN; open them in firewalld if it is active.
   - [ bash, -lc, "systemctl enable --now chronyd dnsmasq" ]
   - [ bash, -lc, "if systemctl is-active --quiet firewalld; then firewall-cmd --permanent --add-service=dns --add-service=ntp --add-port=8443/tcp && firewall-cmd --reload; fi || true" ]

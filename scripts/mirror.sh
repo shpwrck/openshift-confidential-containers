@@ -11,11 +11,18 @@
 #   MIRROR_REGISTRY=bastion.example.com:8443 ./scripts/mirror.sh mirror
 #   MIRROR_REGISTRY=bastion.example.com:8443 ./scripts/mirror.sh resources
 #
-# Requires: oc-mirror on PATH (or ./bin from scripts/install-tools.sh) and a pull/push auth
-# for the mirror registry in ${REGISTRY_AUTH_FILE:-~/.config/containers/auth.json} (or the
-# legacy ~/.docker/config.json). The node firewall lets ONLY the node reach the bastion;
-# this script runs on the bastion/admin host that can push to it.
+# Requires: oc-mirror on PATH (or ./bin from scripts/install-tools.sh) and a MERGED auth
+# (Red Hat pull secret + the mirror registry's push cred) in ~/.docker/config.json.
+#
+# DO NOT set REGISTRY_AUTH_FILE: oc-mirror v2 embeds a `distribution` registry that consumes
+# ALL `REGISTRY_*` env vars as its own config, so REGISTRY_AUTH_FILE collides and panics
+# ("StorageDriver not registered"). We unset it defensively below and rely on the default
+# ~/.docker/config.json lookup. (Learned on metal 2026-06-26.) On a RHEL-family bastion, prefer
+# the `oc-mirror.rhel9.tar.gz` build (no libgpgme dependency).
+#
+# The node firewall lets ONLY the node reach the bastion; run this on the bastion/admin host.
 set -euo pipefail
+unset REGISTRY_AUTH_FILE
 
 CONFIG="install/imageset-config.yaml"
 WORKSPACE="${WORKSPACE:-file://./mirror}"   # oc-mirror v2 workspace (cache + generated resources)
