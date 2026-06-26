@@ -36,7 +36,10 @@ mirror:
           channels:
             - name: stable-v1   # VERIFY: cert-manager channel (often stable-v1)
   additionalImages:
-    # coco-tools provides veritas (RVPS) + snphost helpers; pinned to the OSC train.
-    - name: quay.io/openshift_sandboxed_containers/coco-tools:1.12
-    # ubi-minimal used as a CoCo workload base in the runbook steps.
-    - name: registry.access.redhat.com/ubi9/ubi-minimal:latest   # VERIFY: pin to a digest for air-gap reproducibility
+    # Pinned to digests for air-gap reproducibility (tags float; the mirror must be a fixed
+    # bill of materials). Resolved 2026-06-26 via `oc image info <ref> --filter-by-os=linux/amd64`;
+    # re-resolve and update the digest if you intend to advance the version.
+    # coco-tools provides veritas (RVPS) + snphost helpers; was :1.12.
+    - name: quay.io/openshift_sandboxed_containers/coco-tools@sha256:89c219d2c7cb8359e8cc86605df1d31ce3be0f2565683b8bff882dba0c8e2605
+    # ubi-minimal used as a CoCo workload base in the runbook steps; was ubi9/ubi-minimal:latest.
+    - name: registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63

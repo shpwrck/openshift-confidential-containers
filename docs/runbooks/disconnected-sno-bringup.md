@@ -124,9 +124,11 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
       ssh rocky@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
       ssh rocky@<node-ip> 'curl -m5 -skI https://mirror.rig.local:8443 >/dev/null && echo "MIRROR OK over VLAN"'
       ```
-      (Pre-OpenShift: nft as above on the Rocky node. Post-install: the same default-deny-output ruleset as
-      a MachineConfig.) Do not record the air gap as proven until public egress is BLOCKED **and**
-      the bastion is reachable.
+      (Pre-OpenShift: nft as above on the Rocky node. Post-install: apply the opt-in egress
+      MachineConfig [`gitops/base/airgap-egress`](../../gitops/base/airgap-egress/) **after** the SNO
+      is healthy — `oc apply -k gitops/base/airgap-egress` — it drops public egress while keeping all
+      cluster traffic; do NOT add it to the install-time overlay.) Do not record the air gap as proven
+      until public egress is BLOCKED **and** the bastion is reachable.
 
 > **STOP-gate:** do not proceed unless `host-snp-check.sh` is green. A green result proves
 > silicon + provider + (Rocky 10) kernel do SNP host; it does **not** yet prove RHCOS. If the

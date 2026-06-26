@@ -28,6 +28,8 @@ packages:
   - tar
   - openssl
   - NetworkManager
+  - chrony # NTP source for the air-gapped node (clock skew hangs bootstrap + breaks attestation)
+  - dnsmasq # serves the mirror DNS name over the VLAN (RHCOS can't use /etc/hosts at install time)
 
 write_files:
   # --- VLAN L3: NetworkManager keyfile for the tagged sub-interface on the rig network -----
@@ -50,6 +52,28 @@ write_files:
 
       [ipv6]
       method=ignore
+
+  # --- NTP: serve time to the air-gapped node over the VLAN --------------------------------
+  - path: /etc/chrony.d/rig.conf
+    permissions: "0644"
+    content: |
+      # Serve the rig VLAN even before the bastion itself syncs upstream.
+      allow ${vlan_subnet}
+      local stratum 10
+
+  # --- DNS: resolve the mirror name to the bastion's PRIVATE IP over the VLAN --------------
+  # RHCOS can't use /etc/hosts at install time; the agent-config points dns-resolver here.
+  - path: /etc/dnsmasq.d/rig.conf
+    permissions: "0644"
+    content: |
+      interface=${vlan_parent_interface}.${vlan_vid}
+      bind-interfaces
+      no-dhcp-interface=${vlan_parent_interface}.${vlan_vid}
+      address=/${registry_dns_name}/${bastion_vlan_ip}
+      # add cluster records here too if the bastion is the node's DNS, e.g.:
+      # address=/apps.<cluster>.<basedomain>/<node_vlan_ip>
+      # host-record=api.<cluster>.<basedomain>,<node_vlan_ip>
+      # host-record=api-int.<cluster>.<basedomain>,<node_vlan_ip>
 
   - path: /usr/local/bin/bootstrap-mirror.sh
     permissions: "0755"
@@ -110,6 +134,9 @@ runcmd:
   # bring up the private VLAN (NetworkManager); the public default route is untouched.
   - [ nmcli, connection, reload ]
   - [ bash, -lc, "nmcli connection up rigvlan || nmcli device reapply ${vlan_parent_interface} || true" ]
+  # NTP + DNS services for the node over the VLAN; open them in firewalld if it is active.
+  - [ bash, -lc, "systemctl enable --now chronyd dnsmasq" ]
+  - [ bash, -lc, "if systemctl is-active --quiet firewalld; then firewall-cmd --permanent --add-service=dns --add-service=ntp --add-port=8443/tcp && firewall-cmd --reload; fi || true" ]
   # pipefail on the outer shell too, so a failed bootstrap is a non-zero cloud-init result
   # (not masked by tee's exit). A separate FAILED marker is written if the script errors.
   - [ bash, -lc, "set -o pipefail; /usr/local/bin/bootstrap-mirror.sh 2>&1 | tee -a /var/log/mirror-bootstrap.log || { date -u +%FT%TZ > ${mirror_root}/MIRROR_FAILED; exit 1; }" ]

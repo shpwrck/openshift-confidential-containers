@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# OPT-IN egress lockdown — deliberately NOT referenced by the sno-workers / customer-workers
+# overlays (applying it during/just-after install can wedge the cluster). Apply it on its own,
+# AFTER the cluster is healthy:  oc apply -k gitops/base/airgap-egress
+# airgap-egress.nft is the human-readable source embedded (base64) in the MachineConfig — it is
+# NOT a kustomize resource, so it is not listed here.
+resources:
+  - machineconfig-airgap-egress.yaml

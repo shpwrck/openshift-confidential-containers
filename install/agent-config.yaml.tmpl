@@ -26,9 +26,14 @@ hosts:
         macAddress: 00:00:00:00:00:00   # FILL: real NIC MAC (do NOT guess — read from BIOS/IPMI/`ip link`)
 
     # Static networking as nmstate. Every address/route/DNS below is a placeholder.
+    #
+    # TWO interfaces matter: the boot/data NIC (machineNetwork, public-ish) AND a tagged VLAN
+    # child carrying the PRIVATE rig IP. The VLAN is how RHCOS reaches the mirror over the air
+    # gap — the Phase-1 `/etc/hosts` trick does NOT survive into RHCOS, so the mirror name is
+    # resolved via DNS (the bastion's dnsmasq at its VLAN IP), not a hosts file.
     networkConfig:
       interfaces:
-        - name: eno1                # FILL: must match interfaces[].name above
+        - name: eno1                # FILL: must match interfaces[].name above (VERIFY: bond0 if Latitude LACP-bonds)
           type: ethernet
           state: up
           ipv4:
@@ -39,14 +44,30 @@ hosts:
                 prefix-length: 24   # FILL: match machineNetwork prefix
           ipv6:
             enabled: false
+        # Tagged VLAN child on the rig private network — carries node_vlan_ip; reaches the mirror.
+        - name: eno1.66             # FILL: <parent>.<vid>; vid = `terraform output virtual_network_vid`
+          type: vlan
+          state: up
+          vlan:
+            base-iface: eno1        # FILL: must match the boot NIC above (VERIFY parent on the metal)
+            id: 66                  # FILL: VLAN id = `terraform output virtual_network_vid`
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: 192.168.66.11   # FILL: node_vlan_ip = `terraform output node_vlan_ip`
+                prefix-length: 24   # FILL: match vlan_subnet prefix
+          ipv6:
+            enabled: false
       dns-resolver:
         config:
           server:
-            - 192.168.1.2           # FILL: DNS that resolves the cluster + mirror host (often the bastion)
+            - 192.168.66.10         # FILL: bastion VLAN IP — its dnsmasq resolves the mirror name (+ cluster records if you add them)
+            # - 192.168.1.2         # VERIFY: add a cluster DNS server too if api/api-int/*.apps live elsewhere
           # search:
           #   - example.com         # VERIFY: add search domain(s) if your DNS needs them
       routes:
         config:
           - destination: 0.0.0.0/0
-            next-hop-address: 192.168.1.1   # FILL: default gateway
+            next-hop-address: 192.168.1.1   # FILL: default gateway (public NIC; egress is locked separately)
             next-hop-interface: eno1        # FILL: match interface name
