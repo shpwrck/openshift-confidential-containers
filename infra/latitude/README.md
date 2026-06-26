@@ -38,8 +38,9 @@ terraform output ssh_hint
   on this node — visible within minutes on the IPMI console.
 
 ## Verify SEV-SNP host
-1. SSH in (root@<primary_ipv4>; if refused, use the **IPMI serial console** as fallback).
-2. `scp ../../scripts/host-snp-check.sh <ip>: && ssh <ip> bash host-snp-check.sh`.
+1. SSH in (`rocky@<primary_ipv4>` for the rocky-10 image — try `root@` if refused; or use the
+   **IPMI serial console** as fallback).
+2. `scp ../../scripts/host-snp-check.sh rocky@<ip>: && ssh rocky@<ip> sudo bash host-snp-check.sh`.
    The script **discriminates** kernel-incapable vs BIOS-off vs provider-veto — a FAIL is NOT
    automatically a provider veto; follow its RESULT guidance.
 3. If it points at BIOS: IPMI console → reboot → AMD CBS: **SEV-SNP Support** + **SMEE** on,

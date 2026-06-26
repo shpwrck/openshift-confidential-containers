@@ -25,11 +25,11 @@ resource "latitudesh_server" "snp_rig" {
   hostname         = var.hostname
   plan             = var.plan             # Genoa SKU slug — confirm via the API discovery step
   site             = var.site             # metro with Genoa stock — confirm via the API discovery step
-  operating_system = var.operating_system # "ipxe" for the Ubuntu 25.04 netboot path, else a stock slug
+  operating_system = var.operating_system # rocky-10 (RHEL-family) for rung-0, or "ipxe" to netboot a custom image
   billing          = "hourly"             # destroy after the spike to control cost
   ssh_keys         = length(var.ssh_key_ids) > 0 ? var.ssh_key_ids : [for k in latitudesh_ssh_key.rig : k.id]
 
-  # Ubuntu 25.04 via iPXE: set operating_system="ipxe" and point ipxe at a boot script.
+  # Custom image via iPXE: set operating_system="ipxe" and point ipxe at a boot script.
   ipxe = var.ipxe_url != "" ? var.ipxe_url : null
 
   # Optional cloud-init (e.g. install snpguest/qemu, confirm kernel) once booted.

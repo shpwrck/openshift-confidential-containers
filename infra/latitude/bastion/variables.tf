@@ -27,8 +27,8 @@ variable "plan" {
 
 variable "operating_system" {
   type        = string
-  default     = "ubuntu_26_04_x64_lts"
-  description = "Bastion OS. Defaults to the proven Ubuntu slug; cloud-init adds podman + mirror-registry."
+  default     = "rocky-10"
+  description = "Bastion OS — RHEL-family (Rocky 10): mirror-registry + podman (AppStream) validated here, NetworkManager network stack, SELinux enforcing. `lsh` OS slugs: rocky-10 / almalinux-10."
 }
 
 variable "billing" {
@@ -81,7 +81,7 @@ variable "bastion_vlan_ip" {
 variable "node_vlan_ip" {
   type        = string
   default     = "192.168.66.11"
-  description = "Static private IP the SNP node should use on the VLAN (consumed in agent-config / node netplan)."
+  description = "Static private IP the SNP node should use on the VLAN (consumed in agent-config nmstate / NM)."
 }
 
 variable "vlan_parent_interface" {

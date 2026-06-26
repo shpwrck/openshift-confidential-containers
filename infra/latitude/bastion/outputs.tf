@@ -5,7 +5,7 @@ output "virtual_network_id" {
 
 output "virtual_network_vid" {
   value       = latitudesh_virtual_network.rig.vid
-  description = "VLAN tag id — needed to configure the node's tagged sub-interface (agent-config / netplan)."
+  description = "VLAN tag id — needed to configure the node's tagged sub-interface (agent-config nmstate / NM)."
 }
 
 output "firewall_id" {
@@ -34,5 +34,7 @@ output "node_hosts_entry" {
 }
 
 output "ssh_hint" {
-  value = "ssh ${split("_", var.operating_system)[0] == "ubuntu" ? "ubuntu" : "root"}@${latitudesh_server.bastion.primary_ipv4}  # mirror-registry bootstrap log: /var/log/mirror-bootstrap.log; ready when ${var.mirror_root}/MIRROR_READY exists"
+  # VERIFY the cloud-image login user on first connect: Rocky/Alma images conventionally use
+  # "rocky"/"cloud-user"; Latitude may instead enable root. Falls back across the likely users.
+  value = "ssh ${startswith(var.operating_system, "rocky") ? "rocky" : (startswith(var.operating_system, "ubuntu") ? "ubuntu" : "cloud-user")}@${latitudesh_server.bastion.primary_ipv4}  # (try root@ if refused) — bootstrap log: /var/log/mirror-bootstrap.log; ready when ${var.mirror_root}/MIRROR_READY exists"
 }

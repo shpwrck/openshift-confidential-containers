@@ -28,14 +28,14 @@ variable "site" {
 
 variable "operating_system" {
   type        = string
-  default     = "ipxe"
-  description = "\"ipxe\" for the Ubuntu 25.04 netboot path (set ipxe_url too), or a stock OS slug."
+  default     = "rocky-10"
+  description = "Rung-0 host OS. rocky-10 (RHEL-family, kernel 6.12, SNP-capable) — matches the RHCOS customer node. Or \"ipxe\" to netboot a custom image (set ipxe_url)."
 }
 
 variable "ipxe_url" {
   type        = string
   default     = ""
-  description = "iPXE boot script URL (Ubuntu 25.04 live/installer) when operating_system=\"ipxe\"."
+  description = "iPXE boot script URL (custom RHEL/Fedora live/installer) when operating_system=\"ipxe\"."
 }
 
 variable "user_data" {

@@ -31,13 +31,13 @@ terraform output mirror_endpoint                 # DNS name:8443 -> MIRROR_REGIS
 terraform output node_hosts_entry                # "<bastion-vlan-ip> <mirror-name>" -> node agent-config
 ```
 
-Watch the bootstrap: `ssh ubuntu@<bastion-ip>` then `tail -f /var/log/mirror-bootstrap.log`.
+Watch the bootstrap: `ssh rocky@<bastion-ip>` then `tail -f /var/log/mirror-bootstrap.log`.
 Ready when `<mirror_root>/MIRROR_READY` exists (a `MIRROR_FAILED` marker is written instead on a
 failed bootstrap; `install.log` is 0600). Then grab the two things the install kit needs:
 
 ```bash
-ssh ubuntu@<bastion-ip> 'sudo cat /opt/mirror/mirror-admin-password'   # registry admin pw (generated on-box)
-ssh ubuntu@<bastion-ip> 'sudo cat /opt/mirror/ca/rootCA.pem'           # -> install-config additionalTrustBundle
+ssh rocky@<bastion-ip> 'sudo cat /opt/mirror/mirror-admin-password'   # registry admin pw (generated on-box)
+ssh rocky@<bastion-ip> 'sudo cat /opt/mirror/ca/rootCA.pem'           # -> install-config additionalTrustBundle
 ```
 
 The admin **password is generated on the bastion** (0600 root-only) — it is deliberately never

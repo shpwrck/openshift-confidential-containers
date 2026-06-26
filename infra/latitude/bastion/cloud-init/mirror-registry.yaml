@@ -1,44 +1,55 @@
 #cloud-config
-# Bastion bootstrap: private-VLAN L3 + Red Hat mirror-registry (quay) for the disconnected SNO install.
+# Bastion bootstrap (Rocky Linux 10): private-VLAN L3 + Red Hat mirror-registry (quay).
 # Templated by Terraform (latitudesh_user_data.bastion): $${name} tokens are TF template vars,
 # NOT shell vars. Bootstrap log lands in /var/log/cloud-init-output.log.
 #
+# OS: RHEL-family (rocky-10) — mirror-registry + podman (AppStream 5.x) are validated here, and
+# the network stack is NetworkManager (not netplan). SELinux is ENFORCING; mirror-registry labels
+# its quayRoot itself, but # VERIFY the quay pod starts cleanly under SELinux on first provision.
+#
 # Network model (the REAL air gap, not a cosmetic VLAN):
 #   - this host gets a STATIC private IP (${bastion_vlan_ip}/${vlan_prefix}) on the rig VLAN
-#     (vid ${vlan_vid}) via netplan, in addition to its public IP (kept for internet egress
-#     while mirroring);
-#   - the registry is served under the DNS name ${registry_dns_name}, mapped to the PRIVATE IP
-#     in /etc/hosts, so quay's TLS cert SAN matches what the node dials (no x509 IP-SAN failure);
+#     (vid ${vlan_vid}) via a NetworkManager VLAN connection, plus its public IP (kept for
+#     internet egress while mirroring);
+#   - the registry is served under DNS name ${registry_dns_name}, mapped to the PRIVATE IP in
+#     /etc/hosts, so quay's TLS cert SAN matches what the node dials (no x509 IP-SAN failure);
 #   - the SNP node reaches the mirror ONLY over this private IP (its egress nftables allow just
 #     ${bastion_vlan_ip}); see runbook Phase 1.
-#   # VERIFY on first provision: confirm the VLAN parent interface is '${vlan_parent_interface}'
-#   # (run `ip -br link` on the bastion) and that Latitude does not pre-create the tagged
-#   # sub-interface. Adjust the netplan below if the naming differs — it is hardware-bound.
+#   # VERIFY on first provision: the VLAN parent interface is '${vlan_parent_interface}'
+#   # (`ip -br link` / `nmcli device`). Adjust below if the naming differs — it is hardware-bound.
 #
 # Security: the admin password is GENERATED on the bastion on first boot, 0600 root-only (never
 # templated into Terraform state / the Latitude user-data store). Retrieve after boot with:
 #   sudo cat ${mirror_root}/mirror-admin-password
 
-package_update: true
 packages:
   - podman
   - curl
   - tar
   - openssl
-  - coreutils
+  - NetworkManager
 
 write_files:
-  # --- VLAN L3: tagged sub-interface on the rig private network -------------------------
-  - path: /etc/netplan/99-rig-vlan.yaml
+  # --- VLAN L3: NetworkManager keyfile for the tagged sub-interface on the rig network -----
+  - path: /etc/NetworkManager/system-connections/rigvlan.nmconnection
     permissions: "0600"
+    owner: "root:root"
     content: |
-      network:
-        version: 2
-        vlans:
-          rigvlan${vlan_vid}:
-            id: ${vlan_vid}
-            link: ${vlan_parent_interface}
-            addresses: [${bastion_vlan_ip}/${vlan_prefix}]
+      [connection]
+      id=rigvlan
+      type=vlan
+      interface-name=${vlan_parent_interface}.${vlan_vid}
+
+      [vlan]
+      parent=${vlan_parent_interface}
+      id=${vlan_vid}
+
+      [ipv4]
+      method=manual
+      address1=${bastion_vlan_ip}/${vlan_prefix}
+
+      [ipv6]
+      method=ignore
 
   - path: /usr/local/bin/bootstrap-mirror.sh
     permissions: "0755"
@@ -96,7 +107,9 @@ write_files:
       date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_READY"
 
 runcmd:
-  - [ netplan, apply ]
+  # bring up the private VLAN (NetworkManager); the public default route is untouched.
+  - [ nmcli, connection, reload ]
+  - [ bash, -lc, "nmcli connection up rigvlan || nmcli device reapply ${vlan_parent_interface} || true" ]
   # pipefail on the outer shell too, so a failed bootstrap is a non-zero cloud-init result
   # (not masked by tee's exit). A separate FAILED marker is written if the script errors.
   - [ bash, -lc, "set -o pipefail; /usr/local/bin/bootstrap-mirror.sh 2>&1 | tee -a /var/log/mirror-bootstrap.log || { date -u +%FT%TZ > ${mirror_root}/MIRROR_FAILED; exit 1; }" ]

@@ -72,9 +72,9 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
       terraform output mirror_endpoint   # DNS name:8443 -> MIRROR_REGISTRY for Phase 2
       terraform output node_hosts_entry  # "<bastion-vlan-ip> <mirror-name>" -> into agent-config (Phase 3)
       # retrieve the generated registry admin password once the bastion is up:
-      ssh ubuntu@$(terraform output -raw bastion_public_ipv4) 'sudo cat /opt/mirror/mirror-admin-password'
+      ssh rocky@$(terraform output -raw bastion_public_ipv4) 'sudo cat /opt/mirror/mirror-admin-password'
       # 2) disposable SNP node (reads the bastion's VLAN + firewall via remote state)
-      cd ..            && terraform init && terraform apply       # m4-metal-medium / Genoa / ubuntu_26_04 (proven 2026-06-25)
+      cd ..            && terraform init && terraform apply       # m4-metal-medium / Genoa / rocky-10 (rung-0 was proven on Ubuntu 26.04 — re-verify on Rocky)
       terraform output ssh_hint
       ```
       (Standalone rung-0 with no bastion: `terraform apply -var air_gap=false` in `infra/latitude/`.)
@@ -85,15 +85,17 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
         Enabled**, **`SEV-ES ASID Space Limit` = 100**, `SEV Control` Enabled.
       - The misleading `IOMMU SNP feature not enabled` kernel message is caused by
         `SEV-SNP Support = Auto`, **not** IOMMU — don't chase IOMMU.
-- [ ] **Rung-0 host gate** — prove silicon+provider do SNP host, on the raw Ubuntu node
+- [ ] **Rung-0 host gate** — prove silicon+provider do SNP host, on the raw Rocky 10 node
       (pre-OpenShift), via [`scripts/host-snp-check.sh`](../../scripts/host-snp-check.sh):
       ```bash
-      ssh ubuntu@<ip> 'sudo bash -s' < scripts/host-snp-check.sh   # expect all PASS
+      ssh rocky@<ip> 'sudo bash -s' < scripts/host-snp-check.sh   # expect all PASS
       ```
       The script **discriminates** kernel-incapable vs BIOS-off vs genuine provider-veto — a
       FAIL is *not* automatically a provider veto; follow its `RESULT` guidance.
+      `# VERIFY`: SNP host was first proven on Ubuntu 26.04 (kernel 7.0); Rocky 10's kernel 6.12
+      also carries SEV-SNP host support but is **unproven on this image** — this gate confirms it.
       (The OpenShift-node equivalent, `make verify-snp-host`, runs later in Phase 4 once RHCOS
-      is installed — it proves the *RHCOS* kernel, which this Ubuntu check does not.)
+      is installed — it proves the *RHCOS* kernel, which this rung-0 check does not.)
 
 - [ ] **Lock the node's egress host-side, then VERIFY it bites** (the air gap must be *enforced*,
       not assumed — a silently-reachable internet would hide the VCEK-OfflineStore bug). Two
@@ -106,10 +108,10 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
         default-deny output except to the bastion's private IP:
       ```bash
       # VERIFY the node's VLAN parent interface (`ip -br link`); IDs/IPs come from the bastion outputs.
-      ssh ubuntu@<node-ip> 'sudo ip link add link bond0 name bond0.<vid> type vlan id <vid>;
+      ssh rocky@<node-ip> 'sudo ip link add link bond0 name bond0.<vid> type vlan id <vid>;
         sudo ip addr add 192.168.66.11/24 dev bond0.<vid>; sudo ip link set bond0.<vid> up;
         echo "192.168.66.10 mirror.rig.local" | sudo tee -a /etc/hosts'
-      ssh ubuntu@<node-ip> 'sudo nft -f - <<EOF
+      ssh rocky@<node-ip> 'sudo nft -f - <<EOF
       table inet airgap {
         chain output { type filter hook output priority 0; policy drop;
           ct state established,related accept
@@ -119,15 +121,15 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
       }
       EOF'
       # probe — public egress must be DEAD, the private mirror must answer:
-      ssh ubuntu@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
-      ssh ubuntu@<node-ip> 'curl -m5 -skI https://mirror.rig.local:8443 >/dev/null && echo "MIRROR OK over VLAN"'
+      ssh rocky@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
+      ssh rocky@<node-ip> 'curl -m5 -skI https://mirror.rig.local:8443 >/dev/null && echo "MIRROR OK over VLAN"'
       ```
-      (Pre-OpenShift: nft as above on the Ubuntu node. Post-install: the same default-deny-output ruleset as
+      (Pre-OpenShift: nft as above on the Rocky node. Post-install: the same default-deny-output ruleset as
       a MachineConfig.) Do not record the air gap as proven until public egress is BLOCKED **and**
       the bastion is reachable.
 
 > **STOP-gate:** do not proceed unless `host-snp-check.sh` is green. A green result proves
-> silicon + provider + (Ubuntu) kernel do SNP host; it does **not** yet prove RHCOS. If the
+> silicon + provider + (Rocky 10) kernel do SNP host; it does **not** yet prove RHCOS. If the
 > script reports a genuine provider/firmware veto, the bare-metal decision is invalid for this
 > node — fall back per design §6 rather than building on top.
 
@@ -220,7 +222,7 @@ Reference: [`install/README.md`](../../install/README.md),
 [`gitops/base/operators/subscriptions.yaml`](../../gitops/base/operators/subscriptions.yaml)).
 
 - [ ] **RHCOS SNP host gate** (hands-on) — now that RHCOS is installed, prove the *RHCOS*
-      kernel does SNP host (Phase 1 only proved Ubuntu):
+      kernel does SNP host (Phase 1 only proved the rung-0 OS):
       ```bash
       make verify-snp-host NODE=<node-name>     # -> scripts/verify-snp-host.sh
       ```
