@@ -59,3 +59,22 @@ variable "ssh_public_key_path" {
   type    = string
   default = "~/.ssh/id_ed25519.pub"
 }
+
+# --- Air-gap wiring (depends on the bastion module) --------------------------------------
+variable "air_gap" {
+  type        = bool
+  default     = true
+  description = "Join the bastion VLAN (and optionally its firewall). false = standalone rung-0 node, no bastion."
+}
+
+variable "bastion_state_path" {
+  type        = string
+  default     = "../bastion/terraform.tfstate"
+  description = "Path to the bastion module's local state, read for the VLAN + firewall ids when air_gap=true."
+}
+
+variable "enforce_latitude_firewall" {
+  type        = bool
+  default     = false
+  description = "Attach the bastion's egress-lockdown firewall to the node. Keep false until its egress direction is VERIFIED on provision (else host-nftables fallback)."
+}

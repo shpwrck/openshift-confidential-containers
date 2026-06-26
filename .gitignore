@@ -10,6 +10,11 @@ rvps-*.yaml
 initdata-*.toml
 *.tmp
 
+# Fetched tooling + install working dirs (large, regenerable — never commit)
+bin/
+cluster-assets/
+mirror/
+
 # Terraform
 infra/**/.terraform/
 infra/**/terraform.tfvars

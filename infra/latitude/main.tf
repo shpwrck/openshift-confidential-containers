@@ -35,3 +35,28 @@ resource "latitudesh_server" "snp_rig" {
   # Optional cloud-init (e.g. install snpguest/qemu, confirm kernel) once booted.
   user_data = var.user_data != "" ? var.user_data : null
 }
+
+# --- Air-gap wiring: join the bastion's VLAN + attach its egress-lockdown firewall --------
+# Gated on var.air_gap. With air_gap=false the node is a standalone rung-0 box (yesterday's
+# path: provision, prove SNP host, destroy) needing no bastion. With air_gap=true (default)
+# the bastion module must already be applied — we read its outputs from its local state.
+data "terraform_remote_state" "bastion" {
+  count   = var.air_gap ? 1 : 0
+  backend = "local"
+  config  = { path = var.bastion_state_path }
+}
+
+resource "latitudesh_vlan_assignment" "node" {
+  count              = var.air_gap ? 1 : 0
+  server_id          = latitudesh_server.snp_rig.id
+  virtual_network_id = data.terraform_remote_state.bastion[0].outputs.virtual_network_id
+}
+
+# VERIFY (on first provision, runbook Phase 1): confirm Latitude's firewall actually
+# constrains the node's EGRESS (direction is undocumented). If it proves inbound-only, leave
+# this off and use the host-nftables default-deny-egress fallback in the runbook instead.
+resource "latitudesh_firewall_assignment" "node" {
+  count       = var.air_gap && var.enforce_latitude_firewall ? 1 : 0
+  server_id   = latitudesh_server.snp_rig.id
+  firewall_id = data.terraform_remote_state.bastion[0].outputs.firewall_id
+}

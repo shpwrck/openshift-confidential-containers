@@ -41,9 +41,13 @@ Done on the **bastion / admin host**, not the node.
       pulls `oc`, `openshift-install`, `oc-mirror` (all 4.20.18 / linux-amd64) into `./bin`.
       Then `export PATH="$PWD/bin:$PATH"`.
       `# VERIFY` `OCP_VERSION` matches the [`install/imageset-config.yaml`](../../install/imageset-config.yaml) pin.
-- [ ] **Bastion with the mirror registry:** a host running `mirror-registry`/quay (or
-      Harbor) reachable from the node, with its **CA cert** and a **push/pull credential**.
-      The node will be egress-firewalled to reach **only** this bastion.
+- [ ] **Bastion with the mirror registry — now Terraform-automated** via
+      [`../../infra/latitude/bastion/`](../../infra/latitude/bastion/): a persistent Latitude host
+      that cloud-init bootstraps with Red Hat `mirror-registry` (quay). It is a **separate, longer-
+      lived module** from the SNP node so the ~1–2 h mirror is paid **once** and survives node
+      churn. Apply it **before** the node (Phase 1). It emits the **CA** (`<mirror_root>/ca/rootCA.pem`)
+      and the mirror **host:port** (`terraform output mirror_endpoint`). The node is later egress-
+      restricted to reach **only** this bastion (see the Phase-1 firewall VERIFY).
 - [ ] **Internal git** reachable from the bastion (and, in the customer env, from ArgoCD)
       hosting this repo's `gitops/` tree.
 - [ ] **Red Hat pull secret** from <https://console.redhat.com/openshift/install/pull-secret>
@@ -59,13 +63,18 @@ Done on the **bastion / admin host**, not the node.
 Reference: [`../../infra/latitude/README.md`](../../infra/latitude/README.md),
 BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.md).
 
-- [ ] **Provision the node** (spends money — approve explicitly):
+- [ ] **Provision the bastion first** (persistent; spends money — approve explicitly), then the node:
       ```bash
       export LATITUDESH_AUTH_TOKEN=...
-      cd infra/latitude && terraform init && terraform plan
-      terraform apply            # m4-metal-medium / Genoa / ubuntu_26_04 (proven 2026-06-25)
+      # 1) persistent mirror/air-gap host (apply once; keep up across node spikes)
+      export TF_VAR_mirror_init_password=...                     # mirror admin pw (never commit)
+      cd infra/latitude/bastion && terraform init && terraform apply
+      terraform output mirror_endpoint                           # -> MIRROR_REGISTRY for Phase 2
+      # 2) disposable SNP node (reads the bastion's VLAN + firewall via remote state)
+      cd ..            && terraform init && terraform apply       # m4-metal-medium / Genoa / ubuntu_26_04 (proven 2026-06-25)
       terraform output ssh_hint
       ```
+      (Standalone rung-0 with no bastion: `terraform apply -var air_gap=false` in `infra/latitude/`.)
 - [ ] **Set the SNP BIOS** via the Latitude browser IPMI/KVM (`POST /servers/{id}/remote_access`):
       reboot → AMI Aptio. The proven sequence (note §"BIOS settings"):
       - Main → North Bridge → **`SEV-SNP Support` = Enabled** ⭐ (the actual fix; `Auto` = off)
@@ -82,6 +91,21 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
       FAIL is *not* automatically a provider veto; follow its `RESULT` guidance.
       (The OpenShift-node equivalent, `make verify-snp-host`, runs later in Phase 4 once RHCOS
       is installed — it proves the *RHCOS* kernel, which this Ubuntu check does not.)
+
+- [ ] **VERIFY the egress lockdown actually bites** (the air gap must be *enforced*, not assumed —
+      a silently-reachable internet would hide the VCEK-OfflineStore bug). The node joins the
+      bastion VLAN automatically (`air_gap=true`); the Latitude **firewall** is opt-in
+      (`-var enforce_latitude_firewall=true`) because its egress direction is undocumented. With it
+      attached, probe from the node:
+      ```bash
+      ssh ubuntu@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
+      ssh ubuntu@<node-ip> 'curl -m5 -sI https://<bastion-ip>:8443 >/dev/null && echo "BASTION OK"'
+      ```
+      If public egress is **OPEN** despite the firewall, Latitude's firewall is inbound-only — use
+      the **host-nftables fallback** instead: default-deny egress except to the bastion, e.g.
+      `nft add rule inet filter output ip daddr != <bastion-ip> drop` (pre-OpenShift via cloud-init;
+      post-install via a MachineConfig). Do not record the air gap as proven until public egress is
+      BLOCKED **and** the bastion is reachable.
 
 > **STOP-gate:** do not proceed unless `host-snp-check.sh` is green. A green result proves
 > silicon + provider + (Ubuntu) kernel do SNP host; it does **not** yet prove RHCOS. If the
@@ -102,7 +126,7 @@ mirror; the node does not run this).
       `oc-mirror list operators --catalog <idx> --package <name>` before mirroring 1–2 h of content.
 - [ ] **Fill `MIRROR_REGISTRY` and mirror:**
       ```bash
-      export MIRROR_REGISTRY=bastion.example.com:8443      # FILL: your mirror host:port
+      export MIRROR_REGISTRY=$(cd infra/latitude/bastion && terraform output -raw mirror_endpoint)
       make mirror                                           # -> scripts/mirror.sh mirror (oc-mirror --v2)
       ```
       This is the long pole. It is **cacheable** — the oc-mirror v2 workspace (`./mirror`)
@@ -286,8 +310,8 @@ destroy after each spike).
 
 ## Per-phase quick checklist
 
-- [ ] **0 Prereqs** — `make tools`; mirror registry + CA + internal git; RH pull secret.
-- [ ] **1 Provision + rung-0** — `terraform apply`; SNP BIOS recipe; `host-snp-check.sh` green. **STOP.**
+- [ ] **0 Prereqs** — `make tools`; `infra/latitude/bastion` (mirror-registry, persistent) + CA + internal git; RH pull secret.
+- [ ] **1 Provision + rung-0** — bastion `apply` first, then node `apply`; SNP BIOS recipe; `host-snp-check.sh` green; egress-lockdown probe. **STOP.**
 - [ ] **2 Mirror** — `# VERIFY` channels; `MIRROR_REGISTRY=… make mirror`; keep cluster-resources.
 - [ ] **3 SNO install** — fill templates; `make agent-image`; boot (IPMI vmedia / iPXE);
       `make install-wait`; apply mirror cluster-resources.

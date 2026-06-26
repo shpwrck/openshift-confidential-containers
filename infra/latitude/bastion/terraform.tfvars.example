@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (gitignored) and fill. Persistent air-gap bastion.
+project = "proj_XXXXXXXXXXXXXXX" # "Test" — SAME project as the SNP node
+site    = "NYC"                # MUST match the node's site (virtual networks are site-scoped)
+plan    = ""                   # FILL: cheapest metal SKU w/ disk for the mirror — `lsh plans list`
+
+hostname         = "coco-bastion"
+operating_system = "ubuntu_26_04_x64_lts"
+billing          = "hourly" # "monthly" if the bastion will run for the whole engagement
+
+ssh_key_ids = ["<SSH_KEY_ID>"] # coco-rig — same key as the node
+
+# Tighten before customer use; Any is fine for the throwaway rig.
+admin_cidr = "0.0.0.0/0"
+
+# mirror-registry admin creds. Prefer env: export TF_VAR_mirror_init_password=...  (do NOT commit)
+mirror_init_user = "init"
+# mirror_init_password = "set-via-TF_VAR_mirror_init_password"
+mirror_root = "/opt/mirror"
