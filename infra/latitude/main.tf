@@ -52,9 +52,9 @@ resource "latitudesh_vlan_assignment" "node" {
   virtual_network_id = data.terraform_remote_state.bastion[0].outputs.virtual_network_id
 }
 
-# VERIFY (on first provision, runbook Phase 1): confirm Latitude's firewall actually
-# constrains the node's EGRESS (direction is undocumented). If it proves inbound-only, leave
-# this off and use the host-nftables default-deny-egress fallback in the runbook instead.
+# Attach the bastion's INBOUND-hardening firewall (SSH/API/ingress from admin_cidr only).
+# This is NOT the air-gap egress control — egress is locked host-side with nftables (runbook
+# Phase 1). Opt-in so a wrong admin_cidr can't lock you out of the node on first provision.
 resource "latitudesh_firewall_assignment" "node" {
   count       = var.air_gap && var.enforce_latitude_firewall ? 1 : 0
   server_id   = latitudesh_server.snp_rig.id

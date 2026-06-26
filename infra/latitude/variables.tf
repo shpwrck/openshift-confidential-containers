@@ -76,5 +76,5 @@ variable "bastion_state_path" {
 variable "enforce_latitude_firewall" {
   type        = bool
   default     = false
-  description = "Attach the bastion's egress-lockdown firewall to the node. Keep false until its egress direction is VERIFIED on provision (else host-nftables fallback)."
+  description = "Attach the bastion's INBOUND-hardening firewall (SSH/API/ingress from admin_cidr). Off by default so a wrong admin_cidr can't lock you out. (Egress lockdown is host-nftables, not this.)"
 }

@@ -67,53 +67,46 @@ resource "latitudesh_user_data" "bastion" {
   # VERIFY: Latitude's user_data API expects base64-encoded content; the provider passes it
   # through. If a first apply shows the cloud-init not running, drop the base64encode().
   content = base64encode(templatefile("${path.module}/cloud-init/mirror-registry.yaml", {
-    quay_hostname = var.hostname
-    init_user     = var.mirror_init_user
-    init_password = var.mirror_init_password
-    mirror_root   = var.mirror_root
+    quay_hostname          = var.hostname
+    init_user              = var.mirror_init_user
+    mirror_root            = var.mirror_root
+    mirror_registry_url    = var.mirror_registry_url
+    mirror_registry_sha256 = var.mirror_registry_sha256
+    # NB: the admin password is NOT passed in — it is generated on the bastion (0600).
   }))
 }
 
-# --- Egress-lockdown firewall (assigned to the SNP node, in the node module) --------------
-# Latitude firewalls are deny-by-default for unmatched traffic. THE DIRECTION SEMANTICS
-# (does a rule with to=<bastion> actually constrain the node's EGRESS, or only inbound?)
-# ARE NOT DOCUMENTED — treat this as a `# VERIFY` to confirm on first provision (runbook
-# Phase 1 has the curl probe). If Latitude proves inbound-only, fall back to a host-level
-# nftables default-deny-egress (runbook documents the snippet). Do not assume this enforces
-# the air gap until the probe confirms it.
+# --- Inbound hardening firewall for the SNP node -----------------------------------------
+# SCOPE: this firewall hardens INBOUND traffic to the node. It is NOT the air-gap egress
+# mechanism — Latitude firewall egress direction is undocumented and likely inbound-only, so
+# the node's EGRESS lockdown is enforced host-side with nftables (default-deny output except
+# to the bastion; see runbook Phase 1). Shipping egress-looking rules here would be a false
+# control, so we don't.
 #
-# Ruleset intent: permit only node<->bastion (mirror + DNS) and the admin SSH/API surface;
-# everything else falls through to deny. The node attaches this via firewall_assignment.
-resource "latitudesh_firewall" "node_egress_lockdown" {
+# Coherent allowlist: only the admin surface reaches the node inbound (deny-by-default for the
+# rest). `from` = admin source CIDR (set consciously, no 0.0.0.0/0 default); the node does not
+# need any inbound from the bastion (the node initiates the mirror pull, it does not serve it).
+# The node attaches this via firewall_assignment (opt-in: var.enforce_latitude_firewall).
+resource "latitudesh_firewall" "node_inbound" {
   project = var.project
-  name    = "coco-node-airgap-lockdown"
+  name    = "coco-node-inbound-hardening"
 
-  # node <-> bastion: mirror-registry (quay) over its private IP
-  rules {
-    from     = "${latitudesh_server.bastion.primary_ipv4}/32"
-    to       = "Any"
-    protocol = "TCP"
-    port     = "8443" # VERIFY: mirror-registry quay port (default 8443)
-  }
-  # node <-> bastion: DNS (the bastion can also serve DNS for the air gap)
-  rules {
-    from     = "${latitudesh_server.bastion.primary_ipv4}/32"
-    to       = "Any"
-    protocol = "TCP"
-    port     = "53"
-  }
-  # admin reachability into the node — SSH + k8s API + MCS + ingress.
-  # VERIFY/FILL: tighten `from` to your admin CIDR instead of Any before customer use.
   rules {
     from     = var.admin_cidr
     to       = "Any"
     protocol = "TCP"
-    port     = "22"
+    port     = "22" # SSH
   }
   rules {
     from     = var.admin_cidr
     to       = "Any"
     protocol = "TCP"
-    port     = "6443"
+    port     = "6443" # k8s API
+  }
+  rules {
+    from     = var.admin_cidr
+    to       = "Any"
+    protocol = "TCP"
+    port     = "443" # ingress / console
   }
 }

@@ -3,16 +3,25 @@
 # Templated by Terraform (latitudesh_user_data.bastion): $${name} tokens are TF template vars,
 # NOT shell vars. Bootstrap log lands in /var/log/cloud-init-output.log.
 #
-# What this produces on the persistent disk (survives SNP-node churn — the whole point):
-#   ${mirror_root}/quay/                     quay data root (the mirror cache)
-#   ${mirror_root}/quay/quay-rootCA/rootCA.pem   the registry CA (carry into install-config additionalTrustBundle)
-#   ${mirror_root}/MIRROR_READY              marker written once install succeeds
+# Security posture (the admin password is NEVER templated in — it would otherwise land in
+# Terraform state, the Latitude user-data store, and /var/lib/cloud on disk):
+#   - the registry admin password is GENERATED on the bastion on first boot, 0600 root-only;
+#     retrieve it after boot with:  sudo cat ${mirror_root}/mirror-admin-password
+#   - the mirror-registry tarball is checksum-verified when mirror_registry_sha256 is pinned.
+#
+# Persistent artifacts on disk (survive SNP-node churn — the whole point):
+#   ${mirror_root}/quay/                       quay data root (the mirror cache)
+#   ${mirror_root}/quay/quay-rootCA/rootCA.pem the registry CA -> install-config additionalTrustBundle
+#   ${mirror_root}/mirror-admin-password       generated admin password (0600)
+#   ${mirror_root}/MIRROR_READY                marker written once install succeeds
 
 package_update: true
 packages:
   - podman
   - curl
   - tar
+  - openssl
+  - coreutils
 
 write_files:
   - path: /usr/local/bin/bootstrap-mirror.sh
@@ -24,18 +33,34 @@ write_files:
       QUAY_ROOT="$MIRROR_ROOT/quay"
       mkdir -p "$QUAY_ROOT"
 
-      # VERIFY (2026-06-26): mirror-registry tarball lives under pub/cgw, not pub/openshift-v4/clients.
-      URL="https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry-amd64.tar.gz"
+      # --- admin password generated on-box, never in TF state / user-data --------------
+      PW_FILE="$MIRROR_ROOT/mirror-admin-password"
+      if [ ! -s "$PW_FILE" ]; then
+        ( umask 077; openssl rand -base64 24 > "$PW_FILE" )
+      fi
+      chmod 600 "$PW_FILE"
+
+      # --- fetch mirror-registry; verify checksum when pinned (supply-chain) ------------
+      URL="${mirror_registry_url}"
+      SHA="${mirror_registry_sha256}"
       cd /opt
       curl -fsSL "$URL" -o mirror-registry.tar.gz
+      if [ -n "$SHA" ]; then
+        echo "$SHA  mirror-registry.tar.gz" | sha256sum -c - \
+          || { echo "FATAL: mirror-registry checksum mismatch"; exit 1; }
+      else
+        echo "WARN: mirror_registry_sha256 unset — running UNVERIFIED mirror-registry as root."
+        echo "WARN: pin a sha256 (and a versioned URL, not 'latest') before customer use."
+      fi
       mkdir -p /opt/mirror-registry && tar -xzf mirror-registry.tar.gz -C /opt/mirror-registry
 
-      # quayHostname = this host's public IP (cert SAN). initUser/initPassword from TF vars.
+      # --initPassword is flag-only upstream; the value is read from the 0600 file (still on
+      # argv briefly, but this is a single-tenant root box and the password rotates on reinstall).
       /opt/mirror-registry/mirror-registry install \
         --quayHostname "${quay_hostname}" \
         --quayRoot "$QUAY_ROOT" \
         --initUser "${init_user}" \
-        --initPassword "${init_password}"
+        --initPassword "$(cat "$PW_FILE")"
 
       # Surface the CA where the install kit expects to grab it.
       install -D -m0644 "$QUAY_ROOT/quay-rootCA/rootCA.pem" "$MIRROR_ROOT/ca/rootCA.pem" || true
@@ -44,4 +69,4 @@ write_files:
 runcmd:
   - [ bash, -lc, "/usr/local/bin/bootstrap-mirror.sh 2>&1 | tee -a /var/log/mirror-bootstrap.log" ]
 
-final_message: "mirror-registry bootstrap finished after $UPTIME s — check ${mirror_root}/MIRROR_READY"
+final_message: "mirror-registry bootstrap finished after $UPTIME s — admin password: sudo cat ${mirror_root}/mirror-admin-password"

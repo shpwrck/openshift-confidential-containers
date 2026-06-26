@@ -92,20 +92,30 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
       (The OpenShift-node equivalent, `make verify-snp-host`, runs later in Phase 4 once RHCOS
       is installed — it proves the *RHCOS* kernel, which this Ubuntu check does not.)
 
-- [ ] **VERIFY the egress lockdown actually bites** (the air gap must be *enforced*, not assumed —
-      a silently-reachable internet would hide the VCEK-OfflineStore bug). The node joins the
-      bastion VLAN automatically (`air_gap=true`); the Latitude **firewall** is opt-in
-      (`-var enforce_latitude_firewall=true`) because its egress direction is undocumented. With it
-      attached, probe from the node:
+- [ ] **Lock the node's egress host-side, then VERIFY it bites** (the air gap must be *enforced*,
+      not assumed — a silently-reachable internet would hide the VCEK-OfflineStore bug). Two
+      separate controls, don't conflate them:
+      - **Inbound** to the node is handled by the Latitude firewall (opt-in
+        `-var enforce_latitude_firewall=true`; SSH/API/ingress from `admin_cidr` only).
+      - **Egress** is locked **host-side with nftables** — Latitude firewall egress direction is
+        undocumented, so do not rely on it for the air gap. Default-deny output except to the bastion:
       ```bash
+      ssh ubuntu@<node-ip> 'sudo nft -f - <<EOF
+      table inet airgap {
+        chain output { type filter hook output type 0; policy drop;
+          ct state established,related accept
+          oifname "lo" accept
+          ip daddr <bastion-ip> accept
+        }
+      }
+      EOF'
+      # probe:
       ssh ubuntu@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
       ssh ubuntu@<node-ip> 'curl -m5 -sI https://<bastion-ip>:8443 >/dev/null && echo "BASTION OK"'
       ```
-      If public egress is **OPEN** despite the firewall, Latitude's firewall is inbound-only — use
-      the **host-nftables fallback** instead: default-deny egress except to the bastion, e.g.
-      `nft add rule inet filter output ip daddr != <bastion-ip> drop` (pre-OpenShift via cloud-init;
-      post-install via a MachineConfig). Do not record the air gap as proven until public egress is
-      BLOCKED **and** the bastion is reachable.
+      (Pre-OpenShift: cloud-init/nft as above. Post-install: the same default-deny-output ruleset as
+      a MachineConfig.) Do not record the air gap as proven until public egress is BLOCKED **and**
+      the bastion is reachable.
 
 > **STOP-gate:** do not proceed unless `host-snp-check.sh` is green. A green result proves
 > silicon + provider + (Ubuntu) kernel do SNP host; it does **not** yet prove RHCOS. If the

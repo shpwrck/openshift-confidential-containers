@@ -4,8 +4,8 @@ output "virtual_network_id" {
 }
 
 output "firewall_id" {
-  value       = latitudesh_firewall.node_egress_lockdown.id
-  description = "Consumed by the SNP node module to attach the egress-lockdown firewall (VERIFY direction)."
+  value       = latitudesh_firewall.node_inbound.id
+  description = "Consumed by the SNP node module to attach the inbound-hardening firewall (egress = host nftables)."
 }
 
 output "bastion_public_ipv4" {

@@ -47,29 +47,37 @@ variable "tags" {
   default = []
 }
 
-# --- Firewall lockdown ------------------------------------------------------------------
+# --- Firewall: INBOUND hardening for the node -------------------------------------------
+# No default — fail closed. Set your admin source CIDR explicitly (the rig may use a wide
+# range, but that must be a conscious choice, not a shipped 0.0.0.0/0). NB: this firewall
+# hardens INBOUND to the node only; the air-gap EGRESS lockdown is host-nftables (runbook),
+# not this resource.
 variable "admin_cidr" {
   type        = string
-  default     = "0.0.0.0/0"
-  description = "Admin source CIDR allowed to reach the node (SSH/API). FILL: tighten before customer use."
+  description = "Admin source CIDR allowed inbound to the node (SSH/API). Required — set consciously."
 }
 
 # --- mirror-registry bootstrap ----------------------------------------------------------
 variable "mirror_init_user" {
   type        = string
   default     = "init"
-  description = "Initial mirror-registry (quay) admin username."
-}
-
-variable "mirror_init_password" {
-  type        = string
-  default     = ""
-  sensitive   = true
-  description = "Initial mirror-registry admin password. FILL via TF_VAR_mirror_init_password (do not commit)."
+  description = "Initial mirror-registry (quay) admin username. (The PASSWORD is generated on the bastion, not set here.)"
 }
 
 variable "mirror_root" {
   type        = string
   default     = "/opt/mirror"
   description = "Persistent on-disk root for the quay data + oc-mirror workspace (the cacheable bottleneck)."
+}
+
+variable "mirror_registry_url" {
+  type        = string
+  default     = "https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry-amd64.tar.gz"
+  description = "mirror-registry tarball URL. Pin a versioned URL (not 'latest') + mirror_registry_sha256 before customer use."
+}
+
+variable "mirror_registry_sha256" {
+  type        = string
+  default     = ""
+  description = "sha256 of the mirror-registry tarball. When set, cloud-init verifies it (supply-chain). Empty = run unverified (rig only)."
 }

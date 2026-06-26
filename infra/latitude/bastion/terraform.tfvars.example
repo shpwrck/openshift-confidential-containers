@@ -9,10 +9,15 @@ billing          = "hourly" # "monthly" if the bastion will run for the whole en
 
 ssh_key_ids = ["<SSH_KEY_ID>"] # coco-rig — same key as the node
 
-# Tighten before customer use; Any is fine for the throwaway rig.
-admin_cidr = "0.0.0.0/0"
+# REQUIRED, no default (fail closed). Your admin source CIDR for inbound SSH/API to the node.
+# A wide range is acceptable for the throwaway rig, but set it as a conscious choice.
+admin_cidr = "0.0.0.0/0" # FILL: e.g. "203.0.113.4/32" — your workstation/VPN egress IP
 
-# mirror-registry admin creds. Prefer env: export TF_VAR_mirror_init_password=...  (do NOT commit)
+# mirror-registry: admin username only. The PASSWORD is generated ON the bastion (never in
+# state/user-data) — retrieve after boot: ssh <bastion> 'sudo cat /opt/mirror/mirror-admin-password'
 mirror_init_user = "init"
-# mirror_init_password = "set-via-TF_VAR_mirror_init_password"
-mirror_root = "/opt/mirror"
+mirror_root      = "/opt/mirror"
+
+# Supply-chain: pin a versioned URL + its sha256 before customer use (rig may run unverified).
+# mirror_registry_url    = "https://mirror.openshift.com/pub/cgw/mirror-registry/<ver>/mirror-registry-amd64.tar.gz"
+# mirror_registry_sha256 = "<sha256 of the tarball>"

@@ -22,29 +22,33 @@ outputs (`virtual_network_id`, `firewall_id`) via `terraform_remote_state`.
 
 ```bash
 cd infra/latitude/bastion
-cp terraform.tfvars.example terraform.tfvars   # FILL: plan (cheap metal SKU), site == node's site
+cp terraform.tfvars.example terraform.tfvars   # FILL: plan (cheap metal SKU), site == node's site, admin_cidr
 export LATITUDESH_AUTH_TOKEN=...
-export TF_VAR_mirror_init_password=...          # do NOT commit the mirror admin password
 terraform init
 terraform apply                                  # <-- spends money; approve explicitly
 terraform output mirror_endpoint                 # -> MIRROR_REGISTRY host:port for `make mirror`
 ```
 
 Watch the bootstrap: `ssh ubuntu@<bastion-ip>` then `tail -f /var/log/mirror-bootstrap.log`.
-Ready when `<mirror_root>/MIRROR_READY` exists. Carry `<mirror_root>/ca/rootCA.pem` into the
-install kit (`install-config` `additionalTrustBundle`).
+Ready when `<mirror_root>/MIRROR_READY` exists. Then grab the two things the install kit needs:
 
-## The egress firewall is a `# VERIFY`, not a guarantee
+```bash
+ssh ubuntu@<bastion-ip> 'sudo cat /opt/mirror/mirror-admin-password'   # registry admin pw (generated on-box)
+ssh ubuntu@<bastion-ip> 'sudo cat /opt/mirror/ca/rootCA.pem'           # -> install-config additionalTrustBundle
+```
 
-Latitude firewalls are deny-by-default, but whether a rule constrains a server's **egress**
-(vs inbound only) is **undocumented**. So:
+The admin **password is generated on the bastion** (0600 root-only) — it is deliberately never
+in Terraform state, the Latitude user-data store, or this repo.
 
-- The firewall **ruleset is defined here**, but the node only **attaches** it when you set
-  `-var enforce_latitude_firewall=true` in `../` (default **false**).
-- On first provision, run the egress probe (runbook Phase 1): from the node, try to reach a
-  public address that is *not* the bastion. If it succeeds with the firewall attached, Latitude
-  is inbound-only — **use the host-nftables default-deny-egress fallback** in the runbook
-  instead. Do not claim the air gap is enforced until the probe confirms it.
+## Two firewalls, two layers — don't confuse them
+
+- **Inbound** to the node: `latitudesh_firewall` here (SSH/API/ingress from `admin_cidr` only,
+  deny the rest). Attach via `-var enforce_latitude_firewall=true` in `../` (off by default so a
+  wrong `admin_cidr` can't lock you out). `admin_cidr` is **required** — no `0.0.0.0/0` default.
+- **Egress** lockdown (the air gap): **host-side nftables**, NOT a Latitude firewall — its egress
+  direction is undocumented, so we don't ship a false control. Runbook Phase 1 has the
+  default-deny-output-except-bastion snippet **and** the probe that proves public egress is
+  actually blocked. Do not claim the air gap is enforced until that probe is green.
 
 ## Tear down (only at the end of the engagement)
 
