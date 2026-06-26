@@ -3,9 +3,11 @@ project = "proj_XXXXXXXXXXXXXXX" # "Test" — SAME project as the SNP node
 site    = "NYC"                # MUST match the node's site (virtual networks are site-scoped)
 plan    = ""                   # FILL: cheapest metal SKU w/ disk for the mirror — `lsh plans list`
 
-hostname         = "coco-bastion"
-operating_system = "ubuntu_26_04_x64_lts"
-billing          = "hourly" # "monthly" if the bastion will run for the whole engagement
+hostname = "coco-bastion"
+# operating_system defaults to rocky-10 (RHEL-family; the cloud-init uses NetworkManager + dnf).
+# Do NOT set ubuntu here — a verbatim copy would boot the wrong OS and the Rocky cloud-init fails.
+# operating_system = "rocky-10"
+billing = "hourly" # "monthly" if the bastion will run for the whole engagement
 
 ssh_key_ids = ["<SSH_KEY_ID>"] # coco-rig — same key as the node
 
