@@ -3,6 +3,11 @@ output "virtual_network_id" {
   description = "Consumed by the SNP node module (../) via terraform_remote_state to join the VLAN."
 }
 
+output "virtual_network_vid" {
+  value       = latitudesh_virtual_network.rig.vid
+  description = "VLAN tag id — needed to configure the node's tagged sub-interface (agent-config / netplan)."
+}
+
 output "firewall_id" {
   value       = latitudesh_firewall.node_inbound.id
   description = "Consumed by the SNP node module to attach the inbound-hardening firewall (egress = host nftables)."
@@ -10,14 +15,24 @@ output "firewall_id" {
 
 output "bastion_public_ipv4" {
   value       = latitudesh_server.bastion.primary_ipv4
-  description = "Public IP — used for SSH admin + the bastion's own internet egress while mirroring."
+  description = "Public IP — SSH admin + the bastion's own internet egress while mirroring."
+}
+
+output "bastion_vlan_ip" {
+  value       = var.bastion_vlan_ip
+  description = "Private VLAN IP the mirror is served on; the node's egress nftables allow ONLY this."
 }
 
 output "mirror_endpoint" {
-  value       = "${latitudesh_server.bastion.primary_ipv4}:8443"
-  description = "MIRROR_REGISTRY host:port. Wire into install-config imageDigestSources + `make mirror`. VERIFY port."
+  value       = "${var.registry_dns_name}:8443"
+  description = "MIRROR_REGISTRY host:port (DNS name, not IP — cert SAN matches). Wire into install-config + `make mirror`."
+}
+
+output "node_hosts_entry" {
+  value       = "${var.bastion_vlan_ip} ${var.registry_dns_name}"
+  description = "Add to the SNP node's host resolution (agent-config / MachineConfig) so the mirror name resolves over the VLAN."
 }
 
 output "ssh_hint" {
-  value = "ssh ${split("_", var.operating_system)[0] == "ubuntu" ? "ubuntu" : "root"}@${latitudesh_server.bastion.primary_ipv4}  # mirror-registry bootstrap log: /var/log/cloud-init-output.log"
+  value = "ssh ${split("_", var.operating_system)[0] == "ubuntu" ? "ubuntu" : "root"}@${latitudesh_server.bastion.primary_ipv4}  # mirror-registry bootstrap log: /var/log/mirror-bootstrap.log; ready when ${var.mirror_root}/MIRROR_READY exists"
 }

@@ -66,10 +66,13 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
 - [ ] **Provision the bastion first** (persistent; spends money — approve explicitly), then the node:
       ```bash
       export LATITUDESH_AUTH_TOKEN=...
-      # 1) persistent mirror/air-gap host (apply once; keep up across node spikes)
-      export TF_VAR_mirror_init_password=...                     # mirror admin pw (never commit)
+      # 1) persistent mirror/air-gap host (apply once; keep up across node spikes).
+      #    The mirror admin password is GENERATED on the bastion — do NOT set it here.
       cd infra/latitude/bastion && terraform init && terraform apply
-      terraform output mirror_endpoint                           # -> MIRROR_REGISTRY for Phase 2
+      terraform output mirror_endpoint   # DNS name:8443 -> MIRROR_REGISTRY for Phase 2
+      terraform output node_hosts_entry  # "<bastion-vlan-ip> <mirror-name>" -> into agent-config (Phase 3)
+      # retrieve the generated registry admin password once the bastion is up:
+      ssh ubuntu@$(terraform output -raw bastion_public_ipv4) 'sudo cat /opt/mirror/mirror-admin-password'
       # 2) disposable SNP node (reads the bastion's VLAN + firewall via remote state)
       cd ..            && terraform init && terraform apply       # m4-metal-medium / Genoa / ubuntu_26_04 (proven 2026-06-25)
       terraform output ssh_hint
@@ -97,23 +100,29 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
       separate controls, don't conflate them:
       - **Inbound** to the node is handled by the Latitude firewall (opt-in
         `-var enforce_latitude_firewall=true`; SSH/API/ingress from `admin_cidr` only).
-      - **Egress** is locked **host-side with nftables** — Latitude firewall egress direction is
-        undocumented, so do not rely on it for the air gap. Default-deny output except to the bastion:
+      - **Egress** is locked **host-side with nftables**, allowing only the bastion's PRIVATE VLAN
+        IP — Latitude firewall egress direction is undocumented, so do not rely on it. First bring
+        up the node's VLAN L3 + mirror name (values from `terraform output` in Phase 1), then
+        default-deny output except to the bastion's private IP:
       ```bash
+      # VERIFY the node's VLAN parent interface (`ip -br link`); IDs/IPs come from the bastion outputs.
+      ssh ubuntu@<node-ip> 'sudo ip link add link bond0 name bond0.<vid> type vlan id <vid>;
+        sudo ip addr add 192.168.66.11/24 dev bond0.<vid>; sudo ip link set bond0.<vid> up;
+        echo "192.168.66.10 mirror.rig.local" | sudo tee -a /etc/hosts'
       ssh ubuntu@<node-ip> 'sudo nft -f - <<EOF
       table inet airgap {
-        chain output { type filter hook output type 0; policy drop;
+        chain output { type filter hook output priority 0; policy drop;
           ct state established,related accept
           oifname "lo" accept
-          ip daddr <bastion-ip> accept
+          ip daddr 192.168.66.10 accept   # bastion PRIVATE VLAN IP only
         }
       }
       EOF'
-      # probe:
+      # probe — public egress must be DEAD, the private mirror must answer:
       ssh ubuntu@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
-      ssh ubuntu@<node-ip> 'curl -m5 -sI https://<bastion-ip>:8443 >/dev/null && echo "BASTION OK"'
+      ssh ubuntu@<node-ip> 'curl -m5 -skI https://mirror.rig.local:8443 >/dev/null && echo "MIRROR OK over VLAN"'
       ```
-      (Pre-OpenShift: cloud-init/nft as above. Post-install: the same default-deny-output ruleset as
+      (Pre-OpenShift: nft as above on the Ubuntu node. Post-install: the same default-deny-output ruleset as
       a MachineConfig.) Do not record the air gap as proven until public egress is BLOCKED **and**
       the bastion is reachable.
 
@@ -176,6 +185,12 @@ Reference: [`install/README.md`](../../install/README.md),
         `rootDeviceHints.deviceName` (`# FILL` `/dev/nvme0n1` vs `/dev/sda` — confirm with
         `lsblk` on the node), `interfaces[].macAddress` (real NIC MAC from IPMI/`ip link` —
         **never guess**), `networkConfig` static IP/gateway/DNS.
+      - **VLAN to the mirror (RHCOS side of the air gap):** add an nmstate **VLAN interface**
+        (parent bond + `vid` from `terraform output virtual_network_vid`) carrying the
+        `node_vlan_ip` (`192.168.66.11`), and a host entry for the mirror name from
+        `terraform output node_hosts_entry` (`192.168.66.10 mirror.rig.local`) so
+        `imageDigestSources`/`additionalTrustBundle` resolve over the VLAN, not the public NIC.
+        `# VERIFY` the bond/parent interface name on the node (hardware-bound).
 - [ ] **Build the agent ISO** (unattended, ~5 min): `make agent-image` →
       `openshift-install --dir cluster-assets agent create image` → `cluster-assets/agent.x86_64.iso`.
       For a true air-gap, the `openshift-install` binary should ultimately come from
@@ -311,7 +326,12 @@ A rung is **proven only when reproduced from these steps AND its negative test p
 Reference: [`../../infra/latitude/README.md`](../../infra/latitude/README.md) (hourly billing —
 destroy after each spike).
 
-- [ ] **Destroy the node:** `cd infra/latitude && terraform destroy` (stops billing).
+- [ ] **Destroy the node:** `cd infra/latitude && terraform destroy` (stops billing). Leaves the
+      bastion (separate state) up so the mirror persists.
+      - **Recovery gotcha:** the node module reads the bastion state on **every** op including
+        `destroy`. If the bastion state is missing/moved (or you destroyed the bastion first), node
+        `destroy` errors and you can't stop billing. Restore `infra/latitude/bastion/terraform.tfstate`
+        (or run `terraform destroy -refresh=false`, or kill the server from the Latitude dashboard).
 - [ ] **Note:** re-provisioning gives a **fresh node with default BIOS** — the Phase-1 SNP
       BIOS recipe must be re-applied every time. Provider+silicon are proven; the *settings*
       are not persistent across re-provision.

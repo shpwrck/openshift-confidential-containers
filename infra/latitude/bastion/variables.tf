@@ -57,6 +57,45 @@ variable "admin_cidr" {
   description = "Admin source CIDR allowed inbound to the node (SSH/API). Required — set consciously."
 }
 
+# --- Private VLAN L3 (the real air gap) -------------------------------------------------
+# The SNP node reaches the mirror ONLY over this private segment. The registry is served under
+# a DNS name mapped to the bastion's private IP, so quay's cert SAN matches what the node dials.
+variable "vlan_subnet" {
+  type        = string
+  default     = "192.168.66.0/24"
+  description = "Private CIDR for the rig VLAN (informational + node egress nftables allow-scope)."
+}
+
+variable "vlan_prefix" {
+  type        = number
+  default     = 24
+  description = "Prefix length for the VLAN addresses (must agree with vlan_subnet)."
+}
+
+variable "bastion_vlan_ip" {
+  type        = string
+  default     = "192.168.66.10"
+  description = "Static private IP assigned to the bastion on the VLAN (the mirror's address)."
+}
+
+variable "node_vlan_ip" {
+  type        = string
+  default     = "192.168.66.11"
+  description = "Static private IP the SNP node should use on the VLAN (consumed in agent-config / node netplan)."
+}
+
+variable "vlan_parent_interface" {
+  type        = string
+  default     = "bond0"
+  description = "VERIFY on provision: the bastion NIC/bond the VLAN tags ride on (`ip -br link`). Hardware-bound."
+}
+
+variable "registry_dns_name" {
+  type        = string
+  default     = "mirror.rig.local"
+  description = "DNS name the mirror is served under (quay cert SAN). Resolves to bastion_vlan_ip via /etc/hosts on bastion + node."
+}
+
 # --- mirror-registry bootstrap ----------------------------------------------------------
 variable "mirror_init_user" {
   type        = string

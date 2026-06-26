@@ -1,9 +1,10 @@
 # Persistent air-gap bastion for the disconnected SNO rig.
 #
 # This module is the LONG-LIVED half of the rig. It stands up:
-#   - a private virtual network (VLAN) the disposable SNP node joins,
-#   - a bastion bare-metal host running the Red Hat `mirror-registry` (quay),
-#   - the egress-lockdown firewall ruleset the SNP node attaches to.
+#   - a private virtual network (VLAN) with real L3 (static private IPs assigned in cloud-init),
+#   - a bastion bare-metal host running the Red Hat `mirror-registry` (quay) under a DNS name
+#     mapped to its PRIVATE IP (so the node's mirror pull validates the cert SAN),
+#   - an INBOUND-hardening firewall the SNP node attaches to (egress lockdown is host nftables).
 #
 # Why a separate module / separate state from infra/latitude/ (the SNP node):
 # mirroring is the ~1-2h bottleneck and is CACHEABLE. Keeping the mirror workspace on
@@ -28,7 +29,8 @@ provider "latitudesh" {
 }
 
 # --- Private network the bastion + SNP node share ----------------------------------------
-# The node's only sanctioned path to the outside world is to the bastion across this VLAN.
+# L2 membership only at this layer; static L3 addressing is assigned in cloud-init / agent-config
+# so the node's only sanctioned egress path is to the bastion's private IP across this VLAN.
 resource "latitudesh_virtual_network" "rig" {
   project     = var.project
   site        = var.site
@@ -64,14 +66,18 @@ resource "latitudesh_vlan_assignment" "bastion" {
 # surfaces the generated CA + pull credential to known paths. See cloud-init/mirror-registry.yaml.
 resource "latitudesh_user_data" "bastion" {
   description = "coco-bastion-mirror-registry"
-  # VERIFY: Latitude's user_data API expects base64-encoded content; the provider passes it
-  # through. If a first apply shows the cloud-init not running, drop the base64encode().
+  # Latitude's user_data API expects base64-encoded content; the provider passes it through.
   content = base64encode(templatefile("${path.module}/cloud-init/mirror-registry.yaml", {
-    quay_hostname          = var.hostname
     init_user              = var.mirror_init_user
     mirror_root            = var.mirror_root
     mirror_registry_url    = var.mirror_registry_url
     mirror_registry_sha256 = var.mirror_registry_sha256
+    # private-VLAN L3 + DNS identity (fixes the cosmetic-VLAN / x509-SAN defects)
+    bastion_vlan_ip       = var.bastion_vlan_ip
+    vlan_prefix           = var.vlan_prefix
+    vlan_parent_interface = var.vlan_parent_interface
+    vlan_vid              = latitudesh_virtual_network.rig.vid
+    registry_dns_name     = var.registry_dns_name
     # NB: the admin password is NOT passed in — it is generated on the bastion (0600).
   }))
 }
@@ -93,19 +99,19 @@ resource "latitudesh_firewall" "node_inbound" {
 
   rules {
     from     = var.admin_cidr
-    to       = "Any"
+    to       = "ANY"
     protocol = "TCP"
     port     = "22" # SSH
   }
   rules {
     from     = var.admin_cidr
-    to       = "Any"
+    to       = "ANY"
     protocol = "TCP"
     port     = "6443" # k8s API
   }
   rules {
     from     = var.admin_cidr
-    to       = "Any"
+    to       = "ANY"
     protocol = "TCP"
     port     = "443" # ingress / console
   }
