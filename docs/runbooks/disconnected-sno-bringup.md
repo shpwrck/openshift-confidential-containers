@@ -41,9 +41,13 @@ Done on the **bastion / admin host**, not the node.
       pulls `oc`, `openshift-install`, `oc-mirror` (all 4.20.18 / linux-amd64) into `./bin`.
       Then `export PATH="$PWD/bin:$PATH"`.
       `# VERIFY` `OCP_VERSION` matches the [`install/imageset-config.yaml`](../../install/imageset-config.yaml) pin.
-- [ ] **Bastion with the mirror registry:** a host running `mirror-registry`/quay (or
-      Harbor) reachable from the node, with its **CA cert** and a **push/pull credential**.
-      The node will be egress-firewalled to reach **only** this bastion.
+- [ ] **Bastion with the mirror registry — now Terraform-automated** via
+      [`../../infra/latitude/bastion/`](../../infra/latitude/bastion/): a persistent Latitude host
+      that cloud-init bootstraps with Red Hat `mirror-registry` (quay). It is a **separate, longer-
+      lived module** from the SNP node so the ~1–2 h mirror is paid **once** and survives node
+      churn. Apply it **before** the node (Phase 1). It emits the **CA** (`<mirror_root>/ca/rootCA.pem`)
+      and the mirror **host:port** (`terraform output mirror_endpoint`). The node is later egress-
+      restricted to reach **only** this bastion (see the Phase-1 firewall VERIFY).
 - [ ] **Internal git** reachable from the bastion (and, in the customer env, from ArgoCD)
       hosting this repo's `gitops/` tree.
 - [ ] **Red Hat pull secret** from <https://console.redhat.com/openshift/install/pull-secret>
@@ -59,13 +63,21 @@ Done on the **bastion / admin host**, not the node.
 Reference: [`../../infra/latitude/README.md`](../../infra/latitude/README.md),
 BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.md).
 
-- [ ] **Provision the node** (spends money — approve explicitly):
+- [ ] **Provision the bastion first** (persistent; spends money — approve explicitly), then the node:
       ```bash
       export LATITUDESH_AUTH_TOKEN=...
-      cd infra/latitude && terraform init && terraform plan
-      terraform apply            # m4-metal-medium / Genoa / ubuntu_26_04 (proven 2026-06-25)
+      # 1) persistent mirror/air-gap host (apply once; keep up across node spikes).
+      #    The mirror admin password is GENERATED on the bastion — do NOT set it here.
+      cd infra/latitude/bastion && terraform init && terraform apply
+      terraform output mirror_endpoint   # DNS name:8443 -> MIRROR_REGISTRY for Phase 2
+      terraform output node_hosts_entry  # "<bastion-vlan-ip> <mirror-name>" -> into agent-config (Phase 3)
+      # retrieve the generated registry admin password once the bastion is up:
+      ssh rocky@$(terraform output -raw bastion_public_ipv4) 'sudo cat /opt/mirror/mirror-admin-password'
+      # 2) disposable SNP node (reads the bastion's VLAN + firewall via remote state)
+      cd ..            && terraform init && terraform apply       # m4-metal-medium / Genoa / rocky-10 (rung-0 was proven on Ubuntu 26.04 — re-verify on Rocky)
       terraform output ssh_hint
       ```
+      (Standalone rung-0 with no bastion: `terraform apply -var air_gap=false` in `infra/latitude/`.)
 - [ ] **Set the SNP BIOS** via the Latitude browser IPMI/KVM (`POST /servers/{id}/remote_access`):
       reboot → AMI Aptio. The proven sequence (note §"BIOS settings"):
       - Main → North Bridge → **`SEV-SNP Support` = Enabled** ⭐ (the actual fix; `Auto` = off)
@@ -73,18 +85,51 @@ BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.m
         Enabled**, **`SEV-ES ASID Space Limit` = 100**, `SEV Control` Enabled.
       - The misleading `IOMMU SNP feature not enabled` kernel message is caused by
         `SEV-SNP Support = Auto`, **not** IOMMU — don't chase IOMMU.
-- [ ] **Rung-0 host gate** — prove silicon+provider do SNP host, on the raw Ubuntu node
+- [ ] **Rung-0 host gate** — prove silicon+provider do SNP host, on the raw Rocky 10 node
       (pre-OpenShift), via [`scripts/host-snp-check.sh`](../../scripts/host-snp-check.sh):
       ```bash
-      ssh ubuntu@<ip> 'sudo bash -s' < scripts/host-snp-check.sh   # expect all PASS
+      ssh rocky@<ip> 'sudo bash -s' < scripts/host-snp-check.sh   # expect all PASS
       ```
       The script **discriminates** kernel-incapable vs BIOS-off vs genuine provider-veto — a
       FAIL is *not* automatically a provider veto; follow its `RESULT` guidance.
+      `# VERIFY`: SNP host was first proven on Ubuntu 26.04 (kernel 7.0); Rocky 10's kernel 6.12
+      also carries SEV-SNP host support but is **unproven on this image** — this gate confirms it.
       (The OpenShift-node equivalent, `make verify-snp-host`, runs later in Phase 4 once RHCOS
-      is installed — it proves the *RHCOS* kernel, which this Ubuntu check does not.)
+      is installed — it proves the *RHCOS* kernel, which this rung-0 check does not.)
+
+- [ ] **Lock the node's egress host-side, then VERIFY it bites** (the air gap must be *enforced*,
+      not assumed — a silently-reachable internet would hide the VCEK-OfflineStore bug). Two
+      separate controls, don't conflate them:
+      - **Inbound** to the node is handled by the Latitude firewall (opt-in
+        `-var enforce_latitude_firewall=true`; SSH/API/ingress from `admin_cidr` only).
+      - **Egress** is locked **host-side with nftables**, allowing only the bastion's PRIVATE VLAN
+        IP — Latitude firewall egress direction is undocumented, so do not rely on it. First bring
+        up the node's VLAN L3 + mirror name (values from `terraform output` in Phase 1), then
+        default-deny output except to the bastion's private IP:
+      ```bash
+      # VERIFY the node's VLAN parent interface (`ip -br link`); IDs/IPs come from the bastion outputs.
+      ssh rocky@<node-ip> 'sudo ip link add link bond0 name bond0.<vid> type vlan id <vid>;
+        sudo ip addr add 192.168.66.11/24 dev bond0.<vid>; sudo ip link set bond0.<vid> up;
+        echo "192.168.66.10 mirror.rig.local" | sudo tee -a /etc/hosts'
+      ssh rocky@<node-ip> 'sudo nft -f - <<EOF
+      table inet airgap {
+        chain output { type filter hook output priority 0; policy drop;
+          ct state established,related accept
+          oifname "lo" accept
+          ip daddr 192.168.66.10 accept   # bastion PRIVATE VLAN IP only
+        }
+      }
+      EOF'
+      # probe — public egress must be DEAD, the private mirror must answer:
+      ssh rocky@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
+      ssh rocky@<node-ip> 'curl -m5 -skI https://mirror.rig.local:8443 >/dev/null && echo "MIRROR OK over VLAN"'
+      ```
+      (Pre-OpenShift: nft as above on the Rocky node. Post-install: the same default-deny-output ruleset as
+      a MachineConfig.) Do not record the air gap as proven until public egress is BLOCKED **and**
+      the bastion is reachable.
 
 > **STOP-gate:** do not proceed unless `host-snp-check.sh` is green. A green result proves
-> silicon + provider + (Ubuntu) kernel do SNP host; it does **not** yet prove RHCOS. If the
+> silicon + provider + (Rocky 10) kernel do SNP host; it does **not** yet prove RHCOS. If the
 > script reports a genuine provider/firmware veto, the bare-metal decision is invalid for this
 > node — fall back per design §6 rather than building on top.
 
@@ -102,7 +147,7 @@ mirror; the node does not run this).
       `oc-mirror list operators --catalog <idx> --package <name>` before mirroring 1–2 h of content.
 - [ ] **Fill `MIRROR_REGISTRY` and mirror:**
       ```bash
-      export MIRROR_REGISTRY=bastion.example.com:8443      # FILL: your mirror host:port
+      export MIRROR_REGISTRY=$(cd infra/latitude/bastion && terraform output -raw mirror_endpoint)
       make mirror                                           # -> scripts/mirror.sh mirror (oc-mirror --v2)
       ```
       This is the long pole. It is **cacheable** — the oc-mirror v2 workspace (`./mirror`)
@@ -142,6 +187,12 @@ Reference: [`install/README.md`](../../install/README.md),
         `rootDeviceHints.deviceName` (`# FILL` `/dev/nvme0n1` vs `/dev/sda` — confirm with
         `lsblk` on the node), `interfaces[].macAddress` (real NIC MAC from IPMI/`ip link` —
         **never guess**), `networkConfig` static IP/gateway/DNS.
+      - **VLAN to the mirror (RHCOS side of the air gap):** add an nmstate **VLAN interface**
+        (parent bond + `vid` from `terraform output virtual_network_vid`) carrying the
+        `node_vlan_ip` (`192.168.66.11`), and a host entry for the mirror name from
+        `terraform output node_hosts_entry` (`192.168.66.10 mirror.rig.local`) so
+        `imageDigestSources`/`additionalTrustBundle` resolve over the VLAN, not the public NIC.
+        `# VERIFY` the bond/parent interface name on the node (hardware-bound).
 - [ ] **Build the agent ISO** (unattended, ~5 min): `make agent-image` →
       `openshift-install --dir cluster-assets agent create image` → `cluster-assets/agent.x86_64.iso`.
       For a true air-gap, the `openshift-install` binary should ultimately come from
@@ -171,7 +222,7 @@ Reference: [`install/README.md`](../../install/README.md),
 [`gitops/base/operators/subscriptions.yaml`](../../gitops/base/operators/subscriptions.yaml)).
 
 - [ ] **RHCOS SNP host gate** (hands-on) — now that RHCOS is installed, prove the *RHCOS*
-      kernel does SNP host (Phase 1 only proved Ubuntu):
+      kernel does SNP host (Phase 1 only proved the rung-0 OS):
       ```bash
       make verify-snp-host NODE=<node-name>     # -> scripts/verify-snp-host.sh
       ```
@@ -277,7 +328,12 @@ A rung is **proven only when reproduced from these steps AND its negative test p
 Reference: [`../../infra/latitude/README.md`](../../infra/latitude/README.md) (hourly billing —
 destroy after each spike).
 
-- [ ] **Destroy the node:** `cd infra/latitude && terraform destroy` (stops billing).
+- [ ] **Destroy the node:** `cd infra/latitude && terraform destroy` (stops billing). Leaves the
+      bastion (separate state) up so the mirror persists.
+      - **Recovery gotcha:** the node module reads the bastion state on **every** op including
+        `destroy`. If the bastion state is missing/moved (or you destroyed the bastion first), node
+        `destroy` errors and you can't stop billing. Restore `infra/latitude/bastion/terraform.tfstate`
+        (or run `terraform destroy -refresh=false`, or kill the server from the Latitude dashboard).
 - [ ] **Note:** re-provisioning gives a **fresh node with default BIOS** — the Phase-1 SNP
       BIOS recipe must be re-applied every time. Provider+silicon are proven; the *settings*
       are not persistent across re-provision.
@@ -286,8 +342,8 @@ destroy after each spike).
 
 ## Per-phase quick checklist
 
-- [ ] **0 Prereqs** — `make tools`; mirror registry + CA + internal git; RH pull secret.
-- [ ] **1 Provision + rung-0** — `terraform apply`; SNP BIOS recipe; `host-snp-check.sh` green. **STOP.**
+- [ ] **0 Prereqs** — `make tools`; `infra/latitude/bastion` (mirror-registry, persistent) + CA + internal git; RH pull secret.
+- [ ] **1 Provision + rung-0** — bastion `apply` first, then node `apply`; SNP BIOS recipe; `host-snp-check.sh` green; egress-lockdown probe. **STOP.**
 - [ ] **2 Mirror** — `# VERIFY` channels; `MIRROR_REGISTRY=… make mirror`; keep cluster-resources.
 - [ ] **3 SNO install** — fill templates; `make agent-image`; boot (IPMI vmedia / iPXE);
       `make install-wait`; apply mirror cluster-resources.

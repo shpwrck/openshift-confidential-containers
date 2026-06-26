@@ -28,14 +28,14 @@ variable "site" {
 
 variable "operating_system" {
   type        = string
-  default     = "ipxe"
-  description = "\"ipxe\" for the Ubuntu 25.04 netboot path (set ipxe_url too), or a stock OS slug."
+  default     = "rocky-10"
+  description = "Rung-0 host OS. rocky-10 (RHEL-family, kernel 6.12, SNP-capable) — matches the RHCOS customer node. Or \"ipxe\" to netboot a custom image (set ipxe_url)."
 }
 
 variable "ipxe_url" {
   type        = string
   default     = ""
-  description = "iPXE boot script URL (Ubuntu 25.04 live/installer) when operating_system=\"ipxe\"."
+  description = "iPXE boot script URL (custom RHEL/Fedora live/installer) when operating_system=\"ipxe\"."
 }
 
 variable "user_data" {
@@ -58,4 +58,23 @@ variable "create_ssh_key" {
 variable "ssh_public_key_path" {
   type    = string
   default = "~/.ssh/id_ed25519.pub"
+}
+
+# --- Air-gap wiring (depends on the bastion module) --------------------------------------
+variable "air_gap" {
+  type        = bool
+  default     = true
+  description = "Join the bastion VLAN (and optionally its firewall). false = standalone rung-0 node, no bastion."
+}
+
+variable "bastion_state_path" {
+  type        = string
+  default     = "../bastion/terraform.tfstate"
+  description = "Path to the bastion module's local state, read for the VLAN + firewall ids when air_gap=true."
+}
+
+variable "enforce_latitude_firewall" {
+  type        = bool
+  default     = false
+  description = "Attach the bastion's INBOUND-hardening firewall (SSH/API/ingress from admin_cidr). Off by default so a wrong admin_cidr can't lock you out. (Egress lockdown is host-nftables, not this.)"
 }

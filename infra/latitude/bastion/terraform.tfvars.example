@@ -1,0 +1,32 @@
+# Copy to terraform.tfvars (gitignored) and fill. Persistent air-gap bastion.
+project = "proj_XXXXXXXXXXXXXXX" # "Test" — SAME project as the SNP node
+site    = "NYC"                # MUST match the node's site (virtual networks are site-scoped)
+plan    = ""                   # FILL: cheapest metal SKU w/ disk for the mirror — `lsh plans list`
+
+hostname         = "coco-bastion"
+operating_system = "ubuntu_26_04_x64_lts"
+billing          = "hourly" # "monthly" if the bastion will run for the whole engagement
+
+ssh_key_ids = ["<SSH_KEY_ID>"] # coco-rig — same key as the node
+
+# REQUIRED, no default (fail closed) — left COMMENTED so a verbatim copy fails until you set it.
+# Your admin source CIDR for inbound SSH/API to the node. A wide range is acceptable for the
+# throwaway rig, but set it as a conscious choice (not a shipped 0.0.0.0/0).
+# admin_cidr = "203.0.113.4/32" # FILL: your workstation/VPN egress IP (or "0.0.0.0/0" knowingly)
+
+# Private VLAN L3 (the real air gap). Defaults are fine for the rig; node_vlan_ip + registry
+# name must be mirrored into the SNP node's agent-config / host resolution (see runbook).
+# vlan_subnet           = "192.168.66.0/24"
+# bastion_vlan_ip       = "192.168.66.10"
+# node_vlan_ip          = "192.168.66.11"
+# registry_dns_name     = "mirror.rig.local"
+# vlan_parent_interface = "bond0"   # VERIFY on the bastion: `ip -br link`
+
+# mirror-registry: admin username only. The PASSWORD is generated ON the bastion (never in
+# state/user-data) — retrieve after boot: ssh <bastion> 'sudo cat /opt/mirror/mirror-admin-password'
+mirror_init_user = "init"
+mirror_root      = "/opt/mirror"
+
+# Supply-chain: pin a versioned URL + its sha256 before customer use (rig may run unverified).
+# mirror_registry_url    = "https://mirror.openshift.com/pub/cgw/mirror-registry/<ver>/mirror-registry-amd64.tar.gz"
+# mirror_registry_sha256 = "<sha256 of the tarball>"

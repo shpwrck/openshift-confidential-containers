@@ -33,13 +33,15 @@ tar -xzf "${TMP}/oc.tgz" -C "${BIN_DIR}" oc kubectl
 fetch "${MIRROR}/ocp/${OCP_VERSION}/openshift-install-${OS}-${OCP_VERSION}.tar.gz" "${TMP}/install.tgz"
 tar -xzf "${TMP}/install.tgz" -C "${BIN_DIR}" openshift-install
 
-# --- oc-mirror (v2). Lives under .../clients/ocp-tools, versioned by the same train. -------
-# VERIFY the exact path/filename for your release; the ocp-tools dir uses a 'latest' symlink
-# plus per-version dirs. We pin to OCP_VERSION first, fall back to latest with a warning.
-OCMIRROR_URL="${MIRROR}/ocp-tools/${OCP_VERSION}/oc-mirror.tar.gz"
+# --- oc-mirror (v2). Ships in the SAME per-version dir as oc/openshift-install -------------
+# (verified 2026-06-26: .../clients/ocp/<ver>/oc-mirror.tar.gz — NOT under ocp-tools/, which
+# 404s for the 4.20 train). A glibc build (oc-mirror.tar.gz) and a RHEL9 build
+# (oc-mirror.rhel9.tar.gz) sit side by side; we take the glibc one. Pin to OCP_VERSION, fall
+# back to ocp/latest with a warning.
+OCMIRROR_URL="${MIRROR}/ocp/${OCP_VERSION}/oc-mirror.tar.gz"
 if ! curl -fsI "${OCMIRROR_URL}" >/dev/null 2>&1; then
-  echo ">> WARN: ${OCMIRROR_URL} not found; falling back to ocp-tools/latest (VERIFY version)"
-  OCMIRROR_URL="${MIRROR}/ocp-tools/latest/oc-mirror.tar.gz"
+  echo ">> WARN: ${OCMIRROR_URL} not found; falling back to ocp/latest (VERIFY version)"
+  OCMIRROR_URL="${MIRROR}/ocp/latest/oc-mirror.tar.gz"
 fi
 fetch "${OCMIRROR_URL}" "${TMP}/oc-mirror.tgz"
 tar -xzf "${TMP}/oc-mirror.tgz" -C "${BIN_DIR}" oc-mirror

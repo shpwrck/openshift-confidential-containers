@@ -1,7 +1,13 @@
 # Latitude.sh rig — provision one SNP-capable bare-metal node
 
-Reproducible up/down for the disposable SEV-SNP verification node. **Destroy after each spike**
-(hourly billing). Provisioning spends money — `terraform apply` is gated on your approval.
+Reproducible up/down for the **disposable** SEV-SNP verification node. **Destroy after each
+spike** (hourly billing). Provisioning spends money — `terraform apply` is gated on your approval.
+
+> **Two modules.** This is the *disposable* node. The *persistent* mirror/air-gap host lives in
+> [`bastion/`](bastion/) — apply it **first** (it owns the VLAN + lockdown firewall this node
+> reads via `terraform_remote_state`). Keeping the bastion up across node re-provisions means the
+> ~1–2 h mirror is paid **once**. For a quick standalone rung-0 box with no bastion, set
+> `-var air_gap=false`.
 
 ## Prereqs
 - Latitude account + API token → `export LATITUDESH_AUTH_TOKEN=...`
@@ -32,8 +38,9 @@ terraform output ssh_hint
   on this node — visible within minutes on the IPMI console.
 
 ## Verify SEV-SNP host
-1. SSH in (root@<primary_ipv4>; if refused, use the **IPMI serial console** as fallback).
-2. `scp ../../scripts/host-snp-check.sh <ip>: && ssh <ip> bash host-snp-check.sh`.
+1. SSH in (`rocky@<primary_ipv4>` for the rocky-10 image — try `root@` if refused; or use the
+   **IPMI serial console** as fallback).
+2. `scp ../../scripts/host-snp-check.sh rocky@<ip>: && ssh rocky@<ip> sudo bash host-snp-check.sh`.
    The script **discriminates** kernel-incapable vs BIOS-off vs provider-veto — a FAIL is NOT
    automatically a provider veto; follow its RESULT guidance.
 3. If it points at BIOS: IPMI console → reboot → AMD CBS: **SEV-SNP Support** + **SMEE** on,
@@ -42,5 +49,7 @@ terraform output ssh_hint
 
 ## Tear down (do this when done — saves money)
 ```bash
-terraform destroy
+terraform destroy            # removes ONLY the node + its VLAN/firewall attachments
 ```
+The [`bastion/`](bastion/) (mirror cache) is a separate state and is **untouched** — re-provision
+the node and it rejoins the same mirror. Destroy the bastion only at the very end of the engagement.

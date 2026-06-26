@@ -1,0 +1,117 @@
+#cloud-config
+# Bastion bootstrap (Rocky Linux 10): private-VLAN L3 + Red Hat mirror-registry (quay).
+# Templated by Terraform (latitudesh_user_data.bastion): $${name} tokens are TF template vars,
+# NOT shell vars. Bootstrap log lands in /var/log/cloud-init-output.log.
+#
+# OS: RHEL-family (rocky-10) — mirror-registry + podman (AppStream 5.x) are validated here, and
+# the network stack is NetworkManager (not netplan). SELinux is ENFORCING; mirror-registry labels
+# its quayRoot itself, but # VERIFY the quay pod starts cleanly under SELinux on first provision.
+#
+# Network model (the REAL air gap, not a cosmetic VLAN):
+#   - this host gets a STATIC private IP (${bastion_vlan_ip}/${vlan_prefix}) on the rig VLAN
+#     (vid ${vlan_vid}) via a NetworkManager VLAN connection, plus its public IP (kept for
+#     internet egress while mirroring);
+#   - the registry is served under DNS name ${registry_dns_name}, mapped to the PRIVATE IP in
+#     /etc/hosts, so quay's TLS cert SAN matches what the node dials (no x509 IP-SAN failure);
+#   - the SNP node reaches the mirror ONLY over this private IP (its egress nftables allow just
+#     ${bastion_vlan_ip}); see runbook Phase 1.
+#   # VERIFY on first provision: the VLAN parent interface is '${vlan_parent_interface}'
+#   # (`ip -br link` / `nmcli device`). Adjust below if the naming differs — it is hardware-bound.
+#
+# Security: the admin password is GENERATED on the bastion on first boot, 0600 root-only (never
+# templated into Terraform state / the Latitude user-data store). Retrieve after boot with:
+#   sudo cat ${mirror_root}/mirror-admin-password
+
+packages:
+  - podman
+  - curl
+  - tar
+  - openssl
+  - NetworkManager
+
+write_files:
+  # --- VLAN L3: NetworkManager keyfile for the tagged sub-interface on the rig network -----
+  - path: /etc/NetworkManager/system-connections/rigvlan.nmconnection
+    permissions: "0600"
+    owner: "root:root"
+    content: |
+      [connection]
+      id=rigvlan
+      type=vlan
+      interface-name=${vlan_parent_interface}.${vlan_vid}
+
+      [vlan]
+      parent=${vlan_parent_interface}
+      id=${vlan_vid}
+
+      [ipv4]
+      method=manual
+      address1=${bastion_vlan_ip}/${vlan_prefix}
+
+      [ipv6]
+      method=ignore
+
+  - path: /usr/local/bin/bootstrap-mirror.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      MIRROR_ROOT="${mirror_root}"
+      QUAY_ROOT="$MIRROR_ROOT/quay"
+      mkdir -p "$QUAY_ROOT"
+
+      # registry DNS name -> private VLAN IP, so quayHostname resolves to the private segment
+      # on the bastion (and the node uses the same name -> same IP over the VLAN).
+      if ! grep -q "${registry_dns_name}" /etc/hosts; then
+        echo "${bastion_vlan_ip} ${registry_dns_name}" >> /etc/hosts
+      fi
+
+      # --- admin password generated on-box, never in TF state / user-data --------------
+      PW_FILE="$MIRROR_ROOT/mirror-admin-password"
+      if [ ! -s "$PW_FILE" ]; then
+        ( umask 077; openssl rand -base64 24 > "$PW_FILE" )
+      fi
+      chmod 600 "$PW_FILE"
+
+      # --- fetch mirror-registry; verify checksum when pinned (supply-chain) ------------
+      URL="${mirror_registry_url}"
+      SHA="${mirror_registry_sha256}"
+      cd /opt
+      curl -fsSL "$URL" -o mirror-registry.tar.gz
+      if [ -n "$SHA" ]; then
+        echo "$SHA  mirror-registry.tar.gz" | sha256sum -c - \
+          || { echo "FATAL: mirror-registry checksum mismatch"; exit 1; }
+      else
+        echo "WARN: mirror_registry_sha256 unset — running UNVERIFIED mirror-registry as root."
+        echo "WARN: pin a sha256 (and a versioned URL, not 'latest') before customer use."
+      fi
+      mkdir -p /opt/mirror-registry && tar -xzf mirror-registry.tar.gz -C /opt/mirror-registry
+
+      # quayHostname = the DNS name (cert SAN); password read from the 0600 file. Install output
+      # is captured to a 0600 sink (it can echo the credential), NOT the world-readable tee log.
+      /opt/mirror-registry/mirror-registry install \
+        --quayHostname "${registry_dns_name}" \
+        --quayRoot "$QUAY_ROOT" \
+        --initUser "${init_user}" \
+        --initPassword "$(cat "$PW_FILE")" \
+        > "$MIRROR_ROOT/install.log" 2>&1
+      chmod 600 "$MIRROR_ROOT/install.log"
+
+      # CA must be present for the disconnected install — fail loudly if quay put it elsewhere,
+      # so MIRROR_READY is only stamped when the trust bundle is actually captured.
+      CA_SRC="$QUAY_ROOT/quay-rootCA/rootCA.pem"
+      if [ ! -s "$CA_SRC" ]; then
+        echo "FATAL: quay CA not found at $CA_SRC (version-specific path?) — not marking ready"; exit 1
+      fi
+      install -D -m0644 "$CA_SRC" "$MIRROR_ROOT/ca/rootCA.pem"
+      date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_READY"
+
+runcmd:
+  # bring up the private VLAN (NetworkManager); the public default route is untouched.
+  - [ nmcli, connection, reload ]
+  - [ bash, -lc, "nmcli connection up rigvlan || nmcli device reapply ${vlan_parent_interface} || true" ]
+  # pipefail on the outer shell too, so a failed bootstrap is a non-zero cloud-init result
+  # (not masked by tee's exit). A separate FAILED marker is written if the script errors.
+  - [ bash, -lc, "set -o pipefail; /usr/local/bin/bootstrap-mirror.sh 2>&1 | tee -a /var/log/mirror-bootstrap.log || { date -u +%FT%TZ > ${mirror_root}/MIRROR_FAILED; exit 1; }" ]
+
+final_message: "mirror-registry bootstrap finished after $UPTIME s — admin password: sudo cat ${mirror_root}/mirror-admin-password"
