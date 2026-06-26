@@ -69,8 +69,8 @@ variable "air_gap" {
 
 variable "bastion_state_path" {
   type        = string
-  default     = "../bastion/terraform.tfstate"
-  description = "Path to the bastion module's local state, read for the VLAN + firewall ids when air_gap=true."
+  default     = "bastion/terraform.tfstate"
+  description = "Path to the bastion module's local state (relative to this module dir; bastion/ is nested here), read for the VLAN + firewall ids when air_gap=true."
 }
 
 variable "enforce_latitude_firewall" {
