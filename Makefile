@@ -80,5 +80,5 @@ gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware
 
 ## --- Validation (negative tests) -----------------------------------------
 .PHONY: negative-test
-negative-test: ## Run the per-rung denial proofs (see docs/design/engagement-design.md §5)
-	@echo "TODO: implement rung a/b/c + air-gap negative tests"; exit 1
+negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-a|rung-b|rung-c|air-gap)
+	./scripts/negative-test.sh $(WHICH)

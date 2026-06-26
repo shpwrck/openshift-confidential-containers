@@ -1,0 +1,47 @@
+# Post-install egress lockdown — OPT-IN, NOT in the default overlay.
+#
+# Applies an nftables ruleset (see airgap-egress.nft in this dir) that DROPS the node's egress
+# to the public internet while allowing all cluster/host/VLAN traffic. Delivered as a oneshot
+# systemd unit so it survives reboots and applies after the network is up.
+#
+# WHY OPT-IN: do NOT apply during/right after install — a half-formed allow-list during bootstrap
+# can wedge the cluster. Apply ONLY after the SNO is healthy (Phase 4+), then VERIFY:
+#   ssh core@<node> 'curl -m5 -sI https://quay.io && echo OPEN-bad || echo BLOCKED-good'
+#   oc get co && oc get nodes        # cluster must stay healthy
+# Roll back: oc delete -k gitops/base/airgap-egress  (stops dropping on next boot),
+# or on the node: nft delete table inet airgap  (clears immediately).
+#
+# Targets the SNO control-plane pool (SNO collapses worker into master).
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 99-airgap-egress
+  labels:
+    machineconfiguration.openshift.io/role: master   # FILL: 'worker' on a multi-node customer cluster
+spec:
+  config:
+    ignition:
+      version: 3.4.0
+    storage:
+      files:
+        - path: /etc/nftables/airgap-egress.nft
+          mode: 0600
+          overwrite: true
+          contents:
+            source: data:text/plain;charset=utf-8;base64,IyBBaXItZ2FwIGVncmVzcyBsb2NrZG93biBmb3IgdGhlIFJIQ09TIG5vZGUgKHJlYWRhYmxlIHNvdXJjZSBmb3IgdGhlIE1hY2hpbmVDb25maWcpLgojCiMgR29hbDogdGhlIG5vZGUgbXVzdCBOT1QgcmVhY2ggdGhlIHB1YmxpYyBpbnRlcm5ldCAodGhhdCB3b3VsZCBoaWRlIHRoZSBWQ0VLLU9mZmxpbmVTdG9yZSBidWcpLAojIHdoaWxlIEFMTCBjbHVzdGVyL2hvc3QgdHJhZmZpYyBrZWVwcyB3b3JraW5nLiBTbyB3ZSBEUk9QIGVncmVzcyB0byBwdWJsaWMgSVBzIGFuZCBBTExPVyB0aGUKIyBwcml2YXRlICsgY2x1c3RlciByYW5nZXMuIEEgbmFpdmUgYHBvbGljeSBkcm9wYCB3aXRoIG9ubHkgdGhlIGJhc3Rpb24gYWxsb3dlZCB3b3VsZCBicmVhawojIE9WTi1LdWJlcm5ldGVzIChsaW5rLWxvY2FsIC8gMTAwLjY0KSBhbmQgdGhlIGNsdXN0ZXIvc2VydmljZSBuZXR3b3JrcyDigJQgZG8gTk9UIGRvIHRoYXQuCiMKIyBWRVJJRlkgYmVmb3JlIHJlbHlpbmcgb24gaXQgKHJ1bmJvb2spOiBhZnRlciBhcHBseSwgYGN1cmwgaHR0cHM6Ly9xdWF5LmlvYCBmcm9tIHRoZSBub2RlIG11c3QKIyBGQUlMIGFuZCB0aGUgY2x1c3RlciBtdXN0IHN0YXkgaGVhbHRoeSAoYG9jIGdldCBjb2AsIGBvYyBnZXQgbm9kZXNgKS4gVG8gSEFSREVOIGZvciB0aGUgY3VzdG9tZXIsCiMgdGlnaHRlbiB0aGUgMTkyLjE2OC4wLjAvMTYgbGluZSB0byBqdXN0IHRoZSBiYXN0aW9uIC8zMiBvbmNlIHlvdSd2ZSBjb25maXJtZWQgbm90aGluZyBlbHNlIG9uCiMgdGhlIG1hY2hpbmUgbmV0d29yayBpcyBuZWVkZWQuCnRhYmxlIGluZXQgYWlyZ2FwIHsKICBjaGFpbiBvdXRwdXQgewogICAgdHlwZSBmaWx0ZXIgaG9vayBvdXRwdXQgcHJpb3JpdHkgMDsgcG9saWN5IGRyb3A7CgogICAgb2lmbmFtZSAibG8iIGFjY2VwdAogICAgY3Qgc3RhdGUgZXN0YWJsaXNoZWQscmVsYXRlZCBhY2NlcHQKCiAgICAjIGNsdXN0ZXIgKyBob3N0ICsgVkxBTiBwcml2YXRlIHJhbmdlcyAoY292ZXJzIGNsdXN0ZXJOZXR3b3JrIDEwLjEyOC8xNCwgc2VydmljZU5ldHdvcmsKICAgICMgMTcyLjMwLzE2LCBtYWNoaW5lTmV0d29yayAxOTIuMTY4LngsIHRoZSByaWcgVkxBTiAxOTIuMTY4LjY2LzI0LCBPVk4gbGluay1sb2NhbCArIDEwMC42NCkuCiAgICBpcCBkYWRkciB7CiAgICAgIDEwLjAuMC4wLzgsCiAgICAgIDE3Mi4xNi4wLjAvMTIsCiAgICAgIDE5Mi4xNjguMC4wLzE2LAogICAgICAxNjkuMjU0LjAuMC8xNiwKICAgICAgMTAwLjY0LjAuMC8xMAogICAgfSBhY2NlcHQKICAgIGlwNiBkYWRkciBmZTgwOjovMTAgYWNjZXB0CgogICAgIyBldmVyeXRoaW5nIGVsc2UgKHRoZSBwdWJsaWMgaW50ZXJuZXQpIGZhbGxzIHRocm91Z2ggdG8gdGhlIGRyb3AgcG9saWN5LgogIH0KfQo=
+    systemd:
+      units:
+        - name: airgap-egress.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Air-gap egress lockdown (drop public egress, keep cluster traffic)
+            After=network-online.target nftables.service
+            Wants=network-online.target
+            [Service]
+            Type=oneshot
+            RemainAfterExit=yes
+            ExecStart=/usr/sbin/nft -f /etc/nftables/airgap-egress.nft
+            ExecStop=/usr/sbin/nft delete table inet airgap
+            [Install]
+            WantedBy=multi-user.target

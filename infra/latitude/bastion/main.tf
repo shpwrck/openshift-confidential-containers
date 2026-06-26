@@ -74,6 +74,7 @@ resource "latitudesh_user_data" "bastion" {
     mirror_registry_sha256 = var.mirror_registry_sha256
     # private-VLAN L3 + DNS identity (fixes the cosmetic-VLAN / x509-SAN defects)
     bastion_vlan_ip       = var.bastion_vlan_ip
+    vlan_subnet           = var.vlan_subnet
     vlan_prefix           = var.vlan_prefix
     vlan_parent_interface = var.vlan_parent_interface
     vlan_vid              = latitudesh_virtual_network.rig.vid

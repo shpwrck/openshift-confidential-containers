@@ -1,0 +1,32 @@
+# Air-gap egress lockdown for the RHCOS node (readable source for the MachineConfig).
+#
+# Goal: the node must NOT reach the public internet (that would hide the VCEK-OfflineStore bug),
+# while ALL cluster/host traffic keeps working. So we DROP egress to public IPs and ALLOW the
+# private + cluster ranges. A naive `policy drop` with only the bastion allowed would break
+# OVN-Kubernetes (link-local / 100.64) and the cluster/service networks — do NOT do that.
+#
+# VERIFY before relying on it (runbook): after apply, `curl https://quay.io` from the node must
+# FAIL and the cluster must stay healthy (`oc get co`, `oc get nodes`). To HARDEN for the customer,
+# tighten the 192.168.0.0/16 line to just the bastion /32 once you've confirmed nothing else on
+# the machine network is needed.
+table inet airgap {
+  chain output {
+    type filter hook output priority 0; policy drop;
+
+    oifname "lo" accept
+    ct state established,related accept
+
+    # cluster + host + VLAN private ranges (covers clusterNetwork 10.128/14, serviceNetwork
+    # 172.30/16, machineNetwork 192.168.x, the rig VLAN 192.168.66/24, OVN link-local + 100.64).
+    ip daddr {
+      10.0.0.0/8,
+      172.16.0.0/12,
+      192.168.0.0/16,
+      169.254.0.0/16,
+      100.64.0.0/10
+    } accept
+    ip6 daddr fe80::/10 accept
+
+    # everything else (the public internet) falls through to the drop policy.
+  }
+}

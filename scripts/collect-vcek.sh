@@ -9,24 +9,90 @@
 #   air-gapped:  one K8s secret per LOWERCASE hwid, mounted via KbsConfig.kbsLocalCertCacheSpec
 #                at /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid>/vcek.der
 #
-# Usage: ./scripts/collect-vcek.sh <node-name> [namespace]
+# This script does the real work; it is hardware-bound, so it MUST run against a live node
+# with `oc` logged in. Two-step flow when the admin host can't reach AMD KDS:
+#   1) run it once on a host with `oc` access  -> writes <OUT>/<hwid>/vcek.url per socket;
+#   2) on a KDS-CONNECTED host, run `--download` (curls each .url -> vcek.der);
+#   3) run it again with `oc` access (.der now present) -> creates one secret per hwid.
+# When the host running step 1 IS internet-connected, all three happen in one pass.
+#
+# Usage:
+#   ./scripts/collect-vcek.sh <node-name> [namespace]   # collect urls (+ download if KDS reachable) + create secrets
+#   ./scripts/collect-vcek.sh --download                # offline KDS download step only (no oc needed)
+# Env: OUT=./vcek-bundle  TOOLS_IMG=...  KDS_HOST=kdsintf.amd.com
 set -euo pipefail
 
-NODE="${1:?usage: collect-vcek.sh <node-name> [namespace]}"
-NS="${2:-trustee-operator-system}"
 OUT="${OUT:-./vcek-bundle}"
-TOOLS_IMG="quay.io/openshift_sandboxed_containers/coco-tools:1.12"
+TOOLS_IMG="${TOOLS_IMG:-quay.io/openshift_sandboxed_containers/coco-tools:1.12}"
+KDS_HOST="${KDS_HOST:-kdsintf.amd.com}"
 
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+# --- download-only mode: curl every collected .url on a KDS-connected host ----------------
+if [[ "${1:-}" == "--download" ]]; then
+  shopt -s nullglob
+  urls=("${OUT}"/*/vcek.url)
+  [[ ${#urls[@]} -gt 0 ]] || die "no ${OUT}/*/vcek.url found — run the collect step (with oc) first"
+  for u in "${urls[@]}"; do
+    d="$(dirname "$u")"
+    echo ">> downloading VCEK for $(basename "$d")"
+    curl -fsSL "$(cat "$u")" -o "${d}/vcek.der"
+  done
+  echo "Downloaded ${#urls[@]} VCEK cert(s). Carry ${OUT}/ into the air gap and re-run with <node> to create secrets."
+  exit 0
+fi
+
+NODE="${1:?usage: collect-vcek.sh <node-name> [namespace]   |   collect-vcek.sh --download}"
+NS="${2:-trustee-operator-system}"
+command -v oc >/dev/null || die "oc not on PATH"
+oc whoami >/dev/null 2>&1 || die "not logged into a cluster (oc whoami failed)"
 mkdir -p "${OUT}"
 
-echo "TODO(implement): per-socket loop —"
-echo "  1. VCEK_URL=\$(oc debug node/${NODE} -- chroot /host podman run --rm --privileged ${TOOLS_IMG} \\"
-echo "                  /tools/snphost show vcek-url --socket <n> | grep -o 'https://.*')"
-echo "  2. HWID=\$(echo \"\$VCEK_URL\" | sed -E 's#.*/v1/[^/]+/([^?]+).*#\\1#' | tr 'A-Z' 'a-z')  # LOWERCASE"
-echo "  3. (connected host) curl -fsSL \"\$VCEK_URL\" -o ${OUT}/\$HWID/vcek.der"
-echo "  4. oc create secret generic vcek-\$HWID --from-file=vcek.der=${OUT}/\$HWID/vcek.der -n ${NS}"
-echo "  5. patch KbsConfig.kbsLocalCertCacheSpec.secrets[] with mountPath .../kds-store/vcek/\$HWID"
+# Run a command in a privileged coco-tools container on the node, via `oc debug node`.
+on_node() {  # on_node <shell-command-string>
+  oc debug "node/${NODE}" -- chroot /host \
+    podman run --rm --privileged -v /dev:/dev "${TOOLS_IMG}" bash -c "$1"
+}
+
+# Socket count — one VCEK per physical socket. VERIFY the field on the metal (`lscpu`).
+SOCKETS="$(oc debug "node/${NODE}" -- chroot /host lscpu 2>/dev/null \
+            | awk -F: '/^Socket\(s\)/{gsub(/ /,"",$2); print $2}')"
+[[ "${SOCKETS}" =~ ^[0-9]+$ ]] || die "could not read socket count from the node"
+echo ">> ${NODE}: ${SOCKETS} socket(s)"
+
+created=0
+for ((s=0; s<SOCKETS; s++)); do
+  # VERIFY snphost's exact multi-socket invocation on the metal; --socket is assumed.
+  url="$(on_node "/tools/snphost show vcek-url --socket ${s} 2>/dev/null" | grep -oE 'https://[^[:space:]]+' | head -1)" \
+    || die "snphost show vcek-url failed on socket ${s}"
+  [[ -n "${url}" ]] || die "no VCEK URL returned for socket ${s}"
+
+  # hwid is the path segment after the product name; LOWERCASE it (upper-case silently
+  # misses the OfflineStore and falls through to the unreachable KDS -> attestation fails).
+  hwid="$(echo "${url}" | sed -E 's#.*/v1/[^/]+/([^?]+).*#\1#' | tr 'A-Z' 'a-z')"
+  [[ -n "${hwid}" && "${hwid}" != "${url}" ]] || die "could not parse HWID from URL: ${url}"
+  dir="${OUT}/${hwid}"; mkdir -p "${dir}"; echo "${url}" > "${dir}/vcek.url"
+  echo ">> socket ${s}: hwid ${hwid}"
+
+  # Fetch the .der here if KDS is reachable; otherwise defer to the --download step.
+  if [[ ! -s "${dir}/vcek.der" ]]; then
+    if curl -fsS -m 8 -o /dev/null "https://${KDS_HOST}/" 2>/dev/null; then
+      curl -fsSL "${url}" -o "${dir}/vcek.der"
+    else
+      echo "   KDS unreachable here — run \`$0 --download\` on a connected host, then re-run this."
+      continue
+    fi
+  fi
+
+  # One secret per hwid; idempotent (apply, not create) so TCB-refresh re-runs cleanly.
+  oc create secret generic "vcek-${hwid}" --from-file=vcek.der="${dir}/vcek.der" \
+     -n "${NS}" --dry-run=client -o yaml | oc apply -f -
+  created=$((created+1))
+done
+
 echo
-echo "Landmines: HWID must be lowercase (else silent KDS fallthrough); collect one VCEK per"
-echo "socket per node; verify the .der carries ARK/ASK chain or supply them separately."
-exit 1
+echo "Created/updated ${created}/${SOCKETS} VCEK secret(s) in ${NS}."
+[[ ${created} -eq ${SOCKETS} ]] || die "some sockets lack a vcek.der — download them (--download) and re-run"
+echo "Next: reference each secret in KbsConfig.spec.kbsLocalCertCacheSpec (mountPath"
+echo "  .../kds-store/vcek/<hwid>/vcek.der). VERIFY the .der carries the ARK/ASK chain or supply"
+echo "  ASK/ARK separately. Confirm hwid dirs are LOWERCASE."
