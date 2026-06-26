@@ -86,8 +86,8 @@ variable "node_vlan_ip" {
 
 variable "vlan_parent_interface" {
   type        = string
-  default     = "bond0"
-  description = "VERIFY on provision: the bastion NIC/bond the VLAN tags ride on (`ip -br link`). Hardware-bound."
+  default     = "auto"
+  description = "VLAN parent NIC. \"auto\" (default) detects the cabled, un-addressed, non-USB physical NIC (the private port). Override with an explicit name if detection picks wrong. Hardware-bound."
 }
 
 variable "registry_dns_name" {

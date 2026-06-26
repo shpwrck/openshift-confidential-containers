@@ -22,7 +22,7 @@ ssh_key_ids = ["<SSH_KEY_ID>"] # coco-rig — same key as the node
 # bastion_vlan_ip       = "192.168.66.10"
 # node_vlan_ip          = "192.168.66.11"
 # registry_dns_name     = "mirror.rig.local"
-# vlan_parent_interface = "bond0"   # VERIFY on the bastion: `ip -br link`
+# vlan_parent_interface = "auto"    # auto-detects the private NIC; override only if it picks wrong
 
 # mirror-registry: admin username only. The PASSWORD is generated ON the bastion (never in
 # state/user-data) — retrieve after boot: ssh <bastion> 'sudo cat /opt/mirror/mirror-admin-password'
