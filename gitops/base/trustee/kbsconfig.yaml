@@ -13,6 +13,11 @@ spec:
   #   `oc explain kbsconfig.spec` / config/templates @ v1.1.0.
   kbsConfigMapName: kbs-config
   kbsAuthSecretName: kbs-auth-public-key
+  # REQUIRED (trustee v1.1): without this the operator defaults to MicroservicesDeployment, which
+  # demands a separate attestation-service ConfigMap (kbsAsConfigMapName) and fails with
+  # "ConfigMap name hasn't been provided for volume as-config". AllInOne keeps the AS config inline
+  # in kbs-config.toml (below). Verified on the rig 2026-06-28 (trustee-operator v1.1.0).
+  kbsDeploymentType: AllInOneDeployment
   kbsServiceType: ClusterIP # rig/early rungs; customer overlay may use a Route + HTTPS.
 
   # Policies + reference values from kbs-configmaps.yaml.
