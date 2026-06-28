@@ -1,0 +1,23 @@
+---
+# NodeFeatureRule that emits the TEE label OSC needs to enable CoCo on AMD SEV-SNP.
+# Verbatim from openshift/sandboxed-containers-operator scripts/install-helpers/baremetal-coco/nfd/amd-rules.yaml.
+# Matches the kernel-exposed cpu.security feature `sev.snp.enabled` (present only when SEV-SNP is
+# actually on — BIOS + kernel), so it is the live proof that the host TEE is active. The OSC
+# KataConfig controller watches for `amd.feature.node.kubernetes.io/snp` and only then installs
+# the kata-cc (kata-qemu-snp) runtime.
+apiVersion: nfd.openshift.io/v1alpha1
+kind: NodeFeatureRule
+metadata:
+  name: amd-sev-snp
+  namespace: openshift-nfd
+spec:
+  rules:
+    - name: "amd.sev-snp"
+      labels:
+        "amd.feature.node.kubernetes.io/snp": "true"
+      extendedResources:
+        sev-snp.amd.com/esids: "@cpu.security.sev.encrypted_state_ids"
+      matchFeatures:
+        - feature: cpu.security
+          matchExpressions:
+            sev.snp.enabled: { op: Exists }

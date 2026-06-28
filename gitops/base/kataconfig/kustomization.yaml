@@ -3,4 +3,5 @@ kind: Kustomization
 # KataConfig (TEE type derived from NFD labels) + runtimeclasses kata / kata-cc.
 # Populate from onboarding guide Gate 3.
 resources:
+  - feature-gates.yaml   # osc-feature-gates ConfigMap — enables CoCo; apply BEFORE the KataConfig CR.
   - kataconfig.yaml

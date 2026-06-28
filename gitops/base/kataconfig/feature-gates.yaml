@@ -1,0 +1,15 @@
+---
+# OSC Confidential Containers feature gate. THIS — not a KataConfig field — is how CoCo is
+# enabled in OpenShift sandboxed containers 1.12 (GA on bare metal). The operator watches this
+# ConfigMap; with confidential: "true" it installs the CoCo runtime and, on TEE-capable nodes,
+# auto-creates the `kata-cc` RuntimeClass (handler kata-qemu-snp on SEV-SNP).
+#
+# MUST exist BEFORE the KataConfig CR is reconciled, or the operator installs plain kata only.
+# Verified 2026-06-28 against OSC 1.12.1 + docs.redhat.com OSC 1.12 "Deploying Confidential Containers".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: osc-feature-gates
+  namespace: openshift-sandboxed-containers-operator
+data:
+  confidential: "true"

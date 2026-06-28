@@ -19,10 +19,14 @@ metadata:
   name: cluster-kataconfig
 spec:
   enablePeerPods: false
-  # Enable the Confidential Containers runtime (kata-cc / kata-snp).
-  # VERIFY: field name against the OSC 1.12 KataConfig CRD on the mirrored cluster
-  #   `oc explain kataconfig.spec` — in 1.12 this is `enableConfidentialCompute`.
-  enableConfidentialCompute: true
+  # CoCo is NOT a KataConfig field in OSC 1.12 — the CRD has NO `enableConfidentialCompute`
+  # (verified 2026-06-28 against the OSC 1.12.1 CRD: `oc explain kataconfig.spec` shows only
+  # enablePeerPods / checkNodeEligibility / kataConfigPoolSelector / logLevel). Confidential
+  # Containers is enabled by the `osc-feature-gates` ConfigMap (confidential: "true") in the
+  # operator namespace — see feature-gates.yaml, which MUST be applied BEFORE this CR. The
+  # operator then auto-detects the TEE (SEV-SNP) and creates the `kata-cc` RuntimeClass
+  # (handler kata-qemu-snp). Ref: docs.redhat.com OSC 1.12 "Deploying Confidential Containers".
+  checkNodeEligibility: false   # required field. false = install on all worker nodes (the SNO node).
   # kataConfigPoolSelector: # FILL (per overlay): on multi-node, pin Kata to the SNP worker
   #   matchLabels:          #   pool so plain workers are untouched. SNO collapses to one node,
   #     node-role.kubernetes.io/kata-oc: ""  #   so the base leaves this unset.
