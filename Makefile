@@ -44,8 +44,12 @@ pxe-files: ## Phase 3 (iPXE): build agent PXE/iPXE boot artifacts into $(ASSETS)
 	$(INSTALL) --dir $(ASSETS) agent create pxe-files
 
 .PHONY: serve-boot-artifacts
-serve-boot-artifacts: ## Phase 3 (iPXE): publish $(ASSETS)/boot-artifacts over Range-capable HTTP :8080
+serve-boot-artifacts: ## Phase 3 (iPXE): publish $(ASSETS)/boot-artifacts under the tokenized path (:8080)
 	./scripts/serve-boot-artifacts.sh "$(ASSETS)/boot-artifacts"
+
+.PHONY: stop-boot-artifacts
+stop-boot-artifacts: ## Phase 3 (iPXE): close the boot-artifact endpoint once the node has booted
+	./scripts/serve-boot-artifacts.sh stop
 
 .PHONY: install-wait
 install-wait: ## Wait for the Agent-based SNO install to finish (kubeconfig -> $(ASSETS)/auth)

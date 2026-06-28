@@ -13,9 +13,14 @@ rendezvousIP: 192.168.1.10         # FILL: the node's static IPv4 (inside machin
 
 # iPXE boot path only: where the node fetches kernel/initrd/rootfs at boot. The agent installer
 # bakes this into the generated boot-artifacts/agent.x86_64.ipxe. The node runs iPXE over its
-# PUBLIC NIC before nmstate brings up the VLAN, so this MUST be publicly reachable — point it at
-# the bastion's PUBLIC IP:8080 (where serve-boot-artifacts.sh publishes). Omit for the ISO path.
-bootArtifactsBaseURL: http://203.0.113.10:8080   # FILL: http://<bastion_public_ipv4>:8080
+# PUBLIC NIC before nmstate brings up the VLAN, so this MUST be publicly reachable — the bastion's
+# PUBLIC IP:8080 (where serve-boot-artifacts.sh publishes). Omit for the ISO path.
+#
+# SECURITY: the initrd embeds ignition (mirror pullSecret + sshKey). Include an UNGUESSABLE path
+# segment so the secret-bearing artifacts are not served at a public, guessable root —
+# serve-boot-artifacts.sh serves only this exact path and refuses directory listing. Generate one
+# with e.g. `openssl rand -hex 16`. After the node boots, run `serve-boot-artifacts.sh stop`.
+bootArtifactsBaseURL: http://203.0.113.10:8080/CHANGEME-RANDOM-TOKEN   # FILL: http://<bastion_public_ipv4>:8080/<openssl rand -hex 16>
 
 # Air-gapped NTP — MUST live here (NOT install-config, which silently drops it). Clock skew
 # hangs bootstrap. Point at the bastion's chrony on the VLAN.
