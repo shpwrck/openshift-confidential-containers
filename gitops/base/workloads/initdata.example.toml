@@ -9,7 +9,7 @@
 #   1. Fill __KBS_URL__ with the third server's KBS Route (see overlays/sno-trustee/kbs-route.yaml)
 #      and __TRUSTEE_CA_PEM__ with that cluster's serving CA (the issuer in trustee/issuers.yaml).
 #   2. Encode:  scripts/encode-initdata.sh encode <filled.toml>   -> gzip+base64 string.
-#   3. Put the string in the pod annotation io.confidentialcontainers.org/initdata
+#   3. Put the string in the pod annotation io.katacontainers.config.hypervisor.cc_init_data
 #      (see overlays/sno-workers/initdata-patch.yaml).
 #   4. The TOML is HARDWARE-MEASURED into HOST_DATA (32 bytes / sha256 for SNP). ANY edit changes
 #      the measurement, so Veritas RVPS (make gen-rvps) must be regenerated AFTER initdata is final
