@@ -24,15 +24,29 @@ spec:
       rego: |
         package cococontainermemory
 
-        overhead_mi := input.parameters.overheadMi { input.parameters.overheadMi }
-        overhead_mi := 256 { not input.parameters.overheadMi }
+        # This Constraint matches ONLY labeled CoCo pods (see the Constraint match block), so every
+        # branch here is FAIL-CLOSED: anything we cannot positively verify is a violation, never a
+        # silent pass. (Hardened after a security review flagged missing-annotation and
+        # unrecognized-unit bypasses.)
+
+        overhead_mi := input.parameters.overheadMi { is_number(input.parameters.overheadMi) }
+        overhead_mi := 256 { not is_number(input.parameters.overheadMi) }
 
         annot := input.review.object.metadata.annotations["io.katacontainers.config.hypervisor.default_memory"]
+
+        # FAIL-CLOSED #1: a CoCo pod with no (or non-numeric) default_memory annotation cannot be
+        # sized safely — reject rather than skip.
+        violation[{"msg": msg}] {
+          not valid_annot
+          msg := "CoCo pod is missing a numeric io.katacontainers.config.hypervisor.default_memory annotation (cannot size the CVM safely)"
+        }
+        valid_annot { is_number(to_number(annot)) }
+
         required_mi := to_number(annot) + overhead_mi
 
-        # container memory limit present but below the required floor
+        # container memory limit present, parseable, and below the required floor
         violation[{"msg": msg}] {
-          annot
+          valid_annot
           c := input.review.object.spec.containers[_]
           limit := c.resources.limits.memory
           actual := to_mi(limit)
@@ -40,12 +54,22 @@ spec:
           msg := sprintf("CoCo container %q memory limit %vMi < required %vMi (default_memory %v + overhead %vMi)", [c.name, actual, required_mi, annot, overhead_mi])
         }
 
-        # container missing a memory limit entirely
+        # FAIL-CLOSED #2: container missing a memory limit entirely
         violation[{"msg": msg}] {
-          annot
+          valid_annot
           c := input.review.object.spec.containers[_]
           not c.resources.limits.memory
           msg := sprintf("CoCo container %q has no memory limit (must be >= %vMi)", [c.name, required_mi])
+        }
+
+        # FAIL-CLOSED #3: limit present but in a unit this policy cannot parse (Mi/Gi only) —
+        # reject rather than let an unverifiable value through.
+        violation[{"msg": msg}] {
+          valid_annot
+          c := input.review.object.spec.containers[_]
+          limit := c.resources.limits.memory
+          not to_mi(limit)
+          msg := sprintf("CoCo container %q memory limit %q uses an unsupported unit (policy parses only Mi/Gi)", [c.name, limit])
         }
 
         to_mi(q) = n { endswith(q, "Mi"); n := to_number(trim_suffix(q, "Mi")) }
