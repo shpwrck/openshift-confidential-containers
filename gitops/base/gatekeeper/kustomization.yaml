@@ -6,3 +6,4 @@ resources:
   - operator.yaml
   - gatekeeper-cr.yaml      # apply after the operator CSV is Succeeded (registers mutations CRDs)
   - assign-coco-mem.yaml    # apply after the Gatekeeper CR is up (Assign CRD must exist)
+  - constraint-coco-mem.yaml  # ConstraintTemplate+Constraint; apply Constraint AFTER its template CRD exists

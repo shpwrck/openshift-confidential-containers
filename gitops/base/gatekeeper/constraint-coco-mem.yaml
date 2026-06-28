@@ -1,0 +1,68 @@
+---
+# Validating Constraint — the ENFORCEMENT half of the CoCo memory story. The Assign mutation
+# (assign-coco-mem.yaml) can only set a STATIC default; it can't compute per-pod correctness from
+# the default_memory annotation. Rego in a ConstraintTemplate CAN do that arithmetic, so this
+# REJECTS CoCo pods whose container memory limit is below default_memory + overhead (default 256Mi).
+# Together: mutation fills a safe default when absent; this constraint blocks an explicit too-low value.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: cococontainermemory
+spec:
+  crd:
+    spec:
+      names:
+        kind: CoCoContainerMemory
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            overheadMi:
+              type: integer
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package cococontainermemory
+
+        overhead_mi := input.parameters.overheadMi { input.parameters.overheadMi }
+        overhead_mi := 256 { not input.parameters.overheadMi }
+
+        annot := input.review.object.metadata.annotations["io.katacontainers.config.hypervisor.default_memory"]
+        required_mi := to_number(annot) + overhead_mi
+
+        # container memory limit present but below the required floor
+        violation[{"msg": msg}] {
+          annot
+          c := input.review.object.spec.containers[_]
+          limit := c.resources.limits.memory
+          actual := to_mi(limit)
+          actual < required_mi
+          msg := sprintf("CoCo container %q memory limit %vMi < required %vMi (default_memory %v + overhead %vMi)", [c.name, actual, required_mi, annot, overhead_mi])
+        }
+
+        # container missing a memory limit entirely
+        violation[{"msg": msg}] {
+          annot
+          c := input.review.object.spec.containers[_]
+          not c.resources.limits.memory
+          msg := sprintf("CoCo container %q has no memory limit (must be >= %vMi)", [c.name, required_mi])
+        }
+
+        to_mi(q) = n { endswith(q, "Mi"); n := to_number(trim_suffix(q, "Mi")) }
+        to_mi(q) = n { endswith(q, "Gi"); n := to_number(trim_suffix(q, "Gi")) * 1024 }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: CoCoContainerMemory
+metadata:
+  name: coco-container-memory-floor
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    labelSelector:
+      matchLabels:
+        coco-resource-default: "true"
+  parameters:
+    overheadMi: 256
