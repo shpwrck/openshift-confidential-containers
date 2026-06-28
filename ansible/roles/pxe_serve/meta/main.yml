@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: pxe_serve
+  author: coco-rig
+  description: Build agent boot artifacts and serve them under a tokenized nginx path (206-capable).
+  license: Apache-2.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+        - "10"
+  galaxy_tags:
+    - openshift
+    - airgap
+dependencies: []

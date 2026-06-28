@@ -1,0 +1,4 @@
+---
+# pxe_serve mode: "serve" (default) builds + publishes the boot artifacts under the tokenized
+# path; "stop" tears the endpoint down once the node has booted. Override with -e pxe_mode=stop.
+pxe_mode: serve

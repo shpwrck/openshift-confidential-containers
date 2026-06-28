@@ -1,0 +1,184 @@
+---
+# pxe_serve — translates scripts/serve-boot-artifacts.sh (hard-won fix #8).
+# Builds the agent PXE/iPXE boot artifacts, then serves them via nginx under a TOKENIZED URL
+# path (autoindex off, server_tokens off) and verifies HTTP 206 (Range) on the tokenized path
+# while confirming the guessable root is NOT listable. A `stop` mode tears the endpoint down
+# once the node has booted (the secret-bearing initrd must not stay public — issue #33).
+
+- name: Pxe_serve STOP mode (tear the endpoint down)
+  when: pxe_mode == 'stop'
+  block:
+    - name: Remove the nginx boot-artifacts conf
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/boot-artifacts.conf
+        state: absent
+      become: true
+      register: pxe_conf_removed
+
+    - name: Remove the boot-artifacts webroot
+      ansible.builtin.file:
+        path: "{{ boot_artifacts_webroot }}"
+        state: absent
+      become: true
+
+    - name: Validate nginx config after removal
+      ansible.builtin.command: nginx -t
+      become: true
+      register: pxe_nginx_t_stop
+      changed_when: false
+      failed_when: false
+
+    - name: Reload nginx if its config is still valid, else stop it
+      ansible.builtin.systemd:
+        name: nginx
+        state: "{{ 'reloaded' if pxe_nginx_t_stop.rc == 0 else 'stopped' }}"
+      become: true
+
+    - name: Confirm the endpoint is closed
+      ansible.builtin.debug:
+        msg: "Boot-artifact endpoint closed — the secret-bearing initrd is no longer served."
+
+# ---- SERVE mode ----
+- name: Pxe_serve SERVE mode
+  when: pxe_mode != 'stop'
+  block:
+    - name: Guard against the placeholder token (issue 33 — secret-bearing initrd path)
+      ansible.builtin.assert:
+        that:
+          - boot_artifacts_token != 'REPLACE_WITH_openssl_rand_hex_16'
+          - boot_artifacts_token | length >= 16
+        fail_msg: "boot_artifacts_token is the placeholder — set a real openssl rand -hex 16 token."
+
+    - name: Build the agent PXE/iPXE boot artifacts (openshift-install agent create pxe-files)
+      ansible.builtin.command:
+        cmd: openshift-install --dir {{ cluster_assets_dir }} agent create pxe-files
+        creates: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+
+    - name: Confirm the generated .ipxe exists
+      ansible.builtin.stat:
+        path: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
+      become: true
+      register: ipxe_stat
+
+    - name: Fail if pxe-files were not generated
+      ansible.builtin.fail:
+        msg: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe not found — agent create pxe-files failed."
+      when: not ipxe_stat.stat.exists
+
+    # Derive the URL path the node will actually request from the generated .ipxe and serve
+    # EXACTLY that — guarantees the serve location matches the tokenized bootArtifactsBaseURL.
+    - name: Read the generated .ipxe to derive the served URL path
+      ansible.builtin.slurp:
+        src: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
+      become: true
+      register: ipxe_content
+
+    - name: Extract the URL path prefix from the .ipxe
+      ansible.builtin.set_fact:
+        pxe_url_prefix: >-
+          {{ (ipxe_content.content | b64decode
+              | regex_search('http://[^/]+/([^ ]*)/agent\.x86_64-vmlinuz', '\1')
+              | first) | default('', true) }}
+
+    - name: Warn if the .ipxe base URL has NO path segment (guessable root)
+      ansible.builtin.debug:
+        msg: >-
+          WARN: the .ipxe base URL has no path segment — artifacts would sit at a GUESSABLE root
+          leaking ignition secrets. Set bootArtifactsBaseURL to a tokenized path and rebuild.
+      when: pxe_url_prefix | length == 0
+
+    - name: Ensure nginx is installed
+      ansible.builtin.package:
+        name: nginx
+        state: present
+      become: true
+
+    - name: Stage the boot artifacts into the tokenized webroot
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        rm -rf "{{ boot_artifacts_webroot }}";
+        mkdir -p "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}";
+        cp -rf "{{ boot_artifacts_dir }}/." "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}/";
+        chmod -R a+rX "{{ boot_artifacts_webroot }}"
+      args:
+        executable: /bin/bash
+      become: true
+      register: pxe_stage
+      changed_when: true
+
+    - name: Write the nginx server block (listing OFF; only the tokenized path resolves)
+      ansible.builtin.template:
+        src: boot-artifacts.conf.j2
+        dest: /etc/nginx/conf.d/boot-artifacts.conf
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      register: pxe_nginx_conf
+
+    - name: Apply SELinux context to the webroot (if SELinux enforcing)
+      ansible.builtin.command: "{{ item }}"
+      become: true
+      register: pxe_selinux
+      changed_when: false
+      failed_when: false
+      loop:
+        - semanage fcontext -a -t httpd_sys_content_t "{{ boot_artifacts_webroot }}(/.*)?"
+        - restorecon -R "{{ boot_artifacts_webroot }}"
+        - semanage port -a -t http_port_t -p tcp "{{ boot_artifacts_port }}"
+      when: ansible_facts.selinux is defined and ansible_facts.selinux.status == 'enabled'
+
+    - name: Open the boot-artifacts port in firewalld (if active)
+      ansible.builtin.command: "{{ item }}"
+      become: true
+      register: pxe_fw
+      changed_when: "'success' in (pxe_fw.stdout | default(''))"
+      failed_when: false
+      loop:
+        - firewall-cmd --add-port={{ boot_artifacts_port }}/tcp --permanent
+        - firewall-cmd --reload
+      when: ansible_facts.services['firewalld.service'] is defined
+            and ansible_facts.services['firewalld.service'].state == 'running'
+
+    - name: Validate the nginx config
+      ansible.builtin.command: nginx -t
+      become: true
+      register: pxe_nginx_t
+      changed_when: false
+
+    - name: Enable + (re)start nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+        enabled: true
+      become: true
+
+    - name: Verify HTTP 206 (Range) on the tokenized path
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ boot_artifacts_port }}/{{ pxe_url_prefix }}{{ '/' if pxe_url_prefix | length > 0 else '' }}agent.x86_64-initrd.img"
+        method: GET
+        headers:
+          Range: "bytes=0-1"
+        status_code: [206]
+      register: pxe_range_check
+      retries: 3
+      delay: 2
+      until: pxe_range_check.status == 206
+
+    - name: Verify the initrd is NOT reachable at the guessable root
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ boot_artifacts_port }}/agent.x86_64-initrd.img"
+        method: GET
+        status_code: [403, 404]
+      register: pxe_root_check
+      when: pxe_url_prefix | length > 0
+
+    - name: Report the iPXE URL to feed Latitude
+      ansible.builtin.debug:
+        msg: >-
+          Boot artifacts published. Feed Latitude this iPXE URL:
+          http://{{ bastion_public_ipv4 }}:{{ boot_artifacts_port }}/{{ pxe_url_prefix }}{{ '/' if pxe_url_prefix | length > 0 else '' }}agent.x86_64.ipxe
+          — AFTER the node boots, run the site stop tag (pxe_mode=stop) to close it.

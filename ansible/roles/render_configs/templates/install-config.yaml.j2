@@ -1,0 +1,37 @@
+{{ '#' }} Rendered by Ansible role render_configs — DISCONNECTED SNO install-config.
+{{ '#' }} pullSecret = MIRROR creds only (the node is air-gapped). NOTE: additionalNTPSources
+{{ '#' }} is deliberately ABSENT here — the installer drops it from install-config; it lives in
+{{ '#' }} agent-config.yaml instead (hard-won fix #3).
+apiVersion: v1
+baseDomain: {{ base_domain }}
+metadata:
+  name: {{ cluster_name }}
+controlPlane:
+  name: master
+  replicas: {{ control_plane_replicas }}
+  architecture: amd64
+compute:
+  - name: worker
+    replicas: {{ compute_replicas }}
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+    - cidr: {{ cluster_network_cidr }}
+      hostPrefix: {{ cluster_network_host_prefix }}
+  serviceNetwork:
+    - {{ service_network_cidr }}
+  machineNetwork:
+    - cidr: {{ machine_network }}
+platform:
+  none: {}
+imageDigestSources:
+{% for ids in image_digest_sources %}
+  - source: {{ ids.source }}
+    mirrors:
+      - {{ ids.mirror }}
+{% endfor %}
+additionalTrustBundle: |
+{{ render_ca_pem | indent(2, true) }}
+pullSecret: '{"auths":{"{{ mirror_endpoint }}":{"auth":"{{ render_mirror_auth_b64 }}","email":"noreply@coco.rig.local"}}}'
+sshKey: |
+  {{ render_ssh_key }}

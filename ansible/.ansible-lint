@@ -1,0 +1,8 @@
+---
+profile: basic
+exclude_paths:
+  - group_vars/discovered.yml   # runtime-generated, gitignored
+skip_list:
+  - var-naming[no-role-prefix]  # shared cross-role vars (mirror_endpoint etc.) are intentional
+  - command-instead-of-module   # nft / ip / nginx -t / oc have no first-class modules here
+  - no-changed-when             # explicit changed_when is set where it matters; some probes are read-only

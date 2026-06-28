@@ -1,0 +1,5 @@
+# Managed by Ansible role dns_ntp. Serve time to the air-gapped node over the VLAN.
+# Clock skew silently hangs bootstrap AND breaks SNP attestation, so the bastion serves NTP
+# even before it itself syncs upstream.
+allow {{ vlan_cidr }}
+local stratum 10

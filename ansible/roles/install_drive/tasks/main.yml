@@ -1,0 +1,108 @@
+---
+# install_drive — hard-won fixes #5 + #9.
+# 1. (Re)trigger the netboot via the Latitude reinstall API (NOT a power reboot — a reboot boots
+#    the stale local disk; you must reinstall to re-netboot).
+# 2. openshift-install agent wait-for install-complete; a bootstrap-complete timeout is NON-fatal.
+# 3. ALSO poll `oc get clusterversion` until Available=True / Progressing=False.
+# 4. Add cluster API/console names to the bastion's /etc/hosts so `oc` works there (bastion
+#    resolver uses public DNS, not its own dnsmasq).
+
+# --- (Re)trigger netboot via the Latitude reinstall API (fix #5) ---
+- name: Trigger Latitude reinstall (iPXE re-netboot) for each machine
+  ansible.builtin.uri:
+    url: "{{ latitude_api_base }}/servers/{{ item.server_id }}/reinstall"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ latitude_token }}"
+      Content-Type: "application/vnd.api+json"
+      Accept: "application/vnd.api+json"
+    body_format: json
+    body:
+      data:
+        type: reinstalls
+        attributes:
+          operating_system: ipxe
+          ipxe: "{{ ipxe_url }}"
+    status_code: [200, 201, 202]
+  delegate_to: localhost
+  become: false
+  loop: "{{ machines }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.server_id }})"
+  when: install_trigger_reinstall | bool
+  register: reinstall_result
+
+- name: Note the reinstall was requested
+  ansible.builtin.debug:
+    msg: "Reinstall (iPXE re-netboot) requested for {{ machines | map(attribute='name') | list }}. The node will fetch {{ ipxe_url }}."
+  when: install_trigger_reinstall | bool
+
+# --- Wait for install-complete (bootstrap-complete timeout is NON-fatal, fix #9) ---
+- name: Wait for the Agent-based SNO install to complete (timeout non-fatal)
+  ansible.builtin.command:
+    cmd: openshift-install --dir {{ cluster_assets_dir }} agent wait-for install-complete
+  become: true
+  environment:
+    PATH: "{{ tool_path }}"
+  register: install_wait
+  failed_when: false
+  changed_when: install_wait.rc == 0
+  async: "{{ install_wait_timeout_min | int * 60 }}"
+  poll: 30
+
+- name: Report wait-for install-complete result (non-fatal if it timed out)
+  ansible.builtin.debug:
+    msg: >-
+      wait-for install-complete rc={{ install_wait.rc | default('?') }}.
+      {{ 'Completed.' if install_wait.rc | default(1) == 0
+         else 'Timed out / not yet complete — falling through to clusterversion poll (this is expected for slow bootstraps).' }}
+
+# --- /etc/hosts so oc works on the bastion (fix #9: bastion uses public DNS, not its dnsmasq) ---
+- name: Add cluster API/console names to the bastion /etc/hosts
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE coco cluster records ({{ cluster_name }})"
+    block: |
+      {% for m in machines if m.role == 'master' %}
+      {{ m.vlan_ip }} api.{{ cluster_name }}.{{ base_domain }}
+      {{ m.vlan_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
+      {{ m.vlan_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}
+      {{ m.vlan_ip }} oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}
+      {% endfor %}
+  become: true
+
+# --- Poll clusterversion until Available=True / Progressing=False (fix #9) ---
+- name: Poll clusterversion until Available=True and Progressing=False
+  ansible.builtin.command:
+    cmd: >-
+      oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig
+      get clusterversion version
+      -o jsonpath={range .status.conditions[*]}{.type}={.status};{end}
+  become: true
+  environment:
+    PATH: "{{ tool_path }}"
+  register: cv_poll
+  changed_when: false
+  failed_when: false
+  retries: "{{ clusterversion_poll_retries }}"
+  delay: "{{ clusterversion_poll_delay }}"
+  until: >-
+    cv_poll.rc == 0
+    and 'Available=True' in cv_poll.stdout
+    and 'Progressing=False' in cv_poll.stdout
+
+- name: Assert the cluster reached Available=True / Progressing=False
+  ansible.builtin.assert:
+    that:
+      - cv_poll.rc == 0
+      - "'Available=True' in cv_poll.stdout"
+      - "'Progressing=False' in cv_poll.stdout"
+    fail_msg: "Cluster did not reach Available=True/Progressing=False. Last conditions: {{ cv_poll.stdout | default('(no oc output)') }}"
+    success_msg: "SNO cluster is up: clusterversion Available=True, Progressing=False."
+
+- name: Print kubeconfig + console hints
+  ansible.builtin.debug:
+    msg:
+      - "KUBECONFIG (on bastion): {{ cluster_assets_dir }}/auth/kubeconfig"
+      - "kubeadmin password: {{ cluster_assets_dir }}/auth/kubeadmin-password"
+      - "Console: https://console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}"

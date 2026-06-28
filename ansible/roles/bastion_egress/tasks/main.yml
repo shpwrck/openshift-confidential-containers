@@ -1,0 +1,85 @@
+---
+# bastion_egress — hard-won fix #1.
+#
+# A fresh Latitude bastion's IPv6 egress to quay's CDN blackholes large oc-mirror blobs
+# ("unexpected EOF"). oc-mirror is a Go binary, so /etc/gai.conf IPv4-preference is IGNORED —
+# we must REMOVE IPv6 reachability, clamp the IPv4 default-route MTU, and add an nftables
+# OUTPUT-chain SYN MSS clamp. Run this BEFORE the mirror push. All tasks are idempotent.
+
+- name: Check for an IPv6 default route
+  ansible.builtin.command: ip -6 route show default
+  register: egress_v6_default
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Drop the IPv6 default route (oc-mirror v6 CDN egress blackholes large blobs)
+  ansible.builtin.command: ip -6 route del default
+  become: true
+  when: egress_v6_default.stdout | length > 0
+  register: egress_v6_del
+  changed_when: egress_v6_del.rc == 0
+  # If multiple v6 defaults or none-after-recheck, don't fail the play.
+  failed_when:
+    - egress_v6_del.rc != 0
+    - "'No such process' not in (egress_v6_del.stderr | default(''))"
+
+- name: Read the current IPv4 default route
+  ansible.builtin.command: ip -4 route show default
+  register: egress_v4_default
+  changed_when: false
+  become: true
+
+- name: Set the IPv4 default-route MTU to {{ bastion_egress_mtu }}
+  ansible.builtin.command: >-
+    ip route change {{ egress_v4_default.stdout_lines[0] | regex_replace('\s+mtu\s+\d+', '') }}
+    mtu {{ bastion_egress_mtu }}
+  become: true
+  when:
+    - egress_v4_default.stdout_lines | length > 0
+    - ('mtu ' ~ bastion_egress_mtu) not in egress_v4_default.stdout
+  register: egress_v4_mtu
+  changed_when: egress_v4_mtu.rc == 0
+
+- name: Ensure nftables is installed (for the SYN MSS clamp)
+  ansible.builtin.package:
+    name: nftables
+    state: present
+  become: true
+
+- name: Render the egress MSS-clamp nftables ruleset
+  ansible.builtin.template:
+    src: egress-clamp.nft.j2
+    dest: /etc/nftables/{{ bastion_egress_nft_table }}.nft
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: egress_nft_file
+
+- name: Check whether the egress clamp table is already loaded
+  ansible.builtin.command: nft list table inet {{ bastion_egress_nft_table }}
+  register: egress_nft_loaded
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Load the egress MSS-clamp ruleset (idempotent — flushes table first)
+  ansible.builtin.command: nft -f /etc/nftables/{{ bastion_egress_nft_table }}.nft
+  become: true
+  when: egress_nft_file.changed or egress_nft_loaded.rc != 0
+  register: egress_nft_load
+  changed_when: egress_nft_load.rc == 0
+
+- name: Confirm the SYN MSS clamp rule is present
+  ansible.builtin.command: nft list table inet {{ bastion_egress_nft_table }}
+  register: egress_nft_verify
+  changed_when: false
+  become: true
+
+- name: Assert the SYN MSS clamp is active in the nft ruleset
+  ansible.builtin.assert:
+    that:
+      - "'maxseg size set ' ~ bastion_egress_mss_clamp in egress_nft_verify.stdout"
+    fail_msg: "SYN MSS clamp to {{ bastion_egress_mss_clamp }} not found in nft ruleset — oc-mirror large blobs may EOF."
+    success_msg: "Egress hardened: IPv6 default removed, v4 MTU {{ bastion_egress_mtu }}, SYN MSS clamp {{ bastion_egress_mss_clamp }}."

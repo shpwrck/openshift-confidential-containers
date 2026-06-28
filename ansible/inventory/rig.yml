@@ -1,0 +1,21 @@
+---
+# Inventory for the Latitude SNO rig (single bastion + single SNP node).
+#
+# PORTABILITY: the SNP node is NOT an Ansible-managed host during install — it is
+# provisioned by Terraform and netbooted via the Latitude API, so it has no SSH entry
+# here. Node identity (server id, MACs) lives in group_vars under the `machines` LIST,
+# which is what makes the multi-node customer cluster a vars change rather than a rewrite.
+#
+# The two real connection targets are:
+#   - bastion : the admin/mirror host we SSH into to run the OpenShift install kit.
+#   - localhost (implicit) : used for Latitude API calls (discover / reinstall).
+all:
+  children:
+    bastions:
+      hosts:
+        bastion:
+          # FILL via `terraform -chdir=infra/latitude/bastion output -raw bastion_public_ipv4`,
+          # or override on the CLI: -e bastion_ansible_host=<ip>
+          ansible_host: "{{ bastion_ansible_host | default('REPLACE_WITH_BASTION_PUBLIC_IPV4') }}"
+          ansible_user: "{{ bastion_ssh_user | default('rocky') }}"
+          ansible_ssh_private_key_file: "{{ bastion_ssh_key | default(omit) }}"

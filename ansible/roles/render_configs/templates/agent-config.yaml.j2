@@ -1,0 +1,57 @@
+{{ '#' }} Rendered by Ansible role render_configs — DISCONNECTED SNO agent-config.
+{{ '#' }} additionalNTPSources lives HERE (the installer drops it from install-config — fix #3).
+{{ '#' }} VLAN-only nmstate: the parent NIC has ipv4/ipv6 DISABLED; the tagged VLAN child carries
+{{ '#' }} the node's private IP and reaches the mirror over the air gap. MACs are discovered at
+{{ '#' }} runtime (parent_mac), never hardcoded.
+apiVersion: v1beta1
+kind: AgentConfig
+metadata:
+  name: {{ cluster_name }}
+rendezvousIP: {{ node_vlan_ip }}
+bootArtifactsBaseURL: {{ boot_artifacts_base_url }}
+additionalNTPSources:
+{% for ntp in additional_ntp_sources %}
+  - {{ ntp }}
+{% endfor %}
+hosts:
+{% for m in machines %}
+  - hostname: {{ m.name }}
+    role: {{ m.role }}
+    rootDeviceHints:
+      deviceName: {{ m.root_device }}
+    interfaces:
+      - name: {{ m.parent_if }}
+        macAddress: {{ m.parent_mac }}
+    networkConfig:
+      interfaces:
+        - name: {{ m.parent_if }}
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: false
+          ipv6:
+            enabled: false
+        - name: {{ m.parent_if }}.{{ vlan_vid }}
+          type: vlan
+          state: up
+          vlan:
+            base-iface: {{ m.parent_if }}
+            id: {{ vlan_vid }}
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: {{ m.vlan_ip }}
+                prefix-length: {{ vlan_prefix }}
+          ipv6:
+            enabled: false
+      dns-resolver:
+        config:
+          server:
+            - {{ bastion_vlan_ip }}
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: {{ bastion_vlan_ip }}
+            next-hop-interface: {{ m.parent_if }}.{{ vlan_vid }}
+{% endfor %}

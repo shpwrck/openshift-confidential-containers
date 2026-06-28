@@ -1,0 +1,11 @@
+# Managed by Ansible role dns_ntp. Cluster DNS records served over the rig VLAN.
+# The bastion is the node's resolver (agent-config dns-resolver -> {{ bastion_vlan_ip }}); the
+# /etc/hosts trick does NOT survive into RHCOS, so api/api-int/*.apps must resolve via dnsmasq.
+{% for m in machines %}
+{% if m.role == 'master' %}
+host-record=api.{{ cluster_name }}.{{ base_domain }},{{ m.vlan_ip }}
+host-record=api-int.{{ cluster_name }}.{{ base_domain }},{{ m.vlan_ip }}
+{% endif %}
+{% endfor %}
+# Wildcard apps route to the (single) ingress node. Multi-node: point at the ingress VIP instead.
+address=/apps.{{ cluster_name }}.{{ base_domain }}/{{ node_vlan_ip }}

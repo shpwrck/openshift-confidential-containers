@@ -1,0 +1,12 @@
+---
+# Whether to (re)trigger the netboot via the Latitude reinstall API before waiting. A plain
+# power reboot boots the stale local disk — you MUST reinstall to re-netboot (hard-won fix #5).
+install_trigger_reinstall: true
+
+# wait-for install-complete timeout (minutes). A bootstrap-complete timeout is treated as
+# NON-fatal (fix #9) — we fall through to polling clusterversion.
+install_wait_timeout_min: 90
+
+# clusterversion poll: total attempts * delay should comfortably exceed a slow SNO install.
+clusterversion_poll_retries: 60
+clusterversion_poll_delay: 60
