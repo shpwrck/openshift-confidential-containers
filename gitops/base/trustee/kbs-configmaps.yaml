@@ -51,6 +51,13 @@ data:
         type = "LocalJson"
         file_path = "/opt/confidential-containers/rvps/reference-values/reference-values.json"
 
+      # Air-gap SEV-SNP: read VCEK from the local OfflineStore (mounted via
+      # KbsConfig.kbsLocalCertCacheSpec), NOT the AMD KDS. Default is [KDS]; we omit KDS so the
+      # verifier never reaches out. (The OSC AllInOne inline-TOML form of this is UNDOCUMENTED
+      # upstream — the cert-cache doc only covers the docker/JSON as-config method. Verifying live.)
+      [attestation_service.verifier_config.snp_verifier]
+      vcek_sources = [{ type = "OfflineStore" }]
+
     [[plugins]]
     name = "resource"
     type = "LocalFs"
