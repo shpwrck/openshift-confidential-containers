@@ -7,3 +7,10 @@ resources:
   - ../../base/workloads
 # SNO specifics: single replica, no node anti-affinity, ClusterIP/insecure-HTTP friendly for
 # early rungs. Add patches here as bases are populated.
+#
+# CROSS-CLUSTER (separate Trustee / third server) — initdata points the in-CVM agents at the
+# external KBS Route. Left commented ON PURPOSE: a placeholder annotation makes attestation fail
+# confusingly. Enable only after: third server up -> KBS Route (../sno-trustee/kbs-route.yaml) ->
+# fill+encode initdata (scripts/encode-initdata.sh) into initdata-patch.yaml -> `make gen-rvps`.
+# patches:
+#   - path: initdata-patch.yaml

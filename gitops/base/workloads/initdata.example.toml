@@ -1,0 +1,58 @@
+# Portable initdata STRUCTURE for the separate-Trustee (cross-cluster) topology.
+#
+# This is a REFERENCE artifact (like trustee/secret-stubs.example.yaml) — it is NOT applied by
+# kustomize. It documents the one piece that changes when the verifier moves OFF the confidential
+# worker onto its own cluster (the third server): the worker's in-CVM agents must reach the
+# SEPARATE Trustee's KBS over a Route, not an in-cluster ClusterIP.
+#
+# Lifecycle:
+#   1. Fill __KBS_URL__ with the third server's KBS Route (see overlays/sno-trustee/kbs-route.yaml)
+#      and __TRUSTEE_CA_PEM__ with that cluster's serving CA (the issuer in trustee/issuers.yaml).
+#   2. Encode:  scripts/encode-initdata.sh encode <filled.toml>   -> gzip+base64 string.
+#   3. Put the string in the pod annotation io.confidentialcontainers.org/initdata
+#      (see overlays/sno-workers/initdata-patch.yaml).
+#   4. The TOML is HARDWARE-MEASURED into HOST_DATA (32 bytes / sha256 for SNP). ANY edit changes
+#      the measurement, so Veritas RVPS (make gen-rvps) must be regenerated AFTER initdata is final
+#      — otherwise the KBS logs "measurement mismatch" and withholds the secret.
+#
+# VERIFY the exact schema (table/field names) against the OSC 1.12 / Trustee 1.1 guest-components
+# templates before first use — guest-components versions have renamed these keys historically.
+algorithm = "sha256"          # VERIFY: SNP HOST_DATA is 32 bytes -> sha256 (NOT sha384).
+version = "0.1.0"             # VERIFY against the initdata spec shipped with OSC 1.12.
+
+[data]
+
+# Attestation Agent — the CVM->KBS attestation channel. ONE proxy lives here (the CVM does NOT
+# inherit the cluster proxy); the Trustee pod's own egress proxy is set separately via KbsEnvVars.
+"aa.toml" = '''
+[token_configs]
+[token_configs.kbs]
+url = "__KBS_URL__"              # FILL: https Route of the SEPARATE Trustee (third server).
+# TLS to the external Route: pin the Trustee cluster's serving CA. Passthrough vs re-encrypt is a
+# route-model decision (docs/design/customer-scoping.md) — the cert pinned here must match it.
+cert = """
+__TRUSTEE_CA_PEM__
+"""
+'''
+
+# Confidential Data Hub — resource fetch (rung a secret) + image pull (rungs b/c). Same KBS URL.
+"cdh.toml" = '''
+[kbc]
+name = "cc_kbc"
+url = "__KBS_URL__"              # FILL: same external Trustee KBS Route as aa.toml.
+kbs_cert = """
+__TRUSTEE_CA_PEM__
+"""
+
+# Air-gap image pull goes to the bastion mirror, NOT the internet. The mirror registry CA must be
+# carried as SEPARATE array elements (a multi-cert bundle in one string fails to parse in-guest).
+# image_pull_proxy is set only if the CVM needs a proxy to reach the mirror (usually not on-VLAN).
+# [image]
+# image_pull_proxy = ""          # VERIFY: only if the mirror is not directly reachable from the CVM.
+'''
+
+# Optional agent policy carried in initdata (kept permissive here; restrict in rung c hardening).
+"policy.rego" = '''
+package agent_policy
+default allow := true
+'''

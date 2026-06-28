@@ -11,6 +11,17 @@ metadata:
 # For SNO there is exactly one host, so rendezvousIP == that host's IP.
 rendezvousIP: 192.168.1.10         # FILL: the node's static IPv4 (inside machineNetwork)
 
+# iPXE boot path only: where the node fetches kernel/initrd/rootfs at boot. The agent installer
+# bakes this into the generated boot-artifacts/agent.x86_64.ipxe. The node runs iPXE over its
+# PUBLIC NIC before nmstate brings up the VLAN, so this MUST be publicly reachable — point it at
+# the bastion's PUBLIC IP:8080 (where serve-boot-artifacts.sh publishes). Omit for the ISO path.
+bootArtifactsBaseURL: http://203.0.113.10:8080   # FILL: http://<bastion_public_ipv4>:8080
+
+# Air-gapped NTP — MUST live here (NOT install-config, which silently drops it). Clock skew
+# hangs bootstrap. Point at the bastion's chrony on the VLAN.
+additionalNTPSources:
+  - 192.168.66.10                  # FILL: bastion VLAN IP (= `terraform output bastion_vlan_ip`)
+
 hosts:
   - hostname: sno-coco-node        # FILL: node hostname
     role: master
@@ -23,7 +34,12 @@ hosts:
     # NIC the installer matches this host config to. Must be the boot/data interface MAC.
     interfaces:
       - name: eno1                  # FILL: interface name as seen by RHCOS (e.g. eno1, ens1f0)
-        macAddress: 00:00:00:00:00:00   # FILL: real NIC MAC (do NOT guess — read from BIOS/IPMI/`ip link`)
+        # FILL: real NIC MAC. WARNING: MACs are PER PHYSICAL UNIT — a re-provision from the
+        # provider pool gives a DIFFERENT machine with DIFFERENT MACs even at the same plan/site.
+        # NEVER reuse a remembered MAC; discover it at runtime (Latitude servers-get interfaces,
+        # or `ip link` on the booted node). A wrong MAC = host networkConfig silently NOT applied
+        # => VLAN never comes up => "Cannot access Rendezvous Host". (Hit + fixed on metal.)
+        macAddress: 00:00:00:00:00:00
 
     # Static networking as nmstate. Every address/route/DNS below is a placeholder.
     #

@@ -1,0 +1,20 @@
+# Worker side of the cross-cluster (separate-Trustee) wiring: point the confidential pod's
+# in-CVM agents at the THIRD SERVER's KBS Route via initdata.
+#
+# Enable by adding to overlays/sno-workers/kustomization.yaml:
+#   patches:
+#     - path: initdata-patch.yaml
+# It is left OUT of the default resources on purpose: until the third server exists and the
+# initdata is ENCODED (and the TOML's measured bytes are pinned into Veritas RVPS), applying a
+# placeholder annotation would just make attestation fail confusingly. So: stand up the third
+# server -> fill+encode initdata.example.toml -> paste below -> enable the patch -> regen RVPS.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rung-a-secret
+  namespace: default            # VERIFY: keep in sync with the pod's namespace per overlay.
+  annotations:
+    # FILL: output of `scripts/encode-initdata.sh encode <filled initdata.toml>`.
+    # The TOML inside must carry the separate Trustee's KBS Route URL (see sno-trustee/kbs-route.yaml)
+    # and that cluster's serving CA. Changing this value REQUIRES re-running `make gen-rvps`.
+    io.confidentialcontainers.org/initdata: __FILL_ENCODED_INITDATA__

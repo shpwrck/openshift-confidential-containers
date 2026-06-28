@@ -32,20 +32,23 @@ platform:
   none: {}                         # bare metal, no platform integration (matches infra/latitude rig)
 
 # Air-gapped time source: the node can't reach public NTP, and clock skew silently hangs
-# bootstrap AND breaks SNP attestation. Point at the bastion (it runs chrony on the VLAN).
-additionalNTPSources:
-  - 192.168.66.10                  # FILL: bastion VLAN IP (= `terraform output bastion_vlan_ip`)
+# bootstrap AND breaks SNP attestation.
+# NOTE: additionalNTPSources does NOT belong here — the agent-based installer drops it from
+# install-config as an unknown field (logs "unknown field additionalNTPSources" and ignores it),
+# leaving the node with NO time source. Put it in agent-config.yaml instead. (Verified on metal.)
 
 # --- DISCONNECTED / AIR-GAP ESSENTIALS -------------------------------------------------
-# Point both OCP release repos at the bastion mirror. These must match what oc-mirror v2
-# wrote (and what IDMS/imageDigestSources the cluster will also carry post-install).
+# Point both OCP release repos at the bastion mirror. These paths MUST match what oc-mirror v2
+# actually wrote — reconcile against the emitted cluster-resources/idms-oc-mirror.yaml every run.
+# oc-mirror v2 uses an /openshift/release[-images] layout (NOT a source-preserving layout):
+#   ocp-v4.0-art-dev -> <mirror>/openshift/release ;  ocp-release -> <mirror>/openshift/release-images
 imageDigestSources:
-  - source: quay.io/openshift-release-dev/ocp-release
-    mirrors:
-      - MIRROR_REGISTRY/openshift-release-dev/ocp-release   # FILL: e.g. bastion.example.com:8443/openshift-release-dev/ocp-release
   - source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
     mirrors:
-      - MIRROR_REGISTRY/openshift-release-dev/ocp-v4.0-art-dev   # FILL: same mirror host/path prefix
+      - MIRROR_REGISTRY/openshift/release          # FILL: e.g. mirror.rig.local:8443/openshift/release
+  - source: quay.io/openshift-release-dev/ocp-release
+    mirrors:
+      - MIRROR_REGISTRY/openshift/release-images   # FILL: e.g. mirror.rig.local:8443/openshift/release-images
 
 # CA that signs the bastion mirror registry's TLS cert. Paste the PEM, indented under the
 # block scalar (keep the leading two-space indent on every line).

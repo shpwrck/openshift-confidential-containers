@@ -3,4 +3,7 @@ kind: Kustomization
 # Secondary rig Trustee cluster (stood up once node-0 SNP host is proven).
 resources:
   - ../../base/trustee
+  - kbs-route.yaml          # expose KBS off this (third) server so the worker cluster can reach it
 # Rig Trustee: self-signed certs, OfflineStore seeded from the rig's own VCEK.
+# Cross-cluster: kbs-route.yaml host must also be added to the KBS cert SAN in base/trustee/issuers.yaml,
+# and pasted (with this cluster's CA) into the worker initdata (../sno-workers/initdata-patch.yaml).

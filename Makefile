@@ -36,6 +36,17 @@ agent-image: ## Build the agent ISO from $(ASSETS) (fill install/agent-config fi
 	#         mirrored release (install/README.md step 3), not the public binary.
 	$(INSTALL) --dir $(ASSETS) agent create image
 
+.PHONY: pxe-files
+pxe-files: ## Phase 3 (iPXE): build agent PXE/iPXE boot artifacts into $(ASSETS)/boot-artifacts
+	# FILL: $(ASSETS)/{install-config,agent-config}.yaml first, AND set agent-config
+	#       bootArtifactsBaseURL to where serve-boot-artifacts.sh publishes (bastion pub IP:8080).
+	# The node boots iPXE over its PUBLIC NIC, so the base URL must be publicly reachable.
+	$(INSTALL) --dir $(ASSETS) agent create pxe-files
+
+.PHONY: serve-boot-artifacts
+serve-boot-artifacts: ## Phase 3 (iPXE): publish $(ASSETS)/boot-artifacts over Range-capable HTTP :8080
+	./scripts/serve-boot-artifacts.sh "$(ASSETS)/boot-artifacts"
+
 .PHONY: install-wait
 install-wait: ## Wait for the Agent-based SNO install to finish (kubeconfig -> $(ASSETS)/auth)
 	$(INSTALL) --dir $(ASSETS) agent wait-for install-complete

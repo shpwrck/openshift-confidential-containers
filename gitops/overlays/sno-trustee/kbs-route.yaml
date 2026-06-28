@@ -1,0 +1,28 @@
+# Trustee side of the cross-cluster wiring: expose KBS OFF the verifier cluster so the separate
+# confidential-worker cluster can reach it. With Trustee in-cluster (rung a–c on one SNO) the
+# worker uses the ClusterIP directly and this Route is unused; the THIRD SERVER topology needs it.
+#
+# Pairing checklist when the third server exists:
+#   - KbsConfig.spec.kbsServiceType stays ClusterIP (the Service this Route targets).  # VERIFY svc name/port.
+#   - The Route host below MUST be added to the KBS serving cert SAN in trustee/issuers.yaml
+#     (it currently FILLs "add the external Route host") or TLS fails with an x509 SAN error.
+#   - Put this same https host (+ that cluster's CA) into the worker initdata
+#     (gitops/base/workloads/initdata.example.toml -> overlays/sno-workers/initdata-patch.yaml).
+#   - TLS model: passthrough (cert terminates in KBS pod) vs re-encrypt — must match the cert
+#     pinned in initdata (docs/design/customer-scoping.md). Passthrough shown below.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kbs
+  namespace: trustee-operator-system
+spec:
+  host: kbs.apps.sno-trustee.coco.lab.local   # FILL: the third server's apps domain.
+  to:
+    kind: Service
+    name: kbs-service                          # VERIFY: the Service the trustee-operator creates for KBS.
+    weight: 100
+  port:
+    targetPort: kbs-port                       # VERIFY: KBS service port name (insecure_http=8080 in base).
+  tls:
+    termination: passthrough                   # VERIFY: passthrough vs reencrypt per the route model.
+  wildcardPolicy: None
