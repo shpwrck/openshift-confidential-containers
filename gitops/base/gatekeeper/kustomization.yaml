@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Gatekeeper operator + (after CSV) a Gatekeeper CR with mutation enabled and the CoCo
+# memory-resource Assign mutation. CR + Assign are added once the CRDs exist (verified live).
+resources:
+  - operator.yaml
+  - gatekeeper-cr.yaml      # apply after the operator CSV is Succeeded (registers mutations CRDs)
+  - assign-coco-mem.yaml    # apply after the Gatekeeper CR is up (Assign CRD must exist)

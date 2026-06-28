@@ -35,6 +35,12 @@ mirror:
         - name: openshift-cert-manager-operator
           channels:
             - name: stable-v1   # VERIFY: cert-manager channel (often stable-v1)
+        # Gatekeeper (OPA) — RH-supported via the ACM/governance family. Used to MUTATE CoCo pods'
+        # memory requests/limits (kata-cc needs limit >= default_memory + 256Mi or the host OOM-kills
+        # the CVM). Confirmed in redhat-operator-index:v4.20 (default channel stable -> v3.21.0).
+        - name: gatekeeper-operator-product
+          channels:
+            - name: stable
   additionalImages:
     # Pinned to digests for air-gap reproducibility (tags float; the mirror must be a fixed
     # bill of materials). Resolved 2026-06-26 via `oc image info <ref> --filter-by-os=linux/amd64`;
