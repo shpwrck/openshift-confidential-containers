@@ -23,8 +23,15 @@
 set -euo pipefail
 
 OUT="${OUT:-./vcek-bundle}"
-TOOLS_IMG="${TOOLS_IMG:-quay.io/openshift_sandboxed_containers/coco-tools:1.12}"
+TOOLS_IMG="${TOOLS_IMG:-quay.io/openshift_sandboxed_containers/coco-tools@sha256:89c219d2c7cb8359e8cc86605df1d31ce3be0f2565683b8bff882dba0c8e2605}"
+PODMAN_AUTHFILE="${PODMAN_AUTHFILE:-/var/lib/kubelet/config.json}"
 KDS_HOST="${KDS_HOST:-kdsintf.amd.com}"
+PATH="/usr/local/bin:${PATH}"
+export PATH
+
+if [[ -z "${KUBECONFIG:-}" && -r /opt/install/cluster-assets/auth/kubeconfig ]]; then
+  export KUBECONFIG="/opt/install/cluster-assets/auth/kubeconfig"
+fi
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -50,8 +57,9 @@ mkdir -p "${OUT}"
 
 # Run a command in a privileged coco-tools container on the node, via `oc debug node`.
 on_node() {  # on_node <shell-command-string>
+  local podman_args=(run --rm --authfile "${PODMAN_AUTHFILE}" --privileged -v /dev:/dev)
   oc debug "node/${NODE}" -- chroot /host \
-    podman run --rm --privileged -v /dev:/dev "${TOOLS_IMG}" bash -c "$1"
+    podman "${podman_args[@]}" "${TOOLS_IMG}" bash -c "$1"
 }
 
 # Socket count — one VCEK per physical socket. VERIFY the field on the metal (`lscpu`).
@@ -62,9 +70,13 @@ echo ">> ${NODE}: ${SOCKETS} socket(s)"
 
 created=0
 for ((s=0; s<SOCKETS; s++)); do
-  # VERIFY snphost's exact multi-socket invocation on the metal; --socket is assumed.
-  url="$(on_node "/tools/snphost show vcek-url --socket ${s} 2>/dev/null" | grep -oE 'https://[^[:space:]]+' | head -1)" \
-    || die "snphost show vcek-url failed on socket ${s}"
+  # snphost 1.12 has no --socket flag; only use it when a multi-socket host requires it.
+  vcek_cmd="/tools/snphost show vcek-url"
+  if [[ "${SOCKETS}" -gt 1 ]]; then
+    vcek_cmd="${vcek_cmd} --socket ${s}"
+  fi
+  vcek_out="$(on_node "${vcek_cmd}" 2>&1)" || die "snphost show vcek-url failed on socket ${s}: ${vcek_out}"
+  url="$(grep -oE 'https://[^[:space:]]+' <<<"${vcek_out}" | head -1)"
   [[ -n "${url}" ]] || die "no VCEK URL returned for socket ${s}"
 
   # hwid is the path segment after the product name; LOWERCASE it (upper-case silently
