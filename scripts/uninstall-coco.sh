@@ -147,6 +147,9 @@ uninstall() {
 	clear_deleting_finalizers kbsconfig.confidentialcontainers.org kbsconfig trustee-operator-system
 	clear_deleting_finalizers nodefeaturediscovery.nfd.openshift.io nfd-instance openshift-nfd
 	clear_deleting_finalizers gatekeeper.operator.gatekeeper.sh gatekeeper
+	for rc in "${runtimeclasses[@]}"; do
+		clear_deleting_finalizers runtimeclass "$rc"
+	done
 
 	log "Uninstall submitted"
 	echo "Run 'make validate-coco-uninstalled' until it reports success. On SNO, MachineConfig cleanup may reboot the node."

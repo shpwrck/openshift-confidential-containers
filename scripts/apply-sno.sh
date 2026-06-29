@@ -57,10 +57,8 @@ snp_label_present() {
 	oc get nodes -l amd.feature.node.kubernetes.io/snp=true --no-headers 2>/dev/null | grep -q .
 }
 
-runtimeclasses_present() {
-	oc get runtimeclass kata >/dev/null 2>&1 &&
-		oc get runtimeclass kata-cc >/dev/null 2>&1 &&
-		[[ "$(oc get runtimeclass kata-cc -o jsonpath='{.handler}' 2>/dev/null)" == "kata-snp" ]]
+runtimeclass_present() {
+	[[ "$(oc get runtimeclass kata-cc -o jsonpath='{.handler}' 2>/dev/null)" == "kata-snp" ]]
 }
 
 sno_baseline_ok() {
@@ -97,6 +95,7 @@ wait_until "SNO baseline" sno_baseline_ok || { cat /tmp/apply-sno-baseline.log >
 
 log "Operator subscriptions"
 oc apply -k gitops/base/operators
+oc apply -f gitops/base/gatekeeper/operator.yaml
 wait_until "operator CSVs Succeeded" all_operator_csvs_succeeded
 
 log "NFD operands and SNP label"
@@ -105,7 +104,7 @@ wait_until "NFD SEV-SNP node label" snp_label_present
 
 log "KataConfig and runtime classes"
 oc apply -k gitops/base/kataconfig
-wait_until "kata/kata-cc runtime classes" runtimeclasses_present
+wait_until "kata-cc runtime class" runtimeclass_present
 wait_until "SNO baseline after KataConfig rollout" sno_baseline_ok || { cat /tmp/apply-sno-baseline.log >&2; exit 1; }
 
 log "Gatekeeper instance and CoCo memory policy"
@@ -116,6 +115,6 @@ apply_constraint_template_then_instance
 
 log "SNO worker install validation"
 wait_until "SNO baseline final" sno_baseline_ok || { cat /tmp/apply-sno-baseline.log >&2; exit 1; }
-wait_until "kata/kata-cc runtime classes final" runtimeclasses_present
+wait_until "kata-cc runtime class final" runtimeclass_present
 echo "SNO CoCo worker-side install OK"
 echo "Next: make apply-trustee && make apply-rung-a"

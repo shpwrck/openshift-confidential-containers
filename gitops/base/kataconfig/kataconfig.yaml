@@ -9,10 +9,11 @@
 #     (SEV-SNP) is auto-detected from the NFD label
 #     `feature.node.kubernetes.io/cpu-cpuid.SEV_SNP=true` (Gate 2) — do NOT hardcode it.
 #
-# Outcome (Gate 3) — the operator creates two RuntimeClasses:
-#   - `kata`     : plain Kata (Step 1, non-confidential isolation).
-#   - `kata-cc`  : Confidential Containers; on SNP its handler resolves to `kata-snp`
-#                  (would be `kata-tdx` on Intel TDX). Workloads use runtimeClassName: kata-cc.
+# Outcome (Gate 3) — the operator creates the Confidential Containers RuntimeClass:
+#   - `kata-cc`  : on SNP its handler resolves to `kata-snp` (would be `kata-tdx`
+#                  on Intel TDX). Workloads use runtimeClassName: kata-cc.
+# Some OSC releases/environments may also create plain `kata`; the install gate only requires
+# the confidential runtime because that is what the workload uses.
 apiVersion: kataconfiguration.openshift.io/v1
 kind: KataConfig
 metadata:

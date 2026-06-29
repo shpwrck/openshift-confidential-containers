@@ -99,17 +99,17 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 
 ---
 
-## Phase 4 — Operators (NFD → cert-manager → OSC → Trustee) + KataConfig (node reboot)
-**Goal:** four CSVs Succeeded, node back Ready after a self-reboot, `kata` + `kata-cc` RuntimeClasses present. **~30–45 min mixed.**
+## Phase 4 — Operators (NFD -> cert-manager -> OSC -> Trustee) + KataConfig (node reboot)
+**Goal:** four CSVs Succeeded, node back Ready after a self-reboot, `kata-cc` RuntimeClass present with handler `kata-snp`. **~30-45 min mixed.**
 
 | Step | What happens / command |
 |---|---|
 | **RHCOS SNP host gate** | `make verify-snp-host NODE=<node-name>` — checks PSP SEV-SNP API, RMP table, no Error 0x3, `kvm_amd sev_snp=Y`, `/dev/sev`. **🛑 HARD STOP — do not apply any GitOps until green.** Rung-0 only proved the raw Rocky kernel; this proves the *RHCOS* kernel. |
-| **Reconcile CRD field-name guesses (BLOCKING)** | `gitops/base/**` was authored from docs, **not live CRDs** — the most likely first bite. The moment OSC/Trustee CSVs install: `oc explain kataconfig.spec` (CoCo gate is `enableConfidentialCompute` in OSC 1.12), `oc explain kbsconfig.spec` (incl. `kbsLocalCertCacheSpec` @ trustee v1.1). Correct manifests **before** trusting overlays. |
+| **Reconcile CRD field-name guesses (BLOCKING)** | The moment OSC/Trustee CSVs install: `oc explain kataconfig.spec` (OSC 1.12 uses the `osc-feature-gates` ConfigMap for CoCo; there is no `enableConfidentialCompute` field), `oc explain kbsconfig.spec` (incl. `kbsLocalCertCacheSpec` @ trustee v1.1). Correct manifests **before** trusting overlays. |
 | Apply the workers overlay | `make apply-sno` (`oc apply -k gitops/overlays/sno-workers`). Wait: `oc get csv -A | grep -Ei 'nfd|cert-manager|sandboxed|trustee'` until all **Succeeded**. Order NFD→cert-manager→OSC→Trustee is load-bearing (enforced by `subscriptions.yaml`). **VERIFY** mirrored CatalogSource name/channels. **NFD must label the node `SEV_SNP`** or KataConfig binds the wrong handler — **do NOT hand-label** (masks the fault). |
 | KataConfig reboots the single node | Applying `kataconfig.yaml` triggers an MCP rollout that **self-reboots** the SNO (no spare node — wait it out): `oc get mcp -w`. |
-| Verify RuntimeClasses (the proof) | `oc get runtimeclass` → expect `kata` AND `kata-cc`; `oc get runtimeclass kata-cc -o jsonpath='{.handler}'` must be **`kata-snp`**. |
-| **🛑 STOP-gate** | Four CSVs Succeeded, node Ready post-reboot, `kata` + `kata-cc` (handler `kata-snp`) present. *If handler ≠ `kata-snp`, KataConfig ran before NFD labeled — re-apply KataConfig after the label exists.* |
+| Verify RuntimeClass (the proof) | `oc get runtimeclass` -> expect `kata-cc` (plain `kata` is optional by OSC release/environment); `oc get runtimeclass kata-cc -o jsonpath='{.handler}'` must be **`kata-snp`**. |
+| **STOP-gate** | Four CSVs Succeeded, node Ready post-reboot, `kata-cc` present with handler `kata-snp`. *If handler != `kata-snp`, KataConfig ran before NFD labeled -- re-apply KataConfig after the label exists.* |
 
 ---
 
