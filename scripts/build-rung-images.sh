@@ -15,7 +15,7 @@ RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs://${RUNG_B_KEY_PATH}}"
 RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-${ARTIFACT_DIR}/rung-b-image.key}"
 COCO_KEYPROVIDER_IMAGE="${COCO_KEYPROVIDER_IMAGE:-coco-keyprovider}"
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-}"
-CONTAINER_VOLUME_SUFFIX="${CONTAINER_VOLUME_SUFFIX:-:Z}"
+CONTAINER_VOLUME_SUFFIX="${CONTAINER_VOLUME_SUFFIX:-}"
 COSIGN_KEY="${COSIGN_KEY:-${ARTIFACT_DIR}/cosign.key}"
 COSIGN_PUB="${COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
 COSIGN_SIGN_ARGS="${COSIGN_SIGN_ARGS:---yes --tlog-upload=false}"
@@ -33,15 +33,34 @@ need() {
 detect_runtime() {
 	if [[ -n "$CONTAINER_RUNTIME" ]]; then
 		command -v "$CONTAINER_RUNTIME" >/dev/null || die "$CONTAINER_RUNTIME is not on PATH"
+	else
+		if command -v podman >/dev/null; then
+			CONTAINER_RUNTIME=podman
+		elif command -v docker >/dev/null; then
+			CONTAINER_RUNTIME=docker
+		else
+			die "podman or docker is required to run the CoCo keyprovider image"
+		fi
+	fi
+
+	if [[ -z "$CONTAINER_VOLUME_SUFFIX" && "$CONTAINER_RUNTIME" == "podman" ]]; then
+		CONTAINER_VOLUME_SUFFIX=":Z"
+	fi
+}
+
+keyprovider_image_exists() {
+	case "$CONTAINER_RUNTIME" in
+		podman) podman image exists "$COCO_KEYPROVIDER_IMAGE" ;;
+		docker) docker image inspect "$COCO_KEYPROVIDER_IMAGE" >/dev/null 2>&1 ;;
+		*) "$CONTAINER_RUNTIME" image inspect "$COCO_KEYPROVIDER_IMAGE" >/dev/null 2>&1 ;;
+	esac
+}
+
+require_keyprovider_image() {
+	if keyprovider_image_exists; then
 		return
 	fi
-	if command -v podman >/dev/null; then
-		CONTAINER_RUNTIME=podman
-	elif command -v docker >/dev/null; then
-		CONTAINER_RUNTIME=docker
-	else
-		die "podman or docker is required to run the CoCo keyprovider image"
-	fi
+	die "missing CoCo keyprovider image '$COCO_KEYPROVIDER_IMAGE'. Build it from guest-components with: ${CONTAINER_RUNTIME} build -t ${COCO_KEYPROVIDER_IMAGE} -f ./attestation-agent/docker/Dockerfile.keyprovider ."
 }
 
 generate_rung_b_key() {
@@ -162,6 +181,7 @@ need openssl
 need base64
 need cosign
 detect_runtime
+require_keyprovider_image
 
 mkdir -p "$ARTIFACT_DIR"
 generate_rung_b_key

@@ -88,11 +88,18 @@ The repo now carries the dry-run friendly tooling:
 On the bastion or connected host that can push to the mirror:
 
 ```bash
+# one-time, in a checkout of confidential-containers/guest-components:
+podman build -t coco-keyprovider -f ./attestation-agent/docker/Dockerfile.keyprovider .
+
+# then in this repo:
 COSIGN_PASSWORD='<secret>' make build-rung-images
 export RUNG_B_IMAGE=$(jq -r '.rung_b.digest_ref' rung-bc-artifacts/rung-bc-images.json)
 export RUNG_C_IMAGE=$(jq -r '.rung_c.digest_ref' rung-bc-artifacts/rung-bc-images.json)
 export RUNG_C_UNSIGNED_IMAGE=$(jq -r '.rung_c.unsigned_digest_ref' rung-bc-artifacts/rung-bc-images.json)
 ```
+
+If the keyprovider image has a different local name, pass
+`COCO_KEYPROVIDER_IMAGE=<image-name>` to `make build-rung-images`.
 
 Dry-run acceptance:
 
