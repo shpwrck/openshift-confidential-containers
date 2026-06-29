@@ -75,7 +75,8 @@ The repo now carries the dry-run friendly tooling:
     `kbs:///default/image-key/rung-b`.
   - Pushes an unsigned rung-c negative-control image, then pushes rung-c and signs the
     digest ref that will be used by the workload.
-  - Writes `rung-bc-artifacts/rung-bc-images.json` with digest refs and key paths.
+  - Writes `rung-bc-artifacts/rung-bc-images.json` with digest refs, key paths, and non-secret
+    SHA-256 fingerprints for the rung-b key file and rung-c public key file.
   - Writes `rung-bc-artifacts/rung-bc.env`, a sourceable non-secret env file with the digest
     refs and artifact paths needed by the apply and negative-test targets.
 - `scripts/seed-trustee-secrets.sh`

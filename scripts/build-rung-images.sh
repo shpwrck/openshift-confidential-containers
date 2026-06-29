@@ -41,6 +41,17 @@ file_size_bytes() {
 	fi
 }
 
+file_sha256() {
+	local path="$1"
+	if [[ -r "$path" ]]; then
+		sha256sum "$path" | awk '{print $1}'
+	elif command -v sudo >/dev/null && sudo -n test -r "$path" 2>/dev/null; then
+		sudo -n sha256sum "$path" | awk '{print $1}'
+	else
+		die "cannot read $path"
+	fi
+}
+
 require_rung_b_key_size() {
 	local size
 	size="$(file_size_bytes "$RUNG_B_KEY_FILE")"
@@ -205,13 +216,15 @@ sign_rung_c() {
 }
 
 write_manifest() {
-	local b_digest c_digest c_unsigned_digest b_digest_ref c_digest_ref c_unsigned_digest_ref manifest env_file
+	local b_digest c_digest c_unsigned_digest b_digest_ref c_digest_ref c_unsigned_digest_ref b_key_sha c_pub_sha manifest env_file
 	b_digest="$(skopeo inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
 	c_digest="$(skopeo inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
 	c_unsigned_digest="$(skopeo inspect "docker://${RUNG_C_UNSIGNED_IMAGE}" | jq -r '.Digest')"
 	b_digest_ref="$(image_digest_ref "$RUNG_B_IMAGE" "$b_digest")"
 	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
 	c_unsigned_digest_ref="$(image_digest_ref "$RUNG_C_UNSIGNED_IMAGE" "$c_unsigned_digest")"
+	b_key_sha="$(file_sha256 "$RUNG_B_KEY_FILE")"
+	c_pub_sha="$(file_sha256 "$COSIGN_PUB")"
 	manifest="$ARTIFACT_DIR/rung-bc-images.json"
 	jq -n \
 		--arg source "$SOURCE_IMAGE_REF" \
@@ -220,6 +233,7 @@ write_manifest() {
 		--arg rung_b_digest_ref "$b_digest_ref" \
 		--arg rung_b_key_id "$RUNG_B_KEY_ID" \
 		--arg rung_b_key_file "$RUNG_B_KEY_FILE" \
+		--arg rung_b_key_sha256 "$b_key_sha" \
 		--arg rung_c_image "$RUNG_C_IMAGE" \
 		--arg rung_c_digest "$c_digest" \
 		--arg rung_c_digest_ref "$c_digest_ref" \
@@ -227,6 +241,7 @@ write_manifest() {
 		--arg rung_c_unsigned_digest "$c_unsigned_digest" \
 		--arg rung_c_unsigned_digest_ref "$c_unsigned_digest_ref" \
 		--arg cosign_pub "$COSIGN_PUB" \
+		--arg cosign_pub_sha256 "$c_pub_sha" \
 		'{
 			source_image: $source,
 			rung_b: {
@@ -234,7 +249,8 @@ write_manifest() {
 				digest: $rung_b_digest,
 				digest_ref: $rung_b_digest_ref,
 				key_id: $rung_b_key_id,
-				key_file: $rung_b_key_file
+				key_file: $rung_b_key_file,
+				key_sha256: $rung_b_key_sha256
 			},
 			rung_c: {
 				image: $rung_c_image,
@@ -243,7 +259,8 @@ write_manifest() {
 				unsigned_image: $rung_c_unsigned_image,
 				unsigned_digest: $rung_c_unsigned_digest,
 				unsigned_digest_ref: $rung_c_unsigned_digest_ref,
-				cosign_pub: $cosign_pub
+				cosign_pub: $cosign_pub,
+				cosign_pub_sha256: $cosign_pub_sha256
 			}
 		}' > "$manifest"
 	echo "Wrote $manifest"
@@ -262,6 +279,13 @@ write_manifest() {
 if [[ "${1:-}" == "digest-ref" ]]; then
 	[[ "$#" -eq 3 ]] || die "usage: $0 digest-ref <image-ref> <sha256:digest>"
 	image_digest_ref "$2" "$3"
+	exit 0
+fi
+
+if [[ "${1:-}" == "file-sha256" ]]; then
+	[[ "$#" -eq 2 ]] || die "usage: $0 file-sha256 <path>"
+	need sha256sum
+	file_sha256 "$2"
 	exit 0
 fi
 
@@ -293,6 +317,7 @@ need jq
 need openssl
 need base64
 need cosign
+need sha256sum
 configure_cosign_args
 detect_runtime
 require_keyprovider_image

@@ -65,6 +65,95 @@ expect_digest_ref() {
 	[[ "$actual" == "$expected" ]] || die "digest-ref mismatch for $image: got $actual expected $expected"
 }
 
+verify_artifact_file_sha256() {
+	local artifact="$tmpdir/artifact-fingerprint.txt" expected actual
+	printf 'rung artifact fingerprint\n' > "$artifact"
+	expected="$(sha256sum "$artifact" | awk '{print $1}')"
+	actual="$(bash "$REPO_ROOT/scripts/build-rung-images.sh" file-sha256 "$artifact")"
+	[[ "$actual" == "$expected" ]] || die "artifact sha256 mismatch: got $actual expected $expected"
+}
+
+verify_build_manifest_fingerprints() {
+	local bin="$tmpdir/build-manifest-bin" artifacts="$tmpdir/build-manifest-artifacts" manifest
+	local key_sha pub_sha
+	mkdir -p "$bin" "$artifacts"
+	printf '01234567890123456789012345678901' > "$artifacts/rung-b-image.key"
+	printf 'cosign-public-key' > "$artifacts/cosign.pub"
+	printf 'cosign-private-key' > "$artifacts/cosign.key"
+	key_sha="$(sha256sum "$artifacts/rung-b-image.key" | awk '{print $1}')"
+	pub_sha="$(sha256sum "$artifacts/cosign.pub" | awk '{print $1}')"
+
+	cat > "$bin/podman" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "image" && "${2:-}" == "exists" ]]; then
+	exit 0
+fi
+if [[ "${1:-}" == "run" ]]; then
+	exit 0
+fi
+exit 0
+EOF
+	chmod +x "$bin/podman"
+
+	cat > "$bin/skopeo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+	copy) exit 0 ;;
+	inspect)
+		target="${2:-}"
+		if [[ "$target" == dir:*output ]]; then
+			kid_b64="$(printf '{"kid":"%s"}' "$TEST_RUNG_B_KEY_ID" | base64 -w0)"
+			printf '{"LayersData":[{"Annotations":{"org.opencontainers.image.enc.keys.provider.attestation-agent":"%s"}}]}\n' "$kid_b64"
+			exit 0
+		fi
+		case "$target" in
+			*'rung-b:encrypted') digest='sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' ;;
+			*'rung-c:signed') digest='sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' ;;
+			*'rung-c:unsigned') digest='sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' ;;
+			*) digest='sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ;;
+		esac
+		printf '{"Digest":"%s"}\n' "$digest"
+		exit 0
+		;;
+esac
+exit 1
+EOF
+	chmod +x "$bin/skopeo"
+
+	cat > "$bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "sign" && "${2:-}" == "--help" ]]; then
+	printf '%s\n' '      --tlog-upload bool'
+	exit 0
+fi
+exit 0
+EOF
+	chmod +x "$bin/cosign"
+
+	TEST_RUNG_B_KEY_ID="kbs:///default/image-key/rung-b" PATH="$bin:$PATH" \
+		ARTIFACT_DIR="$artifacts" \
+		CONTAINER_RUNTIME=podman \
+		COSIGN_PASSWORD=test-password \
+		SOURCE_IMAGE_REF="dir:/source-image" \
+		RUNG_B_KEY_ID="kbs:///default/image-key/rung-b" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c:unsigned" \
+		bash "$REPO_ROOT/scripts/build-rung-images.sh" >/dev/null
+
+	manifest="$artifacts/rung-bc-images.json"
+	jq -e --arg key_sha "$key_sha" --arg pub_sha "$pub_sha" '
+		.rung_b.key_sha256 == $key_sha and
+		.rung_c.cosign_pub_sha256 == $pub_sha and
+		.rung_b.digest_ref == "mirror.test.local:5000/coco/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" and
+		.rung_c.digest_ref == "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" and
+		.rung_c.unsigned_digest_ref == "mirror.test.local:5000/coco/rung-c@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	' "$manifest" >/dev/null || die "rung-bc manifest did not include expected fingerprints and digest refs"
+}
+
 verify_apply_requires_digest_refs() {
 	local err="$tmpdir/tagged-image.err"
 
@@ -905,6 +994,8 @@ digest="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
+verify_artifact_file_sha256
+verify_build_manifest_fingerprints
 verify_apply_requires_digest_refs
 verify_rung_b_key_size_guard
 verify_manifest_env_emit
