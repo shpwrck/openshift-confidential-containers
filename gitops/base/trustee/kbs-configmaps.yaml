@@ -92,13 +92,43 @@ data:
 ---
 # Attestation policy (Rego) — the EAR appraisal policy. PERMISSIVE in the base.
 # Step 5 swaps to the restrictive EAR policy (hardware/configuration/executable failing checks).
+#
+# PROVEN ON THE RIG 2026-06-29 — two non-obvious requirements, both of which 401'd attestation:
+#  1. The data KEY MUST be `default_cpu.rego`. The trustee operator subPath-mounts this exact key
+#     as .../policies/opa/default_cpu.rego. A different key (e.g. `default.rego`) leaves the
+#     subPath target an EMPTY DIRECTORY → coco-as logs "Failed to read attestation service policy
+#     file: Is a directory (os error 21)" → POST /kbs/v0/attest 401. (GPU path is default_gpu.rego.)
+#  2. The CONTENT MUST be an EAR appraisal policy that emits `trust_claims` (AR4SI tiers), NOT a
+#     simple `allow := true`. The Ear token broker queries trust_claims; `allow` is ignored.
+#     2 = affirming. This base affirms all claims (hardware sig is already verified by coco-as
+#     before this runs); Step 5 tightens (pin measurement / launch-config / policy id).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: attestation-policy
   namespace: trustee-operator-system
 data:
-  default.rego: |
+  default_cpu.rego: |
     package policy
 
-    default allow := true
+    import rego.v1
+
+    default hardware := 2
+    default executables := 2
+    default configuration := 2
+    default file_system := 2
+    default instance_identity := 2
+    default runtime_opaque := 2
+    default storage_opaque := 2
+    default sourced_data := 2
+
+    trust_claims := {
+    	"executables": executables,
+    	"hardware": hardware,
+    	"configuration": configuration,
+    	"file-system": file_system,
+    	"instance-identity": instance_identity,
+    	"runtime-opaque": runtime_opaque,
+    	"storage-opaque": storage_opaque,
+    	"sourced-data": sourced_data,
+    }
