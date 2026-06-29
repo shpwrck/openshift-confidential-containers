@@ -29,6 +29,207 @@ SEV-SNP** (EPYC Genoa / 9004 or newer).
 
 ---
 
+## First-time reader orientation
+
+This guide assumes you know Linux, Kubernetes, and OpenShift operations, but **not**
+Confidential Computing. The important mental model is:
+
+1. A normal container shares the node kernel.
+2. A Kata container runs the pod inside a lightweight VM.
+3. A **Confidential Container** runs that VM as a hardware-protected confidential VM (CVM).
+4. The workload gets secrets only after an external verifier agrees that the CVM was launched
+   with the expected hardware, firmware, guest image, runtime configuration, and policy.
+
+In this repo the hardware protection is **AMD SEV-SNP**. SEV-SNP encrypts and integrity-protects
+guest memory so the host/hypervisor can run the VM but cannot freely inspect or tamper with the
+guest's private memory. The proof mechanism is **remote attestation**: the guest asks the AMD
+Secure Processor for a signed attestation report, Trustee verifies that report, and Trustee
+releases secrets only when policy and reference values match.
+
+Useful background:
+
+- [AMD SEV overview](https://www.amd.com/en/developer/sev.html) — AMD's overview of SEV,
+  SEV-ES, and SEV-SNP.
+- [AMD SEV-SNP attestation slides](https://www.amd.com/content/dam/amd/en/documents/developer/lss-snp-attestation.pdf)
+  — how SNP reports, VCEK certificates, and KDS fit together.
+- [Confidential Containers attestation](https://confidentialcontainers.org/docs/attestation/)
+  — the upstream CoCo attestation model.
+- [Trustee architecture](https://confidentialcontainers.org/docs/attestation/architecture/) —
+  KBS, Attestation Service, RVPS, policies, and resource release.
+- [OpenShift Agent-based Installer 4.20](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing_an_on-premise_cluster_with_the_agent-based_installer/preparing-to-install-with-agent-based-installer)
+  — the installer flow used for disconnected SNO.
+- [OpenShift oc-mirror v2](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/disconnected_environments/about-installing-oc-mirror-v2)
+  — mirroring release payloads, operators, and generated IDMS/ITMS/CatalogSource resources.
+- [OpenShift sandboxed containers 1.12 on bare metal](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/index)
+  — Red Hat's OSC/CoCo bare-metal deployment guide.
+
+### The whole environment in one picture
+
+```mermaid
+flowchart LR
+  subgraph Connected["Connected preparation side"]
+    RH["Red Hat registries\nrelease + operators + images"]
+    AMD["AMD KDS\nVCEK certificates"]
+    Admin["Admin shell\nthis repo checkout"]
+  end
+
+  subgraph Bastion["Persistent bastion"]
+    Mirror["Mirror registry\nOpenShift + operator images"]
+    DNS["dnsmasq\ncluster + mirror names"]
+    NTP["chrony\ntime for install + attestation"]
+    Boot["nginx/iPXE or ISO staging\nsecret-bearing boot artifacts"]
+  end
+
+  subgraph SNO["Air-gapped SEV-SNP node"]
+    RHCOS["RHCOS host\nKVM + Kata"]
+    OCP["Single-node OpenShift\ncontrol plane + worker"]
+    CVM["Confidential workload pod\nkata-cc RuntimeClass"]
+  end
+
+  subgraph Trustee["Trusted verifier side"]
+    KBS["KBS\nresource request endpoint"]
+    AS["Attestation Service\nverifies SNP evidence"]
+    RVPS["RVPS\nreference values"]
+    Policy["OPA policies\nrelease rules"]
+    VCEK["Offline VCEK cache\nno live AMD KDS"]
+  end
+
+  RH -->|"oc-mirror while connected"| Mirror
+  AMD -->|"collect VCEK while connected"| VCEK
+  Admin -->|"render configs + apply GitOps"| OCP
+  Boot -->|"Agent ISO/iPXE boot"| RHCOS
+  Mirror -->|"all image pulls"| OCP
+  DNS -->|"api, api-int, *.apps, mirror"| OCP
+  NTP -->|"stable clock"| OCP
+  OCP --> RHCOS --> CVM
+  CVM -->|"attestation evidence + resource request"| KBS
+  KBS --> AS
+  AS --> RVPS
+  AS --> Policy
+  AS --> VCEK
+  KBS -->|"secret/key only after success"| CVM
+```
+
+The bastion is not just a jump box. It is the node's replacement for the public internet:
+registry, DNS, NTP, and boot artifacts. If the node can reach public registries or AMD KDS
+directly, the air-gap test is not meaningful because it can bypass the cache paths this guide
+is proving.
+
+### Attestation and secret release
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Pod as Pod container
+  participant CDH as CDH/AA inside CVM
+  participant SNP as AMD SEV-SNP firmware
+  participant KBS as Trustee KBS
+  participant AS as Attestation Service
+  participant RVPS as RVPS + policy
+  participant Cache as Offline VCEK cache
+
+  Pod->>CDH: Request kbs:///default/sample
+  CDH->>SNP: Ask for signed attestation report
+  SNP-->>CDH: Report signed by chip-specific VCEK
+  CDH->>KBS: Send evidence and requested resource URI
+  KBS->>AS: Verify evidence
+  AS->>Cache: Load VCEK for this hardware ID
+  AS->>RVPS: Compare measurements and evaluate OPA policy
+  alt Evidence, reference values, and policy match
+    AS-->>KBS: Attestation token / success
+    KBS-->>CDH: Release secret/resource
+    CDH-->>Pod: Workload starts
+  else Anything is missing or wrong
+    AS-->>KBS: Deny
+    KBS-->>CDH: Withhold resource
+    CDH-->>Pod: Init container fails closed
+  end
+```
+
+The important newcomer detail: **attestation is not "does this pod run?"** It is "can an
+independent verifier connect the hardware-rooted report to expected measurements and policy?"
+That is why every rung below has both a happy path and a negative test.
+
+### Vocabulary used throughout this guide
+
+| Term | What it means here | Why you care |
+|------|--------------------|--------------|
+| **TEE** | Trusted Execution Environment. In this guide, the TEE is AMD SEV-SNP. | It is the hardware root for memory protection and attestation. |
+| **CVM** | Confidential VM. Kata launches the pod sandbox as a VM protected by the TEE. | Your pod still looks like Kubernetes, but it boots inside a VM with measured launch state. |
+| **SEV-SNP** | AMD Secure Encrypted Virtualization with Secure Nested Paging. | Protects guest memory and produces signed attestation reports. |
+| **RMP** | Reverse Map Table, firmware-managed memory ownership metadata used by SNP. | If RMP coverage/BIOS is wrong, SNP guests fail before Kubernetes matters. |
+| **VCEK** | Versioned Chip Endorsement Key certificate for a specific AMD chip and TCB version. | Trustee needs it to verify the SNP report signature. Offline installs must cache it. |
+| **KDS** | AMD Key Distribution Service. | Public source for VCEK certs; production air gaps cannot rely on live access to it. |
+| **KBS** | Key Broker Service, the Trustee endpoint clients ask for secrets/resources. | It releases secrets only after attestation succeeds. |
+| **AS** | Attestation Service inside Trustee. | It validates SNP evidence, VCEK, RVPS values, and policy. |
+| **RVPS** | Reference Value Provider Service. | Stores the expected measurements the attestation evidence is compared against. |
+| **CDH/AA** | Confidential Data Hub / Attestation Agent inside the CVM. | Guest-side pieces that collect evidence and fetch KBS resources. |
+| **initdata** | Gzip+base64 TOML passed as a Kata annotation. | Tells the CVM where Trustee is and what resources/policies to use; its bytes are measured. |
+| **RuntimeClass `kata-cc`** | Kubernetes runtime selector for Confidential Containers. | Workloads without this run as ordinary containers or plain Kata, not CoCo. |
+| **SNO** | Single Node OpenShift. | One node is both control plane and worker, so every reboot is visible. |
+| **IDMS/ITMS** | ImageDigestMirrorSet / ImageTagMirrorSet generated by `oc-mirror`. | Tells a live cluster to pull mirrored content instead of public content. |
+
+### What gets created, who consumes it, and why
+
+The fastest way to get lost in disconnected CoCo work is to treat every YAML as "some config."
+Each file below has one consumer and one job.
+
+#### Install-time files
+
+| File or artifact | Created by | Consumed by | Purpose | Newcomer notes |
+|------------------|------------|-------------|---------|----------------|
+| [`install/imageset-config.yaml`](../install/imageset-config.yaml) | You edit the repo template. | `oc-mirror --v2`. | Declares the OpenShift release, operator catalogs, and extra images to copy into the mirror registry. | This is the shopping list for the air gap. If an operator/image is not listed here, the disconnected cluster cannot pull it later. |
+| `~/.docker/config.json` on the bastion | Phase 2.3. | `oc-mirror` and registry clients. | Merges the Red Hat pull secret with mirror registry credentials. | Red Hat creds are for populating the mirror. The node should receive only mirror creds. |
+| `cluster-assets/install-config.yaml` | Copy from [`install/install-config.yaml.tmpl`](../install/install-config.yaml.tmpl). | `openshift-install agent create ...`. | Cluster identity, network ranges, release-image mirror rules, mirror CA, mirror pull secret, SSH key. | Think "what cluster are we installing, and where should it pull release images?" |
+| `cluster-assets/agent-config.yaml` | Copy from [`install/agent-config.yaml.tmpl`](../install/agent-config.yaml.tmpl). | `openshift-install agent create ...`. | Host inventory and nmstate: rendezvous IP, disk, NIC MAC, VLAN child, DNS, routes, NTP. | Think "how does this exact server boot and reach the mirror?" Wrong MAC or missing VLAN means config is ignored or the mirror is unreachable. |
+| `cluster-assets/agent.x86_64.iso` or `agent.x86_64.ipxe` + initrd/rootfs | `openshift-install`. | The bare-metal node firmware/iPXE boot. | Boots the installer with embedded ignition, pull secret, SSH key, and network config. | Treat these artifacts as sensitive because the initrd contains secrets. Stop the boot server after use. |
+| `cluster-assets/auth/kubeconfig` | The installer. | You and `oc`. | Admin access to the new cluster. | Local secret material; do not commit. |
+| `/opt/mirror/ocm-workspace/working-dir/cluster-resources/` | `oc-mirror --v2`. | `oc apply` after the cluster exists. | IDMS/ITMS and CatalogSource resources for day-2 mirrored pulls. | The installer uses `install-config.imageDigestSources`; the live cluster later uses these resources. They are related, not interchangeable. |
+
+#### Bastion services
+
+| Component | Config/files in this guide | Purpose | Failure symptom |
+|-----------|----------------------------|---------|-----------------|
+| Mirror registry | `/opt/mirror/quay`, `/opt/mirror/ca/rootCA.pem`, `/opt/mirror/mirror-admin-password` | Local registry for OpenShift, operators, Trustee, and test images. | Image pulls fail, CatalogSource not ready, install stalls pulling release images. |
+| Mirror CA trust | `/etc/pki/ca-trust/source/anchors/mirror-rootCA.pem`, `additionalTrustBundle` | Lets the bastion and RHCOS trust the mirror registry TLS certificate. | `x509: certificate signed by unknown authority`. |
+| DNS (`dnsmasq`) | `/etc/dnsmasq.d/rig.conf` | Resolves `mirror.rig.local`, `api`, `api-int`, and `*.apps` over the private VLAN. | Bootstrap hangs or mirror hostname resolves only on the old raw OS. |
+| NTP (`chrony`) | `/etc/chrony.d/rig.conf`, `agent-config.additionalNTPSources` | Gives the air-gapped node stable time. | Bootstrap or attestation behaves mysteriously because certificates/tokens are time-sensitive. |
+| Boot web server | `scripts/serve-boot-artifacts.sh`, nginx on `:8080` | Publishes iPXE kernel/initrd/rootfs under an unguessable path. | Netboot cannot fetch artifacts; if left running, secret-bearing initrd remains exposed. |
+| Egress shaping | `/etc/nftables/egress-clamp.nft`, node `nft` airgap table | Makes large mirror pulls reliable and proves the node cannot bypass the bastion. | `oc-mirror` EOFs, or negative air-gap tests accidentally pass by reaching public services. |
+
+#### Post-install GitOps files
+
+| File or directory | Consumed by | Purpose | Why it matters for CoCo |
+|-------------------|-------------|---------|-------------------------|
+| [`gitops/base/operators/`](../gitops/base/operators/) | OLM. | Namespaces, OperatorGroups, and Subscriptions for NFD, cert-manager, OSC, and Trustee. | Operators install CRDs/controllers; without mirrored CatalogSources, they cannot resolve bundles. |
+| [`gitops/base/nfd/`](../gitops/base/nfd/) | NFD operator. | Runs Node Feature Discovery and the AMD SNP rule. | The SNP label is live proof the node exposes the expected CPU feature. Do not hand-label it. |
+| [`gitops/base/kataconfig/feature-gates.yaml`](../gitops/base/kataconfig/feature-gates.yaml) | OSC operator. | Enables the confidential runtime feature gate. | In OSC 1.12, CoCo is enabled here, not by a `KataConfig` field. |
+| [`gitops/base/kataconfig/kataconfig.yaml`](../gitops/base/kataconfig/kataconfig.yaml) | OSC operator. | Installs Kata and creates RuntimeClasses. | `kata-cc` must resolve to the SNP handler before CoCo workloads mean anything. |
+| [`gitops/base/gatekeeper/`](../gitops/base/gatekeeper/) | OPA Gatekeeper. | Installs mutation/constraint policy for CoCo pod memory settings. | SNP pins guest RAM at launch; the policy helps prevent undersized pods from being killed by the host. |
+| [`gitops/base/trustee/kbs-configmaps.yaml`](../gitops/base/trustee/kbs-configmaps.yaml) | Trustee operator/KBS. | KBS config, resource policy, attestation policy, and RVPS reference values. | Policy and reference values decide whether secrets are released. |
+| [`gitops/base/trustee/secret-stubs.example.yaml`](../gitops/base/trustee/secret-stubs.example.yaml) | You create real Secrets from it. | Documents required secret names and shapes. | Missing secrets look like attestation failures because KBS crash-loops or cannot serve resources. |
+| [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml) | Trustee operator. | Wires ConfigMaps, Secrets, service mode, and OfflineStore VCEK cache into KBS. | This is where air-gapped SNP verification becomes real: no cached VCEK, no attestation. |
+| [`gitops/base/workloads/initdata.example.toml`](../gitops/base/workloads/initdata.example.toml) | Encoded into pod annotations. | Guest-side AA/CDH config: KBS URL, resources, policies, registry config. | The bytes are measured; any environment change can require regenerated RVPS values. |
+| [`gitops/base/workloads/rung-a-secret-pod.yaml`](../gitops/base/workloads/rung-a-secret-pod.yaml) | Kubernetes/Kata. | First proof workload: request a KBS secret before starting. | Verifies the complete pod → CVM → Trustee → secret path. |
+| [`gitops/base/airgap-egress/`](../gitops/base/airgap-egress/) | MachineConfigPool. | Optional post-install host egress lockdown. | Keeps the installed RHCOS node honest after the raw-OS nft rule is wiped by install. |
+
+#### Hardware-bound artifacts
+
+These are deliberately **not portable** between machines or firmware states:
+
+| Artifact | Why it is hardware-bound | Regenerate when |
+|----------|--------------------------|-----------------|
+| BIOS/firmware SNP settings | Firmware decides whether the CPU exposes SNP host capability. | Every re-provision, firmware reset, or hardware change. |
+| VCEK certificates | A VCEK is tied to a chip HWID and TCB version. | New socket, firmware/TCB change, provider swaps the physical server. |
+| RVPS reference values | They describe expected measurements for a concrete launch/config. | initdata, workload, runtime, firmware, or TEE-relevant config changes. |
+| initdata annotation bytes | SNP measures the guest launch data. | KBS URL, registry config, policy/resource URI, or initdata content changes. |
+| TLS identity / Trustee URL | The CVM must talk to the verifier it was configured and measured to use. | Different cluster, route, certificate, or trust domain. |
+
+If you remember only one rule: **GitOps structure is portable; attestation evidence and
+measurement inputs are not.**
+
+---
+
 ## What you need (infrastructure outcomes)
 
 Provision these however your provider allows (cloud bare-metal API, your own DC, IPMI):
@@ -56,6 +257,14 @@ Provision these however your provider allows (cloud bare-metal API, your own DC,
 ## Phase 0 — Tooling (on the bastion / admin host)
 
 Replaces: `make tools` → `scripts/install-tools.sh`.
+
+These tools do three different jobs:
+
+| Tool | Job in this guide | Why the version is pinned |
+|------|-------------------|---------------------------|
+| `oc` / `kubectl` | Talks to the live OpenShift cluster after install. | Client/server skew is tolerated only within limits; keep it aligned with the target release. |
+| `openshift-install` | Renders the Agent-based Installer ISO/iPXE artifacts and waits for install completion. | The installer must understand the same release payload you mirrored. |
+| `oc-mirror` | Copies release payloads, operator catalogs, and images into the bastion mirror. | v2 output layout and generated resources are version-sensitive. |
 
 Fetch the version-pinned clients (`oc`, `openshift-install`, `oc-mirror`, all 4.20.18 /
 linux-amd64). The repo script does this into `./bin`; by hand:
@@ -118,12 +327,29 @@ nmcli connection add type vlan con-name rigvlan dev "$PARENT" id "$VID" \
 nmcli connection up rigvlan
 ```
 
+Why this exists: the public/primary NIC is for provisioning and initial boot reachability; the
+private VLAN is the simulated production air gap. OpenShift, the mirror registry, DNS, NTP,
+and Trustee should all be reachable across this private path. If the VLAN is wrong, later
+errors often look like "registry down" or "bootstrap hung," even though the real bug is L2/L3.
+
 ---
 
 ## Phase 2 — Bastion preparation
 
 Replaces: the Ansible bastion roles (`bastion_egress`, `mirror_tools`, `mirror_push`,
 `dns_ntp`) and the bastion cloud-init. Run everything here **on the bastion**.
+
+This phase creates the services the disconnected node will treat as infrastructure:
+
+```mermaid
+flowchart LR
+  Node["SNO node\nno public egress"] -->|"DNS/NTP/registry/boot"| VLAN["private VLAN"]
+  VLAN --> Bastion["bastion"]
+  Bastion --> Mirror["mirror registry :8443"]
+  Bastion --> DNS["dnsmasq :53"]
+  Bastion --> NTP["chrony :123"]
+  Bastion --> Boot["boot artifacts :8080"]
+```
 
 ### 2.1 Egress hardening (do this FIRST)
 
@@ -225,6 +451,23 @@ sudo firewall-cmd --reload
 
 Replaces: `make mirror` → `scripts/mirror.sh`. Runs on the bastion.
 
+Mirroring is the moment when the connected world is copied into the disconnected world:
+
+```mermaid
+flowchart TB
+  Imageset["install/imageset-config.yaml\nwhat to mirror"] --> OCMirror["oc-mirror --v2"]
+  PullSecret["Red Hat pull secret\nplus mirror creds"] --> OCMirror
+  OCMirror --> Registry["mirror.rig.local:8443\nrelease + operator + workload images"]
+  OCMirror --> Resources["cluster-resources/\nIDMS + ITMS + CatalogSource"]
+  Resources -->|"apply after install"| Cluster["OpenShift cluster"]
+  Registry -->|"used during install via imageDigestSources"| Installer["Agent-based install"]
+  Registry -->|"used after install via IDMS/ITMS/CatalogSource"| Cluster
+```
+
+`imageset-config.yaml` is not applied to the cluster. It is input to `oc-mirror`. The mirror
+output has two halves: image data pushed into the registry, and YAML resources applied later
+so the live cluster knows how to keep using that registry.
+
 ```bash
 # VERIFY operator channels BEFORE the long pull — cheap to check, 1–2 h to redo:
 for pkg in nfd cert-manager sandboxed-containers-operator trustee-operator; do
@@ -256,6 +499,10 @@ oc-mirror --v2 -c install/imageset-config.yaml \
 
 Replaces: `scripts/host-snp-check.sh` + the manual IPMI BIOS step. This proves silicon +
 firmware + provider actually do **SNP host** before you build anything on top.
+
+For newcomers: this is deliberately before OpenShift. If the host cannot launch SNP guests,
+no Kubernetes manifest can fix it. Rung-0 answers only one question: "Does this physical
+server, firmware setup, and kernel expose the SEV-SNP host interface Kata will need later?"
 
 ### 4.1 Set the SEV-SNP BIOS (the one hands-on hardware step)
 
@@ -323,6 +570,23 @@ healthy, not in the install-time overlay.)
 Replaces: the Ansible `render_configs`, `pxe_serve`, and `install_drive` roles, and
 `make agent-image` / `serve-boot-artifacts` / `install-wait`. Full reference:
 [`install/README.md`](../install/README.md).
+
+The Agent-based Installer consumes two YAML files and turns them into bootable media:
+
+```mermaid
+flowchart LR
+  InstallConfig["install-config.yaml\ncluster identity + mirror trust"] --> Installer["openshift-install\nagent create image/pxe-files"]
+  AgentConfig["agent-config.yaml\nhost facts + nmstate + NTP"] --> Installer
+  Installer --> ISO["agent.x86_64.iso\nvirtual media path"]
+  Installer --> PXE["agent.x86_64.ipxe\nkernel/initrd/rootfs path"]
+  ISO --> Node["bare-metal node"]
+  PXE --> Node
+  Node --> Cluster["SNO cluster\nkubeconfig in cluster-assets/auth"]
+```
+
+Treat `install-config.yaml` as cluster intent and `agent-config.yaml` as host inventory. The
+installer consumes both from `cluster-assets/`; keep the `.tmpl` files in `install/` as the
+human-readable source of truth.
 
 ### 5.1 Discover the node's facts (never guess)
 
@@ -410,6 +674,16 @@ Replaces: `make apply-sno` → `oc apply -k gitops/overlays/sno-workers`. You ca
 GitOps tree directly, or apply the same manifests by hand in order. **Install order is
 load-bearing: NFD → cert-manager → OSC → Trustee.**
 
+The worker-side stack builds up in layers:
+
+| Layer | What gets installed | Proof it worked |
+|-------|---------------------|-----------------|
+| NFD | Node Feature Discovery operator + AMD SNP rule. | Node has the SNP CPU feature label from discovery, not from a manual label. |
+| cert-manager | Certificate management needed by Trustee/operator-managed TLS. | cert-manager CSV is `Succeeded`. |
+| OSC | OpenShift sandboxed containers operator, feature gate, and `KataConfig`. | `kata` and `kata-cc` RuntimeClasses exist; `kata-cc` maps to SNP. |
+| Gatekeeper | OPA Gatekeeper plus CoCo memory mutation/constraint resources. | CoCo pods have memory limits high enough for CVM RAM plus QEMU overhead. |
+| Trustee operator | CRDs/controllers for KBS and attestation services. | Trustee CSV is `Succeeded`; KBS can be created in Phase 7. |
+
 ### 6.1 RHCOS SNP host gate
 
 Rung-0 (Phase 4) proved the *raw* kernel; now prove the **RHCOS** kernel:
@@ -429,6 +703,7 @@ oc apply -k gitops/overlays/sno-workers
 #   gitops/base/nfd/{nodefeaturediscovery,amd-snp-rule}.yaml               (starts NFD; emits the SNP label)
 #   gitops/base/kataconfig/feature-gates.yaml                              (osc-feature-gates: confidential=true)
 #   gitops/base/kataconfig/kataconfig.yaml                                 (KataConfig — reboots the node)
+#   gitops/base/gatekeeper/{operator,gatekeeper-cr,assign,constraint}.yaml  (guards CoCo pod memory)
 oc get csv -A | grep -Ei 'nfd|cert-manager|sandboxed|trustee'   # wait for all four Succeeded
 ```
 
@@ -460,6 +735,18 @@ oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-qemu-snp (
 
 Replaces: `make apply-trustee` + `make collect-vcek` + `make gen-rvps`. These produce
 **hardware-bound** data — regenerate on each distinct CPU+firmware config.
+
+Trustee is the verifier. It is intentionally separate from the worker runtime: the confidential
+guest asks Trustee for resources, and Trustee decides whether the evidence is good enough.
+
+| Trustee piece | Config in this repo | Role |
+|---------------|---------------------|------|
+| KBS | `kbs-config.toml` inside `kbs-configmaps.yaml`, wired by `KbsConfig`. | Receives guest resource requests and releases Secrets/resources after attestation succeeds. |
+| Attestation Service | Configured inside the same KBS all-in-one deployment. | Verifies SNP evidence, VCEK, policy, and reference values. |
+| RVPS | `rvps-reference-values` ConfigMap. | Stores expected measurements. |
+| Resource policy | `resource-policy` ConfigMap. | Decides which resource URIs can be released. |
+| Attestation policy | `attestation-policy` ConfigMap. | OPA/Rego policy for evidence decisions. |
+| OfflineStore | `kbsLocalCertCacheSpec` in `kbsconfig.yaml`. | Mounts VCEK certificates so verification works without live AMD KDS. |
 
 ### 7.1 Create the out-of-band Trustee secrets FIRST
 
@@ -515,6 +802,15 @@ Replaces: `make negative-test`. A rung is **proven only when reproduced from the
 its negative test fails-closed** — a negative test that *passes* (secret released when it
 shouldn't be) is a sign-off-blocking finding, not a green. Do them **in order**. See
 [`docs/design/engagement-design.md`](design/engagement-design.md) §5 for the full matrix.
+
+Each rung adds one user-visible capability on top of the same attestation base:
+
+| Rung | Capability being proven | Secret/resource being protected |
+|------|-------------------------|---------------------------------|
+| a | Attested secret release. | A sample KBS resource requested by the pod after CDH reports success. |
+| b | Attested encrypted-image pull. | The image decryption key. |
+| c | Attested signed-image policy. | The registry credential and image security policy. |
+| Air-gap | No hidden live dependency on AMD KDS. | The VCEK cache path itself. |
 
 - **Rung a — secret release.** Deploy
   [`gitops/base/workloads/rung-a-secret-pod.yaml`](../gitops/base/workloads/rung-a-secret-pod.yaml)
