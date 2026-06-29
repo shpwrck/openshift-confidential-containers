@@ -52,6 +52,84 @@ expect_digest_ref() {
 	[[ "$actual" == "$expected" ]] || die "digest-ref mismatch for $image: got $actual expected $expected"
 }
 
+verify_build_make_env() {
+	local stub="$tmpdir/build-rung-images-stub.sh" out="$tmpdir/build-rung-images-env"
+	cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${COSIGN_PASSWORD+x}" ]]; then
+	echo "COSIGN_PASSWORD leaked into build-rung-images recipe" >&2
+	exit 1
+fi
+
+vars=(
+	MIRROR_REGISTRY
+	SOURCE_IMAGE
+	SOURCE_IMAGE_REF
+	ARTIFACT_DIR
+	RUNG_B_IMAGE
+	RUNG_C_IMAGE
+	RUNG_C_UNSIGNED_IMAGE
+	RUNG_B_KEY_PATH
+	RUNG_B_KEY_ID
+	RUNG_B_KEY_FILE
+	COCO_KEYPROVIDER_IMAGE
+	CONTAINER_RUNTIME
+	CONTAINER_VOLUME_SUFFIX
+	COSIGN_KEY
+	COSIGN_PUB
+	COSIGN_SIGN_ARGS
+	COSIGN_VERIFY_ARGS
+)
+
+for var in "${vars[@]}"; do
+	printf '%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$stub"
+
+	make -s build-rung-images \
+		BUILD_RUNG_IMAGES_SCRIPT="$stub" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		SOURCE_IMAGE="registry.example.com/base/app:1.0" \
+		SOURCE_IMAGE_REF="dir:/tmp/source-image" \
+		ARTIFACT_DIR="$tmpdir/artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:test" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:test" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c:unsigned-test" \
+		RUNG_B_KEY_PATH="/default/image-key/custom-rung-b" \
+		RUNG_B_KEY_ID="kbs:///default/image-key/custom-rung-b" \
+		RUNG_B_KEY_FILE="$tmpdir/custom-rung-b.key" \
+		COCO_KEYPROVIDER_IMAGE="custom-keyprovider:local" \
+		CONTAINER_RUNTIME="docker" \
+		CONTAINER_VOLUME_SUFFIX=":cached" \
+		COSIGN_KEY="$tmpdir/custom-cosign.key" \
+		COSIGN_PUB="$tmpdir/custom-cosign.pub" \
+		COSIGN_SIGN_ARGS="--yes --tlog-upload=false --allow-insecure-registry" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
+		> "$out"
+
+	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile mirror override"
+	expect_grep "SOURCE_IMAGE=registry.example.com/base/app:1.0" "$out" "Makefile source image override"
+	expect_grep "SOURCE_IMAGE_REF=dir:/tmp/source-image" "$out" "Makefile source ref override"
+	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$out" "Makefile artifact dir override"
+	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b:test" "$out" "Makefile rung-b image override"
+	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c:test" "$out" "Makefile rung-c image override"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c:unsigned-test" "$out" "Makefile rung-c unsigned image override"
+	expect_grep "RUNG_B_KEY_PATH=/default/image-key/custom-rung-b" "$out" "Makefile rung-b key path override"
+	expect_grep "RUNG_B_KEY_ID=kbs:///default/image-key/custom-rung-b" "$out" "Makefile rung-b key id override"
+	expect_grep "RUNG_B_KEY_FILE=$tmpdir/custom-rung-b.key" "$out" "Makefile rung-b key file override"
+	expect_grep "COCO_KEYPROVIDER_IMAGE=custom-keyprovider:local" "$out" "Makefile keyprovider image override"
+	expect_grep "CONTAINER_RUNTIME=docker" "$out" "Makefile runtime override"
+	expect_grep "CONTAINER_VOLUME_SUFFIX=:cached" "$out" "Makefile volume suffix override"
+	expect_grep "COSIGN_KEY=$tmpdir/custom-cosign.key" "$out" "Makefile cosign key override"
+	expect_grep "COSIGN_PUB=$tmpdir/custom-cosign.pub" "$out" "Makefile cosign pub override"
+	expect_grep "COSIGN_SIGN_ARGS=--yes --tlog-upload=false --allow-insecure-registry" "$out" "Makefile cosign sign args override"
+	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$out" "Makefile cosign verify args override"
+}
+
+need make
 need oc
 need jq
 
@@ -70,6 +148,7 @@ digest="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
+verify_build_make_env
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

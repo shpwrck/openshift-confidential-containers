@@ -14,10 +14,21 @@ KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
 RUNG_A_IMAGE ?= registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
 ARTIFACT_DIR ?= ./rung-bc-artifacts
 SOURCE_IMAGE ?= $(RUNG_A_IMAGE)
+SOURCE_IMAGE_REF ?= docker://$(SOURCE_IMAGE)
 RUNG_B_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-b:encrypted
 RUNG_C_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c:signed
 RUNG_C_UNSIGNED_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c:unsigned
+RUNG_B_KEY_PATH ?= /default/image-key/rung-b
+RUNG_B_KEY_ID ?= kbs://$(RUNG_B_KEY_PATH)
 RUNG_B_KEY_FILE ?= $(ARTIFACT_DIR)/rung-b-image.key
+COCO_KEYPROVIDER_IMAGE ?= coco-keyprovider
+CONTAINER_RUNTIME ?=
+CONTAINER_VOLUME_SUFFIX ?=
+COSIGN_KEY ?= $(ARTIFACT_DIR)/cosign.key
+COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
+COSIGN_SIGN_ARGS ?= --yes --tlog-upload=false
+COSIGN_VERIFY_ARGS ?= --insecure-ignore-tlog=true
+BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 
@@ -127,7 +138,7 @@ seed-trustee-secrets: ## Phase 5: create/update rig Trustee secrets from bastion
 
 .PHONY: build-rung-images
 build-rung-images: ## Phase 6: build/push rung-b encrypted and rung-c signed images
-	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" bash ./scripts/build-rung-images.sh
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" SOURCE_IMAGE_REF="$(SOURCE_IMAGE_REF)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" RUNG_B_KEY_PATH="$(RUNG_B_KEY_PATH)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" COCO_KEYPROVIDER_IMAGE="$(COCO_KEYPROVIDER_IMAGE)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" CONTAINER_VOLUME_SUFFIX="$(CONTAINER_VOLUME_SUFFIX)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)"
 
 .PHONY: seed-rung-bc-secrets
 seed-rung-bc-secrets: ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
