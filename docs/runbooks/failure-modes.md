@@ -27,7 +27,7 @@ fast diagnostic → fix**. Read the "Top 7" first — those are the ones I'd bet
 6. **QEMU OOM-killed at pod launch.** SNP pins *all* guest RAM at boot; if `limits.memory` <
    CVM RAM annotation, the host OOM-killer nukes QEMU in seconds → `DeadlineExceeded`.
 7. **VCEK silent fail** — uppercase HWID dir, or KDS left in `vcek_sources` so it "works" by
-   reaching the internet that won't exist on the customer side. Attestation fails for the wrong reason.
+   reaching the internet that won't exist on the production side. Attestation fails for the wrong reason.
 
 ---
 
@@ -101,7 +101,7 @@ fast diagnostic → fix**. Read the "Top 7" first — those are the ones I'd bet
   neither inherits cluster proxy. Easy to set one and forget the other.
 - **must-gather** — use the **OSC** image, not generic (`registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:1.12.0`).
 - **Disconnected = nothing reaches the internet** — if something "works," confirm it isn't
-  quietly using egress that won't exist at the customer.
+  quietly using egress that won't exist in production.
 
 ## Fast triage commands
 ```bash

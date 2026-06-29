@@ -45,7 +45,7 @@ the complete wiring proven reachable on the rig and the chain of blockers found.
    `rig.local` zone at the bastion dnsmasq —
    `oc patch dns.operator/default --type=merge -p '{"spec":{"servers":[{"name":"riglocal","zones":["rig.local"],"forwardPlugin":{"upstreams":["192.168.66.10"]}}]}}'`.
    Verified: a normal pod resolves `mirror.rig.local → 192.168.66.10` and gets HTTP 200 from the
-   mirror by name AND by IP. (Customer env: use a name the cluster DNS already serves, or add this.)
+   mirror by name AND by IP. (Production env: use a name the cluster DNS already serves, or add this.)
 
 5. **Timeouts.** Guest pull is bounded by `min(kubelet runtimeRequestTimeout, kata
    create_container_timeout)`. Defaults (kata 60s; kubelet 0s/effectively short) are too small for
@@ -79,7 +79,7 @@ rung-a `1/1 Running`, `runtimeClassName: kata-cc`. KBS log for the successful ru
 `POST /kbs/v0/attest 200` → `Verifier/endorsement check passed. tee=Snp` → `GET …/resource/default/
 credential/test 200` + `…/security-policy/test 200`. Mirror nginx for the same run: `GET /v2/auth…
 200`, `…/manifests/sha256:4ba3… 200`, `…/blobs/sha256:837b… 200 (40,689,274 bytes)` from
-`oci-client/0.15.0`. The whole disconnected confidential-pull path works; remaining engagement work
+`oci-client/0.15.0`. The whole disconnected confidential-pull path works; remaining work
 is rungs b/c (release/pause-image workloads — extend `registry-configuration` with the
 `quay.io/openshift-release-dev/*` remaps) and the air-gap VCEK negative test.
 

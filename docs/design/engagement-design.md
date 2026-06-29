@@ -1,37 +1,36 @@
-# Engagement Design — OpenShift Confidential Containers (air-gapped SEV-SNP)
+# Design — OpenShift Confidential Containers (air-gapped SEV-SNP)
 
-Status: draft · Last updated 2026-06-25 · Owner: (internal) (Red Hat)
+Status: draft · Last updated 2026-06-25
 
 This is the synthesis of the setup grilling. It records **why** each decision was made so a
-future session (or the product-team handoff) can reconstruct the reasoning.
+future session can reconstruct the reasoning.
 
 ## 1. Purpose
 
-Stand up CoCo for a customer and **prove each capability on a disposable rig before touching
-the customer's cluster**. The validated runbook is a first-class deliverable because the CoCo
-team reports the official docs are incomplete/inaccurate. Post-engagement: hand notes +
-[`../defects/`](../defects/) to the Red Hat product/docs team (deferred — customer delivery first).
+Stand up CoCo and **prove each capability on a disposable rig before touching the production
+cluster**. The validated runbook is a first-class deliverable because the official CoCo docs
+are reported incomplete/inaccurate; known doc/product gaps found during bring-up are tracked
+separately and surfaced as upstream feedback.
 
-The repo's value-add over the colleague onboarding guide: convert that **linear manual guide
+The repo's value-add over a linear manual onboarding guide: convert that **linear manual guide
 into portable GitOps**, and **automate the two hardware-bound pipelines** (VCEK OfflineStore
 collection, Veritas RVPS generation) — the operator ships nothing for these, and VCEK
-automation is a **customer sign-off gate**.
+automation is a **production sign-off gate**.
 
 ## 2. Constraints
 
-- **Air-gapped / disconnected** — customer is, so the rig must be too (else we'd never hit the
-  VCEK-cache failure mode). Rig simulates it with a bastion/mirror host + the SNO node
-  egress-firewalled to reach only it. NOT egress-open.
-- **No local SNP hardware** → rent bare metal. **Latitude.sh hourly** (chosen over OVHcloud
-  monthly to avoid upfront cost). Default node: EPYC **Genoa (9004)**.
+- **Air-gapped / disconnected** — the production target is, so the rig must be too (else we'd
+  never hit the VCEK-cache failure mode). Rig simulates it with a bastion/mirror host + the SNO
+  node egress-firewalled to reach only it. NOT egress-open.
+- **No local SNP hardware** → rent bare metal. **Latitude.sh hourly** (chosen over a
+  monthly-commit provider to avoid upfront cost). Default node: EPYC **Genoa (9004)**.
 - **Bare-metal host path**, not peer-pods: the worker RHCOS kernel must be the SNP hypervisor
   host (cloud CVM/peer-pods would attest the guest, not give us the bare-metal Kata path).
-- **Red Hat employee** → free subs, real Red Hat operators (OSC + Trustee), no eval clock.
 - Asset progression must be **incremental a → b → c**.
 
 ## 3. Topology
 
-| | Test rig | Customer |
+| | Test rig | Production |
 |--|----------|----------|
 | Cluster | **SNO** (control+worker on one node) | full **multi-node** bare metal |
 | Trustee | secondary cluster (once node 0 proven) | **separate Trustee cluster** (verifier off the confidential workers) |
@@ -78,17 +77,17 @@ Hardware e2e is manual/scheduled on the rented node.
 
 ## 7. Risks / open dependencies
 
-- 🔴 **Fully air-gapped TDX is not supported upstream yet** ("watch this space"). The customer's
-  TDX phase is blocked while disconnected — flag now, not later. SNP air-gap works.
+- 🔴 **Fully air-gapped TDX is not supported upstream yet** ("watch this space"). The TDX
+  phase is blocked while disconnected — flag now, not later. SNP air-gap works.
 - **VCEK re-provisioning on firmware/TCB change** is manual + undocumented; build it as a
   **re-runnable job** (covers one-shot too) since it's a sign-off gate.
 - Trustee bug **#591** hardcoded `"Milan"` — broke Genoa/Turin KDS path. Build VCEK automation
   **generation-agnostic**; check Trustee version.
-- Rig vs customer **CPU generation** unknown → gen-agnostic automation + regenerate RVPS on
-  customer metal, so it's not a blocker. See [customer-scoping.md](customer-scoping.md).
+- Rig vs production **CPU generation** unknown → gen-agnostic automation + regenerate RVPS on
+  the production metal, so it's not a blocker. See [customer-scoping.md](customer-scoping.md).
 
 ## 8. Next artifacts
 
 - `gitops/` base + overlays fleshed out from the onboarding guide (Steps 3–6).
 - `scripts/collect-vcek.sh`, `scripts/gen-rvps-veritas.sh` automated + gen-agnostic.
-- `docs/defects/` populated as the runbook is replayed on real hardware.
+- Known upstream doc/product issues tracked separately as the runbook is replayed on real hardware.

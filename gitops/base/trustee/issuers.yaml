@@ -7,7 +7,7 @@
 # Both are SelfSigned in the base. Customer overlays may replace these with a real CA
 # (intermediate Issuer) — see overlays/customer-trustee.
 #
-# GOTCHA (defects/): cert-manager writes `tls.key` / `tls.crt` into the issued Secret, which
+# GOTCHA (known issue): cert-manager writes `tls.key` / `tls.crt` into the issued Secret, which
 # differ from the upstream KBS template keys `privateKey` / `certificate`. The KbsConfig /
 # kbs-config.toml must reference the cert-manager key names. Do not copy upstream template
 # key names verbatim.

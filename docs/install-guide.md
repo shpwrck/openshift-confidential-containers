@@ -1,0 +1,566 @@
+# Manual Install Guide — OpenShift Confidential Containers (SEV-SNP, air-gapped)
+
+A fully **manual**, provider-neutral procedure for standing up the air-gapped
+single-node OpenShift (SNO) Confidential Containers (CoCo) verification environment **by
+hand** — every step done without Terraform, Ansible, or the `Makefile`.
+
+This guide exists alongside the automation, not instead of it. If you want the hands-off
+path, use:
+
+- **Infrastructure** — `infra/` (Terraform: node, bastion, private VLAN, firewall, netboot).
+- **Bastion + install** — `ansible/` (roles for egress hardening, mirror, DNS/NTP, render,
+  PXE serve, install) driven by `make up`.
+- **Per-phase shortcuts** — the `Makefile` targets (`make tools`, `make mirror`,
+  `make verify-snp-host`, `make apply-sno`, `make apply-trustee`, …).
+
+Everything below is what those automate, rewritten as the commands a human runs by hand. It
+is deliberately **provider-neutral**: where a step needs the metal provisioned a certain way
+(create a node, attach an L2 network, set BIOS over IPMI, netboot), it states the *outcome*
+you must achieve and leaves the provider's API/console up to you. The committed Terraform/
+Ansible target [Latitude.sh](https://www.latitude.sh) as one worked example.
+
+> Conventions: **STOP-gate** = do not proceed until it is green. `# FILL` = an
+> environment-specific value you resolve on the metal — never invent it. Example IP plan used
+> throughout: node L2 subnet on the node's public NIC, plus a private VLAN `192.168.66.0/24`
+> shared by the bastion (`.10`) and the node (`.11`). Substitute your own.
+
+**Targets:** OCP **4.20.18** (alt 4.19.28) · OSC **1.12** · Trustee **1.1** · TEE = **AMD
+SEV-SNP** (EPYC Genoa / 9004 or newer).
+
+---
+
+## What you need (infrastructure outcomes)
+
+Provision these however your provider allows (cloud bare-metal API, your own DC, IPMI):
+
+1. **An SEV-SNP-capable bare-metal node.** AMD EPYC Genoa (9004) or newer. You need:
+   - **IPMI / KVM console** access (for the BIOS recipe and, on the ISO path, virtual media).
+   - The ability to **netboot** it (iPXE) *or* attach an ISO as virtual media.
+   - Two network paths: its **public/primary NIC** (initial OS + iPXE fetch) and a **tagged
+     VLAN** child on the private network (reaches the mirror over the air gap).
+   - Enough headroom for CoCo CVMs — comfortably above the OCP 4.20 SNO minimums
+     (≥ 8 vCPU / 16 GiB / 120 GiB; size up, CVMs pin guest RAM at launch).
+2. **A persistent bastion / admin host.** No SNP required. Needs ≥ ~200 GiB disk for the
+   mirror cache, a public IP (to serve iPXE artifacts), and a leg on the **same private VLAN**
+   as the node. It hosts the mirror registry, DNS, NTP, and the boot-artifact web server, and
+   survives node churn so the (slow) mirror is paid once.
+3. **An L2 private network / VLAN** both hosts share (the air-gap data path). No L3 from the
+   provider — you add the addresses yourself.
+4. **A Red Hat pull secret** from <https://console.redhat.com/openshift/install/pull-secret>.
+   Used **only on the bastion** to populate the mirror. It is **never** carried onto the
+   air-gapped node — the node only ever authenticates to the mirror.
+5. **An SSH keypair** for `core@`/host debugging (its public half goes into `install-config`).
+
+---
+
+## Phase 0 — Tooling (on the bastion / admin host)
+
+Replaces: `make tools` → `scripts/install-tools.sh`.
+
+Fetch the version-pinned clients (`oc`, `openshift-install`, `oc-mirror`, all 4.20.18 /
+linux-amd64). The repo script does this into `./bin`; by hand:
+
+```bash
+OCP=4.20.18
+BASE="https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/${OCP}"
+sudo install -d /usr/local/bin
+curl -fsSL "${BASE}/openshift-client-linux-${OCP}.tar.gz"  | sudo tar -xzf - -C /usr/local/bin oc kubectl
+curl -fsSL "${BASE}/openshift-install-linux-${OCP}.tar.gz" | sudo tar -xzf - -C /usr/local/bin openshift-install
+# oc-mirror: prefer the rhel9 build on a RHEL-family bastion, else the generic one
+curl -fsSL "${BASE}/oc-mirror.rhel9.tar.gz" | sudo tar -xzf - -C /usr/local/bin oc-mirror \
+  || curl -fsSL "${BASE}/oc-mirror.tar.gz" | sudo tar -xzf - -C /usr/local/bin oc-mirror
+oc version --client && openshift-install version && oc-mirror --v2 --help >/dev/null && echo OK
+```
+
+> **VERIFY:** `OCP` here matches the `ocp` pin in [`install/imageset-config.yaml`](../install/imageset-config.yaml).
+
+> **STOP-gate:** all three tools resolve on `PATH`; Red Hat pull secret in hand.
+
+---
+
+## Phase 1 — Provision the infrastructure (by hand)
+
+Replaces: `terraform apply` in `infra/` (node, bastion, VLAN, firewall, netboot).
+
+Do this in your provider's API/console. The **order matters**: bring up the bastion first so
+the mirror exists before the node needs it.
+
+1. **Create the private L2 network / VLAN** in the same site/region both hosts will live in.
+   Record its **VLAN ID (VID)** — you need it for the node's tagged interface later.
+2. **Provision the bastion** (small metal or VM; ≥ 200 GiB disk), attach it to the VLAN, and
+   inject your SSH key. A RHEL-family OS (Rocky 10 in the reference automation) keeps the
+   `dnf`/`firewalld`/`nft` commands below verbatim.
+3. **Provision the SNP node**, attach it to the **same** VLAN, inject the same SSH key. Leave
+   its BIOS at defaults for now — Phase 4 sets the SNP recipe and runs the rung-0 gate before
+   any OpenShift install.
+4. **(Inbound firewall, optional)** Restrict inbound to the node/bastion to your admin CIDR
+   (SSH / API / ingress). Egress is locked **host-side** in Phase 2/4, not via the provider.
+
+> Hourly bare-metal billing accrues from provisioning. Tear the node down between runs
+> (Phase 9); keep the bastion so the mirror persists.
+
+> **Provider note (Latitude.sh):** the reference `infra/latitude/` Terraform creates the
+> virtual network, both servers, the VLAN attachment, and (for the node) an `ipxe` netboot OS.
+> The equivalent by hand is the four steps above plus the per-phase host config that follows.
+
+### 1.1 Bring up the VLAN L3 on both hosts
+
+The provider gives you L2 only; you assign the addresses. On **each** host, create a tagged
+VLAN child on its private-network NIC. Confirm the parent interface name first
+(`ip -br link` — it is hardware-bound; do not guess). Example with NetworkManager:
+
+```bash
+# Bastion: VLAN child carrying 192.168.66.10/24   (node uses 192.168.66.11/24)
+PARENT=<private-nic>        # FILL: e.g. bond0 / enp195s0f1  (ip -br link)
+VID=<vlan-id>              # FILL: the VID from step 1
+nmcli connection add type vlan con-name rigvlan dev "$PARENT" id "$VID" \
+  ip4 192.168.66.10/24
+nmcli connection up rigvlan
+```
+
+---
+
+## Phase 2 — Bastion preparation
+
+Replaces: the Ansible bastion roles (`bastion_egress`, `mirror_tools`, `mirror_push`,
+`dns_ntp`) and the bastion cloud-init. Run everything here **on the bastion**.
+
+### 2.1 Egress hardening (do this FIRST)
+
+A fresh bastion's **IPv6** path to the registry CDN can blackhole large `oc-mirror` blobs
+(symptom: `unexpected EOF` mid-pull). `oc-mirror` is a Go binary, so `/etc/gai.conf`
+IPv4-preference is ignored — you must remove v6 reachability and clamp the v4 path. See
+`ansible/roles/bastion_egress/` for the canonical version.
+
+```bash
+sudo dnf install -y nftables
+# 1) drop the IPv6 default route (kills v6 egress reachability)
+sudo ip -6 route del default 2>/dev/null || true
+# 2) clamp the v4 default-route MTU
+DEF=$(ip -4 route show default | head -1)
+sudo ip route change ${DEF} mtu 1400
+# 3) SYN MSS clamp via nftables
+sudo tee /etc/nftables/egress-clamp.nft >/dev/null <<'EOF'
+table inet egress_clamp {
+  chain output {
+    type filter hook output priority mangle; policy accept;
+    tcp flags syn tcp option maxseg size set 1360
+  }
+}
+EOF
+sudo nft -f /etc/nftables/egress-clamp.nft
+sudo nft list table inet egress_clamp | grep maxseg   # verify the clamp is loaded
+```
+
+### 2.2 Stand up the mirror registry
+
+The reference bastion uses Red Hat's `mirror-registry` (a single-host quay). Install it,
+serving TLS on `:8443` under a DNS name (example `mirror.rig.local`). The **admin password is
+generated on the box**, never stored in code:
+
+```bash
+sudo install -d -m700 /opt/mirror /opt/mirror/quay /opt/mirror/ca
+openssl rand -base64 24 | sudo tee /opt/mirror/mirror-admin-password >/dev/null
+sudo chmod 600 /opt/mirror/mirror-admin-password
+# download + unpack mirror-registry (pin the version/sha for reproducibility), then:
+sudo ./mirror-registry install \
+  --quayHostname mirror.rig.local --quayRoot /opt/mirror/quay \
+  --initUser init --initPassword "$(sudo cat /opt/mirror/mirror-admin-password)"
+# capture the CA the installer emitted:
+sudo cp /opt/mirror/quay/quay-rootCA/rootCA.pem /opt/mirror/ca/rootCA.pem
+```
+
+> Run the registry under SELinux **enforcing**. If the quay pod won't start, `restorecon -Rv`
+> the `quayRoot` — do **not** `setenforce 0`.
+
+### 2.3 Trust the mirror CA + build the merged auth file
+
+```bash
+sudo cp /opt/mirror/ca/rootCA.pem /etc/pki/ca-trust/source/anchors/mirror-rootCA.pem
+sudo update-ca-trust
+curl -s https://mirror.rig.local:8443/health/instance && echo "  mirror reachable + trusted"
+
+# Merge the RH pull secret (pre-staged at ~/pull-secret.json) with the mirror creds into
+# the docker config oc-mirror reads:
+MIRROR=mirror.rig.local:8443
+AUTH=$(printf 'init:%s' "$(sudo cat /opt/mirror/mirror-admin-password)" | base64 -w0)
+mkdir -p ~/.docker
+jq --arg ep "$MIRROR" --arg a "$AUTH" \
+  '.auths[$ep]={auth:$a,email:"noreply@example.com"}' \
+  ~/pull-secret.json > ~/.docker/config.json
+chmod 600 ~/.docker/config.json
+```
+
+### 2.4 DNS + NTP for the air-gapped node
+
+The node has no public DNS/NTP. Serve both from the bastion on the VLAN. See
+`ansible/roles/dns_ntp/` for the canonical templates.
+
+```bash
+sudo dnf install -y dnsmasq chrony
+# DNS: resolve the mirror name and the cluster API/ingress to the node's VLAN IP.
+sudo tee /etc/dnsmasq.d/rig.conf >/dev/null <<'EOF'
+address=/mirror.rig.local/192.168.66.10
+host-record=api.sno-coco.coco.lab.local,192.168.66.11
+host-record=api-int.sno-coco.coco.lab.local,192.168.66.11
+address=/apps.sno-coco.coco.lab.local/192.168.66.11
+EOF
+sudo systemctl enable --now dnsmasq
+# NTP: serve the VLAN, local stratum so it works fully offline.
+sudo tee /etc/chrony.d/rig.conf >/dev/null <<'EOF'
+allow 192.168.66.0/24
+local stratum 10
+EOF
+sudo systemctl enable --now chronyd
+sudo firewall-cmd --permanent --add-service=dns --add-service=ntp --add-port=8443/tcp --add-port=8080/tcp
+sudo firewall-cmd --reload
+```
+
+> Clock skew silently hangs OpenShift bootstrap **and** breaks SNP attestation. Wiring NTP to
+> the bastion (here and in `agent-config`, Phase 5) is not optional.
+
+---
+
+## Phase 3 — Mirror the content (the bottleneck, ~1–2 h, cacheable)
+
+Replaces: `make mirror` → `scripts/mirror.sh`. Runs on the bastion.
+
+```bash
+# VERIFY operator channels BEFORE the long pull — cheap to check, 1–2 h to redo:
+for pkg in nfd cert-manager sandboxed-containers-operator trustee-operator; do
+  oc-mirror list operators --catalog <mirrored-or-public-index> --package "$pkg"
+done
+# reconcile any mismatches in install/imageset-config.yaml (every channel carries # VERIFY).
+
+# Push (oc-mirror v2). The workspace persists and re-runs fetch only deltas.
+export MIRROR_REGISTRY=mirror.rig.local:8443
+oc-mirror --v2 -c install/imageset-config.yaml \
+  --workspace file:///opt/mirror/ocm-workspace docker://${MIRROR_REGISTRY}
+```
+
+`oc-mirror` v2 emits **IDMS/ITMS + a CatalogSource** under
+`/opt/mirror/ocm-workspace/working-dir/cluster-resources/`. Keep them — they are applied
+**after** the cluster exists (Phase 5), not now (the installer uses `install-config`'s
+`imageDigestSources` instead).
+
+> **Landmines:** `401/403` = stale RH pull secret; `x509` = mirror CA not trusted on this host
+> (re-check 2.3). If `oc-mirror` v2 panics on a registry-auth conflict, `unset
+> REGISTRY_AUTH_FILE` (its embedded registry hijacks it).
+
+> **STOP-gate:** mirror completes with no errors; `cluster-resources/` YAML present; all four
+> operator packages confirmed present in the mirrored catalog.
+
+---
+
+## Phase 4 — Rung-0 SNP host gate + the BIOS recipe
+
+Replaces: `scripts/host-snp-check.sh` + the manual IPMI BIOS step. This proves silicon +
+firmware + provider actually do **SNP host** before you build anything on top.
+
+### 4.1 Set the SEV-SNP BIOS (the one hands-on hardware step)
+
+Via the node's IPMI/KVM console → reboot → firmware setup (AMI Aptio in the reference rig).
+Full walkthrough: [`docs/notes/latitude-snp-bringup.md`](notes/latitude-snp-bringup.md).
+
+| Setting | Value |
+|---|---|
+| North Bridge → **SEV-SNP Support** | **Enabled** — *not* `Auto` (Auto reads as OFF — the classic landmine) |
+| CPU Config → **SMEE** | Enabled |
+| CPU Config → **SNP Memory (RMP Table) Coverage** | Enabled |
+| CPU Config → **SEV-ES ASID Space Limit** | 100 |
+| CPU Config → **SEV Control** | Enabled |
+| Memory → **Memory Interleaving** | **Disabled** (else PSP `Error: 0x3`) |
+
+The misleading `IOMMU SNP feature not enabled` kernel message is caused by **SEV-SNP Support =
+Auto**, not IOMMU — don't chase IOMMU. **Re-provisioning resets BIOS to defaults; re-apply
+this recipe every time.**
+
+### 4.2 Run the rung-0 host gate (on the raw OS, pre-OpenShift)
+
+```bash
+ssh <user>@<node-ip> 'sudo bash -s' < scripts/host-snp-check.sh   # expect all PASS
+```
+
+The script discriminates **kernel-incapable** vs **BIOS-off** vs **genuine provider veto** —
+read its `RESULT` line; a FAIL is not automatically a provider veto.
+
+> **STOP-gate:** `RESULT: SEV-SNP host LIVE`. A genuine firmware/provider veto (kernel-capable
+> + BIOS-on, still failing) means the bare-metal SNP path is invalid for this node — stop and
+> reconsider the node/provider rather than building on top.
+
+### 4.3 Lock egress host-side and verify the air gap bites
+
+Two separate controls — don't conflate them. Inbound is the provider firewall (Phase 1.4);
+**egress** is locked here with nftables, allowing only the bastion's private VLAN IP. A
+silently-reachable internet would hide the very VCEK-cache failure mode this environment
+exists to prove.
+
+```bash
+ssh <user>@<node-ip> 'sudo nft -f - <<EOF
+table inet airgap {
+  chain output { type filter hook output priority 0; policy drop;
+    ct state established,related accept
+    oifname "lo" accept
+    ip daddr 192.168.66.10 accept   # bastion PRIVATE VLAN IP only
+  }
+}
+EOF'
+# probe: public egress must be DEAD, the private mirror must answer:
+ssh <user>@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
+ssh <user>@<node-ip> 'curl -m5 -skI https://mirror.rig.local:8443 >/dev/null && echo "MIRROR OK over VLAN"'
+```
+
+(Post-install, the same intent is expressed as the opt-in MachineConfig under
+[`gitops/base/airgap-egress/`](../gitops/base/airgap-egress/) — apply it **after** the SNO is
+healthy, not in the install-time overlay.)
+
+> **STOP-gate:** rung-0 green **and** public egress blocked **and** mirror reachable.
+
+---
+
+## Phase 5 — Install SNO via the Agent-based Installer
+
+Replaces: the Ansible `render_configs`, `pxe_serve`, and `install_drive` roles, and
+`make agent-image` / `serve-boot-artifacts` / `install-wait`. Full reference:
+[`install/README.md`](../install/README.md).
+
+### 5.1 Discover the node's facts (never guess)
+
+On the booted node: root device (`lsblk` → `/dev/nvme0n1` vs `/dev/sda`), the **real NIC MAC**
+of the VLAN-parent interface (`ip link` — MACs are per physical unit; a re-provision gives a
+different machine), and confirm the static IP/gateway plan.
+
+### 5.2 Fill the install templates into a fresh assets dir
+
+```bash
+mkdir -p cluster-assets
+cp install/install-config.yaml.tmpl cluster-assets/install-config.yaml
+cp install/agent-config.yaml.tmpl  cluster-assets/agent-config.yaml
+```
+
+Resolve every `# FILL:` (the templates document each one inline):
+
+- **`install-config.yaml`** — `baseDomain`/`metadata.name`; `machineNetwork` CIDR;
+  `imageDigestSources` (your `MIRROR_REGISTRY` + the two `/openshift/release[-images]` paths
+  oc-mirror wrote — reconcile against the emitted `idms-oc-mirror.yaml`);
+  `additionalTrustBundle` (the mirror CA PEM); `pullSecret` (**mirror** creds, base64
+  `user:pass` — **not** the RH cloud secret); `sshKey` (your public key).
+- **`agent-config.yaml`** — `rendezvousIP` (= the single node's VLAN-reachable IP);
+  `hostname`; `rootDeviceHints.deviceName`; `interfaces[].macAddress` (the discovered MAC);
+  and the **two-interface** `networkConfig`: the boot/data NIC **plus a tagged VLAN child**
+  carrying `192.168.66.11`, with `dns-resolver` pointed at the bastion's dnsmasq
+  (`192.168.66.10`) so the mirror name resolves over the VLAN. `additionalNTPSources` lives
+  **here** (the installer drops it from `install-config`) → the bastion VLAN IP.
+
+> The VLAN child + DNS-based mirror resolution is the single most common "install never
+> starts" trap: the RHCOS node reaches the mirror only over the VLAN, and the Phase-2
+> `/etc/hosts` style trick does **not** survive into RHCOS — resolve the mirror via the
+> bastion's DNS, not a hosts file.
+
+### 5.3 Build boot artifacts and serve them (iPXE path)
+
+```bash
+# iPXE: build the kernel/initrd/rootfs + agent.x86_64.ipxe
+openshift-install --dir cluster-assets agent create pxe-files
+# (ISO path instead: `agent create image` → cluster-assets/agent.x86_64.iso, attach via IPMI vmedia)
+```
+
+The initrd embeds ignition (the **mirror pull secret + sshKey**), so serve it under an
+**unguessable** path segment and refuse directory listing. `scripts/serve-boot-artifacts.sh`
+does exactly this (tokenized nginx root on `:8080`, byte-range/`206` support). Set the
+matching `bootArtifactsBaseURL` (the bastion's **public** IP — the node fetches iPXE over its
+public NIC before the VLAN is up) in `agent-config` *before* `create pxe-files`.
+
+### 5.4 Boot the node and wait
+
+- **Netboot:** point the node at `http://<bastion-public-ip>:8080/<token>/agent.x86_64.ipxe`
+  via your provider's reinstall/netboot mechanism (the reference rig uses the Latitude
+  reinstall API with `operating_system=ipxe`). **Power-cycling alone re-boots the stale local
+  disk — you must trigger a fresh netboot.**
+- **Or ISO:** attach `agent.x86_64.iso` as virtual media via IPMI, one-time-boot to it.
+
+```bash
+openshift-install --dir cluster-assets agent wait-for bootstrap-complete   # may time out; non-fatal
+openshift-install --dir cluster-assets agent wait-for install-complete
+export KUBECONFIG=cluster-assets/auth/kubeconfig
+oc get nodes                                   # single node, Ready
+oc get clusterversion                          # Available=True, Progressing=False
+```
+
+Run the wait from a host with line-of-sight to `api-int.<cluster>.<base>` over the VLAN (the
+bastion, if your admin host can't reach it). Kubeconfig + kubeadmin password land in
+`cluster-assets/auth/`.
+
+### 5.5 Apply the mirror cluster-resources, then close the boot endpoint
+
+```bash
+oc apply -f /opt/mirror/ocm-workspace/working-dir/cluster-resources/   # IDMS/ITMS + CatalogSource
+scripts/serve-boot-artifacts.sh stop                                   # secret-bearing initrd must not stay public
+oc get catalogsource -n openshift-marketplace                          # mirror catalog present + READY
+```
+
+> **STOP-gate:** node `Ready`; mirror `CatalogSource` present and **READY** (not-READY in a
+> disconnected cluster = zero operators install).
+
+---
+
+## Phase 6 — Operators + KataConfig
+
+Replaces: `make apply-sno` → `oc apply -k gitops/overlays/sno-workers`. You can apply the
+GitOps tree directly, or apply the same manifests by hand in order. **Install order is
+load-bearing: NFD → cert-manager → OSC → Trustee.**
+
+### 6.1 RHCOS SNP host gate
+
+Rung-0 (Phase 4) proved the *raw* kernel; now prove the **RHCOS** kernel:
+
+```bash
+scripts/verify-snp-host.sh <node-name>   # PSP SEV-SNP API, RMP table, no Error 0x3, kvm_amd sev_snp=Y, /dev/sev
+```
+
+> **STOP-gate:** do not apply any GitOps until this is green.
+
+### 6.2 Apply operators + NFD + KataConfig
+
+```bash
+oc apply -k gitops/overlays/sno-workers
+# or, by hand, in this order — see each file for the exact content:
+#   gitops/base/operators/{namespaces,operatorgroups,subscriptions}.yaml   (NFD→cert-manager→OSC→Trustee)
+#   gitops/base/nfd/{nodefeaturediscovery,amd-snp-rule}.yaml               (starts NFD; emits the SNP label)
+#   gitops/base/kataconfig/feature-gates.yaml                              (osc-feature-gates: confidential=true)
+#   gitops/base/kataconfig/kataconfig.yaml                                 (KataConfig — reboots the node)
+oc get csv -A | grep -Ei 'nfd|cert-manager|sandboxed|trustee'   # wait for all four Succeeded
+```
+
+Two non-obvious points the manifests encode:
+
+- **CoCo is enabled by the `osc-feature-gates` ConfigMap (`confidential: "true"`), NOT a
+  KataConfig field.** In OSC 1.12 the KataConfig CRD has no `enableConfidentialCompute`. The
+  ConfigMap must exist **before** KataConfig reconciles, or you get plain Kata only.
+- **NFD must label the node** (`amd.feature.node.kubernetes.io/snp=true`) before KataConfig, or
+  the `kata-cc` handler binds wrong. The label is live proof the TEE is on — **do not
+  hand-label** (it masks a real fault). Installing the NFD *operator* alone is not enough; the
+  `NodeFeatureDiscovery` instance must run.
+
+Applying `KataConfig` drives a MachineConfigPool rollout that **reboots the single node** (no
+spare — wait it out): `oc get mcp -w`.
+
+```bash
+oc get runtimeclass         # expect: kata  AND  kata-cc
+oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-qemu-snp (a.k.a. kata-snp) on SEV-SNP
+```
+
+> **STOP-gate:** four CSVs `Succeeded`, node back `Ready` post-reboot, `kata` + `kata-cc`
+> (SNP handler) RuntimeClasses present. If the handler is wrong, KataConfig ran before NFD
+> labeled — re-apply KataConfig once the label exists.
+
+---
+
+## Phase 7 — Trustee + air-gap attestation data
+
+Replaces: `make apply-trustee` + `make collect-vcek` + `make gen-rvps`. These produce
+**hardware-bound** data — regenerate on each distinct CPU+firmware config.
+
+### 7.1 Create the out-of-band Trustee secrets FIRST
+
+KBS crash-loops (looks like an attestation bug) if these are missing. Create them per
+[`gitops/base/trustee/secret-stubs.example.yaml`](../gitops/base/trustee/secret-stubs.example.yaml):
+`kbs-auth-public-key` (your ed25519 admin keypair — you generate and guard the private half),
+`attestation-cert`, `regcred` (**name must not contain dots**), `sample`, plus the
+`credential` / `security-policy` resources the rungs serve.
+
+### 7.2 Stand up Trustee
+
+```bash
+oc apply -k gitops/overlays/sno-trustee     # = gitops/base/trustee
+```
+
+### 7.3 Collect per-socket VCEK certs into the OfflineStore
+
+```bash
+scripts/collect-vcek.sh <node-name> trustee-operator-system
+```
+
+One secret **per socket**, keyed by **lowercase** HWID. The `.der` is fetched via `snphost
+show vcek-url` → downloaded on an **internet-connected** host (the rig node is egress-blocked)
+→ carried in. Generation-agnostic (dodges the upstream Trustee `Milan`-hardcode bug).
+
+> **Landmine:** an UPPER-case HWID silently misses the cache and falls through to the
+> (unreachable) KDS → attestation fails for the wrong reason. The secret name must be short
+> (≤ 63 chars, it becomes a pod volume name); the full 128-hex lowercase HWID goes only in the
+> `kbsLocalCertCacheSpec` `mountPath` (see [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml)).
+
+### 7.4 Generate RVPS reference values
+
+```bash
+scripts/gen-rvps-veritas.sh        # coco-tools:1.12 veritas --tee snp — one run per distinct socket/hw config
+```
+
+### 7.5 Wire both into Trustee
+
+Mount the VCEK secrets via `KbsConfig.spec.kbsLocalCertCacheSpec` at
+`…/kds-store/vcek/<hwid-lowercase>/vcek.der`, and merge the RVPS output into the
+`rvps-reference-values` ConfigMap referenced by `kbsconfig.yaml`. **Ensure `vcek_sources`
+omits `{type=KDS}`** — leaving KDS in lets attestation "work" by reaching an internet that
+won't exist in production.
+
+> **STOP-gate:** KBS restarts cleanly; its logs show no missing-cert / empty-RVPS / measurement
+> errors (`oc logs -n trustee-operator-system -l app=kbs`).
+
+---
+
+## Phase 8 — Capability rungs (a → b → c) + negative tests
+
+Replaces: `make negative-test`. A rung is **proven only when reproduced from these steps AND
+its negative test fails-closed** — a negative test that *passes* (secret released when it
+shouldn't be) is a sign-off-blocking finding, not a green. Do them **in order**. See
+[`docs/design/engagement-design.md`](design/engagement-design.md) §5 for the full matrix.
+
+- **Rung a — secret release.** Deploy
+  [`gitops/base/workloads/rung-a-secret-pod.yaml`](../gitops/base/workloads/rung-a-secret-pod.yaml)
+  (`runtimeClassName: kata-cc`). **Happy:** the init container's CDH attestation call returns
+  `{"status":"success"}` → workload runs. **Negative:** restrictive resource policy + wrong/
+  empty RVPS (or tampered initdata) → attestation errors, **secret withheld**, pod does not
+  start. Keep `limits.memory ≥ default_memory + 256–512 MiB` or the host OOM-kills the CVM
+  (SNP pins all guest RAM at launch). Read `oc describe pod` / `oc get events`, not just logs.
+- **Rung b — encrypted image.** **Happy:** pod Running (image key released after attestation).
+  **Negative:** wrong measurement → key withheld → pod won't start.
+- **Rung c — signed image.** **Happy:** signed image pulls (mirror pull secret served as
+  `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
+- **Air-gap negative test (cross-cutting).** Remove one VCEK secret / use a wrong-case HWID →
+  attestation **must fail**. Proves the OfflineStore cache — not a silently-reachable KDS — is
+  load-bearing.
+
+> **STOP-gate:** every rung's happy path **and** negative test green, and the air-gap negative
+> test fails closed.
+
+---
+
+## Phase 9 — Teardown
+
+Stop node billing; keep the bastion so the mirror persists.
+
+- Destroy/deprovision the **node** (in the automation: `terraform destroy` of the node module;
+  by hand: deprovision via your provider). Leave the bastion up.
+- **Re-provisioning gives a fresh node with default BIOS** — the Phase-4 SNP BIOS recipe must
+  be re-applied every time. Provider + silicon are proven; the *settings* are not persistent.
+- Tear the bastion down only at the very end (the mirror is the expensive thing to rebuild).
+
+---
+
+## Hardware-bound vs portable (carry through every phase)
+
+- **Portable** — prove once, reuse verbatim: all `gitops/` manifests, the operator
+  subscriptions + install order, KBS ConfigMaps / Rego policies, initdata *structure*, and the
+  scripts themselves.
+- **Hardware-bound** — regenerate per distinct CPU+firmware config: VCEK certs (keyed by chip
+  HWID), RVPS reference values, TLS certs + Trustee URL, initdata *measured bytes* (HOST_DATA),
+  and the BIOS recipe.
+
+## Related references
+
+- [`docs/runbooks/disconnected-sno-bringup.md`](runbooks/disconnected-sno-bringup.md) — the
+  same flow as a phase checklist, with `make`/Terraform/Ansible entry points.
+- [`docs/runbooks/failure-modes.md`](runbooks/failure-modes.md) — symptom → cause → fix.
+- [`docs/notes/latitude-snp-bringup.md`](notes/latitude-snp-bringup.md) — the BIOS recipe.
+- [`docs/design/engagement-design.md`](design/engagement-design.md) — why each decision was made.

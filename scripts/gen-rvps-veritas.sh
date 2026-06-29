@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Generate RVPS reference values with Veritas. Hardware-bound: run on the TARGET hardware
-# (rig proves the procedure; customer metal regenerates the data). One run per distinct
-# hardware config (CPU family + firmware). See docs/notes/enterprise-onboarding-guide.md Step 5.
+# (rig proves the procedure; production metal regenerates the data). One run per distinct
+# hardware config (CPU family + firmware). See docs/design/engagement-design.md §4.
 #
 # Runs the coco-tools `veritas` generator over your initdata and emits an RVPS reference-values
 # YAML to merge into the `rvps-reference-values` ConfigMap (gitops/base/trustee/kbsconfig.yaml).

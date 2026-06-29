@@ -1,7 +1,7 @@
-# Customer Scoping — questions to confirm before/early in the engagement
+# Pre-deployment scoping — questions to confirm before/early in a deployment
 
 These are unknowns that the design deliberately works *around* (so they don't block rung-0),
-but they must be confirmed with the customer to finalize the apply-to-customer step.
+but they must be confirmed for the target environment to finalize the apply-to-production step.
 
 ## Hardware
 - [ ] **AMD EPYC generation** — Milan (7003) / Genoa (9004) / Turin (9005)? Changes the KDS
@@ -33,10 +33,10 @@ but they must be confirmed with the customer to finalize the apply-to-customer s
 - [ ] TLS route model: passthrough vs re-encrypt (cert pinned in initdata).
 
 ## Roadmap
-- [ ] 🔴 **TDX timeline** — fully air-gapped TDX is not supported upstream yet. Confirm the
-      customer understands the SNP-now / TDX-when-supported split.
-- [ ] Does the customer already run **OpenShift GitOps/ArgoCD**, or is it net-new?
+- [ ] 🔴 **TDX timeline** — fully air-gapped TDX is not supported upstream yet. Confirm
+      stakeholders understand the SNP-now / TDX-when-supported split.
+- [ ] Does the target environment already run **OpenShift GitOps/ArgoCD**, or is it net-new?
 
-## Secrets the customer actually cares about
+## Secrets to gate behind attestation
 - [ ] Real credential type(s) to gate behind attestation (vs the demo `sample` secret).
 - [ ] Image signing (cosign) and/or encryption requirements for rungs b/c.

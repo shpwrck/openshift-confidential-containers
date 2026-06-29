@@ -25,7 +25,7 @@ spec:
   kbsResourcePolicyConfigMapName: resource-policy
   kbsAttestationPolicyConfigMapName: attestation-policy
 
-  # Secret-backed resources served to attested clients. NB (defects/): KBS resource names must
+  # Secret-backed resources served to attested clients. NB (known issue): KBS resource names must
   # NOT contain dots — registry pull secret is named `regcred`, not `.dockerconfigjson`.
   kbsSecretResources:
     - regcred         # mirror-registry pull secret (rung c image pulls).
@@ -54,4 +54,5 @@ spec:
   kbsLocalCertCacheSpec:
     secrets:
       - secretName: vcek-snp-0   # short (<=63 chars); data key vcek.der lands in mountPath
+        # FILL: the chip's lowercase 128-hex HWID (`snphost show identifier | tr A-Z a-z`).
         mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/<HWID-LOWERCASE-128-HEX>

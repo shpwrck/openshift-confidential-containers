@@ -15,7 +15,7 @@ Background: [`../design/engagement-design.md`](../design/engagement-design.md).
 - **STOP-gates** are hard: do not proceed past one until it is green.
 - `# VERIFY` / `# FILL` markers in the linked files are host- or version-specific. Resolve
   them on the node — do not invent values.
-- This is the **rig** path (`oc apply` via the `Makefile`). The customer environment points
+- This is the **rig** path (`oc apply` via the `Makefile`). The production environment points
   mirrored ArgoCD at the same `gitops/` tree instead; the manifests are identical.
 
 ### What's hardware-bound vs portable
@@ -23,7 +23,7 @@ Background: [`../design/engagement-design.md`](../design/engagement-design.md).
 Carry this distinction through every phase (source: [`../../gitops/README.md`](../../gitops/README.md),
 design §4):
 
-- **Portable** — prove once on the rig, reuse verbatim on customer metal: all `gitops/`
+- **Portable** — prove once on the rig, reuse verbatim on production metal: all `gitops/`
   manifests, operator subscriptions + **install order** (NFD → cert-manager → OSC → Trustee),
   KBS ConfigMaps, Rego policies, initdata *structure*, the `Makefile`/`scripts` themselves.
 - **Hardware-bound** — must be **regenerated on each distinct CPU+firmware config**: VCEK
@@ -48,7 +48,7 @@ Done on the **bastion / admin host**, not the node.
       churn. Apply it **before** the node (Phase 1). It emits the **CA** (`<mirror_root>/ca/rootCA.pem`)
       and the mirror **host:port** (`terraform output mirror_endpoint`). The node is later egress-
       restricted to reach **only** this bastion (see the Phase-1 firewall VERIFY).
-- [ ] **Internal git** reachable from the bastion (and, in the customer env, from ArgoCD)
+- [ ] **Internal git** reachable from the bastion (and, in the production env, from ArgoCD)
       hosting this repo's `gitops/` tree.
 - [ ] **Red Hat pull secret** from <https://console.redhat.com/openshift/install/pull-secret>
       — used to *populate the mirror* (Phase 2). It is **not** carried onto the air-gapped
@@ -63,7 +63,7 @@ Done on the **bastion / admin host**, not the node.
 Reference: [`../../infra/latitude/README.md`](../../infra/latitude/README.md),
 BIOS recipe [`../notes/latitude-snp-bringup.md`](../notes/latitude-snp-bringup.md).
 
-- [ ] **Provision the bastion first** (persistent; spends money — approve explicitly), then the node:
+- [ ] **Provision the bastion first** (persistent; hourly bare-metal billing starts on apply), then the node:
       ```bash
       export LATITUDESH_AUTH_TOKEN=...
       # 1) persistent mirror/air-gap host (apply once; keep up across node spikes).
@@ -264,7 +264,7 @@ Reference: [`install/README.md`](../../install/README.md),
 ## Phase 5 — Air-gap attestation data (hands-on, hardware-bound, ~30–45 min)
 
 Both pipelines run **on this hardware** and produce **environment-bound** data (design §4).
-The operator ships nothing for these; VCEK automation is a **customer sign-off gate**.
+The operator ships nothing for these; VCEK automation is a **production sign-off gate**.
 
 - [ ] **Stand up the rig Trustee** (unattended apply): `make apply-trustee` →
       `oc apply -k gitops/overlays/sno-trustee`

@@ -84,6 +84,6 @@ oc delete -k <repo>/gitops/base/airgap-egress     # or on the node: nft delete t
 
 ## When you find the cause
 The two likely outcomes — (i) attestation/OfflineStore failure, or (ii) CDH ignores the
-initdata registry config — are both worth filing with the OSC/CoCo team (docs/defects #16). If it's
+initdata registry config — are both worth filing with the OSC/CoCo team (a known upstream issue). If it's
 just an auth-key mismatch, register the credential under the mirror-location key the journal shows
 image-rs requesting and redeploy.
