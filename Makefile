@@ -5,13 +5,18 @@ OVERLAY ?= sno-workers
 NODE    ?=
 NS      ?= trustee-operator-system
 CATALOGSOURCE ?= cs-redhat-operator-index-v4-20
+VCEK_BUNDLE ?= ./vcek-bundle
+HWID ?=
+MIRROR_REGISTRY ?= mirror.rig.local:8443
+MIRROR_DNS_UPSTREAM ?= 192.168.66.10
+KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
+RUNG_A_IMAGE ?= registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
 
 # Assets dir the Agent-based installer consumes (install-config + agent-config land here).
 # FILL: matches the dir used in install/README.md ("cluster-assets").
 ASSETS  ?= cluster-assets
 # openshift-install / oc-mirror come from scripts/install-tools.sh into ./bin; prefer them.
 INSTALL ?= ./bin/openshift-install
-MIRROR_REGISTRY ?=
 
 .PHONY: help
 help: ## List targets
@@ -84,6 +89,10 @@ verify-snp-host: ## Rung-0 gate: prove SEV-SNP HOST is live on NODE (run before 
 validate-sno-baseline: ## Read-only gate: node Ready, MCP stable, mirrored CatalogSource READY
 	CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/validate-sno-baseline.sh
 
+.PHONY: repair-sno-baseline
+repair-sno-baseline: ## Repair known MCO kubelet.conf drift, then wait for the SNO baseline gate
+	NODE="$(NODE)" CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/repair-sno-baseline.sh
+
 ## --- Lint / CI (no hardware) ---------------------------------------------
 .PHONY: lint
 lint: ## kustomize build + kubeconform + conftest over all overlays
@@ -96,11 +105,19 @@ apply: ## oc apply -k the selected OVERLAY (default: sno-workers)
 
 .PHONY: apply-sno
 apply-sno: ## Phase 4: operators (NFD->cert-manager->OSC->Trustee) + KataConfig (reboots node)
-	oc apply -k gitops/overlays/sno-workers
+	CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/apply-sno.sh
 
 .PHONY: apply-trustee
 apply-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RVPS after)
-	oc apply -k gitops/overlays/sno-trustee
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/apply-trustee.sh
+
+.PHONY: seed-trustee-secrets
+seed-trustee-secrets: ## Phase 5: create/update rig Trustee secrets from bastion-local files
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/seed-trustee-secrets.sh
+
+.PHONY: apply-rung-a
+apply-rung-a: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
+	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash ./scripts/apply-rung-a.sh
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

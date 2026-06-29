@@ -33,6 +33,49 @@ stable (`Updated=True`, `Updating=False`, `Degraded=False`), and the mirrored Ca
 be `READY`. A degraded MCP is a stop condition for KataConfig because OSC drives a node-level
 MachineConfig rollout.
 
+If the baseline gate reports the known MCO drift:
+
+```text
+content mismatch for file "/etc/kubernetes/kubelet.conf"
+```
+
+repair it through the scripted target:
+
+```bash
+make repair-sno-baseline
+make validate-sno-baseline
+```
+
+The repair target is intentionally narrow: it only handles that exact kubelet.conf drift, backs
+up the live file under `/var/tmp/mco-drift-backups/` on the node, restores the file from the
+node's current rendered MachineConfig, and then waits for the baseline gate to pass.
+
+Replay the rig CoCo install through the scripted Make targets only:
+
+```bash
+make verify-snp-host NODE=<node-name>
+make apply-sno
+make apply-trustee
+make apply-rung-a
+```
+
+`make apply-sno` installs and validates the worker-side CoCo stack: operator CSVs, NFD SNP label,
+KataConfig, `kata-cc` (`kata-snp`) RuntimeClass, and Gatekeeper memory policy. It intentionally
+does not launch the workload.
+
+`make apply-trustee` seeds the rig Trustee secrets from bastion-local files, renders the live SNP
+HWID into `KbsConfig.spec.kbsLocalCertCacheSpec`, applies the KBS ConfigMaps/KbsConfig, and waits
+for the KBS deployment. Defaults match the Latitude rig:
+
+```bash
+VCEK_BUNDLE=./vcek-bundle
+MIRROR_REGISTRY=mirror.rig.local:8443
+```
+
+`make apply-rung-a` generates environment-bound initdata at runtime, configures the `rig.local`
+DNS forwarder to the bastion, applies the digest-pinned rung-a pod, and waits until the
+confidential pod is `Ready`.
+
 ## Prerequisites
 
 - A SEV-SNP-capable bare-metal node with BIOS already proven (see
