@@ -371,8 +371,9 @@ git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`
 YAML/describe/logs, decoded initdata, recent Trustee logs, events, KbsConfig/configmaps,
 mirror log snippets when the collector can read them, redacted Trustee Secret metadata plus
 data-key names and decoded byte lengths, redacted `vcek-*` Secret metadata, and copies of
-`rung-bc-images.json` and `rung-bc.env` when present. It does not dump Secret data, but still
-review the bundle before sharing it outside the engagement.
+`rung-bc-images.json` and `rung-bc.env` when present. `summary.env` records the repo revision,
+branch, dirty state, and local tool paths used to collect the bundle. It does not dump Secret
+data, but still review the bundle before sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed:

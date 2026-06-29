@@ -822,6 +822,27 @@ EOF
 		die "evidence handoff did not copy rung-bc.env"
 }
 
+verify_evidence_summary_provenance() {
+	local summary="$tmpdir/summary.env"
+	NS="workload-test" \
+		TRUSTEE_NS="trustee-test" \
+		ARTIFACT_DIR="$tmpdir/artifacts" \
+		EVIDENCE_DIR="$tmpdir/evidence" \
+		PODS="rung-a rung-b" \
+		MIRROR_LOG_FILES="/tmp/mirror.log" \
+		MIRROR_CONTAINER_NAMES="registry" \
+		bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" write-summary "$summary"
+
+	expect_grep "namespace=workload-test" "$summary" "evidence summary workload namespace"
+	expect_grep "trustee_namespace=trustee-test" "$summary" "evidence summary Trustee namespace"
+	expect_grep "repo_root=$REPO_ROOT" "$summary" "evidence summary repo root"
+	expect_grep "repo_git_head=" "$summary" "evidence summary git head"
+	expect_grep "repo_git_branch=" "$summary" "evidence summary git branch"
+	expect_grep "repo_git_dirty=" "$summary" "evidence summary dirty state"
+	expect_grep "tool_oc=" "$summary" "evidence summary oc path"
+	expect_grep "tool_jq=" "$summary" "evidence summary jq path"
+}
+
 need make
 need oc
 need jq
@@ -856,6 +877,7 @@ verify_workload_namespace_make_env
 verify_negative_test_air_gap_restores_vceks
 verify_evidence_secret_redaction
 verify_evidence_artifact_handoff
+verify_evidence_summary_provenance
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

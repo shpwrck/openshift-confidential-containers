@@ -136,6 +136,38 @@ copy_artifact_handoff() {
 	done
 }
 
+write_summary() {
+	local out="$1" git_head="" git_branch="" git_dirty="" tool
+	if command -v git >/dev/null && git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+		git_head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+		git_branch="$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || true)"
+		if [[ -n "$(git -C "$REPO_ROOT" status --short 2>/dev/null)" ]]; then
+			git_dirty=true
+		else
+			git_dirty=false
+		fi
+	fi
+
+	{
+		echo "captured_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		echo "namespace=${NS}"
+		echo "trustee_namespace=${TRUSTEE_NS}"
+		echo "artifact_dir=${ARTIFACT_DIR}"
+		echo "evidence_dir=${EVIDENCE_DIR}"
+		echo "pods=${PODS}"
+		echo "mirror_log_files=${MIRROR_LOG_FILES}"
+		echo "mirror_container_names=${MIRROR_CONTAINER_NAMES}"
+		echo "oc_user=$(oc whoami 2>/dev/null || true)"
+		echo "repo_root=${REPO_ROOT}"
+		echo "repo_git_head=${git_head}"
+		echo "repo_git_branch=${git_branch}"
+		echo "repo_git_dirty=${git_dirty}"
+		for tool in oc jq skopeo cosign podman docker; do
+			echo "tool_${tool}=$(command -v "$tool" 2>/dev/null || true)"
+		done
+	} > "$out"
+}
+
 if [[ "${1:-}" == "redact-secret-json" ]]; then
 	[[ "$#" -eq 1 ]] || die "usage: $0 redact-secret-json"
 	need jq
@@ -158,6 +190,12 @@ if [[ "${1:-}" == "copy-artifact-handoff" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "write-summary" ]]; then
+	[[ "$#" -eq 2 ]] || die "usage: $0 write-summary <summary.env>"
+	write_summary "$2"
+	exit 0
+fi
+
 need oc
 need jq
 need base64
@@ -168,26 +206,21 @@ mkdir -p \
 	"${EVIDENCE_DIR}/mirror/files" \
 	"${EVIDENCE_DIR}/mirror/containers" \
 	"${EVIDENCE_DIR}/pods" \
+	"${EVIDENCE_DIR}/repo" \
 	"${EVIDENCE_DIR}/trustee/secrets" \
 	"${EVIDENCE_DIR}/trustee/config"
 
-{
-	echo "captured_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	echo "namespace=${NS}"
-	echo "trustee_namespace=${TRUSTEE_NS}"
-	echo "artifact_dir=${ARTIFACT_DIR}"
-	echo "evidence_dir=${EVIDENCE_DIR}"
-	echo "pods=${PODS}"
-	echo "mirror_log_files=${MIRROR_LOG_FILES}"
-	echo "mirror_container_names=${MIRROR_CONTAINER_NAMES}"
-	echo "oc_user=$(oc whoami 2>/dev/null || true)"
-} > "${EVIDENCE_DIR}/summary.env"
+write_summary "${EVIDENCE_DIR}/summary.env"
 
 record "cluster/whoami.txt" oc whoami
 record "cluster/version.txt" oc version
 record "cluster/clusterversion.yaml" oc get clusterversion -o yaml
 record "cluster/runtimeclasses.yaml" oc get runtimeclass -o yaml
 record "cluster/workload-events.txt" oc -n "$NS" get events --sort-by=.lastTimestamp -o wide
+if command -v git >/dev/null && git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	record "repo/git-status.txt" git -C "$REPO_ROOT" status --short
+	record "repo/git-head.txt" git -C "$REPO_ROOT" show --no-patch --format=fuller HEAD
+fi
 record "trustee/events.txt" oc -n "$TRUSTEE_NS" get events --sort-by=.lastTimestamp -o wide
 
 for log_file in $MIRROR_LOG_FILES; do
