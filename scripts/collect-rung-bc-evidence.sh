@@ -127,6 +127,29 @@ decode_pod_initdata() {
 		2> "${EVIDENCE_DIR}/pods/${pod}.initdata.decode.err" || true
 }
 
+pod_summary_from_json() {
+	local pod_json="$1" out="$2" initdata initdata_sha=""
+	initdata="$(jq -r '.metadata.annotations["io.katacontainers.config.hypervisor.cc_init_data"] // ""' "$pod_json")"
+	if [[ -n "$initdata" ]]; then
+		if command -v sha256sum >/dev/null; then
+			initdata_sha="$(printf '%s' "$initdata" | sha256sum | awk '{print $1}')"
+		else
+			initdata_sha="sha256sum-not-found"
+		fi
+	fi
+	jq -r --arg initdata_sha "$initdata_sha" '
+		[
+			["name", (.metadata.name // "")],
+			["namespace", (.metadata.namespace // "")],
+			["phase", (.status.phase // "")],
+			["runtime_class", (.spec.runtimeClassName // "")],
+			["node_name", (.spec.nodeName // "")],
+			["app_image", (([.spec.containers[]? | select(.name == "app") | .image][0]) // "")],
+			["initdata_b64_sha256", $initdata_sha]
+		] | .[] | @tsv
+	' "$pod_json" > "$out"
+}
+
 copy_artifact_handoff() {
 	local artifact_dir="$1" evidence_dir="$2" artifact
 	for artifact in rung-bc-images.json rung-bc.env; do
@@ -196,6 +219,13 @@ if [[ "${1:-}" == "write-summary" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "pod-summary" ]]; then
+	[[ "$#" -eq 2 ]] || die "usage: $0 pod-summary <pod.json>"
+	need jq
+	pod_summary_from_json "$2" /dev/stdout
+	exit 0
+fi
+
 need oc
 need jq
 need base64
@@ -235,6 +265,7 @@ for pod in $PODS; do
 		record "pods/${pod}.yaml" oc -n "$NS" get pod "$pod" -o yaml
 		record "pods/${pod}.describe.txt" oc -n "$NS" describe pod "$pod"
 		record "pods/${pod}.logs.txt" oc -n "$NS" logs "pod/${pod}" --all-containers --prefix=true --tail="$POD_LOG_TAIL"
+		pod_summary_from_json "${EVIDENCE_DIR}/pods/${pod}.json" "${EVIDENCE_DIR}/pods/${pod}.summary.tsv"
 		decode_pod_initdata "$pod"
 	else
 		printf 'missing\n' > "${EVIDENCE_DIR}/pods/${pod}.missing"

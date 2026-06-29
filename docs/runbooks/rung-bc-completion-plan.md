@@ -368,12 +368,13 @@ By default this writes under `rung-bc-artifacts/evidence-<utc-timestamp>/`, whic
 git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`,
 `negtest-rung-a`, `negtest-rung-b`, `negtest-rung-c`, and `negtest-air-gap`; override with
 `EVIDENCE_PODS="..."` when a rig run uses custom pod names. The bundle includes pod
-YAML/describe/logs, decoded initdata, recent Trustee logs, events, KbsConfig/configmaps,
-mirror log snippets when the collector can read them, redacted Trustee Secret metadata plus
-data-key names and decoded byte lengths, redacted `vcek-*` Secret metadata, and copies of
-`rung-bc-images.json` and `rung-bc.env` when present. `summary.env` records the repo revision,
-branch, dirty state, and local tool paths used to collect the bundle. It does not dump Secret
-data, but still review the bundle before sharing it outside the engagement.
+YAML/describe/logs, per-pod summary TSVs, decoded initdata, recent Trustee logs, events,
+KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
+Secret metadata plus data-key names and decoded byte lengths, redacted `vcek-*` Secret
+metadata, and copies of `rung-bc-images.json` and `rung-bc.env` when present. The pod summaries
+record phase, runtime class, app image, and initdata annotation hash; `summary.env` records the
+repo revision, branch, dirty state, and local tool paths used to collect the bundle. It does
+not dump Secret data, but still review the bundle before sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed:

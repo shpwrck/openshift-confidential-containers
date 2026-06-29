@@ -843,6 +843,43 @@ verify_evidence_summary_provenance() {
 	expect_grep "tool_jq=" "$summary" "evidence summary jq path"
 }
 
+verify_evidence_pod_summary() {
+	local pod_json="$tmpdir/pod-summary.json" summary="$tmpdir/pod-summary.tsv" expected_initdata_sha
+	cat > "$pod_json" <<'EOF'
+{
+  "metadata": {
+    "name": "rung-b-encrypted",
+    "namespace": "workload-test",
+    "annotations": {
+      "io.katacontainers.config.hypervisor.cc_init_data": "dGVzdC1pbml0ZGF0YQ=="
+    }
+  },
+  "spec": {
+    "runtimeClassName": "kata-cc",
+    "nodeName": "snp-worker-0",
+    "containers": [
+      {
+        "name": "app",
+        "image": "mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  "status": {
+    "phase": "Running"
+  }
+}
+EOF
+	expected_initdata_sha="$(printf '%s' "dGVzdC1pbml0ZGF0YQ==" | sha256sum | awk '{print $1}')"
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" pod-summary "$pod_json" > "$summary"
+	expect_grep $'name\trung-b-encrypted' "$summary" "pod summary name"
+	expect_grep $'namespace\tworkload-test' "$summary" "pod summary namespace"
+	expect_grep $'phase\tRunning' "$summary" "pod summary phase"
+	expect_grep $'runtime_class\tkata-cc' "$summary" "pod summary runtime class"
+	expect_grep $'node_name\tsnp-worker-0' "$summary" "pod summary node"
+	expect_grep $'app_image\tmirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$summary" "pod summary app image"
+	expect_grep "initdata_b64_sha256	${expected_initdata_sha}" "$summary" "pod summary initdata hash"
+}
+
 need make
 need oc
 need jq
@@ -878,6 +915,7 @@ verify_negative_test_air_gap_restores_vceks
 verify_evidence_secret_redaction
 verify_evidence_artifact_handoff
 verify_evidence_summary_provenance
+verify_evidence_pod_summary
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1
