@@ -837,9 +837,9 @@ Each rung adds one user-visible capability on top of the same attestation base:
   `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
   Plan details: serve a restrictive signed-image policy and public key from KBS, while still
   allowing or verifying the pause/release images the CVM pulls before the app image.
-- **Air-gap negative test (cross-cutting).** Remove one VCEK secret / use a wrong-case HWID,
-  then rerun an otherwise happy rung-a request. Attestation **must fail**. Proves the
-  OfflineStore cache — not a silently-reachable KDS — is load-bearing.
+- **Air-gap negative test (cross-cutting).** Temporarily remove the Trustee `vcek-*` Secrets,
+  then rerun an otherwise happy rung-a request. Attestation **must fail**, and the Secrets must
+  be restored. Proves the OfflineStore cache — not a silently-reachable KDS — is load-bearing.
 
 > **STOP-gate:** every rung's happy path **and** negative test green, and the air-gap negative
 > test fails closed.

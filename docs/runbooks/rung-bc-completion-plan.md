@@ -330,10 +330,12 @@ registry credential, pause image, or KBS URL is broken.
   - Extend denial grep for `Image policy rejected`, `sigstoreSigned`, `signature`,
     `security-policy`, and `rejected`.
 - `air-gap`
-  - Temporarily remove a VCEK secret, then render an otherwise happy rung-a manifest as
+  - Temporarily remove every `vcek-*` Secret in the Trustee namespace, then render an
+    otherwise happy rung-a manifest as
     `negtest-air-gap`.
-  - This must fail because the OfflineStore cache is missing, not because the pod manifest
-    was also tampered.
+  - The script backs up and restores those Secrets even if the probe exits early.
+  - This must fail because the OfflineStore cache is missing, not because the pod manifest was
+    also tampered.
 
 Before declaring the script done, run:
 

@@ -451,6 +451,96 @@ EOF
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence" "$evidence_out" "Makefile evidence dir override"
 }
 
+verify_negative_test_air_gap_restores_vceks() {
+	local bin="$tmpdir/air-gap-bin" log="$tmpdir/air-gap-oc-calls" out="$tmpdir/air-gap-negative-test.out"
+	mkdir -p "$bin"
+
+	cat > "$bin/oc" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'oc' >> "$CALL_LOG"
+for arg in "$@"; do
+	printf '\t%s' "$arg" >> "$CALL_LOG"
+done
+printf '\n' >> "$CALL_LOG"
+
+args=("$@")
+if [[ "${args[0]:-}" == "-n" ]]; then
+	args=("${args[@]:2}")
+fi
+cmd="${args[0]:-}"
+target="${args[1]:-}"
+
+if [[ "$cmd" == "whoami" ]]; then
+	printf 'test-user\n'
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == "runtimeclass" ]]; then
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == "secret" ]]; then
+	printf 'secret/vcek-snp-0\nsecret/vcek-snp-1\nsecret/credential\n'
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == secret/vcek-snp-* ]]; then
+	name="${target#secret/}"
+	cat <<YAML
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${name}
+data:
+  vcek.der: ZGVy
+YAML
+	exit 0
+fi
+if [[ "$cmd" == "patch" ]]; then
+	cat <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: negtest-air-gap
+  namespace: workload-test
+spec:
+  runtimeClassName: kata-cc
+YAML
+	exit 0
+fi
+if [[ "$cmd" == "describe" && "$target" == "pod" ]]; then
+	printf 'Warning: attestation denied because VCEK cache is missing\n'
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == "events" ]]; then
+	printf 'attestation denied: VCEK cache missing\n'
+	exit 0
+fi
+if [[ "$cmd" == "logs" ]]; then
+	printf 'KBS OfflineStore VCEK cache miss\n'
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == "pod" ]]; then
+	exit 0
+fi
+if [[ "$cmd" == "delete" || "$cmd" == "apply" || "$cmd" == "rollout" ]]; then
+	exit 0
+fi
+exit 0
+EOF
+	chmod +x "$bin/oc"
+
+	CALL_LOG="$log" PATH="$bin:$PATH" \
+		MIRROR_CA="$tmpdir/mirror-ca.pem" \
+		NS="workload-test" \
+		TRUSTEE_NS="trustee-test" \
+		TIMEOUT=0 \
+		bash "$REPO_ROOT/scripts/negative-test.sh" air-gap > "$out"
+
+	expect_grep "negative-test summary: 1 passed, 0 failed, 0 skipped." "$out" "air-gap negative-test summary"
+	expect_grep $'delete\tsecret/vcek-snp-0\tsecret/vcek-snp-1' "$log" "air-gap deleted all VCEK secrets"
+	expect_grep "vcek-snp-0.yaml" "$log" "air-gap restored first VCEK secret"
+	expect_grep "vcek-snp-1.yaml" "$log" "air-gap restored second VCEK secret"
+}
+
 verify_evidence_secret_redaction() {
 	local raw="$tmpdir/raw-secret.json" redacted="$tmpdir/redacted-secret.json"
 	cat > "$raw" <<'EOF'
@@ -513,6 +603,7 @@ verify_build_make_env
 verify_trustee_make_env
 verify_negative_test_make_env
 verify_workload_namespace_make_env
+verify_negative_test_air_gap_restores_vceks
 verify_evidence_secret_redaction
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render

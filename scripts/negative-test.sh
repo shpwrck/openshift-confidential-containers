@@ -32,6 +32,17 @@ command -v oc >/dev/null || die "oc not on PATH"
 oc whoami >/dev/null 2>&1 || die "not logged into a cluster (oc whoami failed)"
 oc get runtimeclass kata-cc >/dev/null 2>&1 || die "kata-cc runtimeclass missing — finish Phase 4 first"
 
+denial_signal_seen() {
+  local name="$1" context
+  context="$(
+    oc -n "$NS" describe pod "$name" 2>/dev/null || true
+    oc -n "$NS" get events --field-selector "involvedObject.name=${name}" --sort-by=.lastTimestamp -o wide 2>/dev/null || true
+    oc -n "$NS" logs "pod/${name}" --all-containers --prefix=true --tail=80 2>/dev/null || true
+    oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail=240 2>/dev/null || true
+  )"
+  grep -qiE 'attest|denied|forbidden|policy|sign|signature|sigstore|measurement|secret|decrypt|image-key|vcek|kds|offline|cache|certificate|CreateContainerError|RunContainerError|ImagePullBackOff|ErrImagePull|Unauthorized|401|403' <<<"$context"
+}
+
 # Deploy a workload and assert it FAILS-CLOSED: the pod must NOT reach Running/Succeeded within
 # TIMEOUT (attestation denies the secret/key/pull). If it DOES start, that's the bad case.
 expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label>
@@ -48,7 +59,7 @@ expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label>
     sleep 5
   done
   # never started within the window — confirm there's a denial/attestation signal, not a flake
-  if oc -n "$NS" describe pod "$name" 2>/dev/null | grep -qiE 'attest|denied|forbidden|policy|sign|signature|sigstore|measurement|secret|decrypt|image-key|CreateContainerError|RunContainerError|ImagePullBackOff'; then
+  if denial_signal_seen "$name"; then
     ok "$label"
   else
     echo "  ⚠️  pod '$name' did not start, but no attestation/denial signal seen — investigate (could be a flake)"; bad "$label (no denial signal)"
@@ -121,13 +132,42 @@ run_rung_c() {
 }
 
 run_air_gap() {
-  echo "[air-gap] remove a VCEK secret → OfflineStore miss → attestation must fail (not silently hit KDS)"
-  local vcek; vcek="$(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep -m1 'secret/vcek-' || true)"
-  if [[ -z "$vcek" ]]; then skipt "no vcek-* secret in $TRUSTEE_NS — run make collect-vcek first"; return; fi
-  local bak manifest; bak="$(mktemp)"; manifest="$(mktemp)"
-  oc -n "$TRUSTEE_NS" get "$vcek" -o yaml > "$bak"
-  echo "  (temporarily removing $vcek; will restore)"
-  oc -n "$TRUSTEE_NS" delete "$vcek" >/dev/null
+  echo "[air-gap] remove VCEK secrets → OfflineStore miss → attestation must fail (not silently hit KDS)"
+  local vceks=() bakdir manifest restore_needed=0
+  mapfile -t vceks < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
+  if [[ "${#vceks[@]}" -eq 0 ]]; then skipt "no vcek-* secret in $TRUSTEE_NS — run make collect-vcek first"; return; fi
+  bakdir="$(mktemp -d)"
+  manifest="$(mktemp)"
+
+  air_gap_restore() {
+    local backup
+    [[ "$restore_needed" == "1" ]] || return 0
+    echo "  (restoring ${#vceks[@]} VCEK secret(s))"
+    for backup in "$bakdir"/*.yaml; do
+      [[ -e "$backup" ]] || continue
+      oc -n "$TRUSTEE_NS" apply -f "$backup" >/dev/null || true
+    done
+    oc -n "$TRUSTEE_NS" rollout restart deploy -l app=kbs >/dev/null 2>&1 || true
+    restore_needed=0
+  }
+
+  air_gap_exit_cleanup() {
+    local rc=$?
+    air_gap_restore || true
+    rm -rf "$bakdir"
+    rm -f "$manifest"
+    exit "$rc"
+  }
+
+  local vcek
+  for vcek in "${vceks[@]}"; do
+    oc -n "$TRUSTEE_NS" get "$vcek" -o yaml > "$bakdir/${vcek#secret/}.yaml"
+  done
+  restore_needed=1
+  trap air_gap_exit_cleanup EXIT
+
+  echo "  (temporarily removing ${#vceks[@]} VCEK secret(s); will restore)"
+  oc -n "$TRUSTEE_NS" delete "${vceks[@]}" >/dev/null
   oc -n "$TRUSTEE_NS" rollout restart deploy -l app=kbs >/dev/null 2>&1 || oc -n "$TRUSTEE_NS" delete pod -l app=kbs >/dev/null 2>&1 || true
   sleep 10
   if render_or_skip "air-gap happy-path rung-a manifest" "$manifest" \
@@ -137,8 +177,10 @@ run_air_gap() {
         bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then
     expect_fail_closed "negtest-air-gap" "$manifest" "air-gap VCEK cache miss denied otherwise happy rung-a"
   fi
-  echo "  (restoring $vcek)"; oc -n "$TRUSTEE_NS" apply -f "$bak" >/dev/null; rm -f "$bak" "$manifest"
-  oc -n "$TRUSTEE_NS" rollout restart deploy -l app=kbs >/dev/null 2>&1 || true
+  air_gap_restore
+  rm -rf "$bakdir"
+  rm -f "$manifest"
+  trap - EXIT
 }
 
 case "$WHICH" in

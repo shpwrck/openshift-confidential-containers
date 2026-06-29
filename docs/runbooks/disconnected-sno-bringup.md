@@ -321,10 +321,10 @@ below.
       - **Negative test:** unsigned/tampered image → `image_security_policy` **rejects** the pull.
       - **Implementation note:** the signed policy must account for the app image and every
         infrastructure image pulled inside the CVM, including release/pause images.
-- [ ] **Air-gap negative test (proves the cache is load-bearing):** remove one VCEK secret /
-      use a **wrong-case HWID**, then rerun an otherwise happy rung-a request →
-      **attestation fails**. This proves the OfflineStore — not a silently reachable KDS —
-      is doing the work.
+- [ ] **Air-gap negative test (proves the cache is load-bearing):** temporarily remove the
+      Trustee `vcek-*` Secrets, then rerun an otherwise happy rung-a request →
+      **attestation fails** and the Secrets are restored. This proves the OfflineStore — not
+      a silently reachable KDS — is doing the work.
 
 > Denial-proof automation now exists at `make negative-test WHICH=all`
 > ([Makefile](../../Makefile)); it renders the rung a/b/c negative manifests from the same
