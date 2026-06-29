@@ -73,7 +73,8 @@ The repo now carries the dry-run friendly tooling:
   - Creates a 32-byte rung-b image key.
   - Encrypts the rung-b image with the CoCo keyprovider and KID
     `kbs:///default/image-key/rung-b`.
-  - Pushes an unsigned rung-c negative-control image, then pushes and signs rung-c.
+  - Pushes an unsigned rung-c negative-control image, then pushes rung-c and signs the
+    digest ref that will be used by the workload.
   - Writes `rung-bc-artifacts/rung-bc-images.json` with digest refs and key paths.
 - `scripts/seed-trustee-secrets.sh`
   - `RUNG_B_KEY_FILE` creates Secret `image-key` with key `rung-b`.

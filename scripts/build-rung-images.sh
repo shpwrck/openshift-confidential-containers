@@ -154,16 +154,19 @@ encrypt_rung_b() {
 }
 
 sign_rung_c() {
+	local c_digest c_digest_ref
 	[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD to sign the rung-c image"
 	echo "Pushing unsigned rung-c negative-control image: $RUNG_C_UNSIGNED_IMAGE"
 	skopeo copy "$SOURCE_IMAGE_REF" "docker://${RUNG_C_UNSIGNED_IMAGE}"
 	echo "Pushing rung-c image to sign: $RUNG_C_IMAGE"
 	skopeo copy "$SOURCE_IMAGE_REF" "docker://${RUNG_C_IMAGE}"
-	echo "Signing rung-c image with $COSIGN_KEY"
+	c_digest="$(skopeo inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
+	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
+	echo "Signing rung-c image digest with $COSIGN_KEY: $c_digest_ref"
 	# shellcheck disable=SC2086
-	COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign sign $COSIGN_SIGN_ARGS --key "$COSIGN_KEY" "$RUNG_C_IMAGE"
+	COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign sign $COSIGN_SIGN_ARGS --key "$COSIGN_KEY" "$c_digest_ref"
 	# shellcheck disable=SC2086
-	cosign verify $COSIGN_VERIFY_ARGS --key "$COSIGN_PUB" "$RUNG_C_IMAGE" >/dev/null
+	cosign verify $COSIGN_VERIFY_ARGS --key "$COSIGN_PUB" "$c_digest_ref" >/dev/null
 }
 
 write_manifest() {
@@ -227,6 +230,16 @@ fi
 if [[ "${1:-}" == "default-cosign-sign-args" ]]; then
 	[[ "$#" -eq 1 ]] || die "usage: $0 default-cosign-sign-args"
 	default_cosign_sign_args
+	exit 0
+fi
+
+if [[ "${1:-}" == "sign-rung-c-only" ]]; then
+	[[ "$#" -eq 1 ]] || die "usage: $0 sign-rung-c-only"
+	need skopeo
+	need jq
+	need cosign
+	configure_cosign_args
+	sign_rung_c
 	exit 0
 fi
 

@@ -89,6 +89,64 @@ EOF
 	[[ "$actual" == "--yes --tlog-upload=false" ]] || die "cosign v2 default sign args mismatch: $actual"
 }
 
+verify_rung_c_digest_signing() {
+	local bin="$tmpdir/rung-c-sign-bin" log="$tmpdir/rung-c-sign-calls"
+	local digest signed_ref
+	mkdir -p "$bin"
+	digest="sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	signed_ref="mirror.test.local:5000/coco/rung-c@${digest}"
+
+	cat > "$bin/skopeo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'skopeo' >> "$CALL_LOG"
+for arg in "$@"; do
+	printf '\t%s' "$arg" >> "$CALL_LOG"
+done
+printf '\n' >> "$CALL_LOG"
+
+case "${1:-}" in
+	copy) exit 0 ;;
+	inspect)
+		printf '{"Digest":"%s"}\n' "$TEST_DIGEST"
+		exit 0
+		;;
+esac
+exit 1
+EOF
+	chmod +x "$bin/skopeo"
+
+	cat > "$bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'cosign' >> "$CALL_LOG"
+for arg in "$@"; do
+	printf '\t%s' "$arg" >> "$CALL_LOG"
+done
+printf '\n' >> "$CALL_LOG"
+exit 0
+EOF
+	chmod +x "$bin/cosign"
+
+	CALL_LOG="$log" TEST_DIGEST="$digest" PATH="$bin:$PATH" \
+		COSIGN_PASSWORD=test-password \
+		COSIGN_KEY="$tmpdir/cosign.key" \
+		COSIGN_PUB="$tmpdir/cosign.pub" \
+		COSIGN_SIGN_ARGS="--yes --tlog-upload=false" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true" \
+		SOURCE_IMAGE_REF="dir:/tmp/source-image" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c:unsigned" \
+		bash "$REPO_ROOT/scripts/build-rung-images.sh" sign-rung-c-only >/dev/null
+
+	expect_grep $'skopeo\tcopy\tdir:/tmp/source-image\tdocker://mirror.test.local:5000/coco/rung-c:unsigned' "$log" "rung-c unsigned image copy"
+	expect_grep $'skopeo\tcopy\tdir:/tmp/source-image\tdocker://mirror.test.local:5000/coco/rung-c:signed' "$log" "rung-c signed image copy"
+	expect_grep $'skopeo\tinspect\tdocker://mirror.test.local:5000/coco/rung-c:signed' "$log" "rung-c digest inspect"
+	expect_grep $'cosign\tsign\t--yes\t--tlog-upload=false\t--key' "$log" "rung-c cosign sign"
+	expect_grep "$signed_ref" "$log" "rung-c cosign signed digest ref"
+	expect_grep $'cosign\tverify\t--insecure-ignore-tlog=true\t--key' "$log" "rung-c cosign verify"
+}
+
 verify_build_make_env() {
 	local stub="$tmpdir/build-rung-images-stub.sh" out="$tmpdir/build-rung-images-env"
 	cat > "$stub" <<'EOF'
@@ -186,6 +244,7 @@ expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirro
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 verify_cosign_default_sign_args
+verify_rung_c_digest_signing
 verify_build_make_env
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
