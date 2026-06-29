@@ -114,10 +114,26 @@ decode_pod_initdata() {
 		2> "${EVIDENCE_DIR}/pods/${pod}.initdata.decode.err" || true
 }
 
+copy_artifact_handoff() {
+	local artifact_dir="$1" evidence_dir="$2" artifact
+	for artifact in rung-bc-images.json rung-bc.env; do
+		if [[ -f "${artifact_dir}/${artifact}" ]]; then
+			cp "${artifact_dir}/${artifact}" "${evidence_dir}/${artifact}"
+		fi
+	done
+}
+
 if [[ "${1:-}" == "redact-secret-json" ]]; then
 	[[ "$#" -eq 1 ]] || die "usage: $0 redact-secret-json"
 	need jq
 	redact_secret_json
+	exit 0
+fi
+
+if [[ "${1:-}" == "copy-artifact-handoff" ]]; then
+	[[ "$#" -eq 3 ]] || die "usage: $0 copy-artifact-handoff <artifact-dir> <evidence-dir>"
+	mkdir -p "$3"
+	copy_artifact_handoff "$2" "$3"
 	exit 0
 fi
 
@@ -185,8 +201,6 @@ while IFS= read -r vcek_secret; do
 	write_redacted_secret "${vcek_secret#secret/}"
 done < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
 
-if [[ -f "${ARTIFACT_DIR}/rung-bc-images.json" ]]; then
-	cp "${ARTIFACT_DIR}/rung-bc-images.json" "${EVIDENCE_DIR}/rung-bc-images.json"
-fi
+copy_artifact_handoff "$ARTIFACT_DIR" "$EVIDENCE_DIR"
 
 echo "Rung b/c evidence written to ${EVIDENCE_DIR}"

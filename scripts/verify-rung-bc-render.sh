@@ -710,6 +710,23 @@ EOF
 	fi
 }
 
+verify_evidence_artifact_handoff() {
+	local artifacts="$tmpdir/evidence-artifacts" evidence="$tmpdir/evidence-copy"
+	mkdir -p "$artifacts"
+	cat > "$artifacts/rung-bc-images.json" <<'EOF'
+{"rung_b":{"digest_ref":"mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+EOF
+	cat > "$artifacts/rung-bc.env" <<'EOF'
+export RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+EOF
+
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" copy-artifact-handoff "$artifacts" "$evidence"
+	cmp "$artifacts/rung-bc-images.json" "$evidence/rung-bc-images.json" >/dev/null || \
+		die "evidence handoff did not copy rung-bc-images.json"
+	cmp "$artifacts/rung-bc.env" "$evidence/rung-bc.env" >/dev/null || \
+		die "evidence handoff did not copy rung-bc.env"
+}
+
 need make
 need oc
 need jq
@@ -742,6 +759,7 @@ verify_negative_test_make_env
 verify_workload_namespace_make_env
 verify_negative_test_air_gap_restores_vceks
 verify_evidence_secret_redaction
+verify_evidence_artifact_handoff
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1
