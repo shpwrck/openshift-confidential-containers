@@ -37,6 +37,7 @@ APPLY_RUNG_A_SCRIPT ?= ./scripts/apply-rung-a.sh
 APPLY_RUNG_B_SCRIPT ?= ./scripts/apply-rung-b.sh
 APPLY_RUNG_C_SCRIPT ?= ./scripts/apply-rung-c.sh
 COLLECT_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/collect-rung-bc-evidence.sh
+VALIDATE_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/validate-rung-bc-evidence.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
@@ -46,6 +47,7 @@ RUNG_B_POD ?= rung-b-encrypted
 RUNG_C_POD ?= rung-c-signed
 NEG_RUNG_B_POD ?= negtest-rung-b
 NEG_RUNG_C_POD ?= negtest-rung-c
+KEEP_DENIED_PODS ?= 0
 TRUSTEE_LOG_TAIL ?= 1000
 POD_LOG_TAIL ?= 200
 MIRROR_LOG_TAIL ?= 1000
@@ -184,6 +186,11 @@ apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signe
 collect-rung-bc-evidence: ## Phase 6: collect non-secret rung-b/c proof evidence into ARTIFACT_DIR
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" PODS="$(EVIDENCE_PODS)" RUNG_B_POD="$(RUNG_B_POD)" RUNG_C_POD="$(RUNG_C_POD)" NEG_RUNG_B_POD="$(NEG_RUNG_B_POD)" NEG_RUNG_C_POD="$(NEG_RUNG_C_POD)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash "$(COLLECT_RUNG_BC_EVIDENCE_SCRIPT)"
 
+.PHONY: validate-rung-bc-evidence
+validate-rung-bc-evidence: ## Phase 6: validate a collected rung-b/c evidence bundle (set EVIDENCE_DIR)
+	@test -n "$(EVIDENCE_DIR)" || { echo "set EVIDENCE_DIR=<rung-bc evidence dir>"; exit 2; }
+	EVIDENCE_DIR="$(EVIDENCE_DIR)" RUNG_B_POD="$(RUNG_B_POD)" RUNG_C_POD="$(RUNG_C_POD)" NEG_RUNG_B_POD="$(NEG_RUNG_B_POD)" NEG_RUNG_C_POD="$(NEG_RUNG_C_POD)" bash "$(VALIDATE_RUNG_BC_EVIDENCE_SCRIPT)" "$(EVIDENCE_DIR)"
+
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)
 	bash ./scripts/uninstall-coco.sh
@@ -223,4 +230,4 @@ gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware
 ## --- Validation (negative tests) -----------------------------------------
 .PHONY: negative-test
 negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-a|rung-b|rung-c|air-gap)
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)

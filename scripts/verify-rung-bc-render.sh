@@ -583,6 +583,7 @@ vars=(
 	RUNG_B_IMAGE
 	RUNG_C_UNSIGNED_IMAGE
 	TIMEOUT
+	KEEP_DENIED_PODS
 )
 
 for var in "${vars[@]}"; do
@@ -602,6 +603,7 @@ EOF
 		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/custom/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
 		TIMEOUT="7" \
+		KEEP_DENIED_PODS="1" \
 		> "$out"
 
 	expect_grep "ARG=rung-c" "$out" "Makefile negative-test target argument"
@@ -613,6 +615,7 @@ EOF
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$out" "Makefile negative-test rung-b image override"
 	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/custom/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$out" "Makefile negative-test rung-c unsigned override"
 	expect_grep "TIMEOUT=7" "$out" "Makefile negative-test timeout override"
+	expect_grep "KEEP_DENIED_PODS=1" "$out" "Makefile negative-test keep denied pods override"
 }
 
 verify_negative_test_scoped_denial_signals() {
@@ -677,9 +680,11 @@ EOF
 		NS="workload-test" \
 		TRUSTEE_NS="trustee-test" \
 		TIMEOUT=0 \
+		KEEP_DENIED_PODS=1 \
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
 		bash "$REPO_ROOT/scripts/negative-test.sh" rung-c > "$policy_out"
 	expect_grep "negative-test summary: 1 passed, 0 failed, 0 skipped." "$policy_out" "rung-c scoped policy denial summary"
+	expect_grep "keeping denied pod 'negtest-rung-c' for evidence collection" "$policy_out" "negative-test keep denied pod message"
 
 	if TEST_DENIAL_SIGNAL=unrelated PATH="$bin:$PATH" \
 		MIRROR_CA="$tmpdir/mirror-ca.pem" \
@@ -1062,6 +1067,125 @@ EOF
 	expect_grep "rung_c_negative_unsigned_image	${rung_c_unsigned_image}	${rung_c_unsigned_image}	match" "$out" "proof summary rung-c negative image match"
 }
 
+write_valid_rung_bc_evidence_bundle() {
+	local evidence="$1"
+	local rung_b_image rung_c_image rung_c_unsigned_image key_sha pub_sha policy_sha
+	rung_b_image="mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	rung_c_image="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	rung_c_unsigned_image="mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	key_sha="$(printf '01234567890123456789012345678901' | sha256sum | awk '{print $1}')"
+	pub_sha="$(printf 'cosign public key' | sha256sum | awk '{print $1}')"
+	policy_sha="$(printf '{}' | sha256sum | awk '{print $1}')"
+	mkdir -p "$evidence/pods" "$evidence/trustee/secrets" "$evidence/trustee" "$evidence/cluster"
+
+	cat > "$evidence/summary.env" <<'EOF'
+captured_at_utc=2026-06-29T00:00:00Z
+namespace=workload-test
+trustee_namespace=trustee-test
+repo_git_dirty=false
+EOF
+	cat > "$evidence/rung-bc-images.json" <<EOF
+{
+  "rung_b": {
+    "digest_ref": "${rung_b_image}",
+    "key_sha256": "${key_sha}"
+  },
+  "rung_c": {
+    "digest_ref": "${rung_c_image}",
+    "unsigned_digest_ref": "${rung_c_unsigned_image}",
+    "cosign_pub_sha256": "${pub_sha}"
+  }
+}
+EOF
+	cat > "$evidence/rung-bc-proof-summary.tsv" <<EOF
+check	expected	actual	status
+rung_b_key_secret_sha256	${key_sha}	${key_sha}	match
+rung_c_pub_secret_sha256	${pub_sha}	${pub_sha}	match
+rung_b_happy_image	${rung_b_image}	${rung_b_image}	match
+rung_b_negative_image	${rung_b_image}	${rung_b_image}	match
+rung_c_happy_image	${rung_c_image}	${rung_c_image}	match
+rung_c_negative_unsigned_image	${rung_c_unsigned_image}	${rung_c_unsigned_image}	match
+EOF
+	cat > "$evidence/trustee/secrets/rung-bc-fingerprints.tsv" <<EOF
+secret	key	status	decoded_bytes	sha256
+image-key	rung-b	present	32	${key_sha}
+sig-public-key	rung-c	present	17	${pub_sha}
+security-policy	rung-c	present	2	${policy_sha}
+EOF
+	cat > "$evidence/pods/summary.tsv" <<EOF
+requested_pod	status	name	namespace	phase	runtime_class	node_name	app_image	initdata_b64_sha256
+rung-b-encrypted	present	rung-b-encrypted	workload-test	Running	kata-cc	snp-worker-0	${rung_b_image}	initdata-a
+rung-c-signed	present	rung-c-signed	workload-test	Running	kata-cc	snp-worker-0	${rung_c_image}	initdata-b
+negtest-rung-b	present	negtest-rung-b	workload-test	Pending	kata-cc	snp-worker-0	${rung_b_image}	initdata-c
+negtest-rung-c	present	negtest-rung-c	workload-test	Pending	kata-cc	snp-worker-0	${rung_c_unsigned_image}	initdata-d
+EOF
+	cat > "$evidence/trustee/logs.txt" <<'EOF'
+GET /kbs/v0/resource/default/image-key/rung-b 200
+GET /kbs/v0/resource/default/security-policy/rung-c 200
+GET /kbs/v0/resource/default/sig-public-key/rung-c 200
+rung-b measurement denied before releasing image-key
+rung-c sigstore signature rejected by policy
+EOF
+	cat > "$evidence/pods/negtest-rung-b.describe.txt" <<'EOF'
+Warning: attestation measurement denied; image-key/rung-b withheld
+EOF
+	cat > "$evidence/pods/negtest-rung-c.describe.txt" <<'EOF'
+Warning: image security policy rejected unsigned sigstore signature
+EOF
+	: > "$evidence/trustee/events.txt"
+	: > "$evidence/cluster/workload-events.txt"
+}
+
+verify_evidence_validation_gate() {
+	local evidence="$tmpdir/valid-evidence" out="$tmpdir/validate-evidence.out" broken="$tmpdir/broken-evidence" err="$tmpdir/validate-evidence.err"
+	write_valid_rung_bc_evidence_bundle "$evidence"
+	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
+	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
+
+	cp -R "$evidence" "$broken"
+	awk -F '\t' 'BEGIN { OFS = FS } $1 == "rung_c_happy_image" { $4 = "mismatch" } { print }' \
+		"$broken/rung-bc-proof-summary.tsv" > "$broken/rung-bc-proof-summary.tsv.tmp"
+	mv "$broken/rung-bc-proof-summary.tsv.tmp" "$broken/rung-bc-proof-summary.tsv"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken" > /dev/null 2> "$err"; then
+		die "evidence validator accepted a mismatched proof summary"
+	fi
+	expect_grep "rung-bc proof summary has non-match rows" "$err" "evidence validator proof-summary failure"
+}
+
+verify_evidence_validation_make_env() {
+	local stub="$tmpdir/validate-evidence-stub.sh" out="$tmpdir/validate-evidence-make-env"
+	cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARG=%s\n' "${1:-}"
+vars=(
+	EVIDENCE_DIR
+	RUNG_B_POD
+	RUNG_C_POD
+	NEG_RUNG_B_POD
+	NEG_RUNG_C_POD
+)
+for var in "${vars[@]}"; do
+	printf '%s=%s\n' "$var" "${!var-}"
+done
+EOF
+	chmod +x "$stub"
+	make -s validate-rung-bc-evidence \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$stub" \
+		EVIDENCE_DIR="$tmpdir/evidence-for-validation" \
+		RUNG_B_POD="custom-rung-b" \
+		RUNG_C_POD="custom-rung-c" \
+		NEG_RUNG_B_POD="custom-neg-rung-b" \
+		NEG_RUNG_C_POD="custom-neg-rung-c" \
+		> "$out"
+	expect_grep "ARG=$tmpdir/evidence-for-validation" "$out" "Makefile validate evidence directory argument"
+	expect_grep "EVIDENCE_DIR=$tmpdir/evidence-for-validation" "$out" "Makefile validate evidence dir env"
+	expect_grep "RUNG_B_POD=custom-rung-b" "$out" "Makefile validate rung-b pod override"
+	expect_grep "RUNG_C_POD=custom-rung-c" "$out" "Makefile validate rung-c pod override"
+	expect_grep "NEG_RUNG_B_POD=custom-neg-rung-b" "$out" "Makefile validate negative rung-b pod override"
+	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$out" "Makefile validate negative rung-c pod override"
+}
+
 need make
 need oc
 need jq
@@ -1101,6 +1225,8 @@ verify_evidence_artifact_handoff
 verify_evidence_summary_provenance
 verify_evidence_pod_summary
 verify_evidence_rung_bc_proof_summary
+verify_evidence_validation_gate
+verify_evidence_validation_make_env
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

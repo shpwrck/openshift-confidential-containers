@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+# Validate a collected rung-b/c evidence bundle without contacting the cluster.
+set -euo pipefail
+
+EVIDENCE_DIR="${1:-${EVIDENCE_DIR:-}}"
+RUNG_B_POD="${RUNG_B_POD:-rung-b-encrypted}"
+RUNG_C_POD="${RUNG_C_POD:-rung-c-signed}"
+NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-negtest-rung-b}"
+NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
+RUNG_B_DENIAL_RE="${RUNG_B_DENIAL_RE:-attest|denied|forbidden|measurement|decrypt|image-key|key}"
+RUNG_C_DENIAL_RE="${RUNG_C_DENIAL_RE:-policy|sign|signature|sigstore|reject}"
+
+failures=0
+
+die() {
+	echo "ERROR: $*" >&2
+	exit 2
+}
+
+need() {
+	command -v "$1" >/dev/null || die "$1 is not on PATH"
+}
+
+pass() {
+	printf 'PASS: %s\n' "$*"
+}
+
+fail() {
+	printf 'FAIL: %s\n' "$*" >&2
+	failures=$((failures + 1))
+}
+
+require_file() {
+	local path="$1" label="$2"
+	if [[ -s "$path" ]]; then
+		pass "$label present"
+	else
+		fail "$label missing or empty: $path"
+	fi
+}
+
+is_digest_ref() {
+	[[ "$1" =~ @sha256:[0-9a-f]{64}$ ]]
+}
+
+summary_value() {
+	local key="$1" file="${EVIDENCE_DIR}/summary.env"
+	awk -F '=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); found = 1; exit } END { if (!found) exit 1 }' "$file"
+}
+
+pod_row() {
+	local pod="$1" file="${EVIDENCE_DIR}/pods/summary.tsv"
+	awk -F '\t' -v pod="$pod" 'NR > 1 && $1 == pod { print; found = 1; exit } END { if (!found) exit 1 }' "$file"
+}
+
+pod_col() {
+	local pod="$1" col="$2" row
+	row="$(pod_row "$pod" 2>/dev/null || true)"
+	if [[ -z "$row" ]]; then
+		return 1
+	fi
+	awk -F '\t' -v col="$col" '{ print $col }' <<<"$row"
+}
+
+check_manifest() {
+	local manifest="${EVIDENCE_DIR}/rung-bc-images.json"
+	require_file "$manifest" "rung-bc image manifest"
+	if [[ ! -s "$manifest" ]]; then
+		return
+	fi
+	if jq -e '
+		def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
+		(.rung_b.digest_ref | digest_ref) and
+		(.rung_c.digest_ref | digest_ref) and
+		(.rung_c.unsigned_digest_ref | digest_ref) and
+		(.rung_b.key_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+		(.rung_c.cosign_pub_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+	' "$manifest" >/dev/null; then
+		pass "rung-bc image manifest has digest refs and artifact fingerprints"
+	else
+		fail "rung-bc image manifest is missing digest refs or artifact fingerprints"
+	fi
+}
+
+check_proof_summary() {
+	local proof="${EVIDENCE_DIR}/rung-bc-proof-summary.tsv" bad_rows
+	require_file "$proof" "rung-bc proof summary"
+	if [[ ! -s "$proof" ]]; then
+		return
+	fi
+	bad_rows="$(awk -F '\t' 'NR > 1 && $4 != "match" { print }' "$proof")"
+	if [[ -z "$bad_rows" ]]; then
+		pass "rung-bc proof summary rows all match"
+	else
+		fail "rung-bc proof summary has non-match rows:"
+		printf '%s\n' "$bad_rows" >&2
+	fi
+}
+
+check_secret_fingerprint() {
+	local secret="$1" key="$2" label="$3" expected_bytes="${4:-}"
+	local file="${EVIDENCE_DIR}/trustee/secrets/rung-bc-fingerprints.tsv"
+	local row status bytes sha
+	require_file "$file" "rung-bc secret fingerprint table"
+	if [[ ! -s "$file" ]]; then
+		return
+	fi
+	row="$(awk -F '\t' -v secret="$secret" -v key="$key" 'NR > 1 && $1 == secret && $2 == key { print; found = 1; exit } END { if (!found) exit 1 }' "$file" || true)"
+	if [[ -z "$row" ]]; then
+		fail "$label fingerprint row missing"
+		return
+	fi
+	status="$(awk -F '\t' '{ print $3 }' <<<"$row")"
+	bytes="$(awk -F '\t' '{ print $4 }' <<<"$row")"
+	sha="$(awk -F '\t' '{ print $5 }' <<<"$row")"
+	if [[ "$status" != "present" ]]; then
+		fail "$label fingerprint status is $status"
+		return
+	fi
+	if [[ -n "$expected_bytes" && "$bytes" != "$expected_bytes" ]]; then
+		fail "$label decoded bytes mismatch: expected $expected_bytes, got $bytes"
+	elif [[ ! "$bytes" =~ ^[0-9]+$ || "$bytes" -le 0 ]]; then
+		fail "$label decoded bytes are invalid: $bytes"
+	elif [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+		pass "$label fingerprint present"
+	else
+		fail "$label sha256 is invalid: $sha"
+	fi
+}
+
+check_pod_phase() {
+	local pod="$1" label="$2" mode="$3"
+	local status phase runtime image
+	status="$(pod_col "$pod" 2 2>/dev/null || true)"
+	phase="$(pod_col "$pod" 5 2>/dev/null || true)"
+	runtime="$(pod_col "$pod" 6 2>/dev/null || true)"
+	image="$(pod_col "$pod" 8 2>/dev/null || true)"
+	if [[ "$status" != "present" ]]; then
+		fail "$label pod is not present in pods/summary.tsv"
+		return
+	fi
+	if [[ "$runtime" != "kata-cc" ]]; then
+		fail "$label pod runtime class is $runtime, expected kata-cc"
+	else
+		pass "$label pod uses kata-cc"
+	fi
+	if ! is_digest_ref "$image"; then
+		fail "$label pod app image is not digest-pinned: $image"
+	else
+		pass "$label pod app image is digest-pinned"
+	fi
+	case "$mode" in
+		happy)
+			if [[ "$phase" == "Running" || "$phase" == "Succeeded" ]]; then
+				pass "$label happy pod reached $phase"
+			else
+				fail "$label happy pod phase is $phase, expected Running or Succeeded"
+			fi
+			;;
+		denied)
+			if [[ "$phase" == "Running" || "$phase" == "Succeeded" ]]; then
+				fail "$label denied pod reached $phase"
+			else
+				pass "$label denied pod did not reach Running/Succeeded"
+			fi
+			;;
+		*) die "unknown pod phase mode: $mode" ;;
+	esac
+}
+
+bundle_text_for_pod() {
+	local pod="$1" file
+	for file in \
+		"${EVIDENCE_DIR}/pods/${pod}.describe.txt" \
+		"${EVIDENCE_DIR}/pods/${pod}.logs.txt" \
+		"${EVIDENCE_DIR}/trustee/logs.txt" \
+		"${EVIDENCE_DIR}/trustee/events.txt" \
+		"${EVIDENCE_DIR}/cluster/workload-events.txt"; do
+		[[ -f "$file" ]] && cat "$file"
+		printf '\n'
+	done
+}
+
+check_denial_signal() {
+	local pod="$1" label="$2" pattern="$3" context
+	context="$(bundle_text_for_pod "$pod")"
+	if grep -qiE "$pattern" <<<"$context"; then
+		pass "$label denial signal present"
+	else
+		fail "$label denial signal missing"
+	fi
+}
+
+check_kbs_logs() {
+	local logs="${EVIDENCE_DIR}/trustee/logs.txt" resource
+	require_file "$logs" "Trustee logs"
+	if [[ ! -s "$logs" ]]; then
+		return
+	fi
+	for resource in image-key/rung-b security-policy/rung-c sig-public-key/rung-c; do
+		if grep -Fq "resource/default/${resource}" "$logs"; then
+			pass "Trustee logs include resource/default/${resource}"
+		else
+			fail "Trustee logs missing resource/default/${resource}"
+		fi
+	done
+}
+
+check_summary() {
+	local summary="${EVIDENCE_DIR}/summary.env" dirty
+	require_file "$summary" "evidence summary"
+	if [[ ! -s "$summary" ]]; then
+		return
+	fi
+	dirty="$(summary_value repo_git_dirty 2>/dev/null || true)"
+	if [[ "$dirty" == "false" ]]; then
+		pass "evidence was collected from a clean git worktree"
+	else
+		fail "evidence repo_git_dirty is ${dirty:-missing}; collect from a clean checkout for promotion evidence"
+	fi
+}
+
+[[ -n "$EVIDENCE_DIR" ]] || die "usage: $0 <evidence-dir> (or set EVIDENCE_DIR)"
+[[ -d "$EVIDENCE_DIR" ]] || die "evidence directory does not exist: $EVIDENCE_DIR"
+need jq
+need awk
+need grep
+
+check_summary
+check_manifest
+check_proof_summary
+check_secret_fingerprint image-key rung-b "rung-b image key" 32
+check_secret_fingerprint sig-public-key rung-c "rung-c public key"
+check_secret_fingerprint security-policy rung-c "rung-c security policy"
+require_file "${EVIDENCE_DIR}/pods/summary.tsv" "pod summary index"
+check_pod_phase "$RUNG_B_POD" "rung-b" happy
+check_pod_phase "$RUNG_C_POD" "rung-c" happy
+check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
+check_pod_phase "$NEG_RUNG_C_POD" "rung-c negative" denied
+check_kbs_logs
+check_denial_signal "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_DENIAL_RE"
+check_denial_signal "$NEG_RUNG_C_POD" "rung-c negative" "$RUNG_C_DENIAL_RE"
+
+if (( failures > 0 )); then
+	echo "Rung b/c evidence validation FAILED (${failures} issue(s))." >&2
+	exit 1
+fi
+
+echo "Rung b/c evidence validation OK."

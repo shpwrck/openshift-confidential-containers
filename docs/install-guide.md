@@ -842,7 +842,8 @@ Each rung adds one user-visible capability on top of the same attestation base:
   be restored. Proves the OfflineStore cache — not a silently-reachable KDS — is load-bearing.
 
 > **STOP-gate:** every rung's happy path **and** negative test green, and the air-gap negative
-> test fails closed.
+> test fails closed. For rungs b/c, collect and validate the non-secret evidence bundle with
+> `make collect-rung-bc-evidence` and `make validate-rung-bc-evidence EVIDENCE_DIR=<bundle>`.
 
 ---
 

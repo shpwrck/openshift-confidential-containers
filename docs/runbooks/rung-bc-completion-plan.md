@@ -95,6 +95,7 @@ The repo now carries the dry-run friendly tooling:
   - `make apply-rung-b`
   - `make apply-rung-c`
   - `make collect-rung-bc-evidence`
+  - `make validate-rung-bc-evidence`
 
 Makefile namespace convention: `NS` is the Trustee namespace, defaulting to
 `trustee-operator-system`; `WORKLOAD_NS` is the namespace for rung pods and negative-test pods,
@@ -355,7 +356,9 @@ make negative-test WHICH=all
 ```
 
 `WHICH=all` must exit zero only when rung-a, rung-b, rung-c, and air-gap denial proofs all
-run and all fail closed as expected.
+run and all fail closed as expected. For reviewer-grade evidence, set `KEEP_DENIED_PODS=1`
+when running the rung-b and rung-c negative tests, collect the evidence bundle while those
+denied pods still exist, then delete the `negtest-*` pods after validation.
 
 ## Phase 6 - evidence capture and promotion checklist
 
@@ -364,6 +367,7 @@ logs still exist:
 
 ```bash
 make collect-rung-bc-evidence
+make validate-rung-bc-evidence EVIDENCE_DIR=<bundle path printed above>
 ```
 
 By default this writes under `rung-bc-artifacts/evidence-<utc-timestamp>/`, which is ignored by
@@ -381,9 +385,12 @@ runtime class, app image, and initdata annotation hash. `trustee/secrets/rung-bc
 records non-secret decoded lengths and SHA-256 fingerprints for only `image-key/rung-b`,
 `sig-public-key/rung-c`, and `security-policy/rung-c`; `rung-bc-proof-summary.tsv` compares
 those fingerprints and the happy/negative pod image refs against `rung-bc-images.json`.
-`summary.env` records the repo revision, branch, dirty state, and local tool paths used to
-collect the bundle. It does not dump Secret data, but still review the bundle before sharing it
-outside the engagement.
+`make validate-rung-bc-evidence EVIDENCE_DIR=...` fails if the proof summary has non-matching
+rows, required pod phases/images are missing or wrong, Trustee logs lack the expected KBS
+resource fetches, negative pods lack denial signals, or the bundle was collected from a dirty
+checkout. `summary.env` records the repo revision, branch, dirty state, and local tool paths
+used to collect the bundle. It does not dump Secret data, but still review the bundle before
+sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed:
@@ -401,6 +408,8 @@ After both rungs are green on the disposable rig:
 - Check `rung-bc-proof-summary.tsv`; every row should be `match` unless the row is for a pod
   that was intentionally deleted before collection, in which case re-run collection while that
   pod still exists if you need reviewer-grade evidence.
+- Run `make validate-rung-bc-evidence EVIDENCE_DIR=<bundle>` and treat any failure as a
+  sign-off blocker until the underlying rig evidence is fixed.
 - Save the `collect-rung-bc-evidence` bundle path with the run notes.
 - Re-run `make lint`.
 - Re-run the full hardware gate matrix:

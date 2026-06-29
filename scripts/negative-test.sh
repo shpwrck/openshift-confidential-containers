@@ -8,7 +8,7 @@
 # Hardware-bound: needs `oc` logged into a running CoCo cluster (kata-cc runtimeclass present).
 #
 # Usage: ./scripts/negative-test.sh [all|rung-a|rung-b|rung-c|air-gap]
-# Env: NS=default  TRUSTEE_NS=trustee-operator-system  TIMEOUT=120
+# Env: NS=default  TRUSTEE_NS=trustee-operator-system  TIMEOUT=120  KEEP_DENIED_PODS=0
 #      MIRROR_REGISTRY=mirror.rig.local:8443  RUNG_B_IMAGE=...  RUNG_C_UNSIGNED_IMAGE=...
 #      Source rung-bc-artifacts/rung-bc.env after make build-rung-images for digest refs.
 set -euo pipefail
@@ -17,6 +17,7 @@ WHICH="${1:-all}"
 NS="${NS:-default}"
 TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
 TIMEOUT="${TIMEOUT:-120}"
+KEEP_DENIED_PODS="${KEEP_DENIED_PODS:-0}"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
 MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"
 KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
@@ -69,7 +70,11 @@ expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label> <d
   else
     echo "  ⚠️  pod '$name' did not start, but no ${signal_label} signal seen — investigate (could be a flake or the wrong dependency failing)"; bad "$label (no ${signal_label} signal)"
   fi
-  oc -n "$NS" delete pod "$name" --ignore-not-found >/dev/null 2>&1 || true
+  if [[ "$KEEP_DENIED_PODS" == "1" ]]; then
+    echo "  (keeping denied pod '$name' for evidence collection)"
+  else
+    oc -n "$NS" delete pod "$name" --ignore-not-found >/dev/null 2>&1 || true
+  fi
 }
 
 render_or_skip() { # render_or_skip <label> <output-file> <command...>
