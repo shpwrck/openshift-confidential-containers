@@ -4,6 +4,7 @@
 OVERLAY ?= sno-workers
 NODE    ?=
 NS      ?= trustee-operator-system
+CATALOGSOURCE ?= cs-redhat-operator-index-v4-20
 
 # Assets dir the Agent-based installer consumes (install-config + agent-config land here).
 # FILL: matches the dir used in install/README.md ("cluster-assets").
@@ -79,6 +80,10 @@ verify-snp-host: ## Rung-0 gate: prove SEV-SNP HOST is live on NODE (run before 
 	@test -n "$(NODE)" || { echo "set NODE=<node-name>"; exit 2; }
 	./scripts/verify-snp-host.sh "$(NODE)"
 
+.PHONY: validate-sno-baseline
+validate-sno-baseline: ## Read-only gate: node Ready, MCP stable, mirrored CatalogSource READY
+	CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/validate-sno-baseline.sh
+
 ## --- Lint / CI (no hardware) ---------------------------------------------
 .PHONY: lint
 lint: ## kustomize build + kubeconform + conftest over all overlays
@@ -96,6 +101,14 @@ apply-sno: ## Phase 4: operators (NFD->cert-manager->OSC->Trustee) + KataConfig 
 .PHONY: apply-trustee
 apply-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RVPS after)
 	oc apply -k gitops/overlays/sno-trustee
+
+.PHONY: uninstall-coco
+uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)
+	bash ./scripts/uninstall-coco.sh
+
+.PHONY: validate-coco-uninstalled
+validate-coco-uninstalled: ## Verify CoCo operators/operands are absent and the SNO node is Ready
+	bash ./scripts/uninstall-coco.sh validate
 
 .PHONY: diff
 diff: ## Server-side diff of the selected OVERLAY

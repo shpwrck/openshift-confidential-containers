@@ -7,6 +7,32 @@ The node is egress-firewalled to reach only the bastion mirror registry.
 This directory only covers the **install**. Operator install order (NFD → cert-manager → OSC
 → Trustee) and attestation live under `gitops/` and `docs/` — not here.
 
+## Script-only reset before replay
+
+If a rig already has CoCo operators or operands applied, reset it from the bastion/admin host
+with the Makefile before replaying the install steps. Do not hand-delete cluster resources.
+
+```bash
+make uninstall-coco
+make validate-coco-uninstalled
+```
+
+The uninstall target deletes the CoCo stack in reverse order: Trustee operands, workload and
+Gatekeeper policy operands, KataConfig/NFD/runtime artifacts, then the OLM subscriptions/CSVs
+and stack namespaces. On SNO, removing KataConfig-generated MachineConfig can reboot the node;
+rerun the validation target until it either passes or reports the remaining blocker.
+
+Before replaying the operator install, also run the read-only baseline gate:
+
+```bash
+make validate-sno-baseline
+```
+
+This must pass before `make apply-sno`: the node must be `Ready`, MachineConfigPools must be
+stable (`Updated=True`, `Updating=False`, `Degraded=False`), and the mirrored CatalogSource must
+be `READY`. A degraded MCP is a stop condition for KataConfig because OSC drives a node-level
+MachineConfig rollout.
+
 ## Prerequisites
 
 - A SEV-SNP-capable bare-metal node with BIOS already proven (see
