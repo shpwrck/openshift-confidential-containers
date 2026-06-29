@@ -150,6 +150,36 @@ pod_summary_from_json() {
 	' "$pod_json" > "$out"
 }
 
+pod_index_row_from_json() {
+	local pod_json="$1" requested_pod="$2" initdata initdata_sha=""
+	initdata="$(jq -r '.metadata.annotations["io.katacontainers.config.hypervisor.cc_init_data"] // ""' "$pod_json")"
+	if [[ -n "$initdata" ]]; then
+		if command -v sha256sum >/dev/null; then
+			initdata_sha="$(printf '%s' "$initdata" | sha256sum | awk '{print $1}')"
+		else
+			initdata_sha="sha256sum-not-found"
+		fi
+	fi
+	jq -r --arg requested_pod "$requested_pod" --arg initdata_sha "$initdata_sha" '
+		[
+			$requested_pod,
+			"present",
+			(.metadata.name // ""),
+			(.metadata.namespace // ""),
+			(.status.phase // ""),
+			(.spec.runtimeClassName // ""),
+			(.spec.nodeName // ""),
+			(([.spec.containers[]? | select(.name == "app") | .image][0]) // ""),
+			$initdata_sha
+		] | @tsv
+	' "$pod_json"
+}
+
+pod_index_missing_row() {
+	local requested_pod="$1"
+	printf '%s\tmissing\t\t\t\t\t\t\t\n' "$requested_pod"
+}
+
 copy_artifact_handoff() {
 	local artifact_dir="$1" evidence_dir="$2" artifact
 	for artifact in rung-bc-images.json rung-bc.env; do
@@ -226,6 +256,19 @@ if [[ "${1:-}" == "pod-summary" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "pod-index-row" ]]; then
+	[[ "$#" -eq 3 ]] || die "usage: $0 pod-index-row <pod.json> <requested-pod>"
+	need jq
+	pod_index_row_from_json "$2" "$3"
+	exit 0
+fi
+
+if [[ "${1:-}" == "pod-index-missing-row" ]]; then
+	[[ "$#" -eq 2 ]] || die "usage: $0 pod-index-missing-row <requested-pod>"
+	pod_index_missing_row "$2"
+	exit 0
+fi
+
 need oc
 need jq
 need base64
@@ -253,6 +296,7 @@ if command -v git >/dev/null && git -C "$REPO_ROOT" rev-parse --is-inside-work-t
 fi
 record "trustee/events.txt" oc -n "$TRUSTEE_NS" get events --sort-by=.lastTimestamp -o wide
 
+printf 'requested_pod\tstatus\tname\tnamespace\tphase\truntime_class\tnode_name\tapp_image\tinitdata_b64_sha256\n' > "${EVIDENCE_DIR}/pods/summary.tsv"
 for log_file in $MIRROR_LOG_FILES; do
 	record_log_file "$log_file"
 done
@@ -266,9 +310,11 @@ for pod in $PODS; do
 		record "pods/${pod}.describe.txt" oc -n "$NS" describe pod "$pod"
 		record "pods/${pod}.logs.txt" oc -n "$NS" logs "pod/${pod}" --all-containers --prefix=true --tail="$POD_LOG_TAIL"
 		pod_summary_from_json "${EVIDENCE_DIR}/pods/${pod}.json" "${EVIDENCE_DIR}/pods/${pod}.summary.tsv"
+		pod_index_row_from_json "${EVIDENCE_DIR}/pods/${pod}.json" "$pod" >> "${EVIDENCE_DIR}/pods/summary.tsv"
 		decode_pod_initdata "$pod"
 	else
 		printf 'missing\n' > "${EVIDENCE_DIR}/pods/${pod}.missing"
+		pod_index_missing_row "$pod" >> "${EVIDENCE_DIR}/pods/summary.tsv"
 	fi
 done
 

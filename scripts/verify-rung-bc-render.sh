@@ -844,7 +844,7 @@ verify_evidence_summary_provenance() {
 }
 
 verify_evidence_pod_summary() {
-	local pod_json="$tmpdir/pod-summary.json" summary="$tmpdir/pod-summary.tsv" expected_initdata_sha
+	local pod_json="$tmpdir/pod-summary.json" summary="$tmpdir/pod-summary.tsv" index_row="$tmpdir/pod-index-row.tsv" missing_row="$tmpdir/pod-index-missing-row.tsv" expected_initdata_sha
 	cat > "$pod_json" <<'EOF'
 {
   "metadata": {
@@ -878,6 +878,11 @@ EOF
 	expect_grep $'node_name\tsnp-worker-0' "$summary" "pod summary node"
 	expect_grep $'app_image\tmirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$summary" "pod summary app image"
 	expect_grep "initdata_b64_sha256	${expected_initdata_sha}" "$summary" "pod summary initdata hash"
+
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" pod-index-row "$pod_json" requested-rung-b > "$index_row"
+	expect_grep "requested-rung-b	present	rung-b-encrypted	workload-test	Running	kata-cc	snp-worker-0	mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	${expected_initdata_sha}" "$index_row" "pod summary index row"
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" pod-index-missing-row missing-negtest > "$missing_row"
+	expect_grep $'missing-negtest\tmissing' "$missing_row" "pod summary missing index row"
 }
 
 need make
