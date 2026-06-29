@@ -128,8 +128,22 @@ configure_cosign_args() {
 	fi
 }
 
+validate_manifest_env_values() {
+	local manifest="$1"
+	jq -e '
+		def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
+		def nonempty: type == "string" and length > 0;
+		(.rung_b.digest_ref | digest_ref) and
+		(.rung_b.key_file | nonempty) and
+		(.rung_c.digest_ref | digest_ref) and
+		(.rung_c.unsigned_digest_ref | digest_ref) and
+		(.rung_c.cosign_pub | nonempty)
+	' "$manifest" >/dev/null || die "manifest missing required rung b/c env fields or digest refs: $manifest"
+}
+
 emit_env_from_manifest() {
 	local manifest="$1" line var value
+	validate_manifest_env_values "$manifest"
 	jq -r '
 		[
 			"RUNG_B_IMAGE=" + .rung_b.digest_ref,

@@ -78,7 +78,8 @@ The repo now carries the dry-run friendly tooling:
   - Writes `rung-bc-artifacts/rung-bc-images.json` with digest refs, key paths, and non-secret
     SHA-256 fingerprints for the rung-b key file and rung-c public key file.
   - Writes `rung-bc-artifacts/rung-bc.env`, a sourceable non-secret env file with the digest
-    refs and artifact paths needed by the apply and negative-test targets.
+    refs and artifact paths needed by the apply and negative-test targets; malformed manifests
+    or tag-only image refs fail closed instead of producing exports.
 - `scripts/seed-trustee-secrets.sh`
   - `RUNG_B_KEY_FILE` creates Secret `image-key` with key `rung-b`.
   - `RUNG_C_COSIGN_PUB` creates Secret `sig-public-key` with key `rung-c`.

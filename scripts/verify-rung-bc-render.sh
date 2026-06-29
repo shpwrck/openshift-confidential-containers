@@ -254,7 +254,7 @@ EOF
 }
 
 verify_manifest_env_emit() {
-	local manifest="$tmpdir/rung-bc-images.json" env_file="$tmpdir/rung-bc.env"
+	local manifest="$tmpdir/rung-bc-images.json" invalid_manifest="$tmpdir/rung-bc-images-invalid.json" env_file="$tmpdir/rung-bc.env" err="$tmpdir/rung-bc-env.err"
 	cat > "$manifest" <<'EOF'
 {
   "rung_b": {
@@ -283,6 +283,24 @@ source "$RUNG_ENV_FILE"
 [[ "$RUNG_C_UNSIGNED_IMAGE" == "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" ]]
 [[ "$RUNG_C_COSIGN_PUB" == "/tmp/rung artifacts/cosign.pub" ]]
 EOF
+
+	cat > "$invalid_manifest" <<'EOF'
+{
+  "rung_b": {
+    "digest_ref": "mirror.test.local:5000/coco/rung-b:encrypted",
+    "key_file": "/tmp/rung artifacts/rung-b-image.key"
+  },
+  "rung_c": {
+    "digest_ref": "mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "unsigned_digest_ref": "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "cosign_pub": "/tmp/rung artifacts/cosign.pub"
+  }
+}
+EOF
+	if bash "$REPO_ROOT/scripts/build-rung-images.sh" emit-env "$invalid_manifest" > /dev/null 2> "$err"; then
+		die "emit-env accepted an invalid rung-b digest ref"
+	fi
+	expect_grep "manifest missing required rung b/c env fields or digest refs" "$err" "rung-b env manifest validation"
 }
 
 verify_cosign_default_sign_args() {
