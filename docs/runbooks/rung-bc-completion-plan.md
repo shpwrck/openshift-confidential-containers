@@ -130,7 +130,7 @@ Operator-facing artifact knobs:
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
 | `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
 | `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. |
-| `RUNG_B_KEY_FILE` | `$(ARTIFACT_DIR)/rung-b-image.key` | Reusing a pre-generated image key or writing it elsewhere. |
+| `RUNG_B_KEY_FILE` | `$(ARTIFACT_DIR)/rung-b-image.key` | Reusing a pre-generated image key or writing it elsewhere. The builder and Trustee seeder reject anything other than exactly 32 bytes. |
 | `COCO_KEYPROVIDER_IMAGE` | `coco-keyprovider` | The local keyprovider image has a custom name. |
 | `CONTAINER_RUNTIME` | auto-detect `podman`, then `docker` | Both runtimes are installed or the keyprovider runs under a wrapper. |
 | `CONTAINER_VOLUME_SUFFIX` | `:Z` for podman, empty otherwise | SELinux or Docker volume semantics need a different suffix. |
@@ -149,6 +149,8 @@ Dry-run acceptance:
 - `skopeo inspect` on rung-b shows
   `org.opencontainers.image.enc.keys.provider.attestation-agent` and the decoded `kid` equals
   `kbs:///default/image-key/rung-b`.
+- `wc -c "$RUNG_B_KEY_FILE"` reports `32`; the scripts reject any other key length before
+  encryption or Trustee seeding.
 - `cosign verify --key <cosign.pub> <rung-c-image>@<digest>` succeeds on the connected/bastion
   side.
 - No private key, image key, registry credential, or generated initdata lands in git.

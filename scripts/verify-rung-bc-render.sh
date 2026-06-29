@@ -83,6 +83,76 @@ verify_apply_requires_digest_refs() {
 	expect_grep "RUNG_C_IMAGE must be a sha256 digest ref" "$err" "rung-c digest-ref guard"
 }
 
+verify_rung_b_key_size_guard() {
+	local bin="$tmpdir/key-size-bin" invalid_key="$tmpdir/invalid-rung-b.key" err="$tmpdir/key-size.err"
+	local hwid
+	mkdir -p "$bin"
+	printf 'too-short-key' > "$invalid_key"
+
+	cat > "$bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "sign" && "${2:-}" == "--help" ]]; then
+	printf '%s\n' '      --tlog-upload bool'
+fi
+exit 0
+EOF
+	chmod +x "$bin/cosign"
+
+	cat > "$bin/podman" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "image" && "${2:-}" == "exists" ]]; then
+	exit 0
+fi
+exit 0
+EOF
+	chmod +x "$bin/podman"
+
+	cat > "$bin/skopeo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+	chmod +x "$bin/skopeo"
+
+	if PATH="$bin:$PATH" CONTAINER_RUNTIME=podman RUNG_B_KEY_FILE="$invalid_key" \
+		ARTIFACT_DIR="$tmpdir/key-size-artifacts" \
+		COSIGN_PASSWORD=test-password \
+		bash "$REPO_ROOT/scripts/build-rung-images.sh" > /dev/null 2> "$err"; then
+		die "build-rung-images accepted an invalid rung-b key size"
+	fi
+	expect_grep "rung-b image key must be exactly 32 bytes" "$err" "build rung-b key-size guard"
+
+	cat > "$bin/oc" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "whoami" ]]; then
+	printf 'test-user\n'
+fi
+exit 0
+EOF
+	chmod +x "$bin/oc"
+
+	hwid="$(printf 'f%.0s' {1..128})"
+	mkdir -p "$tmpdir/key-size-vcek/$hwid"
+	printf 'der' > "$tmpdir/key-size-vcek/$hwid/vcek.der"
+	printf 'mirror-password' > "$tmpdir/mirror-password"
+	printf 'kbs-pub' > "$tmpdir/kbs.pub"
+	printf 'attestation-cert' > "$tmpdir/attestation.crt"
+
+	if PATH="$bin:$PATH" \
+		VCEK_BUNDLE="$tmpdir/key-size-vcek" \
+		MIRROR_PASSWORD_FILE="$tmpdir/mirror-password" \
+		KBS_PUB="$tmpdir/kbs.pub" \
+		ATTESTATION_CERT="$tmpdir/attestation.crt" \
+		RUNG_B_KEY_FILE="$invalid_key" \
+		bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh" > /dev/null 2> "$err"; then
+		die "seed-trustee-secrets accepted an invalid rung-b key size"
+	fi
+	expect_grep "rung-b image key must be exactly 32 bytes" "$err" "seed Trustee rung-b key-size guard"
+}
+
 verify_cosign_default_sign_args() {
 	local bin="$tmpdir/cosign-bin" actual
 	mkdir -p "$bin"
@@ -618,6 +688,7 @@ expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirro
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 verify_apply_requires_digest_refs
+verify_rung_b_key_size_guard
 verify_cosign_default_sign_args
 verify_rung_c_digest_signing
 verify_rung_c_policy_render

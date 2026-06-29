@@ -33,6 +33,23 @@ need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
 }
 
+file_size_bytes() {
+	local path="$1"
+	if [[ -r "$path" ]]; then
+		wc -c < "$path" | tr -d '[:space:]'
+	elif command -v sudo >/dev/null && sudo -n test -r "$path" 2>/dev/null; then
+		sudo -n wc -c "$path" | awk '{print $1}'
+	else
+		die "cannot read $path"
+	fi
+}
+
+require_rung_b_key_size() {
+	local path="$1" size
+	size="$(file_size_bytes "$path")"
+	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $path (${size} bytes)"
+}
+
 cleanup() {
 	if [[ -n "$tmpdir" ]]; then
 		rm -rf "$tmpdir"
@@ -135,6 +152,10 @@ if [[ "${1:-}" == "render-rung-c-policy" ]]; then
 	need jq
 	render_default_rung_c_policy "$RUNG_C_POLICY_IMAGE_PREFIX"
 	exit 0
+fi
+
+if [[ -n "$RUNG_B_KEY_FILE" ]]; then
+	require_rung_b_key_size "$RUNG_B_KEY_FILE"
 fi
 
 need oc
