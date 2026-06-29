@@ -344,6 +344,7 @@ EOF
 		NEGATIVE_TEST_SCRIPT="$stub" \
 		WHICH="rung-c" \
 		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
 		MIRROR_REGISTRY="mirror.test.local:5000" \
 		MIRROR_DNS_UPSTREAM="192.0.2.10" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
@@ -353,7 +354,7 @@ EOF
 		> "$out"
 
 	expect_grep "ARG=rung-c" "$out" "Makefile negative-test target argument"
-	expect_grep "NS=default" "$out" "Makefile negative-test workload namespace"
+	expect_grep "NS=workload-test" "$out" "Makefile negative-test workload namespace"
 	expect_grep "TRUSTEE_NS=trustee-test" "$out" "Makefile negative-test Trustee namespace"
 	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile negative-test mirror override"
 	expect_grep "MIRROR_DNS_UPSTREAM=192.0.2.10" "$out" "Makefile negative-test DNS override"
@@ -361,6 +362,68 @@ EOF
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$out" "Makefile negative-test rung-b image override"
 	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/custom/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$out" "Makefile negative-test rung-c unsigned override"
 	expect_grep "TIMEOUT=7" "$out" "Makefile negative-test timeout override"
+}
+
+verify_workload_namespace_make_env() {
+	local stub="$tmpdir/workload-target-stub.sh"
+	local rung_b_out="$tmpdir/apply-rung-b-env" rung_c_out="$tmpdir/apply-rung-c-env" evidence_out="$tmpdir/collect-evidence-env"
+	cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+vars=(
+	NS
+	TRUSTEE_NS
+	MIRROR_REGISTRY
+	MIRROR_DNS_UPSTREAM
+	KBS_URL
+	RUNG_B_IMAGE
+	RUNG_C_IMAGE
+	ARTIFACT_DIR
+	EVIDENCE_DIR
+)
+
+for var in "${vars[@]}"; do
+	printf '%s=%s\n' "$var" "${!var-}"
+done
+EOF
+	chmod +x "$stub"
+
+	make -s apply-rung-b \
+		APPLY_RUNG_B_SCRIPT="$stub" \
+		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		MIRROR_DNS_UPSTREAM="192.0.2.10" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		> "$rung_b_out"
+
+	make -s apply-rung-c \
+		APPLY_RUNG_C_SCRIPT="$stub" \
+		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		MIRROR_DNS_UPSTREAM="192.0.2.10" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		> "$rung_c_out"
+
+	make -s collect-rung-bc-evidence \
+		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$stub" \
+		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
+		ARTIFACT_DIR="$tmpdir/artifacts" \
+		EVIDENCE_DIR="$tmpdir/evidence" \
+		> "$evidence_out"
+
+	for out in "$rung_b_out" "$rung_c_out" "$evidence_out"; do
+		expect_grep "NS=workload-test" "$out" "Makefile workload namespace override"
+		expect_grep "TRUSTEE_NS=trustee-test" "$out" "Makefile Trustee namespace override"
+	done
+	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$rung_b_out" "Makefile apply-rung-b image override"
+	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$rung_c_out" "Makefile apply-rung-c image override"
+	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$evidence_out" "Makefile evidence artifact dir override"
+	expect_grep "EVIDENCE_DIR=$tmpdir/evidence" "$evidence_out" "Makefile evidence dir override"
 }
 
 verify_evidence_secret_redaction() {
@@ -423,6 +486,7 @@ verify_rung_c_policy_render
 verify_build_make_env
 verify_trustee_make_env
 verify_negative_test_make_env
+verify_workload_namespace_make_env
 verify_evidence_secret_redaction
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render

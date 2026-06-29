@@ -4,6 +4,7 @@
 OVERLAY ?= sno-workers
 NODE    ?=
 NS      ?= trustee-operator-system
+WORKLOAD_NS ?= default
 CATALOGSOURCE ?= cs-redhat-operator-index-v4-20
 VCEK_BUNDLE ?= ./vcek-bundle
 HWID ?=
@@ -32,6 +33,10 @@ BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
 SEED_TRUSTEE_SECRETS_SCRIPT ?= ./scripts/seed-trustee-secrets.sh
 APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
 NEGATIVE_TEST_SCRIPT ?= ./scripts/negative-test.sh
+APPLY_RUNG_A_SCRIPT ?= ./scripts/apply-rung-a.sh
+APPLY_RUNG_B_SCRIPT ?= ./scripts/apply-rung-b.sh
+APPLY_RUNG_C_SCRIPT ?= ./scripts/apply-rung-c.sh
+COLLECT_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/collect-rung-bc-evidence.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
@@ -160,19 +165,19 @@ apply-trustee-rung-bc: ## Phase 6: apply Trustee with rung-b/c KBS resources ena
 
 .PHONY: apply-rung-a
 apply-rung-a: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
-	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash ./scripts/apply-rung-a.sh
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash "$(APPLY_RUNG_A_SCRIPT)"
 
 .PHONY: apply-rung-b
 apply-rung-b: ## Phase 6: render initdata, launch rung-b, and wait for the encrypted-image pod
-	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" bash ./scripts/apply-rung-b.sh
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" bash "$(APPLY_RUNG_B_SCRIPT)"
 
 .PHONY: apply-rung-c
 apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signed-image pod
-	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" bash ./scripts/apply-rung-c.sh
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" bash "$(APPLY_RUNG_C_SCRIPT)"
 
 .PHONY: collect-rung-bc-evidence
 collect-rung-bc-evidence: ## Phase 6: collect non-secret rung-b/c proof evidence into ARTIFACT_DIR
-	NS=default TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash ./scripts/collect-rung-bc-evidence.sh
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash "$(COLLECT_RUNG_BC_EVIDENCE_SCRIPT)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)
@@ -213,4 +218,4 @@ gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware
 ## --- Validation (negative tests) -----------------------------------------
 .PHONY: negative-test
 negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-a|rung-b|rung-c|air-gap)
-	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)

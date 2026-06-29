@@ -92,6 +92,10 @@ The repo now carries the dry-run friendly tooling:
   - `make apply-rung-c`
   - `make collect-rung-bc-evidence`
 
+Makefile namespace convention: `NS` is the Trustee namespace, defaulting to
+`trustee-operator-system`; `WORKLOAD_NS` is the namespace for rung pods and negative-test pods,
+defaulting to `default`.
+
 On the bastion or connected host that can push to the mirror:
 
 ```bash
@@ -115,6 +119,7 @@ Operator-facing artifact knobs:
 | `SOURCE_IMAGE` | Rung-a UBI image digest | The proof image should start from a different app image. |
 | `SOURCE_IMAGE_REF` | `docker://$(SOURCE_IMAGE)` | The source is local or already staged, e.g. `dir:/path/to/oci`. |
 | `ARTIFACT_DIR` | `./rung-bc-artifacts` | You want generated keys/manifests outside the checkout. |
+| `WORKLOAD_NS` | `default` | Rung proof pods should run outside the default namespace. |
 | `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. |
 | `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. |
 | `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. |
