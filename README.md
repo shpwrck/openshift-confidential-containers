@@ -14,6 +14,10 @@ target air-gapped multi-node cluster.
 | Attestation (air-gap) | Trustee-side **OfflineStore** VCEK cache (`kbsLocalCertCacheSpec`) — see [design doc](docs/design/engagement-design.md) |
 | GitOps | Kustomize substrate; `oc apply -k` + Makefile on the rig; ArgoCD (mirrored) in the production env |
 
+## Visual overview
+
+See [`docs/architecture.md`](docs/architecture.md) for component diagrams, the attestation sequence, and the step-by-step flow from bastion preparation through negative tests and production promotion.
+
 ## Environments
 
 - **Test rig** — Single Node OpenShift (SNO) on one **Latitude.sh hourly** bare-metal node,
