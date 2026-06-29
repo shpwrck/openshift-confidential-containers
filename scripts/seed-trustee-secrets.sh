@@ -17,7 +17,8 @@ SAMPLE_SECRET="${SAMPLE_SECRET:-rung-a-demo-value}"
 RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
 RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
 RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
-RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-${MIRROR_REGISTRY}/coco/rung-c}"
+RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
+RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-}"
 
 tmpdir=""
 vcek_hwids=()
@@ -33,7 +34,9 @@ need() {
 }
 
 cleanup() {
-	[[ -n "$tmpdir" ]] && rm -rf "$tmpdir"
+	if [[ -n "$tmpdir" ]]; then
+		rm -rf "$tmpdir"
+	fi
 }
 trap cleanup EXIT
 
@@ -51,6 +54,47 @@ read_file() {
 stage_readable_file() {
 	local path="$1" out="$2"
 	read_file "$path" > "$out"
+}
+
+image_repo_ref() {
+	local image="$1" base last_segment
+	if [[ "$image" == *@* ]]; then
+		base="${image%@*}"
+	else
+		last_segment="${image##*/}"
+		if [[ "$last_segment" == *:* ]]; then
+			base="${image%:*}"
+		else
+			base="$image"
+		fi
+	fi
+	printf '%s\n' "$base"
+}
+
+render_default_rung_c_policy() {
+	local image_prefix="$1"
+	jq -n --arg image_prefix "$image_prefix" --arg mirror_registry "$MIRROR_REGISTRY" '{
+		default: [{type: "reject"}],
+		transports: {
+			docker: {
+				($image_prefix): [
+					{
+						type: "sigstoreSigned",
+						keyPath: "kbs:///default/sig-public-key/rung-c"
+					}
+				],
+				($mirror_registry + "/openshift/release"): [
+					{type: "insecureAcceptAnything"}
+				],
+				($mirror_registry + "/openshift/release-images"): [
+					{type: "insecureAcceptAnything"}
+				],
+				($mirror_registry + "/ubi9"): [
+					{type: "insecureAcceptAnything"}
+				]
+			}
+		}
+	}'
 }
 
 load_vcek_bundle() {
@@ -82,6 +126,17 @@ apply_secret() {
 	oc -n "$NS" apply -f -
 }
 
+if [[ -z "$RUNG_C_POLICY_IMAGE_PREFIX" ]]; then
+	RUNG_C_POLICY_IMAGE_PREFIX="$(image_repo_ref "$RUNG_C_IMAGE")"
+fi
+
+if [[ "${1:-}" == "render-rung-c-policy" ]]; then
+	[[ "$#" -eq 1 ]] || die "usage: $0 render-rung-c-policy"
+	need jq
+	render_default_rung_c_policy "$RUNG_C_POLICY_IMAGE_PREFIX"
+	exit 0
+fi
+
 need oc
 need jq
 need base64
@@ -112,30 +167,7 @@ EOF
 if [[ -n "$RUNG_C_POLICY_FILE" ]]; then
 	stage_readable_file "$RUNG_C_POLICY_FILE" "$tmpdir/security-policy-rung-c.json"
 elif [[ -n "$RUNG_C_COSIGN_PUB" ]]; then
-	cat > "$tmpdir/security-policy-rung-c.json" <<EOF
-{
-  "default": [{"type": "reject"}],
-  "transports": {
-    "docker": {
-      "${RUNG_C_POLICY_IMAGE_PREFIX}": [
-        {
-          "type": "sigstoreSigned",
-          "keyPath": "kbs:///default/sig-public-key/rung-c"
-        }
-      ],
-      "${MIRROR_REGISTRY}/openshift/release": [
-        {"type": "insecureAcceptAnything"}
-      ],
-      "${MIRROR_REGISTRY}/openshift/release-images": [
-        {"type": "insecureAcceptAnything"}
-      ],
-      "${MIRROR_REGISTRY}/ubi9": [
-        {"type": "insecureAcceptAnything"}
-      ]
-    }
-  }
-}
-EOF
+	render_default_rung_c_policy "$RUNG_C_POLICY_IMAGE_PREFIX" > "$tmpdir/security-policy-rung-c.json"
 fi
 cat > "$tmpdir/registries.conf" <<EOF
 [[registry]]

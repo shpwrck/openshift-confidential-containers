@@ -8,8 +8,10 @@ VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
 RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
+RUNG_C_IMAGE="${RUNG_C_IMAGE:-}"
 RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
 RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
+RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 
@@ -139,8 +141,10 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
 	RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" \
+	RUNG_C_IMAGE="$RUNG_C_IMAGE" \
 	RUNG_C_COSIGN_PUB="$RUNG_C_COSIGN_PUB" \
 	RUNG_C_POLICY_FILE="$RUNG_C_POLICY_FILE" \
+	RUNG_C_POLICY_IMAGE_PREFIX="$RUNG_C_POLICY_IMAGE_PREFIX" \
 	bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
 
 oc apply -f gitops/base/trustee/issuers.yaml

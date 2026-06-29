@@ -147,6 +147,35 @@ EOF
 	expect_grep $'cosign\tverify\t--insecure-ignore-tlog=true\t--key' "$log" "rung-c cosign verify"
 }
 
+verify_rung_c_policy_render() {
+	local default_policy="$tmpdir/rung-c-policy-default.json" override_policy="$tmpdir/rung-c-policy-override.json"
+	RUNG_C_IMAGE="mirror.test.local:5000/custom/path/rung-c:prod" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh" render-rung-c-policy > "$default_policy"
+
+	jq -e '
+		.default == [{"type":"reject"}] and
+		.transports.docker["mirror.test.local:5000/custom/path/rung-c"][0].type == "sigstoreSigned" and
+		.transports.docker["mirror.test.local:5000/custom/path/rung-c"][0].keyPath == "kbs:///default/sig-public-key/rung-c" and
+		.transports.docker["mirror.test.local:5000/openshift/release"][0].type == "insecureAcceptAnything" and
+		.transports.docker["mirror.test.local:5000/openshift/release-images"][0].type == "insecureAcceptAnything" and
+		.transports.docker["mirror.test.local:5000/ubi9"][0].type == "insecureAcceptAnything"
+	' "$default_policy" >/dev/null || die "default rung-c policy did not derive from RUNG_C_IMAGE"
+	if jq -e '.transports.docker["mirror.rig.local:8443/coco/rung-c"]' "$default_policy" >/dev/null; then
+		die "default rung-c policy unexpectedly kept the fallback image prefix"
+	fi
+
+	RUNG_C_IMAGE="mirror.test.local:5000/custom/path/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+		RUNG_C_POLICY_IMAGE_PREFIX="mirror.test.local:5000/override/rung-c" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh" render-rung-c-policy > "$override_policy"
+	jq -e '.transports.docker["mirror.test.local:5000/override/rung-c"][0].type == "sigstoreSigned"' "$override_policy" >/dev/null || \
+		die "rung-c policy prefix override was not honored"
+	if jq -e '.transports.docker["mirror.test.local:5000/custom/path/rung-c"]' "$override_policy" >/dev/null; then
+		die "rung-c policy override render also included the derived image prefix"
+	fi
+}
+
 verify_build_make_env() {
 	local stub="$tmpdir/build-rung-images-stub.sh" out="$tmpdir/build-rung-images-env"
 	cat > "$stub" <<'EOF'
@@ -224,6 +253,70 @@ EOF
 	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$out" "Makefile cosign verify args override"
 }
 
+verify_trustee_make_env() {
+	local stub="$tmpdir/trustee-stub.sh" seed_out="$tmpdir/seed-rung-bc-env" apply_out="$tmpdir/apply-trustee-rung-bc-env"
+	cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+vars=(
+	NS
+	VCEK_BUNDLE
+	HWID
+	HWIDS
+	MIRROR_REGISTRY
+	RUNG_B_KEY_FILE
+	RUNG_C_IMAGE
+	RUNG_C_COSIGN_PUB
+	RUNG_C_POLICY_FILE
+	RUNG_C_POLICY_IMAGE_PREFIX
+)
+
+for var in "${vars[@]}"; do
+	printf '%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$stub"
+
+	make -s seed-rung-bc-secrets \
+		SEED_TRUSTEE_SECRETS_SCRIPT="$stub" \
+		NS="trustee-test" \
+		VCEK_BUNDLE="$tmpdir/vcek-bundle" \
+		HWID="$(printf 'b%.0s' {1..128})" \
+		HWIDS="$(printf 'c%.0s' {1..128})" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		RUNG_B_KEY_FILE="$tmpdir/rung-b.key" \
+		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+		RUNG_C_COSIGN_PUB="$tmpdir/cosign.pub" \
+		RUNG_C_POLICY_FILE="$tmpdir/policy.json" \
+		RUNG_C_POLICY_IMAGE_PREFIX="mirror.test.local:5000/custom/rung-c" \
+		> "$seed_out"
+
+	make -s apply-trustee-rung-bc \
+		APPLY_TRUSTEE_SCRIPT="$stub" \
+		NS="trustee-test" \
+		VCEK_BUNDLE="$tmpdir/vcek-bundle" \
+		HWID="$(printf 'b%.0s' {1..128})" \
+		HWIDS="$(printf 'c%.0s' {1..128})" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		RUNG_B_KEY_FILE="$tmpdir/rung-b.key" \
+		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+		RUNG_C_COSIGN_PUB="$tmpdir/cosign.pub" \
+		RUNG_C_POLICY_FILE="$tmpdir/policy.json" \
+		RUNG_C_POLICY_IMAGE_PREFIX="mirror.test.local:5000/custom/rung-c" \
+		> "$apply_out"
+
+	for out in "$seed_out" "$apply_out"; do
+		expect_grep "NS=trustee-test" "$out" "Makefile Trustee namespace override"
+		expect_grep "VCEK_BUNDLE=$tmpdir/vcek-bundle" "$out" "Makefile Trustee VCEK bundle override"
+		expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile Trustee mirror override"
+		expect_grep "RUNG_B_KEY_FILE=$tmpdir/rung-b.key" "$out" "Makefile Trustee rung-b key override"
+		expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" "$out" "Makefile Trustee rung-c image override"
+		expect_grep "RUNG_C_COSIGN_PUB=$tmpdir/cosign.pub" "$out" "Makefile Trustee cosign pub override"
+		expect_grep "RUNG_C_POLICY_FILE=$tmpdir/policy.json" "$out" "Makefile Trustee policy file override"
+		expect_grep "RUNG_C_POLICY_IMAGE_PREFIX=mirror.test.local:5000/custom/rung-c" "$out" "Makefile Trustee policy prefix override"
+	done
+}
+
 need make
 need oc
 need jq
@@ -245,7 +338,9 @@ expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaa
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 verify_cosign_default_sign_args
 verify_rung_c_digest_signing
+verify_rung_c_policy_render
 verify_build_make_env
+verify_trustee_make_env
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

@@ -81,6 +81,8 @@ The repo now carries the dry-run friendly tooling:
   - `RUNG_C_COSIGN_PUB` creates Secret `sig-public-key` with key `rung-c`.
   - `RUNG_C_POLICY_FILE` creates key `rung-c` on Secret `security-policy`; if omitted and
     `RUNG_C_COSIGN_PUB` is set, the script generates a default signed-image policy.
+  - The generated rung-c policy derives its signed-image repository prefix from `RUNG_C_IMAGE`;
+    set `RUNG_C_POLICY_IMAGE_PREFIX` only when image-rs reports a different policy key.
   - Existing `security-policy/test` remains the permissive rung-a troubleshooting policy.
 - Make targets:
   - `make build-rung-images`
@@ -115,6 +117,7 @@ Operator-facing artifact knobs:
 | `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. |
 | `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. |
 | `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. |
+| `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
 | `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
 | `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. |
 | `RUNG_B_KEY_FILE` | `$(ARTIFACT_DIR)/rung-b-image.key` | Reusing a pre-generated image key or writing it elsewhere. |
@@ -184,14 +187,19 @@ images the CVM must pull. Skeleton:
       ],
       "mirror.rig.local:8443/openshift/release-images": [
         {"type": "insecureAcceptAnything"}
+      ],
+      "mirror.rig.local:8443/ubi9": [
+        {"type": "insecureAcceptAnything"}
       ]
     }
   }
 }
 ```
 
-Adjust the exact `transports.docker` keys to the reference image-rs reports in events/logs.
-If the sandbox image is rejected before the app image is evaluated, the policy is too narrow.
+The generated policy uses `RUNG_C_IMAGE` with any tag or digest stripped as its signed-image
+key. Adjust `RUNG_C_POLICY_IMAGE_PREFIX` only if image-rs reports a different
+`transports.docker` key in events/logs. If the sandbox image is rejected before the app image is
+evaluated, the policy is too narrow.
 
 ## Phase 3 - implement rung b
 

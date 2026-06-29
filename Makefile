@@ -29,8 +29,11 @@ COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 COSIGN_SIGN_ARGS ?=
 COSIGN_VERIFY_ARGS ?=
 BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
+SEED_TRUSTEE_SECRETS_SCRIPT ?= ./scripts/seed-trustee-secrets.sh
+APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
+RUNG_C_POLICY_IMAGE_PREFIX ?=
 
 # Assets dir the Agent-based installer consumes (install-config + agent-config land here).
 # FILL: matches the dir used in install/README.md ("cluster-assets").
@@ -142,11 +145,11 @@ build-rung-images: ## Phase 6: build/push rung-b encrypted and rung-c signed ima
 
 .PHONY: seed-rung-bc-secrets
 seed-rung-bc-secrets: ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" bash ./scripts/seed-trustee-secrets.sh
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
 
 .PHONY: apply-trustee-rung-bc
 apply-trustee-rung-bc: ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" bash ./scripts/apply-trustee.sh
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
 
 .PHONY: apply-rung-a
 apply-rung-a: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
