@@ -17,4 +17,4 @@ metadata:
     # FILL: output of `scripts/encode-initdata.sh encode <filled initdata.toml>`.
     # The TOML inside must carry the separate Trustee's KBS Route URL (see sno-trustee/kbs-route.yaml)
     # and that cluster's serving CA. Changing this value REQUIRES re-running `make gen-rvps`.
-    io.confidentialcontainers.org/initdata: __FILL_ENCODED_INITDATA__
+    io.katacontainers.config.hypervisor.cc_init_data: __FILL_ENCODED_INITDATA__

@@ -1,0 +1,120 @@
+---
+# render_configs — translates scripts/bastion-render-configs.sh (hard-won fix #3).
+# Renders install-config.yaml + agent-config.yaml into {{ install_src_dir }} (source of truth)
+# and stages copies into {{ cluster_assets_dir }} (the agent installer CONSUMES the copies on
+# `agent create`). Uses Jinja2 templates, NOT heredocs.
+#
+# Correctness baked in:
+#   - additionalNTPSources -> agent-config ONLY (installer drops it from install-config).
+#   - imageDigestSources -> oc-mirror v2 layout (release / release-images).
+#   - install-config pullSecret = MIRROR creds only (node is air-gapped).
+#   - VLAN-only nmstate (parent NIC ipv4/ipv6 disabled; tagged VLAN child carries node IP).
+
+- name: Assert each machine has a discovered parent_mac (run discover.yml first)
+  ansible.builtin.assert:
+    that:
+      - item.parent_mac is defined
+      - item.parent_mac | length > 0
+    fail_msg: >-
+      machine '{{ item.name }}' has no parent_mac — run playbooks/discover.yml first (MACs are
+      per physical unit and must NEVER be hardcoded).
+  loop: "{{ machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Assert the boot-artifacts token was overridden
+  ansible.builtin.assert:
+    that:
+      - boot_artifacts_token != 'REPLACE_WITH_openssl_rand_hex_16'
+      - boot_artifacts_token | length >= 16
+    fail_msg: >-
+      boot_artifacts_token is still the placeholder. Generate one (openssl rand -hex 16) and pass
+      -e boot_artifacts_token=... — the secret-bearing initrd must not sit at a guessable path (#33).
+
+- name: Assert vlan_vid / bastion_public_ipv4 were provided
+  ansible.builtin.assert:
+    that:
+      - vlan_vid is not match('REPLACE_.*')
+      - bastion_public_ipv4 is not match('REPLACE_.*')
+    fail_msg: "Set vlan_vid (-e vlan_vid_override=) and bastion_public_ipv4 (-e bastion_public_ipv4_override=) from terraform output."
+
+- name: Ensure the install src + cluster-assets dirs exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ install_src_dir }}"
+    - "{{ cluster_assets_dir }}"
+
+- name: Read the mirror admin password
+  ansible.builtin.slurp:
+    src: "{{ mirror_password_path }}"
+  become: true
+  register: render_mirror_pw
+  no_log: true
+
+- name: Set the mirror auth fact (install-config pullSecret = mirror creds only)
+  ansible.builtin.set_fact:
+    render_mirror_auth_b64: "{{ (mirror_user ~ ':' ~ (render_mirror_pw.content | b64decode | trim)) | b64encode }}"
+  no_log: true
+
+- name: Read the mirror CA PEM
+  ansible.builtin.slurp:
+    src: "{{ mirror_ca_path }}"
+  become: true
+  register: render_mirror_ca
+
+- name: Read the node SSH public key
+  ansible.builtin.slurp:
+    src: "{{ node_ssh_pubkey_path }}"
+  register: render_ssh_pub
+
+- name: Set the CA + sshKey facts
+  ansible.builtin.set_fact:
+    render_ca_pem: "{{ render_mirror_ca.content | b64decode }}"
+    render_ssh_key: "{{ render_ssh_pub.content | b64decode | trim }}"
+
+- name: Render install-config.yaml into the src dir
+  ansible.builtin.template:
+    src: install-config.yaml.j2
+    dest: "{{ install_src_dir }}/install-config.yaml"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true
+
+- name: Render agent-config.yaml into the src dir
+  ansible.builtin.template:
+    src: agent-config.yaml.j2
+    dest: "{{ install_src_dir }}/agent-config.yaml"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+
+- name: Remove any stale staged copies in cluster-assets
+  ansible.builtin.file:
+    path: "{{ cluster_assets_dir }}/{{ item }}"
+    state: absent
+  become: true
+  loop:
+    - install-config.yaml
+    - agent-config.yaml
+
+- name: Stage fresh copies into cluster-assets (installer consumes these)
+  ansible.builtin.copy:
+    src: "{{ install_src_dir }}/{{ item }}"
+    dest: "{{ cluster_assets_dir }}/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  loop:
+    - install-config.yaml
+    - agent-config.yaml

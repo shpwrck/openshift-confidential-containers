@@ -17,6 +17,24 @@ help: ## List targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
+## --- Hands-off bring-up (Ansible automation) -----------------------------
+# TF owns infra (bastion, node, VLAN, firewall, netboot OS=ipxe); Ansible owns the bastion host
+# config + the OpenShift install. `make up` sequences both, pausing only at the SEV-SNP BIOS step.
+# Requires: LATITUDESH_AUTH_TOKEN in env; RH pull-secret on the bastion (~/pull-secret.json);
+# and -e overrides from terraform output (see ansible/README.md). Pass extra args via ARGS=.
+#   make up ARGS="--apply-tf -e vlan_vid_override=123 -e node_server_id=sv_x -e boot_artifacts_token=$(openssl rand -hex 16)"
+.PHONY: up
+up: ## Hands-off air-gapped SNO bring-up via Ansible (stops at the SEV-SNP BIOS step)
+	cd ansible && ./up.sh $(ARGS)
+
+.PHONY: ansible-lint
+ansible-lint: ## Lint the Ansible tree (yamllint + ansible-lint + syntax-check)
+	cd ansible && yamllint . && ansible-lint && ansible-playbook --syntax-check playbooks/site.yml
+
+.PHONY: pxe-stop
+pxe-stop: ## Close the boot-artifact endpoint after the node has booted (issue #33)
+	cd ansible && ansible-playbook playbooks/site.yml --tags pxe-stop $(ARGS)
+
 ## --- Prereqs / tooling (Phase 0) -----------------------------------------
 .PHONY: tools
 tools: ## Fetch version-pinned oc / openshift-install / oc-mirror into ./bin (Phase 0)

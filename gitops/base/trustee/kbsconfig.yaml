@@ -13,6 +13,11 @@ spec:
   #   `oc explain kbsconfig.spec` / config/templates @ v1.1.0.
   kbsConfigMapName: kbs-config
   kbsAuthSecretName: kbs-auth-public-key
+  # REQUIRED (trustee v1.1): without this the operator defaults to MicroservicesDeployment, which
+  # demands a separate attestation-service ConfigMap (kbsAsConfigMapName) and fails with
+  # "ConfigMap name hasn't been provided for volume as-config". AllInOne keeps the AS config inline
+  # in kbs-config.toml (below). Verified on the rig 2026-06-28 (trustee-operator v1.1.0).
+  kbsDeploymentType: AllInOneDeployment
   kbsServiceType: ClusterIP # rig/early rungs; customer overlay may use a Route + HTTPS.
 
   # Policies + reference values from kbs-configmaps.yaml.
@@ -26,16 +31,27 @@ spec:
     - regcred         # mirror-registry pull secret (rung c image pulls).
     - attestation-cert
     - sample          # the rung-a demo secret released via cdh/resource/default/...
+    - credential      # mirror auth json served at kbs:///default/credential/test (CDH default
+                      # authenticated_registry_credentials_uri) — lets the in-guest image-rs pull
+                      # from the air-gapped mirror after attestation. (Resolves defect #16.)
+    - security-policy # permissive image policy at kbs:///default/security-policy/test (CDH default).
   # All of the above Secrets are created out-of-band; see secret-stubs.example.yaml.
 
   # --- Air-gap VCEK OfflineStore (design §4) --------------------------------------------
-  # Mounts per-chip VCEK .der secrets into the KBS pod at the kds-store path the SNP verifier
-  # reads. Commented in the base because the secret names are keyed by the *environment's*
-  # chip HWIDs (lowercase) — collected by scripts/collect-vcek.sh on the customer/rig metal
-  # and filled in per overlay. Wrong-case HWID or a missing entry => attestation fails.
-  #
-  # kbsLocalCertCacheSpec:
-  #   # VERIFY field names against the v1.1 CRD (`oc explain kbsconfig.spec.kbsLocalCertCacheSpec`).
-  #   secretName: vcek-certs            # Secret holding vcek.der keyed by <hwid-lowercase>.
-  #   # mountPath the operator targets:
-  #   #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid>/vcek.der
+  # Mounts per-chip VCEK .der into the KBS pod at the kds-store path the SNP verifier reads
+  # offline (no KDS). Authoritative layout (confidential-containers/trustee
+  # attestation-service/docs/amd-offline-certificate-cache.md):
+  #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-LOWERCASE>/vcek.der
+  # CRD schema is a LIST of {secretName, mountPath} (NOT a bare secretName — verified via
+  # `oc explain kbsconfig.spec.kbsLocalCertCacheSpec`). One entry per physical socket; the
+  # secret's data key (vcek.der) becomes the file in mountPath. HWID is environment-bound, so
+  # this is filled per overlay (here: the rig's Genoa chip). Wrong-case HWID or missing entry
+  # => attestation fails (air-gap negative test).
+  # GOTCHA: the operator uses secretName as the Pod VOLUME name, which is capped at 63 chars.
+  # The SNP HWID is 128 hex chars, so the secret must NOT be named after the HWID (that fails
+  # deployment validation: "volumes[].name ... must be no more than 63 characters"). Use a short
+  # secret name; the full lowercase HWID goes ONLY in mountPath (the dir the verifier reads).
+  kbsLocalCertCacheSpec:
+    secrets:
+      - secretName: vcek-snp-0   # short (<=63 chars); data key vcek.der lands in mountPath
+        mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/<HWID-LOWERCASE-128-HEX>

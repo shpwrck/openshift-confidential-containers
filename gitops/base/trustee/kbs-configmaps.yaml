@@ -1,18 +1,14 @@
 ---
-# kbs-config.toml — the KBS runtime config, mounted by the KBS pod (onboarding guide Step 3).
+# kbs-config.toml — KBS runtime config, mounted by the KBS pod. Structure tracks the
+# trustee-operator v1.1.0 all-in-one sample (config/samples/all-in-one/kbs-config.yaml) — the
+# v1.1 KBS binary VALIDATES this and rejects the older inline layout (e.g. it requires
+# `[admin] type`). Verified on the rig 2026-06-28.
 #
-# Editing behavior = edit this ConfigMap + restart the KBS pod (design note: KbsConfig itself
-# rarely changes; behavior lives in the ConfigMaps).
-#
-# Air-gap / SEV-SNP: vcek_sources = [{ type = "OfflineStore" }] with KDS omitted, so the
-# verifier NEVER reaches out to the AMD Key Distribution Service. VCEK .der files are mounted
-# from secrets via KbsConfig.spec.kbsLocalCertCacheSpec at
+# AIR-GAP / SEV-SNP OfflineStore: the SNP verifier must read VCEK from a local cache (no KDS).
+# In trustee v1.1 coco-as this is wired by mounting per-chip VCEK .der via
+# KbsConfig.spec.kbsLocalCertCacheSpec (kbsconfig.yaml) at
 #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-lowercase>/vcek.der
-# (design §4). Removing one VCEK / wrong-case HWID => attestation fails (proves the cache is
-# load-bearing, not silently hitting a reachable KDS).
-#
-# This base starts PERMISSIVE (insecure_http for early rungs). Production switches the KBS to
-# HTTPS using the cert-manager issuer (issuers.yaml) — flip in the customer-trustee overlay.
+# rather than a kbs-config.toml verifier stanza. See docs/runbooks for the VCEK collection step.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,51 +16,58 @@ metadata:
   namespace: trustee-operator-system
 data:
   kbs-config.toml: |
-    # --- KBS server ------------------------------------------------------------
     [http_server]
     sockets = ["0.0.0.0:8080"]
-    # PERMISSIVE for early rungs (Step 3, ClusterIP/insecure). Production: set false and
-    # configure private_key / certificate from the cert-manager Secret (tls.key / tls.crt).
     insecure_http = true
-    # private_key  = "/etc/https-key/tls.key"   # VERIFY path the operator mounts the cert at.
-    # certificate  = "/etc/https-cert/tls.crt"
+    worker_count = 4
 
-    # --- Admin / auth ----------------------------------------------------------
     [admin]
-    # ed25519 admin public key used to authenticate resource-registration calls.
-    # Secret kbs-auth-public-key is created out-of-band (see secret-stubs.example.yaml).
+    # DenyAll: no runtime admin API. KBS resources (kbsSecretResources) are injected by the
+    # operator as files into the repository, so registration over the admin API is not needed.
+    type = "DenyAll"
+    insecure_api = true
     auth_public_key = "/etc/auth-secret/publicKey"
 
-    # --- Attestation token signer ---------------------------------------------
     [attestation_token]
-    # FILL/VERIFY: attestation token signer config against trustee-operator v1.1 templates
-    #   https://github.com/openshift/trustee-operator/tree/v1.1.0/config/templates
+    insecure_key = true
+    attestation_token_type = "CoCo"
 
-    # --- Attestation service (CoCo AS, built in) ------------------------------
     [attestation_service]
     type = "coco_as_builtin"
     work_dir = "/opt/confidential-containers/attestation-service"
+    policy_engine = "opa"
 
-    [attestation_service.attestation_token_broker]
-    type = "Ear"
-    # Permissive policy id in the base; Step 5 (Veritas) swaps to the restrictive EAR policy.
-    policy_dir = "/opt/confidential-containers/attestation-service/policies"
+      [attestation_service.attestation_token_broker]
+      type = "Ear"
+      policy_dir = "/opt/confidential-containers/attestation-service/policies"
 
-    [attestation_service.rvps_config]
-    type = "BuiltIn"
-    [attestation_service.rvps_config.storage]
+      [attestation_service.attestation_token_config]
+      duration_min = 5
+
+      [attestation_service.rvps_config]
+      type = "BuiltIn"
+
+        [attestation_service.rvps_config.storage]
+        type = "LocalJson"
+        file_path = "/opt/confidential-containers/rvps/reference-values/reference-values.json"
+
+      # Air-gap SEV-SNP: read VCEK from the local OfflineStore (mounted via
+      # KbsConfig.kbsLocalCertCacheSpec), NOT the AMD KDS. Default is [KDS]; we omit KDS so the
+      # verifier never reaches out. (The OSC AllInOne inline-TOML form of this is UNDOCUMENTED
+      # upstream — the cert-cache doc only covers the docker/JSON as-config method. Verifying live.)
+      [attestation_service.verifier_config.snp_verifier]
+      vcek_sources = [{ type = "OfflineStore" }]
+
+    [[plugins]]
+    name = "resource"
     type = "LocalFs"
+    dir_path = "/opt/confidential-containers/kbs/repository"
 
-    # --- SEV-SNP verifier: VCEK from the OfflineStore only (no KDS) ------------
-    # One per element; KDS intentionally omitted for the air-gap (design §4).
-    [[attestation_service.verifier.snp.vcek_sources]]
-    type = "OfflineStore"
-    # No `url`/KDS fallback: fully offline.
+    [policy_engine]
+    policy_path = "/opt/confidential-containers/opa/policy.rego"
 ---
-# RVPS reference values — empty/permissive in the base. Step 5 replaces this with the Veritas
-# output for the specific hardware config (coco-tools:1.12 veritas --tee snp). An empty
-# reference-value set means the EAR broker has nothing to fail against yet — paired with the
-# permissive policy below, attestation succeeds (rung a happy path) before hardening.
+# RVPS reference values — empty/permissive in the base (rung-a happy path). Step 5 (Veritas)
+# replaces this with the hardware-specific reference values for the negative test.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -75,8 +78,7 @@ data:
     []
 ---
 # Resource policy (Rego) — gates which registered resources a given attestation may read.
-# PERMISSIVE in the base (allow all) so rung a proves the release path. The RESTRICTED
-# version lives in Step 5/6; switch via overlay once RVPS reference values exist.
+# PERMISSIVE in the base (allow all) so rung a proves the release path; restrict in Step 6.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -86,27 +88,47 @@ data:
   policy.rego: |
     package policy
 
-    # PERMISSIVE: release every requested resource. Restrict in production (Step 6) by
-    # asserting on the EAR attestation result before `default allow := true`.
     default allow := true
 ---
 # Attestation policy (Rego) — the EAR appraisal policy. PERMISSIVE in the base.
-# Step 5 swaps to the restrictive EAR policy that fails on
-#   hardware_failing / configuration_failing / executable_failing
-# and requires the affirming range 2-31. Comment kept so the restricted target is obvious.
+# Step 5 swaps to the restrictive EAR policy (hardware/configuration/executable failing checks).
+#
+# PROVEN ON THE RIG 2026-06-29 — two non-obvious requirements, both of which 401'd attestation:
+#  1. The data KEY MUST be `default_cpu.rego`. The trustee operator subPath-mounts this exact key
+#     as .../policies/opa/default_cpu.rego. A different key (e.g. `default.rego`) leaves the
+#     subPath target an EMPTY DIRECTORY → coco-as logs "Failed to read attestation service policy
+#     file: Is a directory (os error 21)" → POST /kbs/v0/attest 401. (GPU path is default_gpu.rego.)
+#  2. The CONTENT MUST be an EAR appraisal policy that emits `trust_claims` (AR4SI tiers), NOT a
+#     simple `allow := true`. The Ear token broker queries trust_claims; `allow` is ignored.
+#     2 = affirming. This base affirms all claims (hardware sig is already verified by coco-as
+#     before this runs); Step 5 tightens (pin measurement / launch-config / policy id).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: attestation-policy
   namespace: trustee-operator-system
 data:
-  default.rego: |
+  default_cpu.rego: |
     package policy
 
-    # PERMISSIVE: accept any attestation. DO NOT ship to production.
-    # Restricted version (Step 5) asserts the SNP EAR claims, e.g.:
-    #   default executables := 33   # executable_failing
-    #   default hardware    := 97   # hardware_failing
-    #   default configuration := 36 # configuration_failing
-    # and only affirms within the trustworthiness range 2..31.
-    default allow := true
+    import rego.v1
+
+    default hardware := 2
+    default executables := 2
+    default configuration := 2
+    default file_system := 2
+    default instance_identity := 2
+    default runtime_opaque := 2
+    default storage_opaque := 2
+    default sourced_data := 2
+
+    trust_claims := {
+    	"executables": executables,
+    	"hardware": hardware,
+    	"configuration": configuration,
+    	"file-system": file_system,
+    	"instance-identity": instance_identity,
+    	"runtime-opaque": runtime_opaque,
+    	"storage-opaque": storage_opaque,
+    	"sourced-data": sourced_data,
+    }

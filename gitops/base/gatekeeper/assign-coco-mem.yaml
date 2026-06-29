@@ -1,0 +1,64 @@
+---
+# Gatekeeper Assign mutations: inject a safe DEFAULT memory request+limit into CoCo pods so the
+# pod meets the SEV-SNP invariant (limit >= default_memory + 256Mi QEMU overhead) and gets
+# Guaranteed QoS, without each author hand-setting it.
+#
+# SPIKE FINDINGS (2026-06-28):
+#  - Gatekeeper `match` cannot select on spec.runtimeClassName (no arbitrary field-value match),
+#    so CoCo pods are targeted by a LABEL (coco-resource-default: "true") — apply it via the
+#    workload's pod template, or scope by a confidential namespace via match.namespaces instead.
+#  - Assign sets a STATIC value; it cannot compute limit = <default_memory annotation> + 256Mi
+#    (no arithmetic / no cross-field reference). So this is a sane FLOOR for the default 2048Mi
+#    CVM (2048+256=2304Mi). Per-pod correctness for larger CVMs needs a paired VALIDATING
+#    Constraint (assert limit >= annotation+256) — mutation alone can't enforce the relationship.
+#  - pathTests MustNotExist => only fill when the author omitted resources (don't clobber explicit
+#    values). Drop the pathTest to hard-override instead.
+apiVersion: mutations.gatekeeper.sh/v1
+kind: Assign
+metadata:
+  name: coco-default-mem-limit
+spec:
+  applyTo:
+    - groups: [""]
+      versions: ["v1"]
+      kinds: ["Pod"]
+  match:
+    scope: Namespaced
+    kinds:
+      - apiGroups: ["*"]
+        kinds: ["Pod"]
+    labelSelector:
+      matchLabels:
+        coco-resource-default: "true"
+  location: "spec.containers[name:*].resources.limits.memory"
+  parameters:
+    assign:
+      value: "2304Mi"
+    pathTests:
+      - subPath: "spec.containers[name:*].resources.limits.memory"
+        condition: MustNotExist
+---
+apiVersion: mutations.gatekeeper.sh/v1
+kind: Assign
+metadata:
+  name: coco-default-mem-request
+spec:
+  applyTo:
+    - groups: [""]
+      versions: ["v1"]
+      kinds: ["Pod"]
+  match:
+    scope: Namespaced
+    kinds:
+      - apiGroups: ["*"]
+        kinds: ["Pod"]
+    labelSelector:
+      matchLabels:
+        coco-resource-default: "true"
+  location: "spec.containers[name:*].resources.requests.memory"
+  parameters:
+    assign:
+      value: "2304Mi"
+    pathTests:
+      - subPath: "spec.containers[name:*].resources.requests.memory"
+        condition: MustNotExist

@@ -1,0 +1,178 @@
+---
+# mirror_tools — translates scripts/bastion-mirror-setup.sh.
+# Installs pinned oc/kubectl/openshift-install/oc-mirror to /usr/local/bin, trusts the mirror CA,
+# installs nmstate (needed before `agent create pxe-files`, fix #7), and builds the merged
+# /root/.docker/config.json (RH pull-secret + mirror creds). Idempotent.
+
+- name: Create a temp dir for tool tarballs
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: ocp-tools
+  register: tools_tmp
+  changed_when: false
+
+- name: Check which OpenShift tools are already installed
+  ansible.builtin.stat:
+    path: "{{ local_bin }}/{{ item }}"
+  loop:
+    - oc
+    - openshift-install
+    - oc-mirror
+  register: tool_stat
+
+- name: Download oc/kubectl client bundle
+  ansible.builtin.get_url:
+    url: "{{ ocp_clients_base }}/ocp/{{ ocp_version }}/openshift-client-linux-{{ ocp_version }}.tar.gz"
+    dest: "{{ tools_tmp.path }}/oc.tgz"
+    mode: "0644"
+  when: not (tool_stat.results[0].stat.exists and tool_stat.results[1].stat.exists)
+
+- name: Extract oc + kubectl into {{ local_bin }}
+  ansible.builtin.unarchive:
+    src: "{{ tools_tmp.path }}/oc.tgz"
+    dest: "{{ local_bin }}"
+    remote_src: true
+    extra_opts: [oc, kubectl]
+  become: true
+  when: not (tool_stat.results[0].stat.exists and tool_stat.results[1].stat.exists)
+
+- name: Download openshift-install
+  ansible.builtin.get_url:
+    url: "{{ ocp_clients_base }}/ocp/{{ ocp_version }}/openshift-install-linux-{{ ocp_version }}.tar.gz"
+    dest: "{{ tools_tmp.path }}/install.tgz"
+    mode: "0644"
+  when: not tool_stat.results[1].stat.exists
+
+- name: Extract openshift-install into {{ local_bin }}
+  ansible.builtin.unarchive:
+    src: "{{ tools_tmp.path }}/install.tgz"
+    dest: "{{ local_bin }}"
+    remote_src: true
+    extra_opts: [openshift-install]
+  become: true
+  when: not tool_stat.results[1].stat.exists
+
+# RHEL-family bastion: prefer the rhel9 oc-mirror build (no libgpgme dep); fall back to glibc.
+- name: Probe for the rhel9 oc-mirror build
+  ansible.builtin.uri:
+    url: "{{ ocp_clients_base }}/ocp/{{ ocp_version }}/oc-mirror.rhel9.tar.gz"
+    method: HEAD
+    status_code: [200, 301, 302, 404]
+  register: ocm_rhel9_head
+  when: not tool_stat.results[2].stat.exists
+
+- name: Select the oc-mirror download URL
+  ansible.builtin.set_fact:
+    ocm_url: >-
+      {{ ocp_clients_base }}/ocp/{{ ocp_version }}/{{
+        'oc-mirror.rhel9.tar.gz' if (ocm_rhel9_head.status | default(404)) == 200
+        else 'oc-mirror.tar.gz' }}
+  when: not tool_stat.results[2].stat.exists
+
+- name: Download oc-mirror
+  ansible.builtin.get_url:
+    url: "{{ ocm_url }}"
+    dest: "{{ tools_tmp.path }}/ocm.tgz"
+    mode: "0644"
+  when: not tool_stat.results[2].stat.exists
+
+- name: Extract oc-mirror into {{ local_bin }}
+  ansible.builtin.unarchive:
+    src: "{{ tools_tmp.path }}/ocm.tgz"
+    dest: "{{ local_bin }}"
+    remote_src: true
+    extra_opts: [oc-mirror]
+  become: true
+  when: not tool_stat.results[2].stat.exists
+
+- name: Ensure the tools are executable
+  ansible.builtin.file:
+    path: "{{ local_bin }}/{{ item }}"
+    mode: "0755"
+  become: true
+  loop:
+    - oc
+    - kubectl
+    - openshift-install
+    - oc-mirror
+
+- name: Remove the temp tool dir
+  ansible.builtin.file:
+    path: "{{ tools_tmp.path }}"
+    state: absent
+  changed_when: false
+
+# --- nmstate (fix #7): required before `openshift-install agent create pxe-files` ---
+- name: Ensure nmstate is installed (needed for agent create pxe-files)
+  ansible.builtin.package:
+    name: nmstate
+    state: present
+  become: true
+
+# --- Trust the mirror CA ---
+- name: Install the mirror CA into the system anchors
+  ansible.builtin.copy:
+    src: "{{ mirror_ca_path }}"
+    dest: /etc/pki/ca-trust/source/anchors/coco-mirror-rootCA.pem
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: ca_copy
+
+- name: Update the CA trust store
+  ansible.builtin.command: update-ca-trust
+  become: true
+  when: ca_copy.changed
+  changed_when: ca_copy.changed
+
+# --- Merged /root/.docker/config.json (RH pull-secret + mirror creds) ---
+- name: Read the mirror admin password
+  ansible.builtin.slurp:
+    src: "{{ mirror_password_path }}"
+  become: true
+  register: mirror_pw_slurp
+
+- name: Set the mirror auth fact (base64 user:pass)
+  ansible.builtin.set_fact:
+    mirror_auth_b64: "{{ (mirror_user ~ ':' ~ (mirror_pw_slurp.content | b64decode | trim)) | b64encode }}"
+  no_log: true
+
+- name: Confirm the RH pull-secret is staged on the bastion
+  ansible.builtin.stat:
+    path: "{{ pull_secret_remote_path }}"
+  register: pull_secret_stat
+
+- name: Fail if the RH pull-secret is missing
+  ansible.builtin.fail:
+    msg: "{{ pull_secret_remote_path }} missing — scp the Red Hat pull-secret to the bastion first (Phase 0)."
+  when: not pull_secret_stat.stat.exists
+
+- name: Read the RH pull-secret
+  ansible.builtin.slurp:
+    src: "{{ pull_secret_remote_path }}"
+  register: pull_secret_slurp
+  no_log: true
+
+- name: Ensure /root/.docker exists
+  ansible.builtin.file:
+    path: /root/.docker
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: Build the merged docker config (RH pull-secret + mirror creds)
+  ansible.builtin.copy:
+    content: >-
+      {{ (pull_secret_slurp.content | b64decode | from_json)
+         | combine({'auths': {mirror_endpoint: {'auth': mirror_auth_b64, 'email': 'noreply@coco.rig.local'}}}, recursive=true)
+         | to_nice_json }}
+    dest: /root/.docker/config.json
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true

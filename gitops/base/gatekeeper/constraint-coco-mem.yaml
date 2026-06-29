@@ -1,0 +1,92 @@
+---
+# Validating Constraint — the ENFORCEMENT half of the CoCo memory story. The Assign mutation
+# (assign-coco-mem.yaml) can only set a STATIC default; it can't compute per-pod correctness from
+# the default_memory annotation. Rego in a ConstraintTemplate CAN do that arithmetic, so this
+# REJECTS CoCo pods whose container memory limit is below default_memory + overhead (default 256Mi).
+# Together: mutation fills a safe default when absent; this constraint blocks an explicit too-low value.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: cococontainermemory
+spec:
+  crd:
+    spec:
+      names:
+        kind: CoCoContainerMemory
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            overheadMi:
+              type: integer
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package cococontainermemory
+
+        # This Constraint matches ONLY labeled CoCo pods (see the Constraint match block), so every
+        # branch here is FAIL-CLOSED: anything we cannot positively verify is a violation, never a
+        # silent pass. (Hardened after a security review flagged missing-annotation and
+        # unrecognized-unit bypasses.)
+
+        overhead_mi := input.parameters.overheadMi { is_number(input.parameters.overheadMi) }
+        overhead_mi := 256 { not is_number(input.parameters.overheadMi) }
+
+        annot := input.review.object.metadata.annotations["io.katacontainers.config.hypervisor.default_memory"]
+
+        # FAIL-CLOSED #1: a CoCo pod with no (or non-numeric) default_memory annotation cannot be
+        # sized safely — reject rather than skip.
+        violation[{"msg": msg}] {
+          not valid_annot
+          msg := "CoCo pod is missing a numeric io.katacontainers.config.hypervisor.default_memory annotation (cannot size the CVM safely)"
+        }
+        valid_annot { is_number(to_number(annot)) }
+
+        required_mi := to_number(annot) + overhead_mi
+
+        # container memory limit present, parseable, and below the required floor
+        violation[{"msg": msg}] {
+          valid_annot
+          c := input.review.object.spec.containers[_]
+          limit := c.resources.limits.memory
+          actual := to_mi(limit)
+          actual < required_mi
+          msg := sprintf("CoCo container %q memory limit %vMi < required %vMi (default_memory %v + overhead %vMi)", [c.name, actual, required_mi, annot, overhead_mi])
+        }
+
+        # FAIL-CLOSED #2: container missing a memory limit entirely
+        violation[{"msg": msg}] {
+          valid_annot
+          c := input.review.object.spec.containers[_]
+          not c.resources.limits.memory
+          msg := sprintf("CoCo container %q has no memory limit (must be >= %vMi)", [c.name, required_mi])
+        }
+
+        # FAIL-CLOSED #3: limit present but in a unit this policy cannot parse (Mi/Gi only) —
+        # reject rather than let an unverifiable value through.
+        violation[{"msg": msg}] {
+          valid_annot
+          c := input.review.object.spec.containers[_]
+          limit := c.resources.limits.memory
+          not to_mi(limit)
+          msg := sprintf("CoCo container %q memory limit %q uses an unsupported unit (policy parses only Mi/Gi)", [c.name, limit])
+        }
+
+        to_mi(q) = n { endswith(q, "Mi"); n := to_number(trim_suffix(q, "Mi")) }
+        to_mi(q) = n { endswith(q, "Gi"); n := to_number(trim_suffix(q, "Gi")) * 1024 }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: CoCoContainerMemory
+metadata:
+  name: coco-container-memory-floor
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    labelSelector:
+      matchLabels:
+        coco-resource-default: "true"
+  parameters:
+    overheadMi: 256

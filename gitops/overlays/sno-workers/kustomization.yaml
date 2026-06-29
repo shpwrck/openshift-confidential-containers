@@ -3,7 +3,9 @@ kind: Kustomization
 # Disposable Single Node OpenShift — confidential workers (control+worker collapsed).
 resources:
   - ../../base/operators
+  - ../../base/nfd          # NFD instance + TEE NodeFeatureRule — must precede KataConfig (CoCo TEE detection)
   - ../../base/kataconfig
+  - ../../base/gatekeeper   # OPA Gatekeeper + CoCo memory-resource Assign mutation (apply order: operator->CR->Assign)
   - ../../base/workloads
 # SNO specifics: single replica, no node anti-affinity, ClusterIP/insecure-HTTP friendly for
 # early rungs. Add patches here as bases are populated.

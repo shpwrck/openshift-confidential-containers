@@ -1,0 +1,12 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible role bastion_egress (hard-won fix #1).
+# SYN MSS clamp on the OUTPUT chain so oc-mirror's large TLS blobs to quay's CDN survive the
+# reduced path MTU instead of blackholing ("unexpected EOF"). Flush-then-recreate => idempotent.
+table inet {{ bastion_egress_nft_table }}
+delete table inet {{ bastion_egress_nft_table }}
+table inet {{ bastion_egress_nft_table }} {
+    chain output {
+        type filter hook output priority mangle; policy accept;
+        tcp flags syn tcp option maxseg size set {{ bastion_egress_mss_clamp }}
+    }
+}

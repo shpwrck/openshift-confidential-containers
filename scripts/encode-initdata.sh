@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Encode/decode CoCo initdata for the pod annotation io.confidentialcontainers.org/initdata.
+# Encode/decode CoCo initdata for the pod annotation io.katacontainers.config.hypervisor.cc_init_data.
 #
 # The annotation value is the initdata TOML, gzip-compressed then base64-encoded (the same TOML
 # is hardware-measured into HOST_DATA). This helper does ONLY that mechanical transform; fill the

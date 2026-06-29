@@ -1,0 +1,30 @@
+---
+# OPA Gatekeeper operator (Red Hat product, ACM/governance family). Used here to MUTATE CoCo
+# pods' memory requests/limits — kata-cc (SEV-SNP) pins all guest RAM at launch, so the pod
+# memory limit must be >= the io.katacontainers...default_memory annotation + 256Mi QEMU overhead
+# or the host OOM-kills the CVM. AllNamespaces install mode (only mode the CSV supports).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-gatekeeper-system
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: gatekeeper-operator
+  namespace: openshift-gatekeeper-system
+spec: {}   # empty == AllNamespaces (the only supported install mode for this operator)
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: gatekeeper-operator-product
+  namespace: openshift-gatekeeper-system
+spec:
+  channel: stable   # gatekeeper-operator-product.v3.21.0 (verified against mirrored catalog)
+  name: gatekeeper-operator-product
+  source: cs-redhat-operator-index-v4-20   # mirrored CatalogSource
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic

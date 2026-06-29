@@ -1,0 +1,16 @@
+---
+# Gatekeeper instance. mutatingWebhook: Enabled is REQUIRED to use Assign mutations (off by
+# default). SNO: 1 replica each (the webhook defaults to 3 with anti-affinity and won't fully
+# schedule on a single node). The operator registers the mutations.gatekeeper.sh CRDs (Assign,
+# AssignMetadata, ModifySet) once this instance is up.
+apiVersion: operator.gatekeeper.sh/v1alpha1
+kind: Gatekeeper
+metadata:
+  name: gatekeeper
+spec:
+  mutatingWebhook: Enabled
+  validatingWebhook: Enabled
+  audit:
+    replicas: 1
+  webhook:
+    replicas: 1

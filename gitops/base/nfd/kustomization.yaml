@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# NFD instance + TEE NodeFeatureRule. REQUIRED before KataConfig for CoCo: OSC detects the TEE
+# from the node label this emits. Apply with (or just before) base/operators; the label must
+# exist before the KataConfig CR reconciles.
+resources:
+  - nodefeaturediscovery.yaml
+  - amd-snp-rule.yaml

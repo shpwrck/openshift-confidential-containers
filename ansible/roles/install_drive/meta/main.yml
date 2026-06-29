@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: install_drive
+  author: coco-rig
+  description: Re-netboot via Latitude API, wait-for install-complete, poll clusterversion.
+  license: Apache-2.0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+        - "10"
+  galaxy_tags:
+    - openshift
+    - airgap
+dependencies: []

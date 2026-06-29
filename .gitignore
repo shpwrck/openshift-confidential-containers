@@ -15,6 +15,14 @@ bin/
 cluster-assets/
 mirror/
 
+# Ansible — runtime-generated + local secret/vars files (never commit)
+ansible/group_vars/discovered.yml
+ansible/group_vars/secrets.yml
+ansible/group_vars/*.local.yml
+ansible/inventory/*.local.yml
+ansible/*.retry
+ansible/.vault-pass
+
 # Terraform
 infra/**/.terraform/
 infra/**/terraform.tfvars

@@ -1,0 +1,12 @@
+# Managed by Ansible role pxe_serve. Serves the agent boot artifacts on :{{ boot_artifacts_port }}
+# under the tokenized path only. Directory listing OFF so the secret-bearing initrd is not
+# advertised (issue #33). nginx serves byte-range (206) for static files automatically.
+server {
+    listen {{ boot_artifacts_port }} default_server;
+{% if ansible_facts.interfaces is defined and 'lo' in ansible_facts.interfaces and ansible_facts.default_ipv6 | default({}) %}
+    listen [::]:{{ boot_artifacts_port }} default_server;
+{% endif %}
+    root {{ boot_artifacts_webroot }};
+    autoindex off;
+    server_tokens off;
+}

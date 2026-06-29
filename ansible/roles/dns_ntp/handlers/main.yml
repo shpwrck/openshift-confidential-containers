@@ -1,0 +1,14 @@
+---
+- name: Restart dnsmasq
+  ansible.builtin.systemd:
+    name: dnsmasq
+    state: restarted
+    enabled: true
+  become: true
+
+- name: Restart chronyd
+  ansible.builtin.systemd:
+    name: chronyd
+    state: restarted
+    enabled: true
+  become: true

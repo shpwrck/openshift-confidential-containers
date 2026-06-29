@@ -1,0 +1,49 @@
+---
+# dns_ntp — hard-won fix #10.
+# cloud-init only lays the mirror.rig.local base dnsmasq record + chrony allow. This role adds
+# the CLUSTER dnsmasq records (api / api-int host-records + address=/apps.../ wildcard -> node)
+# and re-asserts the chrony allow {{ vlan_cidr }} + local stratum 10, all idempotent.
+
+- name: Ensure dnsmasq is installed
+  ansible.builtin.package:
+    name: dnsmasq
+    state: present
+  become: true
+
+- name: Lay the cluster dnsmasq records (api/api-int host-records + apps wildcard)
+  ansible.builtin.template:
+    src: dnsmasq-cluster.conf.j2
+    dest: /etc/dnsmasq.d/rig-cluster.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart dnsmasq
+
+- name: Ensure chrony is installed
+  ansible.builtin.package:
+    name: chrony
+    state: present
+  become: true
+
+- name: Lay the chrony rig allow + local stratum (idempotent re-assert of cloud-init)
+  ansible.builtin.template:
+    src: chrony-rig.conf.j2
+    dest: /etc/chrony.d/rig.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart chronyd
+
+- name: Open dnsmasq + chrony in firewalld (if active)
+  ansible.builtin.command: "{{ item }}"
+  become: true
+  register: dnsntp_fw
+  changed_when: "'success' in (dnsntp_fw.stdout | default(''))"
+  failed_when: false
+  loop:
+    - firewall-cmd --permanent --add-service=dns --add-service=ntp
+    - firewall-cmd --reload
+  when: ansible_facts.services['firewalld.service'] is defined
+        and ansible_facts.services['firewalld.service'].state == 'running'
