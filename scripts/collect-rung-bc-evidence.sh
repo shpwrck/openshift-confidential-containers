@@ -90,15 +90,28 @@ redact_secret_json() {
 	}'
 }
 
+secret_data_lengths() {
+	local key value bytes
+	jq -r '(.data // {}) | to_entries[] | [.key, .value] | @tsv' | while IFS=$'\t' read -r key value; do
+		if bytes="$(printf '%s' "$value" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')"; then
+			printf '%s\t%s\n' "$key" "$bytes"
+		else
+			printf '%s\tdecode-error\n' "$key"
+		fi
+	done
+}
+
 write_redacted_secret() {
 	local secret="$1"
 	local out="${EVIDENCE_DIR}/trustee/secrets/${secret}.redacted.json"
+	local lengths_out="${EVIDENCE_DIR}/trustee/secrets/${secret}.data-lengths.tsv"
 	local raw
 	if ! raw="$(oc -n "$TRUSTEE_NS" get secret "$secret" -o json 2>/dev/null)"; then
 		printf 'missing\n' > "${EVIDENCE_DIR}/trustee/secrets/${secret}.missing"
 		return
 	fi
 	redact_secret_json <<<"$raw" > "$out"
+	secret_data_lengths <<<"$raw" > "$lengths_out"
 }
 
 decode_pod_initdata() {
@@ -130,6 +143,14 @@ if [[ "${1:-}" == "redact-secret-json" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "secret-data-lengths" ]]; then
+	[[ "$#" -eq 1 ]] || die "usage: $0 secret-data-lengths"
+	need jq
+	need base64
+	secret_data_lengths
+	exit 0
+fi
+
 if [[ "${1:-}" == "copy-artifact-handoff" ]]; then
 	[[ "$#" -eq 3 ]] || die "usage: $0 copy-artifact-handoff <artifact-dir> <evidence-dir>"
 	mkdir -p "$3"
@@ -139,6 +160,7 @@ fi
 
 need oc
 need jq
+need base64
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 mkdir -p \

@@ -754,7 +754,7 @@ EOF
 }
 
 verify_evidence_secret_redaction() {
-	local raw="$tmpdir/raw-secret.json" redacted="$tmpdir/redacted-secret.json"
+	local raw="$tmpdir/raw-secret.json" redacted="$tmpdir/redacted-secret.json" lengths_raw="$tmpdir/lengths-secret.json" lengths="$tmpdir/secret-lengths.tsv"
 	cat > "$raw" <<'EOF'
 {
   "apiVersion": "v1",
@@ -786,6 +786,23 @@ EOF
 	if grep -Fq "SECRET-" "$redacted"; then
 		die "secret redaction leaked secret data or annotation values"
 	fi
+
+	cat > "$lengths_raw" <<'EOF'
+{
+  "apiVersion": "v1",
+  "kind": "Secret",
+  "metadata": {
+    "name": "image-key"
+  },
+  "data": {
+    "rung-b": "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
+    "rung-c": "e30="
+  }
+}
+EOF
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" secret-data-lengths < "$lengths_raw" > "$lengths"
+	expect_grep $'rung-b\t32' "$lengths" "secret data length for rung-b key"
+	expect_grep $'rung-c\t2' "$lengths" "secret data length for policy data"
 }
 
 verify_evidence_artifact_handoff() {
