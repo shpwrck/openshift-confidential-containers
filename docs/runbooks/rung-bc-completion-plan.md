@@ -121,11 +121,14 @@ Operator-facing artifact knobs:
 | `CONTAINER_RUNTIME` | auto-detect `podman`, then `docker` | Both runtimes are installed or the keyprovider runs under a wrapper. |
 | `CONTAINER_VOLUME_SUFFIX` | `:Z` for podman, empty otherwise | SELinux or Docker volume semantics need a different suffix. |
 | `COSIGN_KEY` / `COSIGN_PUB` | `$(ARTIFACT_DIR)/cosign.{key,pub}` | Reusing or separating signing key material. |
-| `COSIGN_SIGN_ARGS` | `--yes --tlog-upload=false` | The mirror/PKI requires additional signing flags. |
-| `COSIGN_VERIFY_ARGS` | `--insecure-ignore-tlog=true` | Local verification needs additional offline flags. |
+| `COSIGN_SIGN_ARGS` | auto: `--yes --tlog-upload=false`, plus cosign v3 compatibility flags when supported | The mirror/PKI requires exact signing flags. |
+| `COSIGN_VERIFY_ARGS` | auto: `--insecure-ignore-tlog=true` | Local verification needs exact offline flags. |
 
 The Makefile passes these values through directly to the builder; `COSIGN_PASSWORD` stays as
-an ambient secret environment variable and is intentionally not spelled out in the recipe.
+an ambient secret environment variable and is intentionally not spelled out in the recipe. With
+cosign v3, the builder appends `--new-bundle-format=false` and
+`--use-signing-config=false` when those flags are supported, matching the signature format that
+CoCo image-rs expects for the signed-image proof.
 
 Dry-run acceptance:
 

@@ -43,13 +43,50 @@ render_pod() {
 
 expect_grep() {
 	local pattern="$1" file="$2" label="$3"
-	grep -Fq "$pattern" "$file" || die "$label not found: $pattern"
+	grep -Fq -- "$pattern" "$file" || die "$label not found: $pattern"
 }
 
 expect_digest_ref() {
 	local image="$1" digest="$2" expected="$3" actual
 	actual="$(bash "$REPO_ROOT/scripts/build-rung-images.sh" digest-ref "$image" "$digest")"
 	[[ "$actual" == "$expected" ]] || die "digest-ref mismatch for $image: got $actual expected $expected"
+}
+
+verify_cosign_default_sign_args() {
+	local bin="$tmpdir/cosign-bin" actual
+	mkdir -p "$bin"
+
+	cat > "$bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "sign" && "${2:-}" == "--help" ]]; then
+	cat <<'HELP'
+      --new-bundle-format bool
+      --use-signing-config bool
+HELP
+	exit 0
+fi
+exit 1
+EOF
+	chmod +x "$bin/cosign"
+	actual="$(PATH="$bin:$PATH" bash "$REPO_ROOT/scripts/build-rung-images.sh" default-cosign-sign-args)"
+	[[ "$actual" == "--yes --tlog-upload=false --new-bundle-format=false --use-signing-config=false" ]] || \
+		die "cosign v3 default sign args mismatch: $actual"
+
+	cat > "$bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "sign" && "${2:-}" == "--help" ]]; then
+	cat <<'HELP'
+      --tlog-upload bool
+HELP
+	exit 0
+fi
+exit 1
+EOF
+	chmod +x "$bin/cosign"
+	actual="$(PATH="$bin:$PATH" bash "$REPO_ROOT/scripts/build-rung-images.sh" default-cosign-sign-args)"
+	[[ "$actual" == "--yes --tlog-upload=false" ]] || die "cosign v2 default sign args mismatch: $actual"
 }
 
 verify_build_make_env() {
@@ -148,6 +185,7 @@ digest="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
+verify_cosign_default_sign_args
 verify_build_make_env
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render

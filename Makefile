@@ -26,8 +26,8 @@ CONTAINER_RUNTIME ?=
 CONTAINER_VOLUME_SUFFIX ?=
 COSIGN_KEY ?= $(ARTIFACT_DIR)/cosign.key
 COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
-COSIGN_SIGN_ARGS ?= --yes --tlog-upload=false
-COSIGN_VERIFY_ARGS ?= --insecure-ignore-tlog=true
+COSIGN_SIGN_ARGS ?=
+COSIGN_VERIFY_ARGS ?=
 BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=

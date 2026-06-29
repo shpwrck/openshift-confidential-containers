@@ -18,8 +18,8 @@ CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-}"
 CONTAINER_VOLUME_SUFFIX="${CONTAINER_VOLUME_SUFFIX:-}"
 COSIGN_KEY="${COSIGN_KEY:-${ARTIFACT_DIR}/cosign.key}"
 COSIGN_PUB="${COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
-COSIGN_SIGN_ARGS="${COSIGN_SIGN_ARGS:---yes --tlog-upload=false}"
-COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:---insecure-ignore-tlog=true}"
+COSIGN_SIGN_ARGS="${COSIGN_SIGN_ARGS:-}"
+COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:-}"
 
 die() {
 	echo "ERROR: $*" >&2
@@ -76,6 +76,28 @@ require_keyprovider_image() {
 		return
 	fi
 	die "missing CoCo keyprovider image '$COCO_KEYPROVIDER_IMAGE'. Build it from guest-components with: ${CONTAINER_RUNTIME} build -t ${COCO_KEYPROVIDER_IMAGE} -f ./attestation-agent/docker/Dockerfile.keyprovider ."
+}
+
+default_cosign_sign_args() {
+	local help args
+	args="--yes --tlog-upload=false"
+	help="$(cosign sign --help 2>&1 || true)"
+	if grep -Fq -- "--new-bundle-format" <<<"$help"; then
+		args+=" --new-bundle-format=false"
+	fi
+	if grep -Fq -- "--use-signing-config" <<<"$help"; then
+		args+=" --use-signing-config=false"
+	fi
+	printf '%s\n' "$args"
+}
+
+configure_cosign_args() {
+	if [[ -z "$COSIGN_SIGN_ARGS" ]]; then
+		COSIGN_SIGN_ARGS="$(default_cosign_sign_args)"
+	fi
+	if [[ -z "$COSIGN_VERIFY_ARGS" ]]; then
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true"
+	fi
 }
 
 generate_rung_b_key() {
@@ -202,11 +224,18 @@ if [[ "${1:-}" == "digest-ref" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "default-cosign-sign-args" ]]; then
+	[[ "$#" -eq 1 ]] || die "usage: $0 default-cosign-sign-args"
+	default_cosign_sign_args
+	exit 0
+fi
+
 need skopeo
 need jq
 need openssl
 need base64
 need cosign
+configure_cosign_args
 detect_runtime
 require_keyprovider_image
 
