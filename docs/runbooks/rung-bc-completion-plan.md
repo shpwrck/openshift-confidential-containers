@@ -64,8 +64,11 @@ entry may need to match the remapped mirror reference that appears in the image-
 The repo now carries the dry-run friendly tooling:
 
 - `scripts/build-rung-images.sh`
-  - Inputs: `MIRROR_REGISTRY`, `RUNG_B_IMAGE`, `RUNG_C_IMAGE`, `COSIGN_PASSWORD`,
-    `COSIGN_KEY`, `COSIGN_PUB`, and `ARTIFACT_DIR`.
+  - Inputs: `MIRROR_REGISTRY`, `SOURCE_IMAGE`, `SOURCE_IMAGE_REF`, `ARTIFACT_DIR`,
+    `RUNG_B_IMAGE`, `RUNG_C_IMAGE`, `RUNG_C_UNSIGNED_IMAGE`, `RUNG_B_KEY_PATH`,
+    `RUNG_B_KEY_ID`, `RUNG_B_KEY_FILE`, `COCO_KEYPROVIDER_IMAGE`, `CONTAINER_RUNTIME`,
+    `CONTAINER_VOLUME_SUFFIX`, `COSIGN_KEY`, `COSIGN_PUB`, `COSIGN_SIGN_ARGS`,
+    `COSIGN_VERIFY_ARGS`, and `COSIGN_PASSWORD`.
   - Imports `SOURCE_IMAGE`, defaulting to the pinned UBI image used by rung-a.
   - Creates a 32-byte rung-b image key.
   - Encrypts the rung-b image with the CoCo keyprovider and KID
@@ -100,6 +103,29 @@ export RUNG_C_UNSIGNED_IMAGE=$(jq -r '.rung_c.unsigned_digest_ref' rung-bc-artif
 
 If the keyprovider image has a different local name, pass
 `COCO_KEYPROVIDER_IMAGE=<image-name>` to `make build-rung-images`.
+
+Operator-facing artifact knobs:
+
+| Variable | Default | Use when |
+|---|---|---|
+| `SOURCE_IMAGE` | Rung-a UBI image digest | The proof image should start from a different app image. |
+| `SOURCE_IMAGE_REF` | `docker://$(SOURCE_IMAGE)` | The source is local or already staged, e.g. `dir:/path/to/oci`. |
+| `ARTIFACT_DIR` | `./rung-bc-artifacts` | You want generated keys/manifests outside the checkout. |
+| `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. |
+| `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. |
+| `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. |
+| `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
+| `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. |
+| `RUNG_B_KEY_FILE` | `$(ARTIFACT_DIR)/rung-b-image.key` | Reusing a pre-generated image key or writing it elsewhere. |
+| `COCO_KEYPROVIDER_IMAGE` | `coco-keyprovider` | The local keyprovider image has a custom name. |
+| `CONTAINER_RUNTIME` | auto-detect `podman`, then `docker` | Both runtimes are installed or the keyprovider runs under a wrapper. |
+| `CONTAINER_VOLUME_SUFFIX` | `:Z` for podman, empty otherwise | SELinux or Docker volume semantics need a different suffix. |
+| `COSIGN_KEY` / `COSIGN_PUB` | `$(ARTIFACT_DIR)/cosign.{key,pub}` | Reusing or separating signing key material. |
+| `COSIGN_SIGN_ARGS` | `--yes --tlog-upload=false` | The mirror/PKI requires additional signing flags. |
+| `COSIGN_VERIFY_ARGS` | `--insecure-ignore-tlog=true` | Local verification needs additional offline flags. |
+
+The Makefile passes these values through directly to the builder; `COSIGN_PASSWORD` stays as
+an ambient secret environment variable and is intentionally not spelled out in the recipe.
 
 Dry-run acceptance:
 
@@ -256,8 +282,9 @@ Negative path:
 
 Use an unsigned or tampered image reference with the same initdata and same policy:
 
-1. Push an otherwise runnable image to `mirror.rig.local:8443/coco/rung-c-unsigned@sha256:...`
-   without signing it.
+1. Use the unsigned negative-control image from
+   `rung-bc-artifacts/rung-bc-images.json` (`.rung_c.unsigned_digest_ref`), or push an
+   otherwise runnable image without signing it.
 2. Patch only the app image in the rung-c manifest to the unsigned digest.
 3. Apply as `negtest-rung-c`.
 4. Expected result: pod never reaches `Running`/`Succeeded`; events or runtime errors include
