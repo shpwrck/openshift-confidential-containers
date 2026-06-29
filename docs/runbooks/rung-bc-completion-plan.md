@@ -364,10 +364,14 @@ make collect-rung-bc-evidence
 ```
 
 By default this writes under `rung-bc-artifacts/evidence-<utc-timestamp>/`, which is ignored by
-git. The bundle includes pod YAML/describe/logs, decoded initdata, recent Trustee logs, events,
-KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
-Secret metadata plus data-key names, and a copy of `rung-bc-images.json` if present. It does not
-dump Secret data, but still review the bundle before sharing it outside the engagement.
+git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`,
+`negtest-rung-a`, `negtest-rung-b`, `negtest-rung-c`, and `negtest-air-gap`; override with
+`EVIDENCE_PODS="..."` when a rig run uses custom pod names. The bundle includes pod
+YAML/describe/logs, decoded initdata, recent Trustee logs, events, KbsConfig/configmaps,
+mirror log snippets when the collector can read them, redacted Trustee Secret metadata plus
+data-key names, redacted `vcek-*` Secret metadata, and a copy of `rung-bc-images.json` if
+present. It does not dump Secret data, but still review the bundle before sharing it outside
+the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed:

@@ -7,7 +7,7 @@ NS="${NS:-default}"
 TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-${ARTIFACT_DIR}/evidence-$(date -u +%Y%m%dT%H%M%SZ)}"
-PODS="${PODS:-rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c}"
+PODS="${PODS:-rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap}"
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-1000}"
 POD_LOG_TAIL="${POD_LOG_TAIL:-200}"
 MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-1000}"
@@ -180,6 +180,10 @@ done
 for secret in image-key sig-public-key security-policy registry-configuration credential regcred attestation-status sample; do
 	write_redacted_secret "$secret"
 done
+while IFS= read -r vcek_secret; do
+	[[ -n "$vcek_secret" ]] || continue
+	write_redacted_secret "${vcek_secret#secret/}"
+done < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
 
 if [[ -f "${ARTIFACT_DIR}/rung-bc-images.json" ]]; then
 	cp "${ARTIFACT_DIR}/rung-bc-images.json" "${EVIDENCE_DIR}/rung-bc-images.json"

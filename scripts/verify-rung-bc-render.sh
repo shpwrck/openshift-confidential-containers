@@ -412,6 +412,7 @@ vars=(
 	RUNG_C_IMAGE
 	ARTIFACT_DIR
 	EVIDENCE_DIR
+	PODS
 )
 
 for var in "${vars[@]}"; do
@@ -456,6 +457,7 @@ EOF
 		WORKLOAD_NS="workload-test" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
+		EVIDENCE_PODS="rung-a-secret negtest-air-gap custom-proof-pod" \
 		> "$evidence_out"
 
 	for out in "$tmpdir/apply-rung-a-env" "$rung_b_out" "$rung_c_out" "$evidence_out"; do
@@ -467,6 +469,7 @@ EOF
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$rung_c_out" "Makefile apply-rung-c image override"
 	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$evidence_out" "Makefile evidence artifact dir override"
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence" "$evidence_out" "Makefile evidence dir override"
+	expect_grep "PODS=rung-a-secret negtest-air-gap custom-proof-pod" "$evidence_out" "Makefile evidence pod override"
 }
 
 verify_negative_test_air_gap_restores_vceks() {
