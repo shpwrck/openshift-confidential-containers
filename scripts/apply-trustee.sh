@@ -28,6 +28,23 @@ need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
 }
 
+file_size_bytes() {
+	local path="$1"
+	if [[ -r "$path" ]]; then
+		wc -c < "$path" | tr -d '[:space:]'
+	elif command -v sudo >/dev/null && sudo -n test -r "$path" 2>/dev/null; then
+		sudo -n wc -c "$path" | awk '{print $1}'
+	else
+		die "cannot read $path"
+	fi
+}
+
+require_rung_b_key_size() {
+	local path="$1" size
+	size="$(file_size_bytes "$path")"
+	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $path (${size} bytes)"
+}
+
 cleanup() {
 	[[ -n "$tmpdir" ]] && rm -rf "$tmpdir"
 }
@@ -60,6 +77,7 @@ load_extra_secret_resources() {
 	extra_secret_resources=()
 	if [[ -n "$RUNG_B_KEY_FILE" ]]; then
 		[[ -s "$RUNG_B_KEY_FILE" ]] || die "missing rung-b key file: $RUNG_B_KEY_FILE"
+		require_rung_b_key_size "$RUNG_B_KEY_FILE"
 		extra_secret_resources+=(image-key)
 	fi
 	if [[ -n "$RUNG_C_COSIGN_PUB" ]]; then

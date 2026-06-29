@@ -143,6 +143,15 @@ EOF
 
 	if PATH="$bin:$PATH" \
 		VCEK_BUNDLE="$tmpdir/key-size-vcek" \
+		RENDER_KBSCONFIG_ONLY=1 \
+		RUNG_B_KEY_FILE="$invalid_key" \
+		bash "$REPO_ROOT/scripts/apply-trustee.sh" > /dev/null 2> "$err"; then
+		die "apply-trustee accepted an invalid rung-b key size"
+	fi
+	expect_grep "rung-b image key must be exactly 32 bytes" "$err" "apply Trustee rung-b key-size guard"
+
+	if PATH="$bin:$PATH" \
+		VCEK_BUNDLE="$tmpdir/key-size-vcek" \
 		MIRROR_PASSWORD_FILE="$tmpdir/mirror-password" \
 		KBS_PUB="$tmpdir/kbs.pub" \
 		ATTESTATION_CERT="$tmpdir/attestation.crt" \
@@ -744,7 +753,7 @@ expect_grep '# negative-test tamper: changes SNP HOST_DATA; do not regenerate RV
 hwid="$(printf 'a%.0s' {1..128})"
 mkdir -p "$tmpdir/vcek/$hwid"
 printf 'der' > "$tmpdir/vcek/$hwid/vcek.der"
-printf 'key' > "$tmpdir/rung-b.key"
+head -c 32 /dev/zero > "$tmpdir/rung-b.key"
 printf 'pub' > "$tmpdir/cosign.pub"
 
 VCEK_BUNDLE="$tmpdir/vcek" RENDER_KBSCONFIG_ONLY=1 \
