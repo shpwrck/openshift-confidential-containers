@@ -7,11 +7,15 @@ NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
+RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
+RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
+RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 
 tmpdir=""
 vcek_hwids=()
+extra_secret_resources=()
 
 die() {
 	echo "ERROR: $*" >&2
@@ -50,14 +54,32 @@ load_vcek_bundle() {
 	echo "Using ${#vcek_hwids[@]} VCEK bundle entr$( [[ ${#vcek_hwids[@]} -eq 1 ]] && echo y || echo ies )" >&2
 }
 
+load_extra_secret_resources() {
+	extra_secret_resources=()
+	if [[ -n "$RUNG_B_KEY_FILE" ]]; then
+		[[ -s "$RUNG_B_KEY_FILE" ]] || die "missing rung-b key file: $RUNG_B_KEY_FILE"
+		extra_secret_resources+=(image-key)
+	fi
+	if [[ -n "$RUNG_C_COSIGN_PUB" ]]; then
+		[[ -s "$RUNG_C_COSIGN_PUB" ]] || die "missing rung-c cosign public key: $RUNG_C_COSIGN_PUB"
+		extra_secret_resources+=(sig-public-key)
+	fi
+	if [[ -n "$RUNG_C_POLICY_FILE" ]]; then
+		[[ -s "$RUNG_C_POLICY_FILE" ]] || die "missing rung-c policy file: $RUNG_C_POLICY_FILE"
+	fi
+}
+
 render_kbsconfig() {
-	local out="$1" block="" i hwid
+	local out="$1" block="" extra_block="" i hwid resource
 	for i in "${!vcek_hwids[@]}"; do
 		hwid="${vcek_hwids[$i]}"
 		block+="      - secretName: vcek-snp-${i}"$'\n'
 		block+="        mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/${hwid}"$'\n'
 	done
-	awk -v block="$block" '
+	for resource in "${extra_secret_resources[@]}"; do
+		extra_block+="    - ${resource}"$'\n'
+	done
+	awk -v block="$block" -v extra_block="$extra_block" '
 		/^[[:space:]]+- secretName: vcek-snp-0[[:space:]]*($|#)/ {
 			printf "%s", block
 			skip = 1
@@ -68,7 +90,12 @@ render_kbsconfig() {
 			next
 		}
 		skip { next }
-		{ print }
+		{
+			print
+			if ($0 ~ /^[[:space:]]+- registry-configuration[[:space:]]*($|#)/ && extra_block != "") {
+				printf "%s", extra_block
+			}
+		}
 	' "$REPO_ROOT/gitops/base/trustee/kbsconfig.yaml" > "$out"
 }
 
@@ -98,6 +125,7 @@ trustee_rollout_available() {
 
 cd "$REPO_ROOT"
 load_vcek_bundle
+load_extra_secret_resources
 tmpdir="$(mktemp -d)"
 render_kbsconfig "$tmpdir/kbsconfig.yaml"
 
@@ -109,7 +137,11 @@ fi
 need oc
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
-NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
+NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
+	RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" \
+	RUNG_C_COSIGN_PUB="$RUNG_C_COSIGN_PUB" \
+	RUNG_C_POLICY_FILE="$RUNG_C_POLICY_FILE" \
+	bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
 
 oc apply -f gitops/base/trustee/issuers.yaml
 oc apply -f gitops/base/trustee/kbs-configmaps.yaml

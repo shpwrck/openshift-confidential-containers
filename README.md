@@ -33,6 +33,9 @@ See [`docs/architecture.md`](docs/architecture.md) for component diagrams, the a
 
 Each rung is "done" only when (1) reproduced from written steps on a fresh node and (2) its
 **negative test** (the denial) passes. See [`docs/design/engagement-design.md`](docs/design/engagement-design.md).
+Rungs b/c have repo scaffolding, but are not yet hardware-proven; follow
+[`docs/runbooks/rung-bc-completion-plan.md`](docs/runbooks/rung-bc-completion-plan.md)
+for the artifact build, KBS resource, apply, and negative-test sequence.
 
 ## Layout
 

@@ -295,6 +295,10 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
 
 A rung is **proven only when reproduced from these steps AND its negative test passes** (design
 §5). Do them **in order** — do not skip ahead.
+Rungs b/c are scaffolded in the repo but still need hardware proof. Follow
+[`rung-bc-completion-plan.md`](rung-bc-completion-plan.md) to build the image artifacts,
+enable the KBS resources, and run the b/c happy + negative paths before checking the boxes
+below.
 
 - [ ] **Rung a — secret release.** Deploy the CoCo workload
       ([`gitops/base/workloads/rung-a-secret-pod.yaml`](../../gitops/base/workloads/rung-a-secret-pod.yaml),
@@ -309,10 +313,14 @@ A rung is **proven only when reproduced from these steps AND its negative test p
 - [ ] **Rung b — encrypted image.**
       - **Happy path:** pod reaches `Running` (image key released after attestation).
       - **Negative test:** wrong measurement → key withheld → **pod won't start**.
+      - **Implementation note:** use a digest-pinned encrypted image and KBS resource
+        `image-key/rung-b`; do not count missing-key failure as the primary sign-off proof.
 - [ ] **Rung c — signed image.**
       - **Happy path:** signed image pulls (mirror pull secret served as `regcred`, per
         `kbsconfig.yaml` `kbsSecretResources`).
       - **Negative test:** unsigned/tampered image → `image_security_policy` **rejects** the pull.
+      - **Implementation note:** the signed policy must account for the app image and every
+        infrastructure image pulled inside the CVM, including release/pause images.
 - [ ] **Air-gap negative test (proves the cache is load-bearing):** remove one VCEK secret /
       use a **wrong-case HWID** → **attestation fails**. This proves the OfflineStore — not a
       silently reachable KDS — is doing the work.

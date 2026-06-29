@@ -807,6 +807,9 @@ Replaces: `make negative-test`. A rung is **proven only when reproduced from the
 its negative test fails-closed** — a negative test that *passes* (secret released when it
 shouldn't be) is a sign-off-blocking finding, not a green. Do them **in order**. See
 [`docs/design/engagement-design.md`](design/engagement-design.md) §5 for the full matrix.
+Rungs b/c have implementation scaffolding but are not yet hardware-proven; use
+[`docs/runbooks/rung-bc-completion-plan.md`](runbooks/rung-bc-completion-plan.md) as the
+execution plan for encrypted-image and signed-image proof artifacts.
 
 Each rung adds one user-visible capability on top of the same attestation base:
 
@@ -825,9 +828,13 @@ Each rung adds one user-visible capability on top of the same attestation base:
   start. Keep `limits.memory ≥ default_memory + 256–512 MiB` or the host OOM-kills the CVM
   (SNP pins all guest RAM at launch). Read `oc describe pod` / `oc get events`, not just logs.
 - **Rung b — encrypted image.** **Happy:** pod Running (image key released after attestation).
-  **Negative:** wrong measurement → key withheld → pod won't start.
+  **Negative:** wrong measurement → key withheld → pod won't start. Plan details: build a
+  digest-pinned encrypted image, serve its key from KBS at `image-key/rung-b`, then prove a
+  measured-initdata mismatch prevents the key release.
 - **Rung c — signed image.** **Happy:** signed image pulls (mirror pull secret served as
   `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
+  Plan details: serve a restrictive signed-image policy and public key from KBS, while still
+  allowing or verifying the pause/release images the CVM pulls before the app image.
 - **Air-gap negative test (cross-cutting).** Remove one VCEK secret / use a wrong-case HWID →
   attestation **must fail**. Proves the OfflineStore cache — not a silently-reachable KDS — is
   load-bearing.

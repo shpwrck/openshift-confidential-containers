@@ -81,7 +81,9 @@ credential/test 200` + `…/security-policy/test 200`. Mirror nginx for the same
 200`, `…/manifests/sha256:4ba3… 200`, `…/blobs/sha256:837b… 200 (40,689,274 bytes)` from
 `oci-client/0.15.0`. The whole disconnected confidential-pull path works; remaining work
 is rungs b/c (release/pause-image workloads — extend `registry-configuration` with the
-`quay.io/openshift-release-dev/*` remaps) and the air-gap VCEK negative test.
+`quay.io/openshift-release-dev/*` remaps) and the air-gap VCEK negative test. The b/c
+implementation plan now lives in
+[`../runbooks/rung-bc-completion-plan.md`](../runbooks/rung-bc-completion-plan.md).
 
 ## Diagnosis notes for next time (what was/wasn't useful)
 - The host journal only ever shows the shim's CDH error string (e.g. "Invalid image policy file",

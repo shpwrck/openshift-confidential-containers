@@ -130,11 +130,16 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 ## Phase 6 — Rungs a → b → c (each proven only when reproduced AND its negative test passes)
 **Goal:** every rung's happy path **and** negative test pass, plus the air-gap VCEK-pull negative test. **~1–2 h hands-on, strictly in order.**
 
+Rung-a and the air-gapped guest-pull path have a proven recipe. Rungs b/c now have repo
+scaffolding for image artifacts, workload rendering, KBS resources, and negative-test branches,
+but still need hardware proof; use [`rung-bc-completion-plan.md`](rung-bc-completion-plan.md)
+for the exact sequence.
+
 | Step | What happens / command |
 |---|---|
 | **Rung a — secret release** | Deploy `gitops/base/workloads/rung-a-secret-pod.yaml` (`runtimeClassName: kata-cc`). **Happy:** init `curl …/cdh/resource/default/attestation-status/status` → success → workload runs. **Negative (the proof):** restrictive resource policy + wrong/empty RVPS (or tamper initdata) → attestation errors, **secret withheld**, pod does not start. **Landmine:** keep `limits.memory ≥ default_memory + 256–512 MiB` or the host **OOM-kills the CVM** (DeadlineExceeded, QEMU dies in seconds). Primary signal: `oc describe pod` + `oc get events`, **not** logs. |
-| **Rung b — encrypted image** | **Happy:** pod Running (image key released after attestation). **Negative:** wrong measurement → key withheld → pod won't start. *(after rung a)* |
-| **Rung c — signed image** | **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull. `regcred` name **without dots**; registry CA in initdata as **separate array elements**. *(after rung b)* |
+| **Rung b — encrypted image** | `make build-rung-images` then `make apply-trustee-rung-bc` and `make apply-rung-b RUNG_B_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-b`). **Negative:** wrong measurement → key withheld → pod won't start. *(after rung a)* |
+| **Rung c — signed image** | Use the same artifacts, then `make apply-rung-c RUNG_C_IMAGE=<digest-ref>`. **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. *(after rung b)* |
 | **Air-gap negative test** | `make negative-test` (implemented in Phase 0). Remove one VCEK secret / use a **wrong-case HWID** → attestation **must FAIL**. This proves the OfflineStore cache — not a leaky KDS — is load-bearing. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
 | **🛑 STOP-gate** | All rung a/b/c happy+negative results green **and** the air-gap VCEK-pull negative test fails-closed as expected. |
 

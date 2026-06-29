@@ -14,6 +14,10 @@ MIRROR_CA="${MIRROR_CA:-/opt/mirror/ca/rootCA.pem}"
 KBS_PUB="${KBS_PUB:-${HOME}/kbs.pub}"
 ATTESTATION_CERT="${ATTESTATION_CERT:-$MIRROR_CA}"
 SAMPLE_SECRET="${SAMPLE_SECRET:-rung-a-demo-value}"
+RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
+RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
+RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
+RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-${MIRROR_REGISTRY}/coco/rung-c}"
 
 tmpdir=""
 vcek_hwids=()
@@ -91,6 +95,12 @@ docker_auth_json="$(jq -nc --arg registry "$MIRROR_REGISTRY" --arg auth "$auth" 
 
 stage_readable_file "$KBS_PUB" "$tmpdir/kbs.pub"
 stage_readable_file "$ATTESTATION_CERT" "$tmpdir/attestation.crt"
+if [[ -n "$RUNG_B_KEY_FILE" ]]; then
+	stage_readable_file "$RUNG_B_KEY_FILE" "$tmpdir/rung-b-image.key"
+fi
+if [[ -n "$RUNG_C_COSIGN_PUB" ]]; then
+	stage_readable_file "$RUNG_C_COSIGN_PUB" "$tmpdir/cosign.pub"
+fi
 
 printf '%s' "$docker_auth_json" > "$tmpdir/credential.json"
 printf '%s' "$docker_auth_json" > "$tmpdir/regcred.json"
@@ -99,6 +109,34 @@ printf '%s' '{"status":"success"}' > "$tmpdir/attestation-status"
 cat > "$tmpdir/security-policy.json" <<EOF
 {"default":[{"type":"insecureAcceptAnything"}],"transports":{"docker":{"${MIRROR_REGISTRY}":[{"type":"insecureAcceptAnything"}]}}}
 EOF
+if [[ -n "$RUNG_C_POLICY_FILE" ]]; then
+	stage_readable_file "$RUNG_C_POLICY_FILE" "$tmpdir/security-policy-rung-c.json"
+elif [[ -n "$RUNG_C_COSIGN_PUB" ]]; then
+	cat > "$tmpdir/security-policy-rung-c.json" <<EOF
+{
+  "default": [{"type": "reject"}],
+  "transports": {
+    "docker": {
+      "${RUNG_C_POLICY_IMAGE_PREFIX}": [
+        {
+          "type": "sigstoreSigned",
+          "keyPath": "kbs:///default/sig-public-key/rung-c"
+        }
+      ],
+      "${MIRROR_REGISTRY}/openshift/release": [
+        {"type": "insecureAcceptAnything"}
+      ],
+      "${MIRROR_REGISTRY}/openshift/release-images": [
+        {"type": "insecureAcceptAnything"}
+      ],
+      "${MIRROR_REGISTRY}/ubi9": [
+        {"type": "insecureAcceptAnything"}
+      ]
+    }
+  }
+}
+EOF
+fi
 cat > "$tmpdir/registries.conf" <<EOF
 [[registry]]
 prefix = "registry.access.redhat.com/ubi9"
@@ -130,12 +168,29 @@ oc -n "$NS" create secret generic regcred \
 oc -n "$NS" create secret generic credential \
 	--from-file=test="$tmpdir/credential.json" \
 	--dry-run=client -o yaml | apply_secret
-oc -n "$NS" create secret generic security-policy \
-	--from-file=test="$tmpdir/security-policy.json" \
-	--dry-run=client -o yaml | apply_secret
+if [[ -s "$tmpdir/security-policy-rung-c.json" ]]; then
+	oc -n "$NS" create secret generic security-policy \
+		--from-file=test="$tmpdir/security-policy.json" \
+		--from-file=rung-c="$tmpdir/security-policy-rung-c.json" \
+		--dry-run=client -o yaml | apply_secret
+else
+	oc -n "$NS" create secret generic security-policy \
+		--from-file=test="$tmpdir/security-policy.json" \
+		--dry-run=client -o yaml | apply_secret
+fi
 oc -n "$NS" create secret generic registry-configuration \
 	--from-file=test="$tmpdir/registries.conf" \
 	--dry-run=client -o yaml | apply_secret
+if [[ -s "$tmpdir/rung-b-image.key" ]]; then
+	oc -n "$NS" create secret generic image-key \
+		--from-file=rung-b="$tmpdir/rung-b-image.key" \
+		--dry-run=client -o yaml | apply_secret
+fi
+if [[ -s "$tmpdir/cosign.pub" ]]; then
+	oc -n "$NS" create secret generic sig-public-key \
+		--from-file=rung-c="$tmpdir/cosign.pub" \
+		--dry-run=client -o yaml | apply_secret
+fi
 oc -n "$NS" create secret generic attestation-status \
 	--from-file=status="$tmpdir/attestation-status" \
 	--dry-run=client -o yaml | apply_secret
@@ -151,3 +206,6 @@ done
 
 echo "Trustee secrets seeded in $NS"
 echo "VCEK_COUNT=${#vcek_hwids[@]}"
+[[ -s "$tmpdir/rung-b-image.key" ]] && echo "RUNG_B_KEY_RESOURCE=image-key/rung-b"
+[[ -s "$tmpdir/cosign.pub" ]] && echo "RUNG_C_PUBLIC_KEY_RESOURCE=sig-public-key/rung-c"
+[[ -s "$tmpdir/security-policy-rung-c.json" ]] && echo "RUNG_C_POLICY_RESOURCE=security-policy/rung-c"

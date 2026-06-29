@@ -8,6 +8,9 @@ publicKey
 vcek-bundle/
 rvps-*.yaml
 initdata-*.toml
+rung-bc-artifacts/
+cosign.key
+cosign.pub
 *.tmp
 
 # Fetched tooling + install working dirs (large, regenerable — never commit)

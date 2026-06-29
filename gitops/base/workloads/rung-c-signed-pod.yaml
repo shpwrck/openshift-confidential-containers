@@ -1,0 +1,34 @@
+---
+# Rung c — signed-image policy proof workload.
+#
+# This manifest is intentionally NOT listed in kustomization.yaml yet. It requires a
+# hardware-bound initdata annotation that points image-rs at the restrictive
+# kbs:///default/security-policy/rung-c policy, so scripts/apply-rung-c.sh renders the live
+# version.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rung-c-signed
+  namespace: default
+  annotations:
+    io.katacontainers.config.hypervisor.default_memory: "2048"
+    # io.katacontainers.config.hypervisor.cc_init_data: <rendered by scripts/apply-rung-c.sh>
+spec:
+  runtimeClassName: kata-cc
+  restartPolicy: Never
+  containers:
+    - name: app
+      # FILL: signed image, digest-pinned, e.g. mirror.rig.local:8443/coco/rung-c@sha256:...
+      image: mirror.rig.local:8443/coco/rung-c:signed
+      imagePullPolicy: Always
+      command:
+        - /bin/sh
+        - -c
+        - |
+          echo 'rung-c: signed image accepted and running'
+          sleep 3600
+      resources:
+        limits:
+          memory: "2304Mi"
+        requests:
+          memory: "2304Mi"

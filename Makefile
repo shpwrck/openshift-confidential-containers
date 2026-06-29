@@ -12,6 +12,14 @@ MIRROR_REGISTRY ?= mirror.rig.local:8443
 MIRROR_DNS_UPSTREAM ?= 192.168.66.10
 KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
 RUNG_A_IMAGE ?= registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
+ARTIFACT_DIR ?= ./rung-bc-artifacts
+SOURCE_IMAGE ?= $(RUNG_A_IMAGE)
+RUNG_B_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-b:encrypted
+RUNG_C_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c:signed
+RUNG_C_UNSIGNED_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c:unsigned
+RUNG_B_KEY_FILE ?= $(ARTIFACT_DIR)/rung-b-image.key
+RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
+RUNG_C_POLICY_FILE ?=
 
 # Assets dir the Agent-based installer consumes (install-config + agent-config land here).
 # FILL: matches the dir used in install/README.md ("cluster-assets").
@@ -117,9 +125,29 @@ apply-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RV
 seed-trustee-secrets: ## Phase 5: create/update rig Trustee secrets from bastion-local files
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/seed-trustee-secrets.sh
 
+.PHONY: build-rung-images
+build-rung-images: ## Phase 6: build/push rung-b encrypted and rung-c signed images
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" bash ./scripts/build-rung-images.sh
+
+.PHONY: seed-rung-bc-secrets
+seed-rung-bc-secrets: ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" bash ./scripts/seed-trustee-secrets.sh
+
+.PHONY: apply-trustee-rung-bc
+apply-trustee-rung-bc: ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" bash ./scripts/apply-trustee.sh
+
 .PHONY: apply-rung-a
 apply-rung-a: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
 	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash ./scripts/apply-rung-a.sh
+
+.PHONY: apply-rung-b
+apply-rung-b: ## Phase 6: render initdata, launch rung-b, and wait for the encrypted-image pod
+	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" bash ./scripts/apply-rung-b.sh
+
+.PHONY: apply-rung-c
+apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signed-image pod
+	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" bash ./scripts/apply-rung-c.sh
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)
