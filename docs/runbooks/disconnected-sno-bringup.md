@@ -322,11 +322,12 @@ below.
       - **Implementation note:** the signed policy must account for the app image and every
         infrastructure image pulled inside the CVM, including release/pause images.
 - [ ] **Air-gap negative test (proves the cache is load-bearing):** remove one VCEK secret /
-      use a **wrong-case HWID** → **attestation fails**. This proves the OfflineStore — not a
-      silently reachable KDS — is doing the work.
+      use a **wrong-case HWID**, then rerun an otherwise happy rung-a request →
+      **attestation fails**. This proves the OfflineStore — not a silently reachable KDS —
+      is doing the work.
 
 > Denial-proof automation now exists at `make negative-test WHICH=all`
-> ([Makefile](../../Makefile)); it renders the rung b/c negative manifests from the same
+> ([Makefile](../../Makefile)); it renders the rung a/b/c negative manifests from the same
 > apply scripts used by the happy paths. Treat it as a rig-side proof helper, not as proof
 > by itself: it must run against the hardware cluster and fail closed for every rung.
 

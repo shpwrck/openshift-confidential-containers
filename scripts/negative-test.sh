@@ -73,13 +73,18 @@ render_or_skip() { # render_or_skip <label> <output-file> <command...>
 
 run_rung_a() {
   echo "[rung-a] secret release — tamper so attestation cannot succeed → secret withheld"
-  local src="${REPO_ROOT}/gitops/base/workloads/rung-a-secret-pod.yaml"
-  [[ -f "$src" ]] || { skipt "rung-a workload manifest missing ($src)"; return; }
-  # Tamper: rename to a test pod and break the attested resource path so the CDH gate fails.
-  oc get -f "$src" -o yaml >/dev/null 2>&1 || true
-  sed -e 's/name: .*/name: negtest-rung-a/' \
-      -e 's#attestation-status/status#attestation-status/__tampered__#g' "$src" \
-      | expect_fail_closed "negtest-rung-a" "-" "rung-a tampered attestation path"
+  local manifest
+  manifest="$(mktemp)"
+  if ! render_or_skip "rung-a negative manifest" "$manifest" \
+      env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
+        POD_NAME=negtest-rung-a TAMPER_INITDATA=1 RENDER_ONLY=1 \
+        bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then
+    rm -f "$manifest"
+    return
+  fi
+  expect_fail_closed "negtest-rung-a" "$manifest" "rung-a measured-initdata mismatch withheld attestation-status"
+  rm -f "$manifest"
 }
 
 run_rung_b() {
@@ -119,13 +124,20 @@ run_air_gap() {
   echo "[air-gap] remove a VCEK secret → OfflineStore miss → attestation must fail (not silently hit KDS)"
   local vcek; vcek="$(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep -m1 'secret/vcek-' || true)"
   if [[ -z "$vcek" ]]; then skipt "no vcek-* secret in $TRUSTEE_NS — run make collect-vcek first"; return; fi
-  local bak; bak="$(mktemp)"; oc -n "$TRUSTEE_NS" get "$vcek" -o yaml > "$bak"
+  local bak manifest; bak="$(mktemp)"; manifest="$(mktemp)"
+  oc -n "$TRUSTEE_NS" get "$vcek" -o yaml > "$bak"
   echo "  (temporarily removing $vcek; will restore)"
   oc -n "$TRUSTEE_NS" delete "$vcek" >/dev/null
   oc -n "$TRUSTEE_NS" rollout restart deploy -l app=kbs >/dev/null 2>&1 || oc -n "$TRUSTEE_NS" delete pod -l app=kbs >/dev/null 2>&1 || true
   sleep 10
-  run_rung_a   # with the VCEK gone, the same workload must now fail-closed
-  echo "  (restoring $vcek)"; oc -n "$TRUSTEE_NS" apply -f "$bak" >/dev/null; rm -f "$bak"
+  if render_or_skip "air-gap happy-path rung-a manifest" "$manifest" \
+      env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
+        POD_NAME=negtest-air-gap RENDER_ONLY=1 \
+        bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then
+    expect_fail_closed "negtest-air-gap" "$manifest" "air-gap VCEK cache miss denied otherwise happy rung-a"
+  fi
+  echo "  (restoring $vcek)"; oc -n "$TRUSTEE_NS" apply -f "$bak" >/dev/null; rm -f "$bak" "$manifest"
   oc -n "$TRUSTEE_NS" rollout restart deploy -l app=kbs >/dev/null 2>&1 || true
 }
 

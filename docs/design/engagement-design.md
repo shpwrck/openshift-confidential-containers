@@ -62,7 +62,7 @@ test passes:
 | a — secret release | `cdh/resource/.../attestation-status` → `{"status":"success"}` | restrictive policy + wrong/empty RVPS (or tampered initdata) → **error, secret withheld** |
 | b — encrypted image | pod Running | wrong measurement → key withheld → **pod won't start** |
 | c — signed image | signed image pulls | unsigned/tampered image → `image_security_policy` **rejects** |
-| air-gap | attestation succeeds offline | remove one VCEK / wrong-case HWID → **attestation fails** (proves the cache is load-bearing, not silently hitting a reachable KDS) |
+| air-gap | attestation succeeds offline | remove one VCEK / wrong-case HWID, then rerun an otherwise happy rung-a request → **attestation fails** (proves the cache is load-bearing, not silently hitting a reachable KDS) |
 
 CI (no hardware): `kustomize build`, kubeconform, `conftest`/OPA on the Rego policies, yamllint.
 Hardware e2e is manual/scheduled on the rented node.

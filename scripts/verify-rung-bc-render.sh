@@ -41,6 +41,19 @@ render_pod() {
 		bash "$script" > "$out"
 }
 
+render_rung_a_pod() {
+	local out="$1" image="$2" name="$3" namespace="$4" tamper="${5:-0}"
+	env \
+		MIRROR_CA="$tmpdir/mirror-ca.pem" \
+		MIRROR_REGISTRY="mirror.rig.local:8443" \
+		NS="$namespace" \
+		RENDER_ONLY=1 \
+		TAMPER_INITDATA="$tamper" \
+		POD_NAME="$name" \
+		RUNG_A_IMAGE="$image" \
+		bash "$REPO_ROOT/scripts/apply-rung-a.sh" > "$out"
+}
+
 expect_grep() {
 	local pattern="$1" file="$2" label="$3"
 	grep -Fq -- "$pattern" "$file" || die "$label not found: $pattern"
@@ -376,6 +389,7 @@ vars=(
 	MIRROR_REGISTRY
 	MIRROR_DNS_UPSTREAM
 	KBS_URL
+	RUNG_A_IMAGE
 	RUNG_B_IMAGE
 	RUNG_C_IMAGE
 	ARTIFACT_DIR
@@ -387,6 +401,16 @@ for var in "${vars[@]}"; do
 done
 EOF
 	chmod +x "$stub"
+
+	make -s apply-rung-a \
+		APPLY_RUNG_A_SCRIPT="$stub" \
+		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		MIRROR_DNS_UPSTREAM="192.0.2.10" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_A_IMAGE="mirror.test.local:5000/custom/rung-a@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+		> "$tmpdir/apply-rung-a-env"
 
 	make -s apply-rung-b \
 		APPLY_RUNG_B_SCRIPT="$stub" \
@@ -416,10 +440,11 @@ EOF
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		> "$evidence_out"
 
-	for out in "$rung_b_out" "$rung_c_out" "$evidence_out"; do
+	for out in "$tmpdir/apply-rung-a-env" "$rung_b_out" "$rung_c_out" "$evidence_out"; do
 		expect_grep "NS=workload-test" "$out" "Makefile workload namespace override"
 		expect_grep "TRUSTEE_NS=trustee-test" "$out" "Makefile Trustee namespace override"
 	done
+	expect_grep "RUNG_A_IMAGE=mirror.test.local:5000/custom/rung-a@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$tmpdir/apply-rung-a-env" "Makefile apply-rung-a image override"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$rung_b_out" "Makefile apply-rung-b image override"
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$rung_c_out" "Makefile apply-rung-c image override"
 	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$evidence_out" "Makefile evidence artifact dir override"
@@ -475,6 +500,7 @@ EOF
 
 rung_b_image="mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 rung_c_image="mirror.rig.local:8443/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+rung_a_image="mirror.rig.local:8443/ubi9/ubi-minimal@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 digest="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
@@ -492,7 +518,14 @@ verify_evidence_secret_redaction
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1
 render_pod c "$tmpdir/rung-c.yaml" "$rung_c_image" rung-c-render
+render_rung_a_pod "$tmpdir/rung-a.yaml" "$rung_a_image" rung-a-render workload-render
+render_rung_a_pod "$tmpdir/rung-a-tampered.yaml" "$rung_a_image" negtest-rung-a workload-render 1
 
+expect_grep "name: rung-a-render" "$tmpdir/rung-a.yaml" "rung-a pod name"
+expect_grep "namespace: workload-render" "$tmpdir/rung-a.yaml" "rung-a workload namespace"
+expect_grep "image: $rung_a_image" "$tmpdir/rung-a.yaml" "rung-a image"
+expect_grep "runtimeClassName: kata-cc" "$tmpdir/rung-a.yaml" "rung-a runtimeClass"
+expect_grep "cdh/resource/default/attestation-status/status" "$tmpdir/rung-a.yaml" "rung-a attestation resource path"
 expect_grep "name: rung-b-render" "$tmpdir/rung-b.yaml" "rung-b pod name"
 expect_grep "image: $rung_b_image" "$tmpdir/rung-b.yaml" "rung-b image"
 expect_grep "runtimeClassName: kata-cc" "$tmpdir/rung-b.yaml" "rung-b runtimeClass"
@@ -500,19 +533,28 @@ expect_grep "name: rung-c-render" "$tmpdir/rung-c.yaml" "rung-c pod name"
 expect_grep "image: $rung_c_image" "$tmpdir/rung-c.yaml" "rung-c image"
 expect_grep "runtimeClassName: kata-cc" "$tmpdir/rung-c.yaml" "rung-c runtimeClass"
 
+a_initdata="$(extract_initdata "$tmpdir/rung-a.yaml")"
+a_tampered_initdata="$(extract_initdata "$tmpdir/rung-a-tampered.yaml")"
 b_initdata="$(extract_initdata "$tmpdir/rung-b.yaml")"
 b_tampered_initdata="$(extract_initdata "$tmpdir/rung-b-tampered.yaml")"
 c_initdata="$(extract_initdata "$tmpdir/rung-c.yaml")"
+[[ "$a_initdata" != "$a_tampered_initdata" ]] || die "tampered rung-a initdata did not change the measured annotation"
 [[ "$b_initdata" != "$b_tampered_initdata" ]] || die "tampered rung-b initdata did not change the measured annotation"
 
+a_decoded="$tmpdir/rung-a-initdata.toml"
 b_decoded="$tmpdir/rung-b-initdata.toml"
 c_decoded="$tmpdir/rung-c-initdata.toml"
+a_tampered_decoded="$tmpdir/rung-a-tampered-initdata.toml"
 b_tampered_decoded="$tmpdir/rung-b-tampered-initdata.toml"
+bash "$REPO_ROOT/scripts/encode-initdata.sh" decode "$a_initdata" > "$a_decoded"
+bash "$REPO_ROOT/scripts/encode-initdata.sh" decode "$a_tampered_initdata" > "$a_tampered_decoded"
 bash "$REPO_ROOT/scripts/encode-initdata.sh" decode "$b_initdata" > "$b_decoded"
 bash "$REPO_ROOT/scripts/encode-initdata.sh" decode "$b_tampered_initdata" > "$b_tampered_decoded"
 bash "$REPO_ROOT/scripts/encode-initdata.sh" decode "$c_initdata" > "$c_decoded"
+expect_grep 'image_security_policy_uri = "kbs:///default/security-policy/test"' "$a_decoded" "rung-a policy URI"
 expect_grep 'image_security_policy_uri = "kbs:///default/security-policy/test"' "$b_decoded" "rung-b policy URI"
 expect_grep 'image_security_policy_uri = "kbs:///default/security-policy/rung-c"' "$c_decoded" "rung-c policy URI"
+expect_grep '# negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS' "$a_tampered_decoded" "rung-a tamper marker"
 expect_grep '# negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS' "$b_tampered_decoded" "rung-b tamper marker"
 
 hwid="$(printf 'a%.0s' {1..128})"

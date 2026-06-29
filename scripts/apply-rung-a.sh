@@ -11,9 +11,13 @@ MIRROR_DOMAIN="${MIRROR_DOMAIN:-rig.local}"
 MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"
 KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
 RUNG_A_IMAGE="${RUNG_A_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63}"
+POD_NAME="${POD_NAME:-rung-a-secret}"
+ATTESTATION_RESOURCE_PATH="${ATTESTATION_RESOURCE_PATH:-attestation-status/status}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-900}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 CATALOGSOURCE="${CATALOGSOURCE:-cs-redhat-operator-index-v4-20}"
+RENDER_ONLY="${RENDER_ONLY:-0}"
+TAMPER_INITDATA="${TAMPER_INITDATA:-0}"
 
 tmpdir=""
 
@@ -71,7 +75,7 @@ trustee_available() {
 }
 
 pod_ready() {
-	oc -n "$NS" wait pod/rung-a-secret --for=condition=Ready --timeout=10s >/dev/null 2>&1
+	oc -n "$NS" wait "pod/${POD_NAME}" --for=condition=Ready --timeout=10s >/dev/null 2>&1
 }
 
 ensure_dns_forwarder() {
@@ -114,17 +118,36 @@ ${mirror_ca}
 """]
 '''
 EOF
+	if [[ "$TAMPER_INITDATA" == "1" ]]; then
+		{
+			echo
+			echo "# negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS"
+		} >> "$out"
+	fi
 }
 
 render_pod() {
-	local initdata="$1" out="$2" patch
+	local initdata="$1" out="$2" patch gate_command
+	gate_command="$(cat <<EOF
+set -e
+curl -fsS http://127.0.0.1:8006/cdh/resource/default/${ATTESTATION_RESOURCE_PATH}
+echo "attestation: ok"
+EOF
+)"
 	patch="$(jq -nc \
+		--arg name "$POD_NAME" \
+		--arg namespace "$NS" \
 		--arg initdata "$initdata" \
 		--arg image "$RUNG_A_IMAGE" \
+		--arg gate_command "$gate_command" \
 		'{
-			metadata: {annotations: {"io.katacontainers.config.hypervisor.cc_init_data": $initdata}},
+			metadata: {
+				name: $name,
+				namespace: $namespace,
+				annotations: {"io.katacontainers.config.hypervisor.cc_init_data": $initdata}
+			},
 			spec: {
-				initContainers: [{name: "attestation-gate", image: $image}],
+				initContainers: [{name: "attestation-gate", image: $image, command: ["/bin/sh", "-c", $gate_command]}],
 				containers: [{name: "app", image: $image}]
 			}
 		}')"
@@ -134,9 +157,9 @@ render_pod() {
 
 collect_failure_context() {
 	echo
-	echo "== rung-a pod =="
-	oc -n "$NS" get pod rung-a-secret -o wide || true
-	oc -n "$NS" describe pod rung-a-secret || true
+	echo "== ${POD_NAME} pod =="
+	oc -n "$NS" get pod "$POD_NAME" -o wide || true
+	oc -n "$NS" describe pod "$POD_NAME" || true
 	echo
 	echo "== Trustee logs =="
 	oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail=160 || true
@@ -144,10 +167,20 @@ collect_failure_context() {
 
 need oc
 need jq
-oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 cd "$REPO_ROOT"
 tmpdir="$(mktemp -d)"
+
+render_initdata "$(read_file "$MIRROR_CA")" "$tmpdir/initdata.toml"
+initdata="$(bash "$REPO_ROOT/scripts/encode-initdata.sh" encode "$tmpdir/initdata.toml")"
+render_pod "$initdata" "$tmpdir/rung-a-secret.yaml"
+
+if [[ "$RENDER_ONLY" == "1" ]]; then
+	cat "$tmpdir/rung-a-secret.yaml"
+	exit 0
+fi
+
+oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 wait_until "SNO baseline" sno_baseline_ok || { cat /tmp/apply-rung-a-baseline.log >&2; exit 1; }
 wait_until "kata-cc runtime class" runtimeclass_ok
@@ -156,23 +189,19 @@ wait_until "Trustee deployment available" trustee_available
 echo "Configuring rig.local DNS forwarding to ${MIRROR_DNS_UPSTREAM}"
 ensure_dns_forwarder
 
-render_initdata "$(read_file "$MIRROR_CA")" "$tmpdir/initdata.toml"
-initdata="$(bash "$REPO_ROOT/scripts/encode-initdata.sh" encode "$tmpdir/initdata.toml")"
-render_pod "$initdata" "$tmpdir/rung-a-secret.yaml"
-
-oc -n "$NS" delete pod rung-a-secret --ignore-not-found --wait=true
+oc -n "$NS" delete pod "$POD_NAME" --ignore-not-found --wait=true
 oc apply -f "$tmpdir/rung-a-secret.yaml"
 
-if ! wait_until "rung-a-secret pod Ready" pod_ready; then
+if ! wait_until "${POD_NAME} pod Ready" pod_ready; then
 	collect_failure_context
 	exit 1
 fi
 
 echo
 echo "== attestation gate log =="
-oc -n "$NS" logs pod/rung-a-secret -c attestation-gate
+oc -n "$NS" logs "pod/${POD_NAME}" -c attestation-gate
 echo
 echo "== app log =="
-oc -n "$NS" logs pod/rung-a-secret -c app --tail=20
+oc -n "$NS" logs "pod/${POD_NAME}" -c app --tail=20
 echo
 echo "Rung-a confidential pod is running"

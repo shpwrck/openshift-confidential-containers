@@ -316,6 +316,9 @@ registry credential, pause image, or KBS URL is broken.
 
 `scripts/negative-test.sh` now has real b/c branches:
 
+- `rung-a`
+  - Render the same initdata/apply path as `make apply-rung-a`.
+  - Apply a measured-initdata tamper as `negtest-rung-a`.
 - `rung-b`
   - Render happy-path initdata.
   - Apply a tampered measured-initdata copy as `negtest-rung-b`.
@@ -326,12 +329,19 @@ registry credential, pause image, or KBS URL is broken.
   - Apply the unsigned/tampered image pod as `negtest-rung-c`.
   - Extend denial grep for `Image policy rejected`, `sigstoreSigned`, `signature`,
     `security-policy`, and `rejected`.
+- `air-gap`
+  - Temporarily remove a VCEK secret, then render an otherwise happy rung-a manifest as
+    `negtest-air-gap`.
+  - This must fail because the OfflineStore cache is missing, not because the pod manifest
+    was also tampered.
 
 Before declaring the script done, run:
 
 ```bash
+make negative-test WHICH=rung-a
 make negative-test WHICH=rung-b RUNG_B_IMAGE="$RUNG_B_IMAGE"
 make negative-test WHICH=rung-c RUNG_C_UNSIGNED_IMAGE="$RUNG_C_UNSIGNED_IMAGE"
+make negative-test WHICH=air-gap
 make negative-test WHICH=all
 ```
 
