@@ -726,13 +726,13 @@ Applying `KataConfig` drives a MachineConfigPool rollout that **reboots the sing
 spare — wait it out): `oc get mcp -w`.
 
 ```bash
-oc get runtimeclass         # expect: kata  AND  kata-cc
+oc get runtimeclass         # expect: kata-cc; plain kata may also appear on some OSC releases
 oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-qemu-snp (a.k.a. kata-snp) on SEV-SNP
 ```
 
-> **STOP-gate:** four CSVs `Succeeded`, node back `Ready` post-reboot, `kata` + `kata-cc`
-> (SNP handler) RuntimeClasses present. If the handler is wrong, KataConfig ran before NFD
-> labeled — re-apply KataConfig once the label exists.
+> **STOP-gate:** four CSVs `Succeeded`, node back `Ready` post-reboot, and `kata-cc`
+> RuntimeClass present with the SNP handler. If the handler is wrong, KataConfig ran before
+> NFD labeled — re-apply KataConfig once the label exists.
 
 ---
 

@@ -248,16 +248,17 @@ Reference: [`install/README.md`](../../install/README.md),
       ```bash
       oc get mcp -w
       ```
-      `# VERIFY` the CoCo feature-gate field name against the OSC 1.12 CRD
-      (`oc explain kataconfig.spec` — in 1.12 it is `enableConfidentialCompute`).
+      `# VERIFY` the CoCo feature gate against the OSC 1.12 CRD and operator behavior:
+      `oc explain kataconfig.spec` has no `enableConfidentialCompute` field; CoCo is enabled
+      by the `osc-feature-gates` ConfigMap.
 - [ ] **Verify the RuntimeClasses** (the Phase-4 proof):
       ```bash
       oc get runtimeclass
-      # expect:  kata   AND   kata-cc   (kata-cc handler resolves to kata-snp on SEV-SNP)
+      # expect: kata-cc (plain kata may also appear); kata-cc handler resolves to kata-snp on SEV-SNP
       ```
 
-> STOP-gate: four CSVs `Succeeded`, node back `Ready` after the MCP reboot, and `kata` +
-> `kata-cc` (handler `kata-snp`) RuntimeClasses present.
+> STOP-gate: four CSVs `Succeeded`, node back `Ready` after the MCP reboot, and `kata-cc`
+> present with handler `kata-snp`.
 
 ---
 
