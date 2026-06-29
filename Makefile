@@ -34,6 +34,9 @@ APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
+EVIDENCE_DIR ?=
+TRUSTEE_LOG_TAIL ?= 1000
+POD_LOG_TAIL ?= 200
 
 # Assets dir the Agent-based installer consumes (install-config + agent-config land here).
 # FILL: matches the dir used in install/README.md ("cluster-assets").
@@ -162,6 +165,10 @@ apply-rung-b: ## Phase 6: render initdata, launch rung-b, and wait for the encry
 .PHONY: apply-rung-c
 apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signed-image pod
 	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" bash ./scripts/apply-rung-c.sh
+
+.PHONY: collect-rung-bc-evidence
+collect-rung-bc-evidence: ## Phase 6: collect non-secret rung-b/c proof evidence into ARTIFACT_DIR
+	NS=default TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" bash ./scripts/collect-rung-bc-evidence.sh
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

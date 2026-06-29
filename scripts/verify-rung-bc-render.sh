@@ -317,6 +317,41 @@ EOF
 	done
 }
 
+verify_evidence_secret_redaction() {
+	local raw="$tmpdir/raw-secret.json" redacted="$tmpdir/redacted-secret.json"
+	cat > "$raw" <<'EOF'
+{
+  "apiVersion": "v1",
+  "kind": "Secret",
+  "type": "Opaque",
+  "metadata": {
+    "name": "image-key",
+    "namespace": "trustee-operator-system",
+    "labels": {"app": "trustee"},
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "SECRET-DATA-SHOULD-NOT-SURVIVE",
+      "example": "SECRET-ANNOTATION-VALUE-SHOULD-NOT-SURVIVE"
+    }
+  },
+  "data": {
+    "rung-b": "SECRET-KEY-SHOULD-NOT-SURVIVE"
+  }
+}
+EOF
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" redact-secret-json < "$raw" > "$redacted"
+	jq -e '
+		.kind == "Secret" and
+		.metadata.name == "image-key" and
+		.metadata.annotationKeys == ["example", "kubectl.kubernetes.io/last-applied-configuration"] and
+		.dataKeys == ["rung-b"] and
+		(.data | not) and
+		(.metadata.annotations | not)
+	' "$redacted" >/dev/null || die "secret redaction output shape is wrong"
+	if grep -Fq "SECRET-" "$redacted"; then
+		die "secret redaction leaked secret data or annotation values"
+	fi
+}
+
 need make
 need oc
 need jq
@@ -341,6 +376,7 @@ verify_rung_c_digest_signing
 verify_rung_c_policy_render
 verify_build_make_env
 verify_trustee_make_env
+verify_evidence_secret_redaction
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

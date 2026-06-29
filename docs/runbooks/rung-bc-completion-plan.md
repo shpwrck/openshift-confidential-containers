@@ -90,6 +90,7 @@ The repo now carries the dry-run friendly tooling:
   - `make apply-trustee-rung-bc`
   - `make apply-rung-b`
   - `make apply-rung-c`
+  - `make collect-rung-bc-evidence`
 
 On the bastion or connected host that can push to the mirror:
 
@@ -332,12 +333,26 @@ make negative-test WHICH=all
 `WHICH=all` must exit zero only when rung-a, rung-b, rung-c, and air-gap denial proofs all
 run and all fail closed as expected.
 
-## Phase 6 - promotion checklist
+## Phase 6 - evidence capture and promotion checklist
+
+After each happy/negative cycle, collect a non-secret evidence bundle while the pods and recent
+logs still exist:
+
+```bash
+make collect-rung-bc-evidence
+```
+
+By default this writes under `rung-bc-artifacts/evidence-<utc-timestamp>/`, which is ignored by
+git. The bundle includes pod YAML/describe/logs, decoded initdata, recent Trustee logs, events,
+KbsConfig/configmaps, redacted Trustee Secret metadata plus data-key names, and a copy of
+`rung-bc-images.json` if present. It does not dump Secret data, but still review the bundle
+before sharing it outside the engagement.
 
 After both rungs are green on the disposable rig:
 
 - Commit the workload manifests, apply scripts, negative-test coverage, and doc updates.
 - Record image digests and key IDs in the run notes, not the key material.
+- Save the `collect-rung-bc-evidence` bundle path with the run notes.
 - Re-run `make lint`.
 - Re-run the full hardware gate matrix:
 

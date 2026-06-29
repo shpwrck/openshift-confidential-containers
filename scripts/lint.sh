@@ -2,6 +2,9 @@
 # Hardware-free CI: build every overlay and validate. Safe to run anywhere.
 set -euo pipefail
 
+echo "== shell syntax =="
+find scripts -maxdepth 1 -type f -name '*.sh' -print0 | xargs -0 -r bash -n
+
 overlays=$(find gitops/overlays -maxdepth 1 -mindepth 1 -type d 2>/dev/null || true)
 [ -n "${overlays}" ] || { echo "no overlays yet"; exit 0; }
 
