@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
+HWIDS="${HWIDS:-}"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
 MIRROR_USERNAME="${MIRROR_USERNAME:-init}"
 MIRROR_PASSWORD_FILE="${MIRROR_PASSWORD_FILE:-/opt/mirror/mirror-admin-password}"
@@ -15,6 +16,8 @@ ATTESTATION_CERT="${ATTESTATION_CERT:-$MIRROR_CA}"
 SAMPLE_SECRET="${SAMPLE_SECRET:-rung-a-demo-value}"
 
 tmpdir=""
+vcek_hwids=()
+vcek_ders=()
 
 die() {
 	echo "ERROR: $*" >&2
@@ -46,17 +49,29 @@ stage_readable_file() {
 	read_file "$path" > "$out"
 }
 
-find_hwid() {
-	local hwid="$HWID"
-	if [[ -z "$hwid" ]]; then
-		mapfile -t vceks < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
-		[[ "${#vceks[@]}" -eq 1 ]] || die "set HWID=<lowercase-hwid> (found ${#vceks[@]} VCEK files in $VCEK_BUNDLE)"
-		hwid="$(basename "$(dirname "${vceks[0]}")")"
+load_vcek_bundle() {
+	local raw hwid der
+	raw="${HWIDS:-$HWID}"
+	raw="${raw//,/ }"
+	if [[ -n "$raw" ]]; then
+		for hwid in $raw; do
+			hwid="$(printf '%s' "$hwid" | tr 'A-F' 'a-f')"
+			[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "HWID must be 128 lowercase hex chars: $hwid"
+			der="$VCEK_BUNDLE/$hwid/vcek.der"
+			[[ -s "$der" ]] || die "missing VCEK file: $der"
+			vcek_hwids+=("$hwid")
+			vcek_ders+=("$der")
+		done
+	else
+		mapfile -t ders < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
+		[[ "${#ders[@]}" -gt 0 ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
+		for der in "${ders[@]}"; do
+			hwid="$(basename "$(dirname "$der")" | tr 'A-F' 'a-f')"
+			[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "invalid HWID directory name for $der: $hwid"
+			vcek_hwids+=("$hwid")
+			vcek_ders+=("$der")
+		done
 	fi
-	hwid="$(printf '%s' "$hwid" | tr 'A-F' 'a-f')"
-	[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "HWID must be 128 lowercase hex chars: $hwid"
-	[[ -s "$VCEK_BUNDLE/$hwid/vcek.der" ]] || die "missing VCEK file: $VCEK_BUNDLE/$hwid/vcek.der"
-	printf '%s\n' "$hwid"
 }
 
 apply_secret() {
@@ -69,7 +84,7 @@ need base64
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 tmpdir="$(mktemp -d)"
-hwid="$(find_hwid)"
+load_vcek_bundle
 mirror_password="$(read_file "$MIRROR_PASSWORD_FILE" | tr -d '\n')"
 auth="$(printf '%s' "${MIRROR_USERNAME}:${mirror_password}" | base64 -w0)"
 docker_auth_json="$(jq -nc --arg registry "$MIRROR_REGISTRY" --arg auth "$auth" '{auths:{($registry):{auth:$auth}}}')"
@@ -127,9 +142,12 @@ oc -n "$NS" create secret generic attestation-status \
 oc -n "$NS" create secret generic sample \
 	--from-file=secret="$tmpdir/sample" \
 	--dry-run=client -o yaml | apply_secret
-oc -n "$NS" create secret generic vcek-snp-0 \
-	--from-file=vcek.der="$VCEK_BUNDLE/$hwid/vcek.der" \
-	--dry-run=client -o yaml | apply_secret
+for i in "${!vcek_hwids[@]}"; do
+	oc -n "$NS" create secret generic "vcek-snp-${i}" \
+		--from-file=vcek.der="${vcek_ders[$i]}" \
+		--dry-run=client -o yaml | apply_secret
+	echo "VCEK vcek-snp-${i}: ${vcek_hwids[$i]}"
+done
 
 echo "Trustee secrets seeded in $NS"
-echo "HWID=$hwid"
+echo "VCEK_COUNT=${#vcek_hwids[@]}"
