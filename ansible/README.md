@@ -42,7 +42,8 @@ rewrite — see [Portability](#portability).
    goes in agent-config), `pxe_serve` (build pxe-files, tokenized nginx serve, verify HTTP 206),
    `install_drive` (Latitude **reinstall** to re-netboot — not a reboot; `wait-for install-complete`
    with a non-fatal bootstrap timeout; poll `clusterversion` until Available=True/Progressing=False;
-   add cluster names to the bastion `/etc/hosts`).
+   add cluster names to the bastion `/etc/hosts`), then `public_console` (default-on sslip.io
+   console/OAuth edge through the bastion public IP).
 5. **Post-install** (`--tags pxe-stop`): close the boot-artifact endpoint (the secret-bearing
    initrd must not stay public — issue #33).
 
@@ -75,6 +76,9 @@ ansible-playbook playbooks/site.yml \
   -e node_server_id=$SRV \
   -e boot_artifacts_token=$TOKEN
 ```
+
+The public console edge is enabled by default after the cluster is Available. Opt out with
+`-e public_console_enabled=false`; the role removes its managed nginx snippet on opt-out.
 
 Or the single entrypoint (prints the TF commands; add `--apply-tf` to run them):
 

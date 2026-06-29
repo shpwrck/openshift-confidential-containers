@@ -72,6 +72,25 @@ boot_artifacts_port: 8080
 # intentionally obvious so an un-overridden run is caught in review, not shipped.
 boot_artifacts_token: "REPLACE_WITH_openssl_rand_hex_16"
 
+# ---- Public console edge ---------------------------------------------------
+# Default-on convenience for the disposable Latitude rig: publish the OpenShift console through
+# the bastion's public IP using sslip.io names, while proxying to the private VLAN ingress IP.
+# Opt out with `-e public_console_enabled=false`.
+public_console_enabled: true
+public_console_domain_suffix: "{{ bastion_public_ipv4 }}.sslip.io"
+public_console_host: "console-openshift-console.apps.{{ cluster_name }}.{{ public_console_domain_suffix }}"
+public_oauth_host: "oauth-openshift.apps.{{ cluster_name }}.{{ public_console_domain_suffix }}"
+public_console_internal_host: "console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}"
+public_oauth_internal_host: "oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}"
+public_console_cluster_upstream_ip: "{{ node_vlan_ip }}"
+public_console_nginx_conf_path: "/etc/nginx/conf.d/coco-public-console.conf"
+public_console_cert_path: "/etc/pki/nginx/coco-public-console.crt"
+public_console_key_path: "/etc/pki/nginx/private/coco-public-console.key"
+public_console_secret_name: "coco-public-console-route"
+public_console_cert_days: 365
+public_console_cert_min_lifetime_seconds: 604800
+public_console_proxy_probe_address: "127.0.0.1"
+
 # ---- NTP -------------------------------------------------------------------
 # additionalNTPSources MUST go in agent-config (the installer drops it from install-config).
 additional_ntp_sources:

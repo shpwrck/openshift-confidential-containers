@@ -14,6 +14,8 @@
 - name: Discover node interface MACs from the Latitude API
   hosts: localhost
   gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
   vars:
     discovered_machines: []
   tasks:

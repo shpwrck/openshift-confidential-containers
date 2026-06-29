@@ -28,6 +28,7 @@ help: ## List targets
 # config + the OpenShift install. `make up` sequences both, pausing only at the SEV-SNP BIOS step.
 # Requires: LATITUDESH_AUTH_TOKEN in env; RH pull-secret on the bastion (~/pull-secret.json);
 # and -e overrides from terraform output (see ansible/README.md). Pass extra args via ARGS=.
+# Public console publishing is default-on; opt out with -e public_console_enabled=false.
 #   make up ARGS="--apply-tf -e vlan_vid_override=123 -e node_server_id=sv_x -e boot_artifacts_token=$(openssl rand -hex 16)"
 .PHONY: up
 up: ## Hands-off air-gapped SNO bring-up via Ansible (stops at the SEV-SNP BIOS step)

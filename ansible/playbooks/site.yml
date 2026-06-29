@@ -19,6 +19,8 @@
 - name: "Phase A — bastion preparation (egress, tools, mirror, dns/ntp)"
   hosts: bastions
   gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
   roles:
     - role: bastion_egress   # fix #1 — drop v6 default, clamp MTU 1400 + SYN MSS 1360. FIRST.
       tags: [egress, bastion-prep]
@@ -37,6 +39,8 @@
 - name: "STOP — set the SEV-SNP BIOS on the node before continuing"
   hosts: localhost
   gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
   tags: [bios, install]
   tasks:
     - name: Print the SEV-SNP BIOS recipe and pause
@@ -78,6 +82,8 @@
 - name: "Phase C — render configs, serve boot artifacts, drive the install"
   hosts: bastions
   gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
   pre_tasks:
     # Load the discovered MACs if discover.yml has run (optional so syntax-check/dry runs work).
     - name: Load discovered MACs (overrides the machines list)
@@ -91,6 +97,8 @@
       tags: [pxe, install]
     - role: install_drive    # fix #5 + #9 — reinstall netboot, wait-for, poll clusterversion
       tags: [drive, install]
+    - role: public_console   # default-on public sslip.io console edge; opt out with public_console_enabled=false
+      tags: [console, public-console, install]
 
 # =====================================================================================
 # After install: close the boot-artifact endpoint (run explicitly: --tags pxe-stop, or the
@@ -99,6 +107,8 @@
 - name: "Post-install — close the boot-artifact endpoint"
   hosts: bastions
   gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
   tags: [pxe-stop, never]
   roles:
     - role: pxe_serve
