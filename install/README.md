@@ -76,8 +76,9 @@ For multi-socket or multi-node hardware, carry every required VCEK into
 `VCEK_BUNDLE/<lowercase-hwid>/vcek.der` before running `make apply-trustee`. The script renders
 one short secret/mount pair per bundle entry (`vcek-snp-0`, `vcek-snp-1`, ...). Do not rely on a
 `snphost --socket` flag: the coco-tools snphost used here has no socket selector. `make
-collect-vcek` records every URL that `snphost show vcek-url` emits and fails if a multi-socket
-node reports more sockets than the carried bundle covers.
+collect-vcek` builds a socket-to-CPU map with `lscpu -p=CPU,SOCKET`, runs the coco-tools container
+once per socket with `podman --cpuset-cpus=<socket-cpus>`, records the resulting HWIDs, and fails
+if a multi-socket node reports more sockets than the carried bundle covers.
 
 `make apply-rung-a` generates environment-bound initdata at runtime, configures the `rig.local`
 DNS forwarder to the bastion, applies the digest-pinned rung-a pod, and waits until the
