@@ -30,6 +30,21 @@ need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
 }
 
+image_digest_ref() {
+	local image="$1" digest="$2" base last_segment
+	if [[ "$image" == *@* ]]; then
+		base="${image%@*}"
+	else
+		last_segment="${image##*/}"
+		if [[ "$last_segment" == *:* ]]; then
+			base="${image%:*}"
+		else
+			base="$image"
+		fi
+	fi
+	printf '%s@%s\n' "$base" "$digest"
+}
+
 detect_runtime() {
 	if [[ -n "$CONTAINER_RUNTIME" ]]; then
 		command -v "$CONTAINER_RUNTIME" >/dev/null || die "$CONTAINER_RUNTIME is not on PATH"
@@ -130,38 +145,44 @@ sign_rung_c() {
 }
 
 write_manifest() {
-	local b_digest c_digest c_unsigned_digest manifest
+	local b_digest c_digest c_unsigned_digest b_digest_ref c_digest_ref c_unsigned_digest_ref manifest
 	b_digest="$(skopeo inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
 	c_digest="$(skopeo inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
 	c_unsigned_digest="$(skopeo inspect "docker://${RUNG_C_UNSIGNED_IMAGE}" | jq -r '.Digest')"
+	b_digest_ref="$(image_digest_ref "$RUNG_B_IMAGE" "$b_digest")"
+	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
+	c_unsigned_digest_ref="$(image_digest_ref "$RUNG_C_UNSIGNED_IMAGE" "$c_unsigned_digest")"
 	manifest="$ARTIFACT_DIR/rung-bc-images.json"
 	jq -n \
 		--arg source "$SOURCE_IMAGE_REF" \
 		--arg rung_b_image "$RUNG_B_IMAGE" \
 		--arg rung_b_digest "$b_digest" \
+		--arg rung_b_digest_ref "$b_digest_ref" \
 		--arg rung_b_key_id "$RUNG_B_KEY_ID" \
 		--arg rung_b_key_file "$RUNG_B_KEY_FILE" \
 		--arg rung_c_image "$RUNG_C_IMAGE" \
 		--arg rung_c_digest "$c_digest" \
+		--arg rung_c_digest_ref "$c_digest_ref" \
 		--arg rung_c_unsigned_image "$RUNG_C_UNSIGNED_IMAGE" \
 		--arg rung_c_unsigned_digest "$c_unsigned_digest" \
+		--arg rung_c_unsigned_digest_ref "$c_unsigned_digest_ref" \
 		--arg cosign_pub "$COSIGN_PUB" \
 		'{
 			source_image: $source,
 			rung_b: {
 				image: $rung_b_image,
 				digest: $rung_b_digest,
-				digest_ref: ($rung_b_image | sub(":[^/:@]+$"; "@" + $rung_b_digest)),
+				digest_ref: $rung_b_digest_ref,
 				key_id: $rung_b_key_id,
 				key_file: $rung_b_key_file
 			},
 			rung_c: {
 				image: $rung_c_image,
 				digest: $rung_c_digest,
-				digest_ref: ($rung_c_image | sub(":[^/:@]+$"; "@" + $rung_c_digest)),
+				digest_ref: $rung_c_digest_ref,
 				unsigned_image: $rung_c_unsigned_image,
 				unsigned_digest: $rung_c_unsigned_digest,
-				unsigned_digest_ref: ($rung_c_unsigned_image | sub(":[^/:@]+$"; "@" + $rung_c_unsigned_digest)),
+				unsigned_digest_ref: $rung_c_unsigned_digest_ref,
 				cosign_pub: $cosign_pub
 			}
 		}' > "$manifest"
@@ -174,6 +195,12 @@ write_manifest() {
 		"RUNG_C_COSIGN_PUB=" + .rung_c.cosign_pub
 	' "$manifest"
 }
+
+if [[ "${1:-}" == "digest-ref" ]]; then
+	[[ "$#" -eq 3 ]] || die "usage: $0 digest-ref <image-ref> <sha256:digest>"
+	image_digest_ref "$2" "$3"
+	exit 0
+fi
 
 need skopeo
 need jq
