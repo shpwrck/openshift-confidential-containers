@@ -103,9 +103,23 @@ diff: ## Server-side diff of the selected OVERLAY
 
 ## --- Air-gap data pipelines ----------------------------------------------
 .PHONY: collect-vcek
-collect-vcek: ## Collect per-socket VCEK certs into the OfflineStore secret (gen-agnostic)
-	@test -n "$(NODE)" || { echo "set NODE=<node-name>"; exit 2; }
-	./scripts/collect-vcek.sh "$(NODE)" "$(NS)"
+collect-vcek: ## Collect per-socket VCEK certs into the OfflineStore secret (auto-detects single-node clusters)
+	@node="$(NODE)"; \
+	if [ -z "$$node" ]; then \
+		nodes="$$(oc get nodes --request-timeout=10s -o name 2>/dev/null | sed 's#^node/##')"; \
+		count="$$(printf '%s\n' "$$nodes" | sed '/^$$/d' | wc -l | tr -d ' ')"; \
+		if [ "$$count" = "1" ]; then \
+			node="$$nodes"; \
+			echo "Auto-detected NODE=$$node"; \
+		elif [ "$$count" = "0" ]; then \
+			echo "set NODE=<node-name> (could not auto-detect from oc get nodes)"; \
+			exit 2; \
+		else \
+			echo "set NODE=<node-name> (multiple nodes found: $$(printf '%s' "$$nodes" | tr '\n' ' '))"; \
+			exit 2; \
+		fi; \
+	fi; \
+	./scripts/collect-vcek.sh "$$node" "$(NS)"
 
 .PHONY: gen-rvps
 gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware)
