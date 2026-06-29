@@ -30,7 +30,7 @@ require_digest_ref() {
 	if [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
 		return
 	fi
-	die "${var_name} must be a sha256 digest ref for proof runs: ${image}. Use the digest refs from rung-bc-artifacts/rung-bc-images.json."
+	die "${var_name} must be a sha256 digest ref for proof runs: ${image}. Source rung-bc-artifacts/rung-bc.env from make build-rung-images, or read the digest refs from rung-bc-artifacts/rung-bc-images.json."
 }
 
 need() {

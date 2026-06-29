@@ -10,6 +10,7 @@
 # Usage: ./scripts/negative-test.sh [all|rung-a|rung-b|rung-c|air-gap]
 # Env: NS=default  TRUSTEE_NS=trustee-operator-system  TIMEOUT=120
 #      MIRROR_REGISTRY=mirror.rig.local:8443  RUNG_B_IMAGE=...  RUNG_C_UNSIGNED_IMAGE=...
+#      Source rung-bc-artifacts/rung-bc.env after make build-rung-images for digest refs.
 set -euo pipefail
 
 WHICH="${1:-all}"

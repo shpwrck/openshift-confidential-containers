@@ -74,6 +74,7 @@ verify_apply_requires_digest_refs() {
 		die "apply-rung-b accepted a tagged image reference"
 	fi
 	expect_grep "RUNG_B_IMAGE must be a sha256 digest ref" "$err" "rung-b digest-ref guard"
+	expect_grep "rung-bc.env" "$err" "rung-b digest-ref env hint"
 
 	if MIRROR_CA="$tmpdir/mirror-ca.pem" RENDER_ONLY=1 \
 		RUNG_C_IMAGE="mirror.rig.local:8443/coco/rung-c:signed" \
@@ -81,6 +82,7 @@ verify_apply_requires_digest_refs() {
 		die "apply-rung-c accepted a tagged image reference"
 	fi
 	expect_grep "RUNG_C_IMAGE must be a sha256 digest ref" "$err" "rung-c digest-ref guard"
+	expect_grep "rung-bc.env" "$err" "rung-c digest-ref env hint"
 }
 
 verify_rung_b_key_size_guard() {

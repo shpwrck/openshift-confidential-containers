@@ -111,7 +111,7 @@ COSIGN_PASSWORD='<secret>' make build-rung-images
 
 The `apply-rung-b`, `apply-rung-c`, and b/c negative-test render paths intentionally reject
 tag-only image references. The tag defaults are build destinations; proof runs must use the
-`@sha256:...` refs from `rung-bc-images.json`.
+`@sha256:...` refs from `rung-bc.env` or `rung-bc-images.json`.
 
 If the keyprovider image has a different local name, pass
 `COCO_KEYPROVIDER_IMAGE=<image-name>` to `make build-rung-images`.
@@ -307,8 +307,8 @@ Negative path:
 Use an unsigned or tampered image reference with the same initdata and same policy:
 
 1. Use the unsigned negative-control image from
-   `rung-bc-artifacts/rung-bc-images.json` (`.rung_c.unsigned_digest_ref`), or push an
-   otherwise runnable image without signing it.
+   `RUNG_C_UNSIGNED_IMAGE` in `rung-bc-artifacts/rung-bc.env`, or push an otherwise runnable
+   image without signing it.
 2. Patch only the app image in the rung-c manifest to the unsigned digest.
 3. Apply as `negtest-rung-c`.
 4. Expected result: pod never reaches `Running`/`Succeeded`; events or runtime errors include
