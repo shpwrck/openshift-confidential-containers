@@ -37,6 +37,9 @@ RUNG_C_POLICY_IMAGE_PREFIX ?=
 EVIDENCE_DIR ?=
 TRUSTEE_LOG_TAIL ?= 1000
 POD_LOG_TAIL ?= 200
+MIRROR_LOG_TAIL ?= 1000
+MIRROR_LOG_FILES ?=
+MIRROR_CONTAINER_NAMES ?=
 
 # Assets dir the Agent-based installer consumes (install-config + agent-config land here).
 # FILL: matches the dir used in install/README.md ("cluster-assets").
@@ -168,7 +171,7 @@ apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signe
 
 .PHONY: collect-rung-bc-evidence
 collect-rung-bc-evidence: ## Phase 6: collect non-secret rung-b/c proof evidence into ARTIFACT_DIR
-	NS=default TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" bash ./scripts/collect-rung-bc-evidence.sh
+	NS=default TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash ./scripts/collect-rung-bc-evidence.sh
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

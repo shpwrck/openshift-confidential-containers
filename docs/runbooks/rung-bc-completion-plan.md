@@ -344,9 +344,18 @@ make collect-rung-bc-evidence
 
 By default this writes under `rung-bc-artifacts/evidence-<utc-timestamp>/`, which is ignored by
 git. The bundle includes pod YAML/describe/logs, decoded initdata, recent Trustee logs, events,
-KbsConfig/configmaps, redacted Trustee Secret metadata plus data-key names, and a copy of
-`rung-bc-images.json` if present. It does not dump Secret data, but still review the bundle
-before sharing it outside the engagement.
+KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
+Secret metadata plus data-key names, and a copy of `rung-bc-images.json` if present. It does not
+dump Secret data, but still review the bundle before sharing it outside the engagement.
+
+When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
+oc-mirror, and quay container log locations. Override as needed:
+
+```bash
+make collect-rung-bc-evidence \
+  MIRROR_LOG_FILES="/var/log/nginx/access.log /opt/mirror/custom-access.log" \
+  MIRROR_CONTAINER_NAMES="quay-app"
+```
 
 After both rungs are green on the disposable rig:
 

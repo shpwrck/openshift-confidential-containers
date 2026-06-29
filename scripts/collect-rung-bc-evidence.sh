@@ -10,6 +10,9 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-${ARTIFACT_DIR}/evidence-$(date -u +%Y%m%dT%H%M%SZ
 PODS="${PODS:-rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c}"
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-1000}"
 POD_LOG_TAIL="${POD_LOG_TAIL:-200}"
+MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-1000}"
+MIRROR_LOG_FILES="${MIRROR_LOG_FILES:-/var/log/nginx/access.log /var/log/nginx/error.log /var/log/mirror-bootstrap.log /opt/mirror/oc-mirror-push.log}"
+MIRROR_CONTAINER_NAMES="${MIRROR_CONTAINER_NAMES:-quay-app quay registry mirror-registry}"
 
 die() {
 	echo "ERROR: $*" >&2
@@ -18,6 +21,19 @@ die() {
 
 need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
+}
+
+run_readable() {
+	local path="$1"
+	if [[ -r "$path" ]]; then
+		shift
+		"$@" "$path"
+	elif command -v sudo >/dev/null && sudo -n test -r "$path" 2>/dev/null; then
+		shift
+		sudo -n "$@" "$path"
+	else
+		return 1
+	fi
 }
 
 record() {
@@ -29,6 +45,34 @@ record() {
 		printf '\n'
 		"$@"
 	} > "${EVIDENCE_DIR}/${file}" 2>&1 || true
+}
+
+record_log_file() {
+	local path="$1" safe_name
+	safe_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9_.-]#_#g')"
+	if ! run_readable "$path" tail -n "$MIRROR_LOG_TAIL" > "${EVIDENCE_DIR}/mirror/files/${safe_name}" 2>&1; then
+		printf 'missing or unreadable: %s\n' "$path" > "${EVIDENCE_DIR}/mirror/files/${safe_name}.missing"
+	fi
+}
+
+record_mirror_container_log() {
+	local name="$1" runtime=""
+	if command -v podman >/dev/null; then
+		runtime=podman
+	elif command -v docker >/dev/null; then
+		runtime=docker
+	else
+		printf 'podman/docker not on PATH\n' > "${EVIDENCE_DIR}/mirror/containers/${name}.missing"
+		return
+	fi
+
+	if "$runtime" container inspect "$name" >/dev/null 2>&1; then
+		"$runtime" logs --tail "$MIRROR_LOG_TAIL" "$name" > "${EVIDENCE_DIR}/mirror/containers/${name}.log" 2>&1 || true
+	elif command -v sudo >/dev/null && sudo -n "$runtime" container inspect "$name" >/dev/null 2>&1; then
+		{ sudo -n "$runtime" logs --tail "$MIRROR_LOG_TAIL" "$name"; } > "${EVIDENCE_DIR}/mirror/containers/${name}.log" 2>&1 || true
+	else
+		printf 'missing container: %s\n' "$name" > "${EVIDENCE_DIR}/mirror/containers/${name}.missing"
+	fi
 }
 
 redact_secret_json() {
@@ -83,6 +127,8 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 mkdir -p \
 	"${EVIDENCE_DIR}/cluster" \
+	"${EVIDENCE_DIR}/mirror/files" \
+	"${EVIDENCE_DIR}/mirror/containers" \
 	"${EVIDENCE_DIR}/pods" \
 	"${EVIDENCE_DIR}/trustee/secrets" \
 	"${EVIDENCE_DIR}/trustee/config"
@@ -94,6 +140,8 @@ mkdir -p \
 	echo "artifact_dir=${ARTIFACT_DIR}"
 	echo "evidence_dir=${EVIDENCE_DIR}"
 	echo "pods=${PODS}"
+	echo "mirror_log_files=${MIRROR_LOG_FILES}"
+	echo "mirror_container_names=${MIRROR_CONTAINER_NAMES}"
 	echo "oc_user=$(oc whoami 2>/dev/null || true)"
 } > "${EVIDENCE_DIR}/summary.env"
 
@@ -103,6 +151,13 @@ record "cluster/clusterversion.yaml" oc get clusterversion -o yaml
 record "cluster/runtimeclasses.yaml" oc get runtimeclass -o yaml
 record "cluster/workload-events.txt" oc -n "$NS" get events --sort-by=.lastTimestamp -o wide
 record "trustee/events.txt" oc -n "$TRUSTEE_NS" get events --sort-by=.lastTimestamp -o wide
+
+for log_file in $MIRROR_LOG_FILES; do
+	record_log_file "$log_file"
+done
+for container_name in $MIRROR_CONTAINER_NAMES; do
+	record_mirror_container_log "$container_name"
+done
 
 for pod in $PODS; do
 	if oc -n "$NS" get pod "$pod" -o json > "${EVIDENCE_DIR}/pods/${pod}.json" 2> "${EVIDENCE_DIR}/pods/${pod}.get.err"; then
