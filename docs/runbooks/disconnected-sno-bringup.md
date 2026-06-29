@@ -325,9 +325,10 @@ below.
       use a **wrong-case HWID** → **attestation fails**. This proves the OfflineStore — not a
       silently reachable KDS — is doing the work.
 
-> A scaffold for these denial proofs exists at `make negative-test`
-> ([target is currently a TODO stub](../../Makefile) — see design §5 for the rung a/b/c +
-> air-gap matrix it must implement).
+> Denial-proof automation now exists at `make negative-test WHICH=all`
+> ([Makefile](../../Makefile)); it renders the rung b/c negative manifests from the same
+> apply scripts used by the happy paths. Treat it as a rig-side proof helper, not as proof
+> by itself: it must run against the hardware cluster and fail closed for every rung.
 
 > STOP-gate: every rung's happy path **and** negative test pass. Only then is a rung "proven".
 

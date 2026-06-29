@@ -28,7 +28,7 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 ---
 
 ## Phase 0 — Prereqs / tooling + pre-spend file fixes
-**Goal:** tooling on `PATH`, pull secret staged, tfvars fail-closed traps fixed, stub scripts implemented — all **before any spend**. **~30–45 min hands-on.**
+**Goal:** tooling on `PATH`, pull secret staged, tfvars fail-closed traps fixed, local scaffold checks green — all **before any spend**. **~30–45 min hands-on.**
 
 | Step | What happens / command |
 |---|---|
@@ -37,10 +37,10 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 | Ensure internal git reachable | Host this repo's `gitops/` tree on internal git reachable from the bastion VLAN. |
 | **Fix bastion tfvars OS drift** | `terraform.tfvars.example` line 7 ships `operating_system = "ubuntu_26_04_x64_lts"` — a verbatim copy boots the **wrong OS** and the Rocky-specific NM/dnf cloud-init silently fails → VLAN never comes up. Edit the active `terraform.tfvars` so OS starts with `rocky`. |
 | **Pre-fill bastion SKU** | `lsh plans list` → pick the cheapest metal with ≥200 GB disk. Write `plan = "<sku>"` (no longer `""`). |
-| **Implement the 3 stub scripts** | `scripts/collect-vcek.sh`, `scripts/gen-rvps-veritas.sh`, and `make negative-test` all `echo TODO; exit 1` today. Implement them now (no hardware needed for scaffolding) against design §5. **Acceptance = exits 0 and produces the artifact**, not "prints the recipe." Lowercase-HWID logic baked into collect-vcek. |
+| **Verify local scaffold scripts** | `scripts/collect-vcek.sh`, `scripts/gen-rvps-veritas.sh`, and `make negative-test` are implemented, but their real evidence is hardware-bound. Before spend, run `make lint` to cover shell syntax, overlay builds, and the hardware-free rung b/c render verifier. Then, on the rig, rerun the specific hardware targets in Phase 6. |
 | **Pin floating image tags** | `install/imageset-config.yaml` carries `ubi-minimal:latest` and `coco-tools:1.12` (a floating train tag). Pin both to digests before mirroring or rung-b/c image tests aren't reproducible. |
 | Fix cosmetic script header | `scripts/host-snp-check.sh` header still says "Ubuntu node" — update so the executor doesn't think it's the wrong script. |
-| **🛑 STOP-gate** | Confirm: `./bin/oc version`, `./bin/openshift-install version`, `./bin/oc-mirror --help` all resolve; pull secret present; active bastion tfvars has `rocky` OS + non-empty `plan`; the 3 scripts exit 0. **Hard gate before any spend.** |
+| **🛑 STOP-gate** | Confirm: `./bin/oc version`, `./bin/openshift-install version`, `./bin/oc-mirror --help` all resolve; pull secret present; active bastion tfvars has `rocky` OS + non-empty `plan`; `make lint` is green. **Hard gate before any spend.** |
 
 ---
 
@@ -138,9 +138,9 @@ for the exact sequence.
 | Step | What happens / command |
 |---|---|
 | **Rung a — secret release** | Deploy `gitops/base/workloads/rung-a-secret-pod.yaml` (`runtimeClassName: kata-cc`). **Happy:** init `curl …/cdh/resource/default/attestation-status/status` → success → workload runs. **Negative (the proof):** restrictive resource policy + wrong/empty RVPS (or tamper initdata) → attestation errors, **secret withheld**, pod does not start. **Landmine:** keep `limits.memory ≥ default_memory + 256–512 MiB` or the host **OOM-kills the CVM** (DeadlineExceeded, QEMU dies in seconds). Primary signal: `oc describe pod` + `oc get events`, **not** logs. |
-| **Rung b — encrypted image** | `make build-rung-images` then `make apply-trustee-rung-bc` and `make apply-rung-b RUNG_B_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-b`). **Negative:** wrong measurement → key withheld → pod won't start. *(after rung a)* |
-| **Rung c — signed image** | Use the same artifacts, then `make apply-rung-c RUNG_C_IMAGE=<digest-ref>`. **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. *(after rung b)* |
-| **Air-gap negative test** | `make negative-test` (implemented in Phase 0). Remove one VCEK secret / use a **wrong-case HWID** → attestation **must FAIL**. This proves the OfflineStore cache — not a leaky KDS — is load-bearing. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
+| **Rung b — encrypted image** | `make build-rung-images` then `make apply-trustee-rung-bc` and `make apply-rung-b RUNG_B_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-b`). **Negative:** `make negative-test WHICH=rung-b RUNG_B_IMAGE=<digest-ref>` must fail closed from a measured-initdata mismatch, not from a missing key. *(after rung a)* |
+| **Rung c — signed image** | Use the same artifacts, then `make apply-rung-c RUNG_C_IMAGE=<digest-ref>`. **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** `make negative-test WHICH=rung-c RUNG_C_UNSIGNED_IMAGE=<unsigned-digest-ref>` must fail closed through `image_security_policy` rejection. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. *(after rung b)* |
+| **Air-gap negative test** | `make negative-test WHICH=air-gap`. Remove one VCEK secret / use a **wrong-case HWID** → attestation **must FAIL**. This proves the OfflineStore cache — not a leaky KDS — is load-bearing. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
 | **🛑 STOP-gate** | All rung a/b/c happy+negative results green **and** the air-gap VCEK-pull negative test fails-closed as expected. |
 
 ---

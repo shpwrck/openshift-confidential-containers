@@ -803,11 +803,13 @@ won't exist in production.
 
 ## Phase 8 — Capability rungs (a → b → c) + negative tests
 
-Replaces: `make negative-test`. A rung is **proven only when reproduced from these steps AND
-its negative test fails-closed** — a negative test that *passes* (secret released when it
-shouldn't be) is a sign-off-blocking finding, not a green. Do them **in order**. See
-[`docs/design/engagement-design.md`](design/engagement-design.md) §5 for the full matrix.
-Rungs b/c have implementation scaffolding but are not yet hardware-proven; use
+Manual equivalent of the rig targets `make apply-rung-a`, `make apply-rung-b`,
+`make apply-rung-c`, and `make negative-test WHICH=all`. A rung is **proven only when
+reproduced from these steps AND its negative test fails-closed** — a negative test that
+*passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
+Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
+§5 for the full matrix. Rungs b/c have implementation scaffolding but are not yet
+hardware-proven; use
 [`docs/runbooks/rung-bc-completion-plan.md`](runbooks/rung-bc-completion-plan.md) as the
 execution plan for encrypted-image and signed-image proof artifacts.
 
