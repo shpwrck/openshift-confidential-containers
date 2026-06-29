@@ -12,6 +12,9 @@ for o in ${overlays}; do
 	command -v kubeconform >/dev/null && kustomize build "${o}" | kubeconform -strict -summary || true
 done
 
+echo "== rung b/c render checks =="
+bash ./scripts/verify-rung-bc-render.sh
+
 # Rego policies (when present)
 if command -v conftest >/dev/null && ls gitops/**/policy.rego >/dev/null 2>&1; then
 	conftest verify -p gitops || true
