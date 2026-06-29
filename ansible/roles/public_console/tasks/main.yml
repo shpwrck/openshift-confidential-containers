@@ -1,0 +1,401 @@
+---
+# public_console — publish the disposable rig console through the bastion public IP.
+# The cluster keeps using its private ingress IP; nginx on the bastion translates the public
+# sslip.io console/OAuth names to the OpenShift routes that live on the VLAN.
+
+- name: Public_console opt-out cleanup
+  when: not (public_console_enabled | bool)
+  block:
+    - name: Remove the managed public console nginx conf
+      ansible.builtin.file:
+        path: "{{ public_console_nginx_conf_path }}"
+        state: absent
+      become: true
+      register: public_console_conf_removed
+
+    - name: Validate nginx config after public console opt-out
+      ansible.builtin.command: nginx -t
+      become: true
+      register: public_console_nginx_t_disabled
+      changed_when: false
+      failed_when: false
+      when: public_console_conf_removed.changed
+
+    - name: Reload nginx after public console opt-out
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+      become: true
+      when:
+        - public_console_conf_removed.changed
+        - (public_console_nginx_t_disabled.rc | default(1)) == 0
+
+    - name: Report public console opt-out
+      ansible.builtin.debug:
+        msg: "Public console exposure disabled (public_console_enabled=false)."
+
+- name: Public_console default-on edge route
+  when: public_console_enabled | bool
+  block:
+    - name: Build public console route patch facts
+      ansible.builtin.set_fact:
+        public_console_auth_callback_url: "https://{{ public_console_host }}/auth/callback"
+        public_console_route_patch:
+          spec:
+            route:
+              hostname: "{{ public_console_host }}"
+              secret:
+                name: "{{ public_console_secret_name }}"
+
+    - name: Validate public console inputs
+      ansible.builtin.assert:
+        that:
+          - bastion_public_ipv4 is defined
+          - bastion_public_ipv4 | length > 0
+          - bastion_public_ipv4 != 'REPLACE_WITH_BASTION_PUBLIC_IPV4'
+          - public_console_cluster_upstream_ip is defined
+          - public_console_cluster_upstream_ip | length > 0
+          - cluster_assets_dir is defined
+        fail_msg: >-
+          Public console publishing needs bastion_public_ipv4_override and a cluster kubeconfig.
+          Pass the bastion public IP, or opt out with -e public_console_enabled=false.
+
+    - name: Ensure nginx and openssl are installed
+      ansible.builtin.package:
+        name:
+          - curl
+          - nginx
+          - openssl
+        state: present
+      become: true
+
+    - name: Ensure public console certificate directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      become: true
+      loop:
+        - path: "{{ public_console_cert_path | dirname }}"
+          mode: "0755"
+        - path: "{{ public_console_key_path | dirname }}"
+          mode: "0700"
+
+    - name: Check public console certificate
+      ansible.builtin.stat:
+        path: "{{ public_console_cert_path }}"
+      become: true
+      register: public_console_cert_stat
+
+    - name: Check public console private key
+      ansible.builtin.stat:
+        path: "{{ public_console_key_path }}"
+      become: true
+      register: public_console_key_stat
+
+    - name: Read public console certificate SANs
+      ansible.builtin.command:
+        cmd: "openssl x509 -in {{ public_console_cert_path }} -noout -ext subjectAltName"
+      become: true
+      register: public_console_cert_san
+      changed_when: false
+      failed_when: false
+      when: public_console_cert_stat.stat.exists
+
+    - name: Check public console certificate freshness
+      ansible.builtin.command:
+        cmd: "openssl x509 -checkend {{ public_console_cert_min_lifetime_seconds }} -noout -in {{ public_console_cert_path }}"
+      become: true
+      register: public_console_cert_fresh
+      changed_when: false
+      failed_when: false
+      when: public_console_cert_stat.stat.exists
+
+    - name: Decide whether the public console certificate needs regeneration
+      ansible.builtin.set_fact:
+        public_console_cert_needs_regen: >-
+          {{ (not public_console_cert_stat.stat.exists)
+             or (not public_console_key_stat.stat.exists)
+             or ((public_console_cert_san.rc | default(1)) != 0)
+             or ((public_console_cert_fresh.rc | default(1)) != 0)
+             or (public_console_host not in (public_console_cert_san.stdout | default('')))
+             or (public_oauth_host not in (public_console_cert_san.stdout | default(''))) }}
+
+    - name: Generate public console edge certificate
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -nodes -newkey rsa:2048 -sha256
+          -days {{ public_console_cert_days }}
+          -subj /CN={{ public_console_host }}
+          -addext subjectAltName=DNS:{{ public_console_host }},DNS:{{ public_oauth_host }}
+          -keyout {{ public_console_key_path }}
+          -out {{ public_console_cert_path }}
+      become: true
+      changed_when: true
+      register: public_console_cert_generate
+      when: public_console_cert_needs_regen | bool
+
+    - name: Lock down public console certificate files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      become: true
+      loop:
+        - path: "{{ public_console_cert_path }}"
+          mode: "0644"
+        - path: "{{ public_console_key_path }}"
+          mode: "0600"
+
+    - name: Gather service facts for firewall handling
+      ansible.builtin.service_facts:
+
+    - name: Record whether firewalld is running
+      ansible.builtin.set_fact:
+        public_console_firewalld_running: >-
+          {{ (ansible_facts.services | default({})).get('firewalld.service', {}).state | default('') == 'running' }}
+
+    - name: Check public console firewalld services
+      ansible.builtin.command:
+        cmd: "firewall-cmd --query-service={{ item }}"
+      become: true
+      loop:
+        - http
+        - https
+      register: public_console_firewall_queries
+      changed_when: false
+      failed_when: false
+      when: public_console_firewalld_running | bool
+
+    - name: Enable public console firewalld services
+      ansible.builtin.command:
+        cmd: "firewall-cmd --add-service={{ item.item }} --permanent"
+      become: true
+      loop: "{{ public_console_firewall_queries.results | default([]) }}"
+      register: public_console_firewall_add
+      changed_when: "'success' in public_console_firewall_add.stdout"
+      when:
+        - public_console_firewalld_running | bool
+        - item.rc != 0
+
+    - name: Reload firewalld after public console service changes
+      ansible.builtin.command:
+        cmd: firewall-cmd --reload
+      become: true
+      register: public_console_firewall_reload
+      changed_when: "'success' in public_console_firewall_reload.stdout"
+      when:
+        - public_console_firewalld_running | bool
+        - public_console_firewall_add is defined
+        - public_console_firewall_add is changed
+
+    - name: Check whether SELinux allows nginx upstream connections
+      ansible.builtin.command:
+        cmd: getsebool httpd_can_network_connect
+      become: true
+      register: public_console_getsebool
+      changed_when: false
+      failed_when: false
+      when: ansible_facts.selinux is defined and ansible_facts.selinux.status == 'enabled'
+
+    - name: Allow nginx to proxy to OpenShift ingress under SELinux
+      ansible.builtin.command:
+        cmd: setsebool -P httpd_can_network_connect 1
+      become: true
+      changed_when: true
+      when:
+        - ansible_facts.selinux is defined
+        - ansible_facts.selinux.status == 'enabled'
+        - (public_console_getsebool.rc | default(1)) == 0
+        - "' off' in (public_console_getsebool.stdout | default(''))"
+
+    - name: Write the public console nginx proxy
+      ansible.builtin.template:
+        src: public-console.conf.j2
+        dest: "{{ public_console_nginx_conf_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      register: public_console_nginx_conf
+
+    - name: Validate nginx config with public console proxy
+      ansible.builtin.command:
+        cmd: nginx -t
+      become: true
+      register: public_console_nginx_t
+      changed_when: false
+
+    - name: Enable and start nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: started
+        enabled: true
+      become: true
+
+    - name: Reload nginx with public console proxy
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+      become: true
+      when: >-
+        public_console_nginx_conf.changed
+        or (public_console_cert_generate is defined and public_console_cert_generate.changed)
+
+    - name: Read public console certificate for secret comparison
+      ansible.builtin.slurp:
+        src: "{{ public_console_cert_path }}"
+      become: true
+      register: public_console_cert_file
+
+    - name: Read public console private key for secret comparison
+      ansible.builtin.slurp:
+        src: "{{ public_console_key_path }}"
+      become: true
+      register: public_console_key_file
+      no_log: true
+
+    - name: Read current OpenShift TLS secret for public console
+      ansible.builtin.command:
+        cmd: >-
+          oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig
+          -n openshift-config get secret {{ public_console_secret_name }}
+          -o json
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      register: public_console_secret_current
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Decide whether the OpenShift TLS secret needs update
+      ansible.builtin.set_fact:
+        public_console_secret_needs_apply: >-
+          {{ public_console_secret_current.rc != 0
+             or public_console_cert_file.content !=
+                ((public_console_secret_current.stdout | from_json).data['tls.crt'] | default(''))
+             or public_console_key_file.content !=
+                ((public_console_secret_current.stdout | from_json).data['tls.key'] | default('')) }}
+      no_log: true
+
+    - name: Create or update the OpenShift TLS secret for the public console route
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig
+        -n openshift-config create secret tls {{ public_console_secret_name | quote }}
+        --cert={{ public_console_cert_path | quote }}
+        --key={{ public_console_key_path | quote }}
+        --dry-run=client -o yaml |
+        oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig apply -f -
+      args:
+        executable: /bin/bash
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      register: public_console_secret_apply
+      changed_when: true
+      when: public_console_secret_needs_apply | bool
+
+    - name: Patch the OpenShift console custom route
+      ansible.builtin.command:
+        argv:
+          - oc
+          - --kubeconfig
+          - "{{ cluster_assets_dir }}/auth/kubeconfig"
+          - patch
+          - consoles.operator.openshift.io
+          - cluster
+          - --type=merge
+          - --patch
+          - "{{ public_console_route_patch | to_json }}"
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      register: public_console_route_patch_result
+      changed_when: "'(no change)' not in public_console_route_patch_result.stdout"
+
+    - name: Wait for the custom console route host
+      ansible.builtin.command:
+        cmd: >-
+          oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig
+          -n openshift-console get route console-custom -o jsonpath={.spec.host}
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      register: public_console_route_host
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: public_console_route_host.rc == 0 and public_console_route_host.stdout == public_console_host
+
+    - name: Wait for the console OAuth callback to include the public hostname
+      ansible.builtin.command:
+        cmd: >-
+          oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig
+          get oauthclient console -o jsonpath={.redirectURIs}
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      register: public_console_oauth_client
+      changed_when: false
+      retries: 30
+      delay: 10
+      until:
+        - public_console_oauth_client.rc == 0
+        - public_console_auth_callback_url in public_console_oauth_client.stdout
+
+    - name: Wait for console and authentication operators after the route change
+      ansible.builtin.command:
+        cmd: >-
+          oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig
+          wait clusteroperator/console clusteroperator/authentication
+          --for=condition=Available=True --timeout=5m
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      register: public_console_operator_wait
+      changed_when: false
+
+    - name: Probe the public console login redirect through local nginx
+      ansible.builtin.command:
+        argv:
+          - curl
+          - -kIsS
+          - --connect-timeout
+          - "10"
+          - --max-time
+          - "20"
+          - --resolve
+          - "{{ public_console_host }}:443:{{ public_console_proxy_probe_address }}"
+          - "https://{{ public_console_host }}/auth/login"
+      register: public_console_login_probe
+      changed_when: false
+      failed_when: false
+      retries: 12
+      delay: 5
+      until:
+        - public_console_login_probe.rc == 0
+        - "' 302' in public_console_login_probe.stdout or ' 303' in public_console_login_probe.stdout"
+        - public_oauth_host in public_console_login_probe.stdout
+        - public_console_host in public_console_login_probe.stdout
+
+    - name: Assert the public console login redirect uses public OAuth
+      ansible.builtin.assert:
+        that:
+          - public_console_login_probe.rc == 0
+          - "' 302' in public_console_login_probe.stdout or ' 303' in public_console_login_probe.stdout"
+          - public_oauth_host in public_console_login_probe.stdout
+          - public_console_host in public_console_login_probe.stdout
+        fail_msg: "Public console login redirect did not include the public console/OAuth hostnames."
+        success_msg: "Public console login redirects through the public OAuth hostname."
+
+    - name: Report the public console URL
+      ansible.builtin.debug:
+        msg:
+          - "Public console: https://{{ public_console_host }}/"
+          - "Public OAuth: https://{{ public_oauth_host }}/"
+          - "Certificate is self-signed; browser trust warning is expected for this disposable rig."

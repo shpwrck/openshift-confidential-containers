@@ -1,0 +1,72 @@
+# Managed by Ansible role public_console. Public sslip.io console/OAuth edge for the Latitude rig.
+server_names_hash_bucket_size 128;
+map_hash_bucket_size 128;
+
+map $host $coco_console_upstream_host {
+    default "";
+    {{ public_console_host }} {{ public_console_host }};
+    {{ public_oauth_host }} {{ public_oauth_internal_host }};
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ public_console_host }} {{ public_oauth_host }};
+    return 308 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+
+    ssl_certificate {{ public_console_cert_path }};
+    ssl_certificate_key {{ public_console_key_path }};
+    ssl_session_cache shared:coco_public_console_ssl:10m;
+    ssl_session_timeout 10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    return 444;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name {{ public_console_host }} {{ public_oauth_host }};
+
+    ssl_certificate {{ public_console_cert_path }};
+    ssl_certificate_key {{ public_console_key_path }};
+    ssl_session_cache shared:coco_public_console_ssl:10m;
+    ssl_session_timeout 10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 64m;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+
+    location / {
+        proxy_pass https://{{ public_console_cluster_upstream_ip }};
+        proxy_ssl_server_name on;
+        proxy_ssl_name $coco_console_upstream_host;
+        proxy_ssl_verify off;
+
+        proxy_set_header Host $coco_console_upstream_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Accept-Encoding "";
+
+        proxy_redirect https://{{ public_oauth_internal_host }}/ https://{{ public_oauth_host }}/;
+        proxy_redirect https://{{ public_console_internal_host }}/ https://{{ public_console_host }}/;
+        proxy_redirect https%3A%2F%2F{{ public_console_internal_host }}%2F https%3A%2F%2F{{ public_console_host }}%2F;
+
+        sub_filter_once off;
+        sub_filter_types text/css application/javascript application/json;
+        sub_filter "{{ public_console_internal_host }}" "{{ public_console_host }}";
+        sub_filter "{{ public_oauth_internal_host }}" "{{ public_oauth_host }}";
+    }
+}

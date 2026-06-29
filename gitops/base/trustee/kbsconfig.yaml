@@ -30,11 +30,13 @@ spec:
   kbsSecretResources:
     - regcred         # mirror-registry pull secret (rung c image pulls).
     - attestation-cert
+    - attestation-status # rung-a gate resource at kbs:///default/attestation-status/status.
     - sample          # the rung-a demo secret released via cdh/resource/default/...
     - credential      # mirror auth json served at kbs:///default/credential/test (CDH default
                       # authenticated_registry_credentials_uri) — lets the in-guest image-rs pull
                       # from the air-gapped mirror after attestation. (Resolves defect #16.)
     - security-policy # permissive image policy at kbs:///default/security-policy/test (CDH default).
+    - registry-configuration # registries.conf remap at kbs:///default/registry-configuration/test.
   # All of the above Secrets are created out-of-band; see secret-stubs.example.yaml.
 
   # --- Air-gap VCEK OfflineStore (design §4) --------------------------------------------
