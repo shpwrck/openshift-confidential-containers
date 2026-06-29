@@ -1072,11 +1072,11 @@ write_valid_rung_bc_evidence_bundle() {
 	local rung_b_image rung_c_image rung_c_unsigned_image key_sha pub_sha policy_sha
 	rung_b_image="mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	rung_c_image="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	rung_c_unsigned_image="mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	rung_c_unsigned_image="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	key_sha="$(printf '01234567890123456789012345678901' | sha256sum | awk '{print $1}')"
 	pub_sha="$(printf 'cosign public key' | sha256sum | awk '{print $1}')"
 	policy_sha="$(printf '{}' | sha256sum | awk '{print $1}')"
-	mkdir -p "$evidence/pods" "$evidence/trustee/secrets" "$evidence/trustee" "$evidence/cluster"
+	mkdir -p "$evidence/pods" "$evidence/trustee/secrets" "$evidence/trustee" "$evidence/cluster" "$evidence/mirror/files"
 
 	cat > "$evidence/summary.env" <<'EOF'
 captured_at_utc=2026-06-29T00:00:00Z
@@ -1126,6 +1126,11 @@ GET /kbs/v0/resource/default/sig-public-key/rung-c 200
 rung-b measurement denied before releasing image-key
 rung-c sigstore signature rejected by policy
 EOF
+	cat > "$evidence/mirror/files/access.log" <<'EOF'
+10.0.0.10 - - "GET /v2/coco/rung-b/manifests/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HTTP/1.1" 200 "-" "oci-client/0.15.0"
+10.0.0.10 - - "GET /v2/coco/rung-c/manifests/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb HTTP/1.1" 200 "-" "oci-client/0.15.0"
+10.0.0.10 - - "GET /v2/coco/rung-c-unsigned/manifests/sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc HTTP/1.1" 200 "-" "oci-client/0.15.0"
+EOF
 	cat > "$evidence/pods/negtest-rung-b.describe.txt" <<'EOF'
 Warning: attestation measurement denied; image-key/rung-b withheld
 EOF
@@ -1137,7 +1142,9 @@ EOF
 }
 
 verify_evidence_validation_gate() {
-	local evidence="$tmpdir/valid-evidence" out="$tmpdir/validate-evidence.out" broken="$tmpdir/broken-evidence" err="$tmpdir/validate-evidence.err"
+	local evidence="$tmpdir/valid-evidence" out="$tmpdir/validate-evidence.out"
+	local broken="$tmpdir/broken-evidence" err="$tmpdir/validate-evidence.err"
+	local broken_mirror="$tmpdir/broken-mirror-evidence" mirror_err="$tmpdir/validate-mirror-evidence.err"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
@@ -1150,6 +1157,13 @@ verify_evidence_validation_gate() {
 		die "evidence validator accepted a mismatched proof summary"
 	fi
 	expect_grep "rung-bc proof summary has non-match rows" "$err" "evidence validator proof-summary failure"
+
+	cp -R "$evidence" "$broken_mirror"
+	rm -f "$broken_mirror/mirror/files/access.log"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_mirror" > /dev/null 2> "$mirror_err"; then
+		die "evidence validator accepted missing mirror logs"
+	fi
+	expect_grep "mirror logs missing or empty" "$mirror_err" "evidence validator mirror-log failure"
 }
 
 verify_evidence_validation_make_env() {

@@ -387,10 +387,10 @@ records non-secret decoded lengths and SHA-256 fingerprints for only `image-key/
 those fingerprints and the happy/negative pod image refs against `rung-bc-images.json`.
 `make validate-rung-bc-evidence EVIDENCE_DIR=...` fails if the proof summary has non-matching
 rows, required pod phases/images are missing or wrong, Trustee logs lack the expected KBS
-resource fetches, negative pods lack denial signals, or the bundle was collected from a dirty
-checkout. `summary.env` records the repo revision, branch, dirty state, and local tool paths
-used to collect the bundle. It does not dump Secret data, but still review the bundle before
-sharing it outside the engagement.
+resource fetches, mirror logs lack rung-b/rung-c repository pulls, negative pods lack denial
+signals, or the bundle was collected from a dirty checkout. `summary.env` records the repo
+revision, branch, dirty state, and local tool paths used to collect the bundle. It does not dump
+Secret data, but still review the bundle before sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed:

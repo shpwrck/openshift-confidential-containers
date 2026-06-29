@@ -43,6 +43,20 @@ is_digest_ref() {
 	[[ "$1" =~ @sha256:[0-9a-f]{64}$ ]]
 }
 
+image_repo_path() {
+	local image="$1" without_digest last_segment
+	without_digest="${image%@*}"
+	last_segment="${without_digest##*/}"
+	if [[ "$last_segment" == *:* ]]; then
+		without_digest="${without_digest%:*}"
+	fi
+	if [[ "$without_digest" == */* ]]; then
+		printf '%s\n' "${without_digest#*/}"
+	else
+		printf '%s\n' "$without_digest"
+	fi
+}
+
 summary_value() {
 	local key="$1" file="${EVIDENCE_DIR}/summary.env"
 	awk -F '=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); found = 1; exit } END { if (!found) exit 1 }' "$file"
@@ -206,6 +220,50 @@ check_kbs_logs() {
 	done
 }
 
+mirror_log_context() {
+	local file
+	for file in \
+		"${EVIDENCE_DIR}"/mirror/files/* \
+		"${EVIDENCE_DIR}"/mirror/containers/*.log; do
+		[[ -f "$file" ]] && cat "$file"
+		printf '\n'
+	done
+}
+
+check_mirror_image_pull() {
+	local label="$1" image="$2" context="$3" repo
+	if [[ -z "$image" ]]; then
+		fail "$label mirror image ref missing from manifest"
+		return
+	fi
+	repo="$(image_repo_path "$image")"
+	if grep -Fq "/v2/${repo}/" <<<"$context" || grep -Fq "$repo" <<<"$context"; then
+		pass "$label mirror logs include ${repo}"
+	else
+		fail "$label mirror logs missing ${repo}"
+	fi
+}
+
+check_mirror_logs() {
+	local manifest="${EVIDENCE_DIR}/rung-bc-images.json" context
+	local rung_b_image rung_c_image rung_c_unsigned_image
+	context="$(mirror_log_context)"
+	if [[ -z "$(tr -d '[:space:]' <<<"$context")" ]]; then
+		fail "mirror logs missing or empty"
+		return
+	fi
+	if [[ ! -s "$manifest" ]]; then
+		fail "cannot validate mirror pulls without rung-bc-images.json"
+		return
+	fi
+	rung_b_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest")"
+	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
+	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
+	check_mirror_image_pull "rung-b happy image" "$rung_b_image" "$context"
+	check_mirror_image_pull "rung-c happy image" "$rung_c_image" "$context"
+	check_mirror_image_pull "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context"
+}
+
 check_summary() {
 	local summary="${EVIDENCE_DIR}/summary.env" dirty
 	require_file "$summary" "evidence summary"
@@ -238,6 +296,7 @@ check_pod_phase "$RUNG_C_POD" "rung-c" happy
 check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
 check_pod_phase "$NEG_RUNG_C_POD" "rung-c negative" denied
 check_kbs_logs
+check_mirror_logs
 check_denial_signal "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_DENIAL_RE"
 check_denial_signal "$NEG_RUNG_C_POD" "rung-c negative" "$RUNG_C_DENIAL_RE"
 
