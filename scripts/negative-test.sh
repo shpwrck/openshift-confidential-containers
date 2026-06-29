@@ -23,6 +23,10 @@ KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pass=0 fail=0 skip=0
+RUNG_A_DENIAL_RE='attest|denied|forbidden|measurement|attestation-status|secret'
+RUNG_B_DENIAL_RE='attest|denied|forbidden|measurement|decrypt|image-key|key'
+RUNG_C_DENIAL_RE='policy|sign|signature|sigstore|reject'
+AIR_GAP_DENIAL_RE='attest|denied|forbidden|vcek|kds|offline|cache|certificate'
 
 die()  { echo "ERROR: $*" >&2; exit 2; }
 ok()   { echo "  ✅ PASS (denied as expected): $*"; pass=$((pass+1)); }
@@ -34,20 +38,20 @@ oc whoami >/dev/null 2>&1 || die "not logged into a cluster (oc whoami failed)"
 oc get runtimeclass kata-cc >/dev/null 2>&1 || die "kata-cc runtimeclass missing — finish Phase 4 first"
 
 denial_signal_seen() {
-  local name="$1" context
+  local name="$1" pattern="$2" context
   context="$(
     oc -n "$NS" describe pod "$name" 2>/dev/null || true
     oc -n "$NS" get events --field-selector "involvedObject.name=${name}" --sort-by=.lastTimestamp -o wide 2>/dev/null || true
     oc -n "$NS" logs "pod/${name}" --all-containers --prefix=true --tail=80 2>/dev/null || true
     oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail=240 2>/dev/null || true
   )"
-  grep -qiE 'attest|denied|forbidden|policy|sign|signature|sigstore|measurement|secret|decrypt|image-key|vcek|kds|offline|cache|certificate|CreateContainerError|RunContainerError|ImagePullBackOff|ErrImagePull|Unauthorized|401|403' <<<"$context"
+  grep -qiE "$pattern" <<<"$context"
 }
 
 # Deploy a workload and assert it FAILS-CLOSED: the pod must NOT reach Running/Succeeded within
 # TIMEOUT (attestation denies the secret/key/pull). If it DOES start, that's the bad case.
-expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label>
-  local name="$1" manifest="$2" label="$3"
+expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label> <denial-pattern> <signal-label>
+  local name="$1" manifest="$2" label="$3" pattern="$4" signal_label="$5"
   oc -n "$NS" delete pod "$name" --ignore-not-found --wait >/dev/null 2>&1 || true
   if [[ "$manifest" == "-" ]]; then oc -n "$NS" apply -f - >/dev/null; else oc -n "$NS" apply -f "$manifest" >/dev/null; fi
   local deadline=$(( SECONDS + TIMEOUT ))
@@ -59,11 +63,11 @@ expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label>
     esac
     sleep 5
   done
-  # never started within the window — confirm there's a denial/attestation signal, not a flake
-  if denial_signal_seen "$name"; then
+  # never started within the window - confirm this rung's expected denial signal, not a flake
+  if denial_signal_seen "$name" "$pattern"; then
     ok "$label"
   else
-    echo "  ⚠️  pod '$name' did not start, but no attestation/denial signal seen — investigate (could be a flake)"; bad "$label (no denial signal)"
+    echo "  ⚠️  pod '$name' did not start, but no ${signal_label} signal seen — investigate (could be a flake or the wrong dependency failing)"; bad "$label (no ${signal_label} signal)"
   fi
   oc -n "$NS" delete pod "$name" --ignore-not-found >/dev/null 2>&1 || true
 }
@@ -95,7 +99,7 @@ run_rung_a() {
     rm -f "$manifest"
     return
   fi
-  expect_fail_closed "negtest-rung-a" "$manifest" "rung-a measured-initdata mismatch withheld attestation-status"
+  expect_fail_closed "negtest-rung-a" "$manifest" "rung-a measured-initdata mismatch withheld attestation-status" "$RUNG_A_DENIAL_RE" "rung-a attestation/resource denial"
   rm -f "$manifest"
 }
 
@@ -111,7 +115,7 @@ run_rung_b() {
     rm -f "$manifest"
     return
   fi
-  expect_fail_closed "negtest-rung-b" "$manifest" "rung-b measured-initdata mismatch withheld image key"
+  expect_fail_closed "negtest-rung-b" "$manifest" "rung-b measured-initdata mismatch withheld image key" "$RUNG_B_DENIAL_RE" "rung-b attestation/image-key denial"
   rm -f "$manifest"
 }
 
@@ -128,7 +132,7 @@ run_rung_c() {
     rm -f "$manifest"
     return
   fi
-  expect_fail_closed "negtest-rung-c" "$manifest" "rung-c unsigned image rejected by image_security_policy"
+  expect_fail_closed "negtest-rung-c" "$manifest" "rung-c unsigned image rejected by image_security_policy" "$RUNG_C_DENIAL_RE" "rung-c signature/policy denial"
   rm -f "$manifest"
 }
 
@@ -176,7 +180,7 @@ run_air_gap() {
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
         POD_NAME=negtest-air-gap RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then
-    expect_fail_closed "negtest-air-gap" "$manifest" "air-gap VCEK cache miss denied otherwise happy rung-a"
+    expect_fail_closed "negtest-air-gap" "$manifest" "air-gap VCEK cache miss denied otherwise happy rung-a" "$AIR_GAP_DENIAL_RE" "air-gap VCEK/OfflineStore denial"
   fi
   air_gap_restore
   rm -rf "$bakdir"

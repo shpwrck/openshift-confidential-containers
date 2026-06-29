@@ -508,6 +508,84 @@ EOF
 	expect_grep "TIMEOUT=7" "$out" "Makefile negative-test timeout override"
 }
 
+verify_negative_test_scoped_denial_signals() {
+	local bin="$tmpdir/scoped-denial-bin" policy_out="$tmpdir/rung-c-policy-denial.out" unrelated_out="$tmpdir/rung-c-unrelated-denial.out"
+	mkdir -p "$bin"
+
+	cat > "$bin/oc" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+if [[ "${args[0]:-}" == "-n" ]]; then
+	args=("${args[@]:2}")
+fi
+cmd="${args[0]:-}"
+target="${args[1]:-}"
+
+if [[ "$cmd" == "whoami" ]]; then
+	printf 'test-user\n'
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == "runtimeclass" ]]; then
+	exit 0
+fi
+if [[ "$cmd" == "patch" ]]; then
+	cat <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: negtest-rung-c
+  namespace: workload-test
+spec:
+  runtimeClassName: kata-cc
+YAML
+	exit 0
+fi
+if [[ "$cmd" == "describe" && "$target" == "pod" ]]; then
+	if [[ "${TEST_DENIAL_SIGNAL:-}" == "policy" ]]; then
+		printf 'Warning: image policy rejected unsigned sigstore signature\n'
+	else
+		printf 'Warning: VCEK cache miss while checking unrelated attestation path\n'
+	fi
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == "events" ]]; then
+	exit 0
+fi
+if [[ "$cmd" == "logs" ]]; then
+	exit 0
+fi
+if [[ "$cmd" == "get" && "$target" == "pod" ]]; then
+	exit 0
+fi
+if [[ "$cmd" == "delete" || "$cmd" == "apply" ]]; then
+	exit 0
+fi
+exit 0
+EOF
+	chmod +x "$bin/oc"
+
+	TEST_DENIAL_SIGNAL=policy PATH="$bin:$PATH" \
+		MIRROR_CA="$tmpdir/mirror-ca.pem" \
+		NS="workload-test" \
+		TRUSTEE_NS="trustee-test" \
+		TIMEOUT=0 \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		bash "$REPO_ROOT/scripts/negative-test.sh" rung-c > "$policy_out"
+	expect_grep "negative-test summary: 1 passed, 0 failed, 0 skipped." "$policy_out" "rung-c scoped policy denial summary"
+
+	if TEST_DENIAL_SIGNAL=unrelated PATH="$bin:$PATH" \
+		MIRROR_CA="$tmpdir/mirror-ca.pem" \
+		NS="workload-test" \
+		TRUSTEE_NS="trustee-test" \
+		TIMEOUT=0 \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		bash "$REPO_ROOT/scripts/negative-test.sh" rung-c > "$unrelated_out" 2>&1; then
+		die "rung-c negative test accepted an unrelated denial signal"
+	fi
+	expect_grep "no rung-c signature/policy denial signal" "$unrelated_out" "rung-c unrelated denial rejection"
+}
+
 verify_workload_namespace_make_env() {
 	local stub="$tmpdir/workload-target-stub.sh"
 	local rung_b_out="$tmpdir/apply-rung-b-env" rung_c_out="$tmpdir/apply-rung-c-env" evidence_out="$tmpdir/collect-evidence-env"
@@ -756,6 +834,7 @@ verify_rung_c_policy_render
 verify_build_make_env
 verify_trustee_make_env
 verify_negative_test_make_env
+verify_negative_test_scoped_denial_signals
 verify_workload_namespace_make_env
 verify_negative_test_air_gap_restores_vceks
 verify_evidence_secret_redaction

@@ -325,23 +325,22 @@ registry credential, pause image, or KBS URL is broken.
 - `rung-a`
   - Render the same initdata/apply path as `make apply-rung-a`.
   - Apply a measured-initdata tamper as `negtest-rung-a`.
+  - Require a rung-a attestation/resource-denial signal before counting the proof green.
 - `rung-b`
   - Render happy-path initdata.
   - Apply a tampered measured-initdata copy as `negtest-rung-b`.
-  - Reuse `expect_fail_closed`, but extend the denial grep for `decrypt`, `image-key`,
-    `key`, `measurement`, and `attestation`.
+  - Require a rung-b attestation/image-key denial signal before counting the proof green.
 - `rung-c`
   - Render signed-policy initdata.
   - Apply the unsigned/tampered image pod as `negtest-rung-c`.
-  - Extend denial grep for `Image policy rejected`, `sigstoreSigned`, `signature`,
-    `security-policy`, and `rejected`.
+  - Require a rung-c signature/policy denial signal before counting the proof green.
 - `air-gap`
   - Temporarily remove every `vcek-*` Secret in the Trustee namespace, then render an
     otherwise happy rung-a manifest as
     `negtest-air-gap`.
   - The script backs up and restores those Secrets even if the probe exits early.
   - This must fail because the OfflineStore cache is missing, not because the pod manifest was
-    also tampered.
+    also tampered; the harness requires a VCEK/OfflineStore denial signal.
 
 Before declaring the script done, run:
 
