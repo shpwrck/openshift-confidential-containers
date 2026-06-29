@@ -42,6 +42,10 @@ RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
 EVIDENCE_DIR ?=
 EVIDENCE_PODS ?= rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap
+RUNG_B_POD ?= rung-b-encrypted
+RUNG_C_POD ?= rung-c-signed
+NEG_RUNG_B_POD ?= negtest-rung-b
+NEG_RUNG_C_POD ?= negtest-rung-c
 TRUSTEE_LOG_TAIL ?= 1000
 POD_LOG_TAIL ?= 200
 MIRROR_LOG_TAIL ?= 1000
@@ -178,7 +182,7 @@ apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signe
 
 .PHONY: collect-rung-bc-evidence
 collect-rung-bc-evidence: ## Phase 6: collect non-secret rung-b/c proof evidence into ARTIFACT_DIR
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" PODS="$(EVIDENCE_PODS)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash "$(COLLECT_RUNG_BC_EVIDENCE_SCRIPT)"
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" PODS="$(EVIDENCE_PODS)" RUNG_B_POD="$(RUNG_B_POD)" RUNG_C_POD="$(RUNG_C_POD)" NEG_RUNG_B_POD="$(NEG_RUNG_B_POD)" NEG_RUNG_C_POD="$(NEG_RUNG_C_POD)" TRUSTEE_LOG_TAIL="$(TRUSTEE_LOG_TAIL)" POD_LOG_TAIL="$(POD_LOG_TAIL)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash "$(COLLECT_RUNG_BC_EVIDENCE_SCRIPT)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

@@ -711,6 +711,10 @@ vars=(
 	ARTIFACT_DIR
 	EVIDENCE_DIR
 	PODS
+	RUNG_B_POD
+	RUNG_C_POD
+	NEG_RUNG_B_POD
+	NEG_RUNG_C_POD
 )
 
 for var in "${vars[@]}"; do
@@ -756,6 +760,10 @@ EOF
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		EVIDENCE_PODS="rung-a-secret negtest-air-gap custom-proof-pod" \
+		RUNG_B_POD="custom-rung-b" \
+		RUNG_C_POD="custom-rung-c" \
+		NEG_RUNG_B_POD="custom-neg-rung-b" \
+		NEG_RUNG_C_POD="custom-neg-rung-c" \
 		> "$evidence_out"
 
 	for out in "$tmpdir/apply-rung-a-env" "$rung_b_out" "$rung_c_out" "$evidence_out"; do
@@ -768,6 +776,10 @@ EOF
 	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$evidence_out" "Makefile evidence artifact dir override"
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence" "$evidence_out" "Makefile evidence dir override"
 	expect_grep "PODS=rung-a-secret negtest-air-gap custom-proof-pod" "$evidence_out" "Makefile evidence pod override"
+	expect_grep "RUNG_B_POD=custom-rung-b" "$evidence_out" "Makefile evidence rung-b pod override"
+	expect_grep "RUNG_C_POD=custom-rung-c" "$evidence_out" "Makefile evidence rung-c pod override"
+	expect_grep "NEG_RUNG_B_POD=custom-neg-rung-b" "$evidence_out" "Makefile evidence negative rung-b pod override"
+	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$evidence_out" "Makefile evidence negative rung-c pod override"
 }
 
 verify_negative_test_air_gap_restores_vceks() {
@@ -862,6 +874,7 @@ EOF
 
 verify_evidence_secret_redaction() {
 	local raw="$tmpdir/raw-secret.json" redacted="$tmpdir/redacted-secret.json" lengths_raw="$tmpdir/lengths-secret.json" lengths="$tmpdir/secret-lengths.tsv"
+	local fingerprints="$tmpdir/secret-fingerprints.tsv" expected_rung_b_sha expected_rung_c_sha
 	cat > "$raw" <<'EOF'
 {
   "apiVersion": "v1",
@@ -910,6 +923,12 @@ EOF
 	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" secret-data-lengths < "$lengths_raw" > "$lengths"
 	expect_grep $'rung-b\t32' "$lengths" "secret data length for rung-b key"
 	expect_grep $'rung-c\t2' "$lengths" "secret data length for policy data"
+
+	expected_rung_b_sha="$(printf '01234567890123456789012345678901' | sha256sum | awk '{print $1}')"
+	expected_rung_c_sha="$(printf '{}' | sha256sum | awk '{print $1}')"
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" secret-data-fingerprints < "$lengths_raw" > "$fingerprints"
+	expect_grep "rung-b	32	${expected_rung_b_sha}" "$fingerprints" "secret data fingerprint for rung-b key"
+	expect_grep "rung-c	2	${expected_rung_c_sha}" "$fingerprints" "secret data fingerprint for rung-c policy"
 }
 
 verify_evidence_artifact_handoff() {
@@ -992,6 +1011,57 @@ EOF
 	expect_grep $'missing-negtest\tmissing' "$missing_row" "pod summary missing index row"
 }
 
+verify_evidence_rung_bc_proof_summary() {
+	local evidence="$tmpdir/proof-evidence" manifest="$tmpdir/proof-rung-bc-images.json" out="$tmpdir/proof-summary.tsv"
+	local rung_b_image rung_c_image rung_c_unsigned_image key_sha pub_sha
+	rung_b_image="mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	rung_c_image="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	rung_c_unsigned_image="mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	key_sha="$(printf '01234567890123456789012345678901' | sha256sum | awk '{print $1}')"
+	pub_sha="$(printf 'cosign public key' | sha256sum | awk '{print $1}')"
+
+	mkdir -p "$evidence/pods" "$evidence/trustee/secrets"
+	cat > "$manifest" <<EOF
+{
+  "rung_b": {
+    "digest_ref": "${rung_b_image}",
+    "key_sha256": "${key_sha}"
+  },
+  "rung_c": {
+    "digest_ref": "${rung_c_image}",
+    "unsigned_digest_ref": "${rung_c_unsigned_image}",
+    "cosign_pub_sha256": "${pub_sha}"
+  }
+}
+EOF
+	cat > "$evidence/trustee/secrets/rung-bc-fingerprints.tsv" <<EOF
+secret	key	status	decoded_bytes	sha256
+image-key	rung-b	present	32	${key_sha}
+sig-public-key	rung-c	present	17	${pub_sha}
+security-policy	rung-c	present	2	$(printf '{}' | sha256sum | awk '{print $1}')
+EOF
+	cat > "$evidence/pods/rung-b-encrypted.json" <<EOF
+{"spec":{"containers":[{"name":"app","image":"${rung_b_image}"}]}}
+EOF
+	cat > "$evidence/pods/negtest-rung-b.json" <<EOF
+{"spec":{"containers":[{"name":"app","image":"${rung_b_image}"}]}}
+EOF
+	cat > "$evidence/pods/rung-c-signed.json" <<EOF
+{"spec":{"containers":[{"name":"app","image":"${rung_c_image}"}]}}
+EOF
+	cat > "$evidence/pods/negtest-rung-c.json" <<EOF
+{"spec":{"containers":[{"name":"app","image":"${rung_c_unsigned_image}"}]}}
+EOF
+
+	bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" write-rung-bc-proof-summary "$manifest" "$evidence" "$out"
+	expect_grep "rung_b_key_secret_sha256	${key_sha}	${key_sha}	match" "$out" "proof summary rung-b key fingerprint match"
+	expect_grep "rung_c_pub_secret_sha256	${pub_sha}	${pub_sha}	match" "$out" "proof summary rung-c public key fingerprint match"
+	expect_grep "rung_b_happy_image	${rung_b_image}	${rung_b_image}	match" "$out" "proof summary rung-b happy image match"
+	expect_grep "rung_b_negative_image	${rung_b_image}	${rung_b_image}	match" "$out" "proof summary rung-b negative image match"
+	expect_grep "rung_c_happy_image	${rung_c_image}	${rung_c_image}	match" "$out" "proof summary rung-c happy image match"
+	expect_grep "rung_c_negative_unsigned_image	${rung_c_unsigned_image}	${rung_c_unsigned_image}	match" "$out" "proof summary rung-c negative image match"
+}
+
 need make
 need oc
 need jq
@@ -1030,6 +1100,7 @@ verify_evidence_secret_redaction
 verify_evidence_artifact_handoff
 verify_evidence_summary_provenance
 verify_evidence_pod_summary
+verify_evidence_rung_bc_proof_summary
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

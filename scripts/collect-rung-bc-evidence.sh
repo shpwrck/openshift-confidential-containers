@@ -8,6 +8,10 @@ TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-${ARTIFACT_DIR}/evidence-$(date -u +%Y%m%dT%H%M%SZ)}"
 PODS="${PODS:-rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap}"
+RUNG_B_POD="${RUNG_B_POD:-rung-b-encrypted}"
+RUNG_C_POD="${RUNG_C_POD:-rung-c-signed}"
+NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-negtest-rung-b}"
+NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-1000}"
 POD_LOG_TAIL="${POD_LOG_TAIL:-200}"
 MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-1000}"
@@ -101,6 +105,18 @@ secret_data_lengths() {
 	done
 }
 
+secret_data_fingerprints() {
+	local key value bytes sha
+	jq -r '(.data // {}) | to_entries[] | [.key, .value] | @tsv' | while IFS=$'\t' read -r key value; do
+		if bytes="$(printf '%s' "$value" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')" &&
+			sha="$(printf '%s' "$value" | base64 -d 2>/dev/null | sha256sum | awk '{print $1}')"; then
+			printf '%s\t%s\t%s\n' "$key" "$bytes" "$sha"
+		else
+			printf '%s\tdecode-error\tdecode-error\n' "$key"
+		fi
+	done
+}
+
 write_redacted_secret() {
 	local secret="$1"
 	local out="${EVIDENCE_DIR}/trustee/secrets/${secret}.redacted.json"
@@ -112,6 +128,35 @@ write_redacted_secret() {
 	fi
 	redact_secret_json <<<"$raw" > "$out"
 	secret_data_lengths <<<"$raw" > "$lengths_out"
+}
+
+write_secret_fingerprint_row() {
+	local secret="$1" key="$2" raw value bytes sha
+	if ! raw="$(oc -n "$TRUSTEE_NS" get secret "$secret" -o json 2>/dev/null)"; then
+		printf '%s\t%s\tmissing\t\t\n' "$secret" "$key"
+		return
+	fi
+	value="$(jq -r --arg key "$key" '.data[$key] // ""' <<<"$raw")"
+	if [[ -z "$value" ]]; then
+		printf '%s\t%s\tkey-missing\t\t\n' "$secret" "$key"
+		return
+	fi
+	if bytes="$(printf '%s' "$value" | base64 -d 2>/dev/null | wc -c | tr -d '[:space:]')" &&
+		sha="$(printf '%s' "$value" | base64 -d 2>/dev/null | sha256sum | awk '{print $1}')"; then
+		printf '%s\t%s\tpresent\t%s\t%s\n' "$secret" "$key" "$bytes" "$sha"
+	else
+		printf '%s\t%s\tdecode-error\t\t\n' "$secret" "$key"
+	fi
+}
+
+write_rung_bc_secret_fingerprints() {
+	local out="${EVIDENCE_DIR}/trustee/secrets/rung-bc-fingerprints.tsv"
+	{
+		printf 'secret\tkey\tstatus\tdecoded_bytes\tsha256\n'
+		write_secret_fingerprint_row image-key rung-b
+		write_secret_fingerprint_row sig-public-key rung-c
+		write_secret_fingerprint_row security-policy rung-c
+	} > "$out"
 }
 
 decode_pod_initdata() {
@@ -189,6 +234,80 @@ copy_artifact_handoff() {
 	done
 }
 
+secret_fingerprint_sha_from_file() {
+	local fingerprints="$1" secret="$2" key="$3"
+	awk -F '\t' -v secret="$secret" -v key="$key" '
+		NR > 1 && $1 == secret && $2 == key && $3 == "present" { print $5; found = 1; exit }
+		END { if (!found) exit 1 }
+	' "$fingerprints"
+}
+
+pod_app_image_from_evidence() {
+	local evidence_dir="$1" pod="$2" pod_json
+	pod_json="${evidence_dir}/pods/${pod}.json"
+	if [[ ! -s "$pod_json" ]]; then
+		return 1
+	fi
+	jq -r '([.spec.containers[]? | select(.name == "app") | .image][0]) // ""' "$pod_json"
+}
+
+write_match_row() {
+	local check="$1" expected="$2" actual="$3" status
+	if [[ -z "$expected" ]]; then
+		status="expected-missing"
+	elif [[ -z "$actual" ]]; then
+		status="actual-missing"
+	elif [[ "$actual" == "$expected" ]]; then
+		status="match"
+	else
+		status="mismatch"
+	fi
+	printf '%s\t%s\t%s\t%s\n' "$check" "$expected" "$actual" "$status"
+}
+
+write_rung_bc_proof_summary() {
+	local manifest="$1" evidence_dir="$2" out="$3"
+	local fingerprints="${evidence_dir}/trustee/secrets/rung-bc-fingerprints.tsv"
+	local rung_b_image rung_c_image rung_c_unsigned_image rung_b_key_sha rung_c_pub_sha
+	local actual
+
+	printf 'check\texpected\tactual\tstatus\n' > "$out"
+	if [[ ! -s "$manifest" ]]; then
+		write_match_row "artifact_manifest" "present" "" >> "$out"
+		return
+	fi
+
+	rung_b_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest")"
+	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
+	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
+	rung_b_key_sha="$(jq -r '.rung_b.key_sha256 // ""' "$manifest")"
+	rung_c_pub_sha="$(jq -r '.rung_c.cosign_pub_sha256 // ""' "$manifest")"
+
+	actual=""
+	if [[ -s "$fingerprints" ]]; then
+		actual="$(secret_fingerprint_sha_from_file "$fingerprints" image-key rung-b 2>/dev/null || true)"
+	fi
+	write_match_row "rung_b_key_secret_sha256" "$rung_b_key_sha" "$actual" >> "$out"
+
+	actual=""
+	if [[ -s "$fingerprints" ]]; then
+		actual="$(secret_fingerprint_sha_from_file "$fingerprints" sig-public-key rung-c 2>/dev/null || true)"
+	fi
+	write_match_row "rung_c_pub_secret_sha256" "$rung_c_pub_sha" "$actual" >> "$out"
+
+	actual="$(pod_app_image_from_evidence "$evidence_dir" "$RUNG_B_POD" 2>/dev/null || true)"
+	write_match_row "rung_b_happy_image" "$rung_b_image" "$actual" >> "$out"
+
+	actual="$(pod_app_image_from_evidence "$evidence_dir" "$NEG_RUNG_B_POD" 2>/dev/null || true)"
+	write_match_row "rung_b_negative_image" "$rung_b_image" "$actual" >> "$out"
+
+	actual="$(pod_app_image_from_evidence "$evidence_dir" "$RUNG_C_POD" 2>/dev/null || true)"
+	write_match_row "rung_c_happy_image" "$rung_c_image" "$actual" >> "$out"
+
+	actual="$(pod_app_image_from_evidence "$evidence_dir" "$NEG_RUNG_C_POD" 2>/dev/null || true)"
+	write_match_row "rung_c_negative_unsigned_image" "$rung_c_unsigned_image" "$actual" >> "$out"
+}
+
 write_summary() {
 	local out="$1" git_head="" git_branch="" git_dirty="" tool
 	if command -v git >/dev/null && git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -236,6 +355,15 @@ if [[ "${1:-}" == "secret-data-lengths" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "secret-data-fingerprints" ]]; then
+	[[ "$#" -eq 1 ]] || die "usage: $0 secret-data-fingerprints"
+	need jq
+	need base64
+	need sha256sum
+	secret_data_fingerprints
+	exit 0
+fi
+
 if [[ "${1:-}" == "copy-artifact-handoff" ]]; then
 	[[ "$#" -eq 3 ]] || die "usage: $0 copy-artifact-handoff <artifact-dir> <evidence-dir>"
 	mkdir -p "$3"
@@ -269,9 +397,17 @@ if [[ "${1:-}" == "pod-index-missing-row" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "write-rung-bc-proof-summary" ]]; then
+	[[ "$#" -eq 4 ]] || die "usage: $0 write-rung-bc-proof-summary <rung-bc-images.json> <evidence-dir> <out.tsv>"
+	need jq
+	write_rung_bc_proof_summary "$2" "$3" "$4"
+	exit 0
+fi
+
 need oc
 need jq
 need base64
+need sha256sum
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 mkdir -p \
@@ -328,11 +464,13 @@ done
 for secret in image-key sig-public-key security-policy registry-configuration credential regcred attestation-status sample; do
 	write_redacted_secret "$secret"
 done
+write_rung_bc_secret_fingerprints
 while IFS= read -r vcek_secret; do
 	[[ -n "$vcek_secret" ]] || continue
 	write_redacted_secret "${vcek_secret#secret/}"
 done < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
 
 copy_artifact_handoff "$ARTIFACT_DIR" "$EVIDENCE_DIR"
+write_rung_bc_proof_summary "${EVIDENCE_DIR}/rung-bc-images.json" "$EVIDENCE_DIR" "${EVIDENCE_DIR}/rung-bc-proof-summary.tsv"
 
 echo "Rung b/c evidence written to ${EVIDENCE_DIR}"

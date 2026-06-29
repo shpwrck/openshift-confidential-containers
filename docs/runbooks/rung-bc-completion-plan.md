@@ -369,15 +369,21 @@ make collect-rung-bc-evidence
 By default this writes under `rung-bc-artifacts/evidence-<utc-timestamp>/`, which is ignored by
 git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`,
 `negtest-rung-a`, `negtest-rung-b`, `negtest-rung-c`, and `negtest-air-gap`; override with
-`EVIDENCE_PODS="..."` when a rig run uses custom pod names. The bundle includes pod
+`EVIDENCE_PODS="..."` when a rig run uses custom pod names. If the rung-b/c pod names change,
+also set `RUNG_B_POD`, `RUNG_C_POD`, `NEG_RUNG_B_POD`, and `NEG_RUNG_C_POD` so
+`rung-bc-proof-summary.tsv` can correlate the right pod JSON files. The bundle includes pod
 YAML/describe/logs, per-pod summary TSVs, decoded initdata, recent Trustee logs, events,
 KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
 Secret metadata plus data-key names and decoded byte lengths, redacted `vcek-*` Secret
 metadata, and copies of `rung-bc-images.json` and `rung-bc.env` when present. `pods/summary.tsv`
 indexes every requested pod, including missing pods, so reviewers can quickly check phase,
-runtime class, app image, and initdata annotation hash; `summary.env` records the repo revision,
-branch, dirty state, and local tool paths used to collect the bundle. It does not dump Secret
-data, but still review the bundle before sharing it outside the engagement.
+runtime class, app image, and initdata annotation hash. `trustee/secrets/rung-bc-fingerprints.tsv`
+records non-secret decoded lengths and SHA-256 fingerprints for only `image-key/rung-b`,
+`sig-public-key/rung-c`, and `security-policy/rung-c`; `rung-bc-proof-summary.tsv` compares
+those fingerprints and the happy/negative pod image refs against `rung-bc-images.json`.
+`summary.env` records the repo revision, branch, dirty state, and local tool paths used to
+collect the bundle. It does not dump Secret data, but still review the bundle before sharing it
+outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed:
@@ -392,6 +398,9 @@ After both rungs are green on the disposable rig:
 
 - Commit the workload manifests, apply scripts, negative-test coverage, and doc updates.
 - Record image digests and key IDs in the run notes, not the key material.
+- Check `rung-bc-proof-summary.tsv`; every row should be `match` unless the row is for a pod
+  that was intentionally deleted before collection, in which case re-run collection while that
+  pod still exists if you need reviewer-grade evidence.
 - Save the `collect-rung-bc-evidence` bundle path with the run notes.
 - Re-run `make lint`.
 - Re-run the full hardware gate matrix:
