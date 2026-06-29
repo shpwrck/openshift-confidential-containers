@@ -25,6 +25,7 @@ flowchart LR
     Mirror[Mirror registry]
     DNS[DNS + NTP]
     Boot[Boot artifacts\nHTTP/iPXE/ISO]
+    ConsoleProxy[nginx console proxy\nsslip.io public edge]
     Cache[VCEK OfflineStore\ncache material]
   end
 
@@ -44,9 +45,11 @@ flowchart LR
   RH -->|oc-mirror while connected| Mirror
   AMD -->|collect VCEK certs while connected| Cache
   Admin -->|render/apply GitOps + run gates| SNO
+  Admin -->|browser console/OAuth| ConsoleProxy
   Boot -->|netboot/install assets| SNO
   Mirror -->|release payload, operators, images| SNO
   DNS -->|cluster name resolution + time| SNO
+  ConsoleProxy -->|proxy to private ingress| SNO
   SNO --> RHCOS --> CoCo
   CoCo -->|attestation evidence + resource request| KBS
   KBS --> AS
@@ -63,6 +66,7 @@ flowchart LR
 | Admin workstation / repo checkout | Operator-controlled host | Runs the Makefile, Terraform/Ansible path, or manual commands; applies Kustomize overlays. |
 | Bastion / mirror host | Persistent connected host with a private VLAN leg | Holds the mirror registry, DNS, NTP, and boot artifacts; downloads public content before the node is sealed off. |
 | Mirror registry | Bastion | Serves OpenShift payloads, operator catalogs, and workload images to the disconnected cluster. |
+| nginx console proxy | Bastion | Publishes the disposable rig's OpenShift console/OAuth routes through the bastion public IP while proxying to private VLAN ingress. |
 | OpenShift SNO rig | SNP-capable bare-metal node | Disposable proof environment where the host kernel is the SEV-SNP/Kata host. |
 | RHCOS + Kata | OpenShift worker node | Launches confidential VM pods using the bare-metal host path, not peer pods. |
 | Trustee cluster | Separate cluster in rig and production | Runs KBS, Attestation Service, RVPS, policy, and OfflineStore-backed VCEK material. |
@@ -83,7 +87,7 @@ sequenceDiagram
 
   Op->>Bastion: Install tools and harden egress
   Op->>Bastion: Mirror OpenShift payloads, operators, and images
-  Op->>Bastion: Configure DNS, NTP, registry CA, and boot artifacts
+  Op->>Bastion: Configure DNS, NTP, registry CA, boot artifacts, and console proxy
   Op->>Node: Provision metal, attach private VLAN, set SEV-SNP BIOS
   Op->>Node: Run rung-0 SNP host verification
   Node-->>Op: SNP host gate passes before any GitOps is applied

@@ -78,6 +78,7 @@ flowchart LR
     DNS["dnsmasq\ncluster + mirror names"]
     NTP["chrony\ntime for install + attestation"]
     Boot["nginx/iPXE or ISO staging\nsecret-bearing boot artifacts"]
+    ConsoleProxy["nginx console proxy\npublic sslip.io edge"]
   end
 
   subgraph SNO["Air-gapped SEV-SNP node"]
@@ -97,10 +98,12 @@ flowchart LR
   RH -->|"oc-mirror while connected"| Mirror
   AMD -->|"collect VCEK while connected"| VCEK
   Admin -->|"render configs + apply GitOps"| OCP
+  Admin -->|"browser console/OAuth"| ConsoleProxy
   Boot -->|"Agent ISO/iPXE boot"| RHCOS
   Mirror -->|"all image pulls"| OCP
   DNS -->|"api, api-int, *.apps, mirror"| OCP
   NTP -->|"stable clock"| OCP
+  ConsoleProxy -->|"proxy to private ingress"| OCP
   OCP --> RHCOS --> CVM
   CVM -->|"attestation evidence + resource request"| KBS
   KBS --> AS
@@ -195,6 +198,7 @@ Each file below has one consumer and one job.
 | DNS (`dnsmasq`) | `/etc/dnsmasq.d/rig.conf` | Resolves `mirror.rig.local`, `api`, `api-int`, and `*.apps` over the private VLAN. | Bootstrap hangs or mirror hostname resolves only on the old raw OS. |
 | NTP (`chrony`) | `/etc/chrony.d/rig.conf`, `agent-config.additionalNTPSources` | Gives the air-gapped node stable time. | Bootstrap or attestation behaves mysteriously because certificates/tokens are time-sensitive. |
 | Boot web server | `scripts/serve-boot-artifacts.sh`, nginx on `:8080` | Publishes iPXE kernel/initrd/rootfs under an unguessable path. | Netboot cannot fetch artifacts; if left running, secret-bearing initrd remains exposed. |
+| Console proxy | `/etc/nginx/conf.d/coco-public-console.conf`, managed by `ansible/roles/public_console/` | Publishes the disposable rig console/OAuth route through the bastion public IP using sslip.io names, then proxies to private OpenShift ingress. | The cluster is healthy but the browser cannot reach the console from outside the private VLAN. |
 | Egress shaping | `/etc/nftables/egress-clamp.nft`, node `nft` airgap table | Makes large mirror pulls reliable and proves the node cannot bypass the bastion. | `oc-mirror` EOFs, or negative air-gap tests accidentally pass by reaching public services. |
 
 #### Post-install GitOps files
@@ -349,6 +353,7 @@ flowchart LR
   Bastion --> DNS["dnsmasq :53"]
   Bastion --> NTP["chrony :123"]
   Bastion --> Boot["boot artifacts :8080"]
+  Bastion --> Console["nginx console proxy :443"]
 ```
 
 ### 2.1 Egress hardening (do this FIRST)
