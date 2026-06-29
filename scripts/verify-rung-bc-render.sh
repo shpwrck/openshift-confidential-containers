@@ -317,6 +317,52 @@ EOF
 	done
 }
 
+verify_negative_test_make_env() {
+	local stub="$tmpdir/negative-test-stub.sh" out="$tmpdir/negative-test-env"
+	cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ARG=%s\n' "${1:-}"
+vars=(
+	NS
+	TRUSTEE_NS
+	MIRROR_REGISTRY
+	MIRROR_DNS_UPSTREAM
+	KBS_URL
+	RUNG_B_IMAGE
+	RUNG_C_UNSIGNED_IMAGE
+	TIMEOUT
+)
+
+for var in "${vars[@]}"; do
+	printf '%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$stub"
+
+	make -s negative-test \
+		NEGATIVE_TEST_SCRIPT="$stub" \
+		WHICH="rung-c" \
+		NS="trustee-test" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		MIRROR_DNS_UPSTREAM="192.0.2.10" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/custom/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		TIMEOUT="7" \
+		> "$out"
+
+	expect_grep "ARG=rung-c" "$out" "Makefile negative-test target argument"
+	expect_grep "NS=default" "$out" "Makefile negative-test workload namespace"
+	expect_grep "TRUSTEE_NS=trustee-test" "$out" "Makefile negative-test Trustee namespace"
+	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile negative-test mirror override"
+	expect_grep "MIRROR_DNS_UPSTREAM=192.0.2.10" "$out" "Makefile negative-test DNS override"
+	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$out" "Makefile negative-test KBS URL override"
+	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$out" "Makefile negative-test rung-b image override"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/custom/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$out" "Makefile negative-test rung-c unsigned override"
+	expect_grep "TIMEOUT=7" "$out" "Makefile negative-test timeout override"
+}
+
 verify_evidence_secret_redaction() {
 	local raw="$tmpdir/raw-secret.json" redacted="$tmpdir/redacted-secret.json"
 	cat > "$raw" <<'EOF'
@@ -376,6 +422,7 @@ verify_rung_c_digest_signing
 verify_rung_c_policy_render
 verify_build_make_env
 verify_trustee_make_env
+verify_negative_test_make_env
 verify_evidence_secret_redaction
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render

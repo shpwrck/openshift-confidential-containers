@@ -31,6 +31,7 @@ COSIGN_VERIFY_ARGS ?=
 BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
 SEED_TRUSTEE_SECRETS_SCRIPT ?= ./scripts/seed-trustee-secrets.sh
 APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
+NEGATIVE_TEST_SCRIPT ?= ./scripts/negative-test.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
@@ -212,4 +213,4 @@ gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware
 ## --- Validation (negative tests) -----------------------------------------
 .PHONY: negative-test
 negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-a|rung-b|rung-c|air-gap)
-	./scripts/negative-test.sh $(WHICH)
+	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)

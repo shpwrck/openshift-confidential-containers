@@ -17,6 +17,9 @@ NS="${NS:-default}"
 TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
 TIMEOUT="${TIMEOUT:-120}"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
+MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"
+KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
+RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pass=0 fail=0 skip=0
 
@@ -85,6 +88,7 @@ run_rung_b() {
   manifest="$(mktemp)"
   if ! render_or_skip "rung-b negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" RUNG_B_IMAGE="$RUNG_B_IMAGE" \
         POD_NAME=negtest-rung-b TAMPER_INITDATA=1 RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-b.sh"; then
     rm -f "$manifest"
@@ -101,6 +105,7 @@ run_rung_c() {
   manifest="$(mktemp)"
   if ! render_or_skip "rung-c negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
         POD_NAME=negtest-rung-c RUNG_C_IMAGE="$unsigned_image" RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-c.sh"; then
     rm -f "$manifest"
