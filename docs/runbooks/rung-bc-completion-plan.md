@@ -76,6 +76,8 @@ The repo now carries the dry-run friendly tooling:
   - Pushes an unsigned rung-c negative-control image, then pushes rung-c and signs the
     digest ref that will be used by the workload.
   - Writes `rung-bc-artifacts/rung-bc-images.json` with digest refs and key paths.
+  - Writes `rung-bc-artifacts/rung-bc.env`, a sourceable non-secret env file with the digest
+    refs and artifact paths needed by the apply and negative-test targets.
 - `scripts/seed-trustee-secrets.sh`
   - `RUNG_B_KEY_FILE` creates Secret `image-key` with key `rung-b`.
   - `RUNG_C_COSIGN_PUB` creates Secret `sig-public-key` with key `rung-c`.
@@ -104,9 +106,7 @@ podman build -t coco-keyprovider -f ./attestation-agent/docker/Dockerfile.keypro
 
 # then in this repo:
 COSIGN_PASSWORD='<secret>' make build-rung-images
-export RUNG_B_IMAGE=$(jq -r '.rung_b.digest_ref' rung-bc-artifacts/rung-bc-images.json)
-export RUNG_C_IMAGE=$(jq -r '.rung_c.digest_ref' rung-bc-artifacts/rung-bc-images.json)
-export RUNG_C_UNSIGNED_IMAGE=$(jq -r '.rung_c.unsigned_digest_ref' rung-bc-artifacts/rung-bc-images.json)
+. rung-bc-artifacts/rung-bc.env
 ```
 
 The `apply-rung-b`, `apply-rung-c`, and b/c negative-test render paths intentionally reject

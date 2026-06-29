@@ -117,6 +117,24 @@ configure_cosign_args() {
 	fi
 }
 
+emit_env_from_manifest() {
+	local manifest="$1" line var value
+	jq -r '
+		[
+			"RUNG_B_IMAGE=" + .rung_b.digest_ref,
+			"RUNG_B_KEY_FILE=" + .rung_b.key_file,
+			"RUNG_C_IMAGE=" + .rung_c.digest_ref,
+			"RUNG_C_UNSIGNED_IMAGE=" + .rung_c.unsigned_digest_ref,
+			"RUNG_C_COSIGN_PUB=" + .rung_c.cosign_pub
+		] | .[]
+	' "$manifest" | while IFS= read -r line; do
+		var="${line%%=*}"
+		value="${line#*=}"
+		printf 'export %s=' "$var"
+		printf '%q\n' "$value"
+	done
+}
+
 generate_rung_b_key() {
 	if [[ -s "$RUNG_B_KEY_FILE" ]]; then
 		return
@@ -187,7 +205,7 @@ sign_rung_c() {
 }
 
 write_manifest() {
-	local b_digest c_digest c_unsigned_digest b_digest_ref c_digest_ref c_unsigned_digest_ref manifest
+	local b_digest c_digest c_unsigned_digest b_digest_ref c_digest_ref c_unsigned_digest_ref manifest env_file
 	b_digest="$(skopeo inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
 	c_digest="$(skopeo inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
 	c_unsigned_digest="$(skopeo inspect "docker://${RUNG_C_UNSIGNED_IMAGE}" | jq -r '.Digest')"
@@ -229,6 +247,9 @@ write_manifest() {
 			}
 		}' > "$manifest"
 	echo "Wrote $manifest"
+	env_file="$ARTIFACT_DIR/rung-bc.env"
+	emit_env_from_manifest "$manifest" > "$env_file"
+	echo "Wrote $env_file"
 	jq -r '
 		"RUNG_B_IMAGE=" + .rung_b.digest_ref,
 		"RUNG_B_KEY_FILE=" + .rung_b.key_file,
@@ -241,6 +262,13 @@ write_manifest() {
 if [[ "${1:-}" == "digest-ref" ]]; then
 	[[ "$#" -eq 3 ]] || die "usage: $0 digest-ref <image-ref> <sha256:digest>"
 	image_digest_ref "$2" "$3"
+	exit 0
+fi
+
+if [[ "${1:-}" == "emit-env" ]]; then
+	[[ "$#" -eq 2 ]] || die "usage: $0 emit-env <rung-bc-images.json>"
+	need jq
+	emit_env_from_manifest "$2"
 	exit 0
 fi
 

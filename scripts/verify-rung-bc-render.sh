@@ -162,6 +162,38 @@ EOF
 	expect_grep "rung-b image key must be exactly 32 bytes" "$err" "seed Trustee rung-b key-size guard"
 }
 
+verify_manifest_env_emit() {
+	local manifest="$tmpdir/rung-bc-images.json" env_file="$tmpdir/rung-bc.env"
+	cat > "$manifest" <<'EOF'
+{
+  "rung_b": {
+    "digest_ref": "mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "key_file": "/tmp/rung artifacts/rung-b-image.key"
+  },
+  "rung_c": {
+    "digest_ref": "mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "unsigned_digest_ref": "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "cosign_pub": "/tmp/rung artifacts/cosign.pub"
+  }
+}
+EOF
+	bash "$REPO_ROOT/scripts/build-rung-images.sh" emit-env "$manifest" > "$env_file"
+	expect_grep "export RUNG_B_IMAGE=" "$env_file" "rung-b env export"
+	expect_grep "export RUNG_C_IMAGE=" "$env_file" "rung-c env export"
+	expect_grep "export RUNG_C_UNSIGNED_IMAGE=" "$env_file" "rung-c unsigned env export"
+
+	RUNG_ENV_FILE="$env_file" bash <<'EOF'
+set -euo pipefail
+# shellcheck source=/dev/null
+source "$RUNG_ENV_FILE"
+[[ "$RUNG_B_IMAGE" == "mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]]
+[[ "$RUNG_B_KEY_FILE" == "/tmp/rung artifacts/rung-b-image.key" ]]
+[[ "$RUNG_C_IMAGE" == "mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]]
+[[ "$RUNG_C_UNSIGNED_IMAGE" == "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" ]]
+[[ "$RUNG_C_COSIGN_PUB" == "/tmp/rung artifacts/cosign.pub" ]]
+EOF
+}
+
 verify_cosign_default_sign_args() {
 	local bin="$tmpdir/cosign-bin" actual
 	mkdir -p "$bin"
@@ -698,6 +730,7 @@ expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaa
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 verify_apply_requires_digest_refs
 verify_rung_b_key_size_guard
+verify_manifest_env_emit
 verify_cosign_default_sign_args
 verify_rung_c_digest_signing
 verify_rung_c_policy_render
