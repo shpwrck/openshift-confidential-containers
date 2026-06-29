@@ -7,6 +7,7 @@ NS      ?= trustee-operator-system
 CATALOGSOURCE ?= cs-redhat-operator-index-v4-20
 VCEK_BUNDLE ?= ./vcek-bundle
 HWID ?=
+HWIDS ?=
 MIRROR_REGISTRY ?= mirror.rig.local:8443
 MIRROR_DNS_UPSTREAM ?= 192.168.66.10
 KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
@@ -110,11 +111,11 @@ apply-sno: ## Phase 4: operators (NFD->cert-manager->OSC->Trustee) + KataConfig 
 
 .PHONY: apply-trustee
 apply-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RVPS after)
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/apply-trustee.sh
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/apply-trustee.sh
 
 .PHONY: seed-trustee-secrets
 seed-trustee-secrets: ## Phase 5: create/update rig Trustee secrets from bastion-local files
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/seed-trustee-secrets.sh
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/seed-trustee-secrets.sh
 
 .PHONY: apply-rung-a
 apply-rung-a: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run

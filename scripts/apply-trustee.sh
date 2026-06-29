@@ -6,10 +6,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
+HWIDS="${HWIDS:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 
 tmpdir=""
+vcek_hwids=()
 
 die() {
 	echo "ERROR: $*" >&2
@@ -25,16 +27,49 @@ cleanup() {
 }
 trap cleanup EXIT
 
-find_hwid() {
-	local hwid="$HWID"
-	if [[ -z "$hwid" ]]; then
-		mapfile -t vceks < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
-		[[ "${#vceks[@]}" -eq 1 ]] || die "set HWID=<lowercase-hwid> (found ${#vceks[@]} VCEK files in $VCEK_BUNDLE)"
-		hwid="$(basename "$(dirname "${vceks[0]}")")"
+load_vcek_bundle() {
+	local raw hwid der
+	raw="${HWIDS:-$HWID}"
+	raw="${raw//,/ }"
+	if [[ -n "$raw" ]]; then
+		for hwid in $raw; do
+			hwid="$(printf '%s' "$hwid" | tr 'A-F' 'a-f')"
+			[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "HWID must be 128 lowercase hex chars: $hwid"
+			[[ -s "$VCEK_BUNDLE/$hwid/vcek.der" ]] || die "missing VCEK file: $VCEK_BUNDLE/$hwid/vcek.der"
+			vcek_hwids+=("$hwid")
+		done
+	else
+		mapfile -t ders < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
+		[[ "${#ders[@]}" -gt 0 ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
+		for der in "${ders[@]}"; do
+			hwid="$(basename "$(dirname "$der")" | tr 'A-F' 'a-f')"
+			[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "invalid HWID directory name for $der: $hwid"
+			vcek_hwids+=("$hwid")
+		done
 	fi
-	hwid="$(printf '%s' "$hwid" | tr 'A-F' 'a-f')"
-	[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "HWID must be 128 lowercase hex chars: $hwid"
-	printf '%s\n' "$hwid"
+	echo "Using ${#vcek_hwids[@]} VCEK bundle entr$( [[ ${#vcek_hwids[@]} -eq 1 ]] && echo y || echo ies )" >&2
+}
+
+render_kbsconfig() {
+	local out="$1" block="" i hwid
+	for i in "${!vcek_hwids[@]}"; do
+		hwid="${vcek_hwids[$i]}"
+		block+="      - secretName: vcek-snp-${i}"$'\n'
+		block+="        mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/${hwid}"$'\n'
+	done
+	awk -v block="$block" '
+		/^[[:space:]]+- secretName: vcek-snp-0[[:space:]]*($|#)/ {
+			printf "%s", block
+			skip = 1
+			next
+		}
+		skip && /^[[:space:]]*mountPath:/ {
+			skip = 0
+			next
+		}
+		skip { next }
+		{ print }
+	' "$REPO_ROOT/gitops/base/trustee/kbsconfig.yaml" > "$out"
 }
 
 wait_until() {
@@ -61,17 +96,20 @@ trustee_rollout_available() {
 	oc -n "$NS" rollout status deployment/trustee-deployment --timeout=10s >/dev/null 2>&1
 }
 
+cd "$REPO_ROOT"
+load_vcek_bundle
+tmpdir="$(mktemp -d)"
+render_kbsconfig "$tmpdir/kbsconfig.yaml"
+
+if [[ "${RENDER_KBSCONFIG_ONLY:-}" == "1" ]]; then
+	cat "$tmpdir/kbsconfig.yaml"
+	exit 0
+fi
+
 need oc
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
-cd "$REPO_ROOT"
-hwid="$(find_hwid)"
-tmpdir="$(mktemp -d)"
-
-NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWID="$hwid" bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
-
-sed "s/<HWID-LOWERCASE-128-HEX>/${hwid}/g" \
-	"$REPO_ROOT/gitops/base/trustee/kbsconfig.yaml" > "$tmpdir/kbsconfig.yaml"
+NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
 
 oc apply -f gitops/base/trustee/issuers.yaml
 oc apply -f gitops/base/trustee/kbs-configmaps.yaml

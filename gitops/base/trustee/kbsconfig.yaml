@@ -45,10 +45,10 @@ spec:
   # attestation-service/docs/amd-offline-certificate-cache.md):
   #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-LOWERCASE>/vcek.der
   # CRD schema is a LIST of {secretName, mountPath} (NOT a bare secretName — verified via
-  # `oc explain kbsconfig.spec.kbsLocalCertCacheSpec`). One entry per physical socket; the
-  # secret's data key (vcek.der) becomes the file in mountPath. HWID is environment-bound, so
-  # this is filled per overlay (here: the rig's Genoa chip). Wrong-case HWID or missing entry
-  # => attestation fails (air-gap negative test).
+  # `oc explain kbsconfig.spec.kbsLocalCertCacheSpec`). One entry per chip/HWID; the
+  # secret's data key (vcek.der) becomes the file in mountPath. HWIDs are environment-bound, so
+  # scripts/apply-trustee.sh renders one entry per vcek-bundle/<hwid>/vcek.der. Wrong-case HWID
+  # or a missing socket/chip entry => attestation fails (air-gap negative test).
   # GOTCHA: the operator uses secretName as the Pod VOLUME name, which is capped at 63 chars.
   # The SNP HWID is 128 hex chars, so the secret must NOT be named after the HWID (that fails
   # deployment validation: "volumes[].name ... must be no more than 63 characters"). Use a short
@@ -56,5 +56,5 @@ spec:
   kbsLocalCertCacheSpec:
     secrets:
       - secretName: vcek-snp-0   # short (<=63 chars); data key vcek.der lands in mountPath
-        # FILL: the chip's lowercase 128-hex HWID (`snphost show identifier | tr A-Z a-z`).
+        # FILL/rendered: the chip's lowercase 128-hex HWID from vcek-bundle/<hwid>/vcek.der.
         mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/<HWID-LOWERCASE-128-HEX>
