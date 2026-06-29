@@ -65,6 +65,24 @@ expect_digest_ref() {
 	[[ "$actual" == "$expected" ]] || die "digest-ref mismatch for $image: got $actual expected $expected"
 }
 
+verify_apply_requires_digest_refs() {
+	local err="$tmpdir/tagged-image.err"
+
+	if MIRROR_CA="$tmpdir/mirror-ca.pem" RENDER_ONLY=1 \
+		RUNG_B_IMAGE="mirror.rig.local:8443/coco/rung-b:encrypted" \
+		bash "$REPO_ROOT/scripts/apply-rung-b.sh" > /dev/null 2> "$err"; then
+		die "apply-rung-b accepted a tagged image reference"
+	fi
+	expect_grep "RUNG_B_IMAGE must be a sha256 digest ref" "$err" "rung-b digest-ref guard"
+
+	if MIRROR_CA="$tmpdir/mirror-ca.pem" RENDER_ONLY=1 \
+		RUNG_C_IMAGE="mirror.rig.local:8443/coco/rung-c:signed" \
+		bash "$REPO_ROOT/scripts/apply-rung-c.sh" > /dev/null 2> "$err"; then
+		die "apply-rung-c accepted a tagged image reference"
+	fi
+	expect_grep "RUNG_C_IMAGE must be a sha256 digest ref" "$err" "rung-c digest-ref guard"
+}
+
 verify_cosign_default_sign_args() {
 	local bin="$tmpdir/cosign-bin" actual
 	mkdir -p "$bin"
@@ -596,6 +614,7 @@ digest="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
+verify_apply_requires_digest_refs
 verify_cosign_default_sign_args
 verify_rung_c_digest_signing
 verify_rung_c_policy_render

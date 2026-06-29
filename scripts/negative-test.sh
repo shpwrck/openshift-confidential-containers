@@ -199,5 +199,5 @@ esac
 echo
 echo "negative-test summary: ${pass} passed, ${fail} failed, ${skip} skipped."
 (( fail == 0 )) || { echo "FAIL: a denial did not hold — treat as a sign-off blocker."; exit 1; }
-(( skip == 0 )) || { echo "INCOMPLETE: ${skip} rung(s) not yet covered (author the b/c workloads)."; exit 3; }
+(( skip == 0 )) || { echo "INCOMPLETE: ${skip} rung(s) not covered; fix the reported prerequisites and rerun."; exit 3; }
 echo "All denial proofs held."

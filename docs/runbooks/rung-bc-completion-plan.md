@@ -109,6 +109,10 @@ export RUNG_C_IMAGE=$(jq -r '.rung_c.digest_ref' rung-bc-artifacts/rung-bc-image
 export RUNG_C_UNSIGNED_IMAGE=$(jq -r '.rung_c.unsigned_digest_ref' rung-bc-artifacts/rung-bc-images.json)
 ```
 
+The `apply-rung-b`, `apply-rung-c`, and b/c negative-test render paths intentionally reject
+tag-only image references. The tag defaults are build destinations; proof runs must use the
+`@sha256:...` refs from `rung-bc-images.json`.
+
 If the keyprovider image has a different local name, pass
 `COCO_KEYPROVIDER_IMAGE=<image-name>` to `make build-rung-images`.
 
@@ -120,9 +124,9 @@ Operator-facing artifact knobs:
 | `SOURCE_IMAGE_REF` | `docker://$(SOURCE_IMAGE)` | The source is local or already staged, e.g. `dir:/path/to/oci`. |
 | `ARTIFACT_DIR` | `./rung-bc-artifacts` | You want generated keys/manifests outside the checkout. |
 | `WORKLOAD_NS` | `default` | Rung proof pods should run outside the default namespace. |
-| `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. |
-| `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. |
-| `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. |
+| `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. Use the generated digest ref for apply/negative-test. |
+| `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. Use the generated digest ref for apply. |
+| `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. Use the generated digest ref for negative-test. |
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
 | `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
 | `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. |

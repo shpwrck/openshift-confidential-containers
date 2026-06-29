@@ -25,6 +25,14 @@ die() {
 	exit 2
 }
 
+require_digest_ref() {
+	local var_name="$1" image="$2"
+	if [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+		return
+	fi
+	die "${var_name} must be a sha256 digest ref for proof runs: ${image}. Use the digest refs from rung-bc-artifacts/rung-bc-images.json."
+}
+
 need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
 }
@@ -176,6 +184,7 @@ case "$RUNG" in
 		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-b-encrypted-pod.yaml}"
 		POD_NAME="${POD_NAME:-rung-b-encrypted}"
 		RUNG_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
+		RUNG_IMAGE_VAR=RUNG_B_IMAGE
 		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/test}"
 		EXPECTED_KBS_RESOURCES=(image-key/rung-b)
 		;;
@@ -183,11 +192,14 @@ case "$RUNG" in
 		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-c-signed-pod.yaml}"
 		POD_NAME="${POD_NAME:-rung-c-signed}"
 		RUNG_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
+		RUNG_IMAGE_VAR=RUNG_C_IMAGE
 		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/rung-c}"
 		EXPECTED_KBS_RESOURCES=(security-policy/rung-c sig-public-key/rung-c)
 		;;
 	*) die "set RUNG=b or RUNG=c" ;;
 esac
+
+require_digest_ref "$RUNG_IMAGE_VAR" "$RUNG_IMAGE"
 
 need oc
 need jq
