@@ -9,9 +9,9 @@ path, use:
 
 - **Infrastructure** — `infra/` (Terraform: node, bastion, private VLAN, firewall, netboot).
 - **Bastion + install** — `ansible/` (roles for egress hardening, mirror, DNS/NTP, render,
-  PXE serve, install) driven by `make up`.
-- **Per-phase shortcuts** — the `Makefile` targets (`make tools`, `make mirror`,
-  `make verify-snp-host`, `make apply-sno`, `make apply-trustee`, …).
+  PXE serve, install) driven by `make bringup-sno-airgapped`.
+- **Per-phase shortcuts** — the `Makefile` targets (`make fetch-cli-tools`, `make mirror-content`,
+  `make verify-snp-host`, `make install-coco-operators`, `make deploy-trustee`, …).
 
 Everything below is what those automate, rewritten as the commands a human runs by hand. It
 is deliberately **provider-neutral**: where a step needs the metal provisioned a certain way
@@ -260,7 +260,7 @@ Provision these however your provider allows (cloud bare-metal API, your own DC,
 
 ## Phase 0 — Tooling (on the bastion / admin host)
 
-Replaces: `make tools` → `scripts/install-tools.sh`.
+Replaces: `make fetch-cli-tools` → `scripts/install-tools.sh`.
 
 These tools do three different jobs:
 
@@ -454,7 +454,7 @@ sudo firewall-cmd --reload
 
 ## Phase 3 — Mirror the content (the bottleneck, ~1–2 h, cacheable)
 
-Replaces: `make mirror` → `scripts/mirror.sh`. Runs on the bastion.
+Replaces: `make mirror-content` → `scripts/mirror.sh`. Runs on the bastion.
 
 Mirroring is the moment when the connected world is copied into the disconnected world:
 
@@ -675,7 +675,7 @@ oc get catalogsource -n openshift-marketplace                          # mirror 
 
 ## Phase 6 — Operators + KataConfig
 
-Replaces: `make apply-sno` → `oc apply -k gitops/overlays/sno-workers`. You can apply the
+Replaces: `make install-coco-operators` → `oc apply -k gitops/overlays/sno-workers`. You can apply the
 GitOps tree directly, or apply the same manifests by hand in order. **Install order is
 load-bearing: NFD → cert-manager → OSC → Trustee.**
 
@@ -738,7 +738,7 @@ oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-qemu-snp (
 
 ## Phase 7 — Trustee + air-gap attestation data
 
-Replaces: `make apply-trustee` + `make collect-vcek` + `make gen-rvps`. These produce
+Replaces: `make deploy-trustee` + `make collect-vcek` + `make gen-rvps`. These produce
 **hardware-bound** data — regenerate on each distinct CPU+firmware config.
 
 Trustee is the verifier. It is intentionally separate from the worker runtime: the confidential
@@ -809,8 +809,8 @@ won't exist in production.
 
 ## Phase 8 — Capability rungs (a → b → c) + negative tests
 
-Manual equivalent of the rig targets `make apply-rung-a`, `make apply-rung-b`,
-`make apply-rung-c`, and `make negative-test WHICH=all`. A rung is **proven only when
+Manual equivalent of the rig targets `make run-rung-a-secret`, `make run-rung-b-encrypted`,
+`make run-rung-c-signed`, and `make negative-test WHICH=all`. A rung is **proven only when
 reproduced from these steps AND its negative test fails-closed** — a negative test that
 *passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
 Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
