@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T11:23:29Z
+Last updated: 2026-06-30T11:28:55Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest proof-tooling checkpoint verified on the rig: `3c0948f` (`make verify-rung-b-key-wrap`
@@ -60,6 +60,10 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   check: it validates `rung-bc-images.json` against the signed digest, unsigned-control digest,
   and public-key fingerprint, verifies the signed digest with the configured public key, and
   requires the unsigned negative-control ref not to verify with that same key.
+- The Make-facing verifier path now defaults `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1`, so direct
+  `make verify-rung-b-key-wrap`, `make verify-rung-c-signature`, and their seed/apply
+  prerequisites fail if the artifact manifest is missing instead of silently downgrading to
+  metadata-only checks.
 - `make build-rung-images` now runs the rung-b key-wrap and rung-c signature verifiers after
   writing `rung-bc-images.json`, so a newly built artifact set fails before any Trustee or pod
   step if the pushed images, keys, signatures, or manifest disagree.

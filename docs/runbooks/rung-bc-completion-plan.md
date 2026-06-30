@@ -191,12 +191,15 @@ Dry-run acceptance:
   annotation, checks `rung-bc-images.json` against the selected image/key, and proves the
   configured 32-byte KEK authenticates/decrypts the A256GCM-wrapped layer key without printing key
   material. `make seed-rung-bc-secrets` and `make apply-trustee-rung-bc` run this verifier first,
-  so a mismatched KEK fails before Trustee resources are changed.
+  with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1`, so a missing manifest or mismatched KEK fails before
+  Trustee resources are changed.
 - `make verify-rung-c-signature` passes on the connected/bastion side. It checks
   `rung-bc-images.json` against the selected signed digest, unsigned-control digest, and public
   key fingerprint; verifies the signed image with the configured public key; and requires the
   unsigned negative-control ref not to verify with that same key. `make seed-rung-bc-secrets` and
-  `make apply-trustee-rung-bc` run this verifier before Trustee resources are changed.
+  `make apply-trustee-rung-bc` run this verifier with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` before
+  Trustee resources are changed. Override that variable to `0` only for narrow diagnostics where
+  the artifact manifest is intentionally absent.
 - No private key, image key, registry credential, or generated initdata lands in git.
 
 ## Phase 2 - add Trustee resources deliberately
