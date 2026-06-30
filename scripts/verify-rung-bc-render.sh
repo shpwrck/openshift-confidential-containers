@@ -184,6 +184,13 @@ verify_apply_requires_digest_refs() {
 	expect_grep "rung-bc.env" "$err" "rung-c digest-ref env hint"
 }
 
+verify_apply_uses_private_baseline_log() {
+	if grep -Fq "/tmp/apply-rung-image-baseline.log" "$REPO_ROOT/scripts/apply-rung-image.sh"; then
+		die "apply-rung-image uses a shared /tmp baseline log path"
+	fi
+	expect_grep "baseline_log=\"\${tmpdir}/sno-baseline.log\"" "$REPO_ROOT/scripts/apply-rung-image.sh" "private baseline log path"
+}
+
 verify_rung_b_key_size_guard() {
 	local bin="$tmpdir/key-size-bin" invalid_key="$tmpdir/invalid-rung-b.key" err="$tmpdir/key-size.err"
 	local hwid
@@ -2236,6 +2243,7 @@ verify_artifact_file_sha256
 verify_deterministic_initdata_encoding
 verify_build_manifest_fingerprints
 verify_apply_requires_digest_refs
+verify_apply_uses_private_baseline_log
 verify_rung_b_key_size_guard
 verify_manifest_env_emit
 verify_gen_rvps_veritas_local_command

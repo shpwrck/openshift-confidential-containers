@@ -19,6 +19,7 @@ TAMPER_INITDATA="${TAMPER_INITDATA:-0}"
 REQUIRE_KBS_RESOURCE_LOGS="${REQUIRE_KBS_RESOURCE_LOGS:-1}"
 
 tmpdir=""
+baseline_log=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -80,7 +81,7 @@ wait_until() {
 }
 
 sno_baseline_ok() {
-	CATALOGSOURCE="$CATALOGSOURCE" bash "$REPO_ROOT/scripts/validate-sno-baseline.sh" >/tmp/apply-rung-image-baseline.log 2>&1
+	CATALOGSOURCE="$CATALOGSOURCE" bash "$REPO_ROOT/scripts/validate-sno-baseline.sh" > "$baseline_log" 2>&1
 }
 
 runtimeclass_ok() {
@@ -218,6 +219,7 @@ need jq
 
 cd "$REPO_ROOT"
 tmpdir="$(mktemp -d)"
+baseline_log="${tmpdir}/sno-baseline.log"
 render_initdata "$(read_file "$MIRROR_CA")" "$tmpdir/initdata.toml"
 initdata="$(bash "$REPO_ROOT/scripts/encode-initdata.sh" encode "$tmpdir/initdata.toml")"
 render_pod "$initdata" "$tmpdir/pod.yaml"
@@ -229,7 +231,7 @@ fi
 
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
-wait_until "SNO baseline" sno_baseline_ok || { cat /tmp/apply-rung-image-baseline.log >&2; exit 1; }
+wait_until "SNO baseline" sno_baseline_ok || { cat "$baseline_log" >&2; exit 1; }
 wait_until "kata-cc runtime class" runtimeclass_ok
 wait_until "Trustee deployment available" trustee_available
 
