@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T10:59:35Z
+Last updated: 2026-06-30T11:09:02Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest proof-tooling checkpoint verified on the rig: `3b7dd9b` (`make prove-rung-bc` smoke with
@@ -56,12 +56,18 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   earlier KEK mismatch: it verifies the encrypted layer annotation KID, checks
   `rung-bc-images.json` image/key consistency, and proves the configured 32-byte KEK decrypts the
   A256GCM-wrapped layer key without printing key material.
+- `make verify-rung-c-signature` now performs the matching pre-seed rung-c signature sanity
+  check: it validates `rung-bc-images.json` against the signed digest, unsigned-control digest,
+  and public-key fingerprint, verifies the signed digest with the configured public key, and
+  requires the unsigned negative-control ref not to verify with that same key.
 - `make seed-rung-bc-secrets` and `make apply-trustee-rung-bc` now run
-  `verify-rung-b-key-wrap` first, so a wrong rung-b KEK fails before Trustee Secrets or KbsConfig
-  are updated.
-- `make prove-rung-bc` now runs the same key-wrap verifier after loading `rung-bc.env` and before
-  creating proof pods, with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` so the proof run cannot proceed
-  with an untracked or mismatched rung-b digest/key pair.
+  `verify-rung-b-key-wrap` and `verify-rung-c-signature` first, so wrong rung-b KEK bytes or a
+  wrong rung-c public key/unsigned-control setup fail before Trustee Secrets or KbsConfig are
+  updated.
+- `make prove-rung-bc` now runs the same key-wrap and signature verifiers after loading
+  `rung-bc.env` and before creating proof pods, with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` so the
+  proof run cannot proceed with an untracked or mismatched rung-b digest/key pair or rung-c
+  signed/unsigned/public-key tuple.
 - Initdata encoding now uses deterministic gzip output, and evidence validation compares decoded
   initdata content for happy/negative relationships so gzip metadata cannot create false
   differences.

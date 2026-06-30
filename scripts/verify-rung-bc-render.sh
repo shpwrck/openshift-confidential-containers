@@ -278,6 +278,133 @@ EOF
 	expect_grep "RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile key-wrap manifest override"
 }
 
+verify_rung_c_signature_verifier() {
+	local bin="$tmpdir/rung-c-signature-bin" artifacts="$tmpdir/rung-c-signature-artifacts"
+	local pub="$artifacts/cosign.pub" manifest="$artifacts/rung-bc-images.json" out="$tmpdir/rung-c-signature.out"
+	local err="$tmpdir/rung-c-signature.err" log="$tmpdir/rung-c-signature-cosign.log"
+	local bad_manifest="$artifacts/bad-rung-bc-images.json" pub_sha
+	mkdir -p "$bin" "$artifacts"
+	printf 'cosign public key' > "$pub"
+	pub_sha="$(sha256sum "$pub" | awk '{print $1}')"
+
+	cat > "$bin/skopeo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "inspect" ]]; then
+	case "${2:-}" in
+		*'rung-c:signed'|*'rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')
+			printf '{"Digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}\n'
+			;;
+		*'rung-c-unsigned:unsigned'|*'rung-c-unsigned@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
+			printf '{"Digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}\n'
+			;;
+		*) exit 1 ;;
+	esac
+	exit 0
+fi
+exit 1
+EOF
+	chmod +x "$bin/skopeo"
+
+	cat > "$bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'cosign\t%s\n' "$*" >> "$CALL_LOG"
+target="${@: -1}"
+case "$target" in
+	*'rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc') exit 0 ;;
+	*'rung-c-unsigned@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd') exit 1 ;;
+esac
+exit 1
+EOF
+	chmod +x "$bin/cosign"
+
+	jq -n \
+		--arg signed "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		--arg unsigned "mirror.test.local:5000/coco/rung-c-unsigned@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" \
+		--arg pub_sha "$pub_sha" \
+		'{rung_c:{digest_ref:$signed,unsigned_digest_ref:$unsigned,cosign_pub_sha256:$pub_sha}}' > "$manifest"
+
+	CALL_LOG="$log" PATH="$bin:$PATH" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned:unsigned" \
+		RUNG_C_COSIGN_PUB="$pub" \
+		RUNG_BC_IMAGES_MANIFEST="$manifest" \
+		bash "$REPO_ROOT/scripts/verify-rung-c-signature.sh" > "$out"
+
+	expect_grep "Rung-c signature verification OK." "$out" "rung-c signature verifier success"
+	expect_grep "configured public key verifies rung-c signed image" "$out" "rung-c signed verify pass"
+	expect_grep "unsigned negative-control image does not verify" "$out" "rung-c unsigned negative-control pass"
+	expect_grep "cosign	verify --insecure-ignore-tlog=true --key $pub mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$log" "rung-c signed cosign verify call"
+	expect_grep "cosign	verify --insecure-ignore-tlog=true --key $pub mirror.test.local:5000/coco/rung-c-unsigned@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" "$log" "rung-c unsigned cosign verify call"
+
+	jq '.rung_c.cosign_pub_sha256 = "bad"' "$manifest" > "$bad_manifest"
+	if CALL_LOG="$log" PATH="$bin:$PATH" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned:unsigned" \
+		RUNG_C_COSIGN_PUB="$pub" \
+		RUNG_BC_IMAGES_MANIFEST="$bad_manifest" \
+		bash "$REPO_ROOT/scripts/verify-rung-c-signature.sh" > /dev/null 2> "$err"; then
+		die "rung-c signature verifier accepted a mismatched manifest"
+	fi
+	expect_grep "manifest does not match rung-c signed digest, unsigned digest, or public key fingerprint" "$err" "rung-c signature manifest mismatch failure"
+
+	cat > "$bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+	chmod +x "$bin/cosign"
+	if PATH="$bin:$PATH" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned:unsigned" \
+		RUNG_C_COSIGN_PUB="$pub" \
+		RUNG_BC_IMAGES_MANIFEST="$manifest" \
+		bash "$REPO_ROOT/scripts/verify-rung-c-signature.sh" > /dev/null 2> "$err"; then
+		die "rung-c signature verifier accepted an unsigned control that verifies"
+	fi
+	expect_grep "unsigned negative-control image unexpectedly verifies" "$err" "rung-c unsigned verification failure"
+}
+
+verify_rung_c_signature_make_env() {
+	local stub="$tmpdir/rung-c-signature-stub.sh" out="$tmpdir/rung-c-signature-make-env"
+	cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+vars=(
+	MIRROR_REGISTRY
+	ARTIFACT_DIR
+	RUNG_C_IMAGE
+	RUNG_C_UNSIGNED_IMAGE
+	RUNG_C_COSIGN_PUB
+	RUNG_BC_IMAGES_MANIFEST
+	COSIGN_VERIFY_ARGS
+)
+for var in "${vars[@]}"; do
+	printf '%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$stub"
+
+	make -s verify-rung-c-signature \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$stub" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		ARTIFACT_DIR="$tmpdir/custom-artifacts" \
+		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/custom/rung-c-unsigned@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" \
+		RUNG_C_COSIGN_PUB="$tmpdir/custom-cosign.pub" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
+		> "$out"
+	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile rung-c signature mirror override"
+	expect_grep "ARTIFACT_DIR=$tmpdir/custom-artifacts" "$out" "Makefile rung-c signature artifact dir override"
+	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$out" "Makefile rung-c signature signed image override"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/custom/rung-c-unsigned@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" "$out" "Makefile rung-c signature unsigned image override"
+	expect_grep "RUNG_C_COSIGN_PUB=$tmpdir/custom-cosign.pub" "$out" "Makefile rung-c signature public key override"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile rung-c signature manifest override"
+	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$out" "Makefile rung-c signature verify args override"
+}
+
 verify_apply_requires_digest_refs() {
 	local err="$tmpdir/tagged-image.err"
 
@@ -752,6 +879,7 @@ EOF
 
 verify_trustee_make_env() {
 	local stub="$tmpdir/trustee-stub.sh" key_wrap_stub="$tmpdir/key-wrap-target-stub.sh"
+	local c_signature_stub="$tmpdir/rung-c-signature-target-stub.sh"
 	local seed_out="$tmpdir/seed-rung-bc-env" apply_out="$tmpdir/apply-trustee-rung-bc-env"
 	cat > "$stub" <<'EOF'
 #!/usr/bin/env bash
@@ -795,8 +923,29 @@ done
 EOF
 	chmod +x "$key_wrap_stub"
 
+	cat > "$c_signature_stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'C_SIGNATURE_CALLED=1\n'
+vars=(
+	MIRROR_REGISTRY
+	ARTIFACT_DIR
+	RUNG_C_IMAGE
+	RUNG_C_UNSIGNED_IMAGE
+	RUNG_C_COSIGN_PUB
+	RUNG_BC_IMAGES_MANIFEST
+	COSIGN_VERIFY_ARGS
+)
+
+for var in "${vars[@]}"; do
+	printf 'C_SIGNATURE_%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$c_signature_stub"
+
 	make -s seed-rung-bc-secrets \
 		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap_stub" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature_stub" \
 		SEED_TRUSTEE_SECRETS_SCRIPT="$stub" \
 		NS="trustee-test" \
 		VCEK_BUNDLE="$tmpdir/vcek-bundle" \
@@ -809,13 +958,16 @@ EOF
 		RUNG_B_KEY_ID="kbs:///default/custom-image-kek/custom-rung-b" \
 		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
 		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/custom/rung-c-unsigned@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
 		RUNG_C_COSIGN_PUB="$tmpdir/cosign.pub" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
 		RUNG_C_POLICY_FILE="$tmpdir/policy.json" \
 		RUNG_C_POLICY_IMAGE_PREFIX="mirror.test.local:5000/custom/rung-c" \
 		> "$seed_out"
 
 	make -s apply-trustee-rung-bc \
 		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap_stub" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature_stub" \
 		APPLY_TRUSTEE_SCRIPT="$stub" \
 		NS="trustee-test" \
 		VCEK_BUNDLE="$tmpdir/vcek-bundle" \
@@ -828,7 +980,9 @@ EOF
 		RUNG_B_KEY_ID="kbs:///default/custom-image-kek/custom-rung-b" \
 		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
 		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/custom/rung-c-unsigned@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
 		RUNG_C_COSIGN_PUB="$tmpdir/cosign.pub" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
 		RUNG_C_POLICY_FILE="$tmpdir/policy.json" \
 		RUNG_C_POLICY_IMAGE_PREFIX="mirror.test.local:5000/custom/rung-c" \
 		> "$apply_out"
@@ -850,6 +1004,14 @@ EOF
 		expect_grep "KEY_WRAP_RUNG_B_KEY_FILE=$tmpdir/rung-b.key" "$out" "Makefile Trustee key-wrap key file override"
 		expect_grep "KEY_WRAP_RUNG_B_KEY_ID=kbs:///default/custom-image-kek/custom-rung-b" "$out" "Makefile Trustee key-wrap key ID override"
 		expect_grep "KEY_WRAP_RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile Trustee key-wrap manifest override"
+		expect_grep "C_SIGNATURE_CALLED=1" "$out" "Makefile Trustee target runs rung-c signature verifier first"
+		expect_grep "C_SIGNATURE_MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile Trustee rung-c signature mirror override"
+		expect_grep "C_SIGNATURE_ARTIFACT_DIR=$tmpdir/custom-artifacts" "$out" "Makefile Trustee rung-c signature artifact dir override"
+		expect_grep "C_SIGNATURE_RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" "$out" "Makefile Trustee rung-c signature image override"
+		expect_grep "C_SIGNATURE_RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/custom/rung-c-unsigned@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" "$out" "Makefile Trustee rung-c signature unsigned image override"
+		expect_grep "C_SIGNATURE_RUNG_C_COSIGN_PUB=$tmpdir/cosign.pub" "$out" "Makefile Trustee rung-c signature public key override"
+		expect_grep "C_SIGNATURE_RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile Trustee rung-c signature manifest override"
+		expect_grep "C_SIGNATURE_COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$out" "Makefile Trustee rung-c signature verify args override"
 	done
 }
 
@@ -2269,11 +2431,12 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tRUNG_B_KEY_FILE=%s\tRUNG_BC_IMAGES_MANIFEST=%s\tREQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tRUNG_B_KEY_FILE=%s\tRUNG_C_COSIGN_PUB=%s\tRUNG_BC_IMAGES_MANIFEST=%s\tREQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\tCOSIGN_VERIFY_ARGS=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
 	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${RUNG_B_KEY_FILE:-}" \
-	"${RUNG_BC_IMAGES_MANIFEST:-}" "${REQUIRE_RUNG_BC_IMAGES_MANIFEST:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
+	"${RUNG_C_COSIGN_PUB:-}" "${RUNG_BC_IMAGES_MANIFEST:-}" "${REQUIRE_RUNG_BC_IMAGES_MANIFEST:-}" \
+	"${COSIGN_VERIFY_ARGS:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
 	"${RUNG_B_POLICY_URI:-}" "${RUNG_C_POLICY_URI:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
 	"${RUNG_C_POD:-}" "${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
 	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${TRUSTEE_LOG_SINCE_TIME:-}" "${POD_LOG_TAIL:-}" \
@@ -2286,15 +2449,17 @@ EOF
 
 verify_prove_rung_bc_workflow() {
 	local dir="$tmpdir/prove-rung-bc" log="$tmpdir/prove-rung-bc-calls.tsv" err="$tmpdir/prove-rung-bc.err" bad_log="$tmpdir/prove-rung-bc-bad-calls.tsv"
-	local key_wrap apply_b apply_c negative collect validate first_call
+	local key_wrap c_signature apply_b apply_c negative collect validate first_call second_call
 	mkdir -p "$dir"
 	key_wrap="$dir/key-wrap.sh"
+	c_signature="$dir/c-signature.sh"
 	apply_b="$dir/apply-b.sh"
 	apply_c="$dir/apply-c.sh"
 	negative="$dir/negative-test.sh"
 	collect="$dir/collect-evidence.sh"
 	validate="$dir/validate-evidence.sh"
 	create_prove_stub "$key_wrap" key-wrap
+	create_prove_stub "$c_signature" c-signature
 	create_prove_stub "$apply_b" apply-b
 	create_prove_stub "$apply_c" apply-c
 	create_prove_stub "$negative" negative-test
@@ -2308,12 +2473,15 @@ verify_prove_rung_bc_workflow() {
 		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
 		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
 		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature" \
 		NS="trustee-test" \
 		WORKLOAD_NS="workload-test" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		RUNG_B_KEY_ID="kbs:///default/custom-image-key/rung-b" \
 		RUNG_B_KEY_FILE="$tmpdir/custom-rung-b.key" \
 		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
+		RUNG_C_COSIGN_PUB="$tmpdir/custom-cosign.pub" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
 		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
 		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
@@ -2346,6 +2514,13 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "RUNG_B_KEY_FILE=$tmpdir/custom-rung-b.key" "$log" "prove-rung-bc key-wrap key file"
 	expect_grep "RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$log" "prove-rung-bc key-wrap manifest"
 	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$log" "prove-rung-bc requires image manifest during key-wrap preflight"
+	second_call="$(sed -n '2p' "$log")"
+	[[ "$second_call" == c-signature$'\t'* ]] || die "prove-rung-bc did not run rung-c signature preflight before applying pods"
+	[[ "$second_call" == *$'\tRUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t'* ]] ||
+		die "prove-rung-bc rung-c signature preflight did not receive the digest-pinned rung-c image"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$log" "prove-rung-bc rung-c signature unsigned image"
+	expect_grep "RUNG_C_COSIGN_PUB=$tmpdir/custom-cosign.pub" "$log" "prove-rung-bc rung-c signature public key"
+	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$log" "prove-rung-bc rung-c signature verify args"
 	expect_grep "apply-b	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc apply-b step"
 	expect_grep "apply-c	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc apply-c step"
 	expect_grep $'negative-test\targ=rung-b\tKEEP_DENIED_PODS=1' "$log" "prove-rung-bc rung-b negative step"
@@ -2393,15 +2568,17 @@ verify_prove_rung_bc_workflow() {
 
 verify_prove_rung_bc_loads_artifact_env() {
 	local dir="$tmpdir/prove-rung-bc-env" artifacts="$tmpdir/prove-rung-bc-artifacts" log="$tmpdir/prove-rung-bc-env-calls.tsv"
-	local key_wrap apply_b apply_c negative collect validate first_call
+	local key_wrap c_signature apply_b apply_c negative collect validate first_call second_call
 	mkdir -p "$dir" "$artifacts"
 	key_wrap="$dir/key-wrap.sh"
+	c_signature="$dir/c-signature.sh"
 	apply_b="$dir/apply-b.sh"
 	apply_c="$dir/apply-c.sh"
 	negative="$dir/negative-test.sh"
 	collect="$dir/collect-evidence.sh"
 	validate="$dir/validate-evidence.sh"
 	create_prove_stub "$key_wrap" key-wrap-env
+	create_prove_stub "$c_signature" c-signature-env
 	create_prove_stub "$apply_b" apply-b-env
 	create_prove_stub "$apply_c" apply-c-env
 	create_prove_stub "$negative" negative-test-env
@@ -2424,6 +2601,7 @@ EOF
 		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
 		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
 		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature" \
 		ARTIFACT_DIR="$artifacts" \
 		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
 		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
@@ -2437,6 +2615,13 @@ EOF
 	expect_grep "RUNG_B_KEY_FILE=/tmp/rung-b-image.key" "$log" "prove-rung-bc artifact env key file"
 	expect_grep "RUNG_BC_IMAGES_MANIFEST=$artifacts/rung-bc-images.json" "$log" "prove-rung-bc artifact env image manifest"
 	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$log" "prove-rung-bc artifact env requires image manifest"
+	second_call="$(sed -n '2p' "$log")"
+	[[ "$second_call" == c-signature-env$'\t'* ]] || die "prove-rung-bc did not run artifact-env rung-c signature preflight second"
+	[[ "$second_call" == *$'\tRUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t'* ]] ||
+		die "prove-rung-bc artifact-env rung-c signature preflight did not receive the digest-pinned rung-c image"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$log" "prove-rung-bc artifact env rung-c signature unsigned image"
+	expect_grep "RUNG_C_COSIGN_PUB=/tmp/cosign.pub" "$log" "prove-rung-bc artifact env rung-c signature public key"
+	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true" "$log" "prove-rung-bc artifact env rung-c signature verify args"
 	expect_grep "apply-b-env	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$artifacts/evidence-rung-bc-proof-" "$log" "prove-rung-bc artifact env apply-b step"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$log" "prove-rung-bc loaded rung-b image from env"
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$log" "prove-rung-bc loaded rung-c image from env"
@@ -2476,6 +2661,7 @@ verify_artifact_file_sha256
 verify_deterministic_initdata_encoding
 verify_build_manifest_fingerprints
 verify_rung_b_key_wrap_verifier
+verify_rung_c_signature_verifier
 verify_apply_requires_digest_refs
 verify_apply_uses_private_baseline_log
 verify_rung_b_key_size_guard
@@ -2487,6 +2673,7 @@ verify_rung_c_digest_signing
 verify_rung_c_policy_render
 verify_build_make_env
 verify_rung_b_key_wrap_make_env
+verify_rung_c_signature_make_env
 verify_trustee_make_env
 verify_negative_test_make_env
 verify_negative_test_scoped_denial_signals

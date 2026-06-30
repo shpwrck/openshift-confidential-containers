@@ -15,6 +15,8 @@ KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
 RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
 RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-${ARTIFACT_DIR}/rung-b-image.key}"
 RUNG_BC_IMAGES_MANIFEST="${RUNG_BC_IMAGES_MANIFEST:-${ARTIFACT_DIR}/rung-bc-images.json}"
+RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
+COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:---insecure-ignore-tlog=true}"
 RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
 RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
 PODS="${PODS:-rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap}"
@@ -39,6 +41,7 @@ NEGATIVE_TEST_SCRIPT="${NEGATIVE_TEST_SCRIPT:-${REPO_ROOT}/scripts/negative-test
 COLLECT_RUNG_BC_EVIDENCE_SCRIPT="${COLLECT_RUNG_BC_EVIDENCE_SCRIPT:-${REPO_ROOT}/scripts/collect-rung-bc-evidence.sh}"
 VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="${VALIDATE_RUNG_BC_EVIDENCE_SCRIPT:-${REPO_ROOT}/scripts/validate-rung-bc-evidence.sh}"
 VERIFY_RUNG_B_KEY_WRAP_SCRIPT="${VERIFY_RUNG_B_KEY_WRAP_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-b-key-wrap.sh}"
+VERIFY_RUNG_C_SIGNATURE_SCRIPT="${VERIFY_RUNG_C_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-c-signature.sh}"
 
 die() {
 	echo "ERROR: $*" >&2
@@ -81,6 +84,7 @@ require_digest_ref RUNG_B_IMAGE "$RUNG_B_IMAGE"
 require_digest_ref RUNG_C_IMAGE "$RUNG_C_IMAGE"
 require_digest_ref RUNG_C_UNSIGNED_IMAGE "$RUNG_C_UNSIGNED_IMAGE"
 require_script "$VERIFY_RUNG_B_KEY_WRAP_SCRIPT"
+require_script "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
 require_script "$APPLY_RUNG_B_SCRIPT"
 require_script "$APPLY_RUNG_C_SCRIPT"
 require_script "$NEGATIVE_TEST_SCRIPT"
@@ -91,6 +95,12 @@ echo "== rung-b key wrap preflight =="
 ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_B_IMAGE="$RUNG_B_IMAGE" RUNG_B_KEY_ID="$RUNG_B_KEY_ID" \
 	RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" RUNG_BC_IMAGES_MANIFEST="$RUNG_BC_IMAGES_MANIFEST" \
 	REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_B_KEY_WRAP_SCRIPT"
+
+echo
+echo "== rung-c signature preflight =="
+ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_C_IMAGE="$RUNG_C_IMAGE" RUNG_C_UNSIGNED_IMAGE="$RUNG_C_UNSIGNED_IMAGE" \
+	RUNG_C_COSIGN_PUB="$RUNG_C_COSIGN_PUB" RUNG_BC_IMAGES_MANIFEST="$RUNG_BC_IMAGES_MANIFEST" \
+	COSIGN_VERIFY_ARGS="$COSIGN_VERIFY_ARGS" REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
 
 echo
 echo "== rung-b happy path =="

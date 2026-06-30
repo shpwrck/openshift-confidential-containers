@@ -189,8 +189,11 @@ Dry-run acceptance:
   configured 32-byte KEK authenticates/decrypts the A256GCM-wrapped layer key without printing key
   material. `make seed-rung-bc-secrets` and `make apply-trustee-rung-bc` run this verifier first,
   so a mismatched KEK fails before Trustee resources are changed.
-- `cosign verify --key <cosign.pub> <rung-c-image>@<digest>` succeeds on the connected/bastion
-  side.
+- `make verify-rung-c-signature` passes on the connected/bastion side. It checks
+  `rung-bc-images.json` against the selected signed digest, unsigned-control digest, and public
+  key fingerprint; verifies the signed image with the configured public key; and requires the
+  unsigned negative-control ref not to verify with that same key. `make seed-rung-bc-secrets` and
+  `make apply-trustee-rung-bc` run this verifier before Trustee resources are changed.
 - No private key, image key, registry credential, or generated initdata lands in git.
 
 ## Phase 2 - add Trustee resources deliberately
@@ -547,10 +550,11 @@ both rungs.
 Once Trustee has the rung-b/c resources, the one-shot proof runner loads digest refs from
 `rung-bc-artifacts/rung-bc.env` when `RUNG_B_IMAGE`, `RUNG_C_IMAGE`, and
 `RUNG_C_UNSIGNED_IMAGE` are not already digest-pinned. It then runs `verify-rung-b-key-wrap`
-with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1`, so the selected rung-b digest, KID, key fingerprint,
-and KEK unwrap are checked before any proof pods are created. After that preflight, it executes
-the b/c happy paths, keeps the b/c denied pods for collection, collects a timestamped evidence
-bundle, and validates it:
+and `verify-rung-c-signature` with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1`, so the selected rung-b
+digest, KID, key fingerprint, KEK unwrap, rung-c signed digest, unsigned-control digest, and
+public key fingerprint are checked before any proof pods are created. After those preflights, it
+executes the b/c happy paths, keeps the b/c denied pods for collection, collects a timestamped
+evidence bundle, and validates it:
 
 ```bash
 make prove-rung-bc
