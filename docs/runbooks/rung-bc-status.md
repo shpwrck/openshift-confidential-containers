@@ -1,10 +1,11 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T13:17:59Z
+Last updated: 2026-06-30T13:22:03Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest proof-tooling checkpoint verified on the rig: `433651a` (`make validate-rung-b-direct-pull`
-from this head passed for the manifest/env-aware direct-pull bundle at
+Latest proof-tooling checkpoint verified on the rig: `2b9437b` (`make validate-rung-b-direct-pull`
+and `make validate-rung-c-evidence` from this head passed for the manifest/env-aware direct-pull
+bundle at
 `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T125624Z`, which was
 collected from clean head `dfae546`; latest scoped rung-c proof remains
 `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T124321Z`)
@@ -317,7 +318,7 @@ Live rig check on 2026-06-30:
 - The current packaged direct-pull diagnostic bundle
   `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T125624Z` validates
   with `make validate-rung-b-direct-pull DIAG_DIR=...` on the bastion, most recently from
-  validator head `433651a`. The validation confirms the
+  validator head `2b9437b`. The validation confirms the
   known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, clean repo
   provenance from head `dfae546` with `repo_git_dirty=false`, bounded CRI-O and mirror-log
   collection from `2026-06-30T12:56:24Z`, copied `rung-bc-images.json` and `rung-bc.env`
