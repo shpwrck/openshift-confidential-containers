@@ -463,7 +463,7 @@ check_mirror_logs() {
 }
 
 check_summary() {
-	local summary="${EVIDENCE_DIR}/summary.env" dirty
+	local summary="${EVIDENCE_DIR}/summary.env" dirty trustee_since
 	require_file "$summary" "evidence summary"
 	if [[ ! -s "$summary" ]]; then
 		return
@@ -473,6 +473,12 @@ check_summary() {
 		pass "evidence was collected from a clean git worktree"
 	else
 		fail "evidence repo_git_dirty is ${dirty:-missing}; collect from a clean checkout for promotion evidence"
+	fi
+	trustee_since="$(summary_value trustee_log_since_time 2>/dev/null || true)"
+	if [[ "$trustee_since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+		pass "Trustee logs are bounded by --since-time=$trustee_since"
+	else
+		fail "evidence trustee_log_since_time is ${trustee_since:-missing}; collect bounded Trustee logs for promotion evidence"
 	fi
 }
 

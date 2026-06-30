@@ -912,6 +912,7 @@ vars=(
 	RUNG_B_APP_LOG_MARKER
 	RUNG_C_APP_LOG_MARKER
 	TRUSTEE_LOG_TAIL
+	TRUSTEE_LOG_SINCE_TIME
 	POD_LOG_TAIL
 	MIRROR_LOG_TAIL
 	MIRROR_LOG_FILES
@@ -975,6 +976,7 @@ EOF
 		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		TRUSTEE_LOG_TAIL="111" \
+		TRUSTEE_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		POD_LOG_TAIL="222" \
 		MIRROR_LOG_TAIL="333" \
 		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
@@ -1020,6 +1022,7 @@ EOF
 	expect_grep "RUNG_B_APP_LOG_MARKER=custom rung-b proof marker" "$evidence_out" "Makefile evidence rung-b app marker override"
 	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$evidence_out" "Makefile evidence rung-c app marker override"
 	expect_grep "TRUSTEE_LOG_TAIL=111" "$evidence_out" "Makefile evidence Trustee log tail override"
+	expect_grep "TRUSTEE_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$evidence_out" "Makefile evidence Trustee log since-time override"
 	expect_grep "POD_LOG_TAIL=222" "$evidence_out" "Makefile evidence pod log tail override"
 	expect_grep "MIRROR_LOG_TAIL=333" "$evidence_out" "Makefile evidence mirror log tail override"
 	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$evidence_out" "Makefile evidence mirror log file override"
@@ -1217,6 +1220,7 @@ verify_evidence_summary_provenance() {
 		NEG_RUNG_C_POD="custom-neg-rung-c" \
 		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
+		TRUSTEE_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_FILES="/tmp/mirror.log" \
 		MIRROR_CONTAINER_NAMES="registry" \
 		bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" write-summary "$summary"
@@ -1237,6 +1241,7 @@ verify_evidence_summary_provenance() {
 	expect_grep "neg_rung_c_pod=custom-neg-rung-c" "$summary" "evidence summary negative rung-c pod role"
 	expect_grep "rung_b_app_log_marker=custom rung-b proof marker" "$summary" "evidence summary rung-b app marker"
 	expect_grep "rung_c_app_log_marker=custom rung-c proof marker" "$summary" "evidence summary rung-c app marker"
+	expect_grep "trustee_log_since_time=2026-06-29T00:00:00Z" "$summary" "evidence summary Trustee log since-time"
 	expect_grep "tool_oc=" "$summary" "evidence summary oc path"
 	expect_grep "tool_jq=" "$summary" "evidence summary jq path"
 }
@@ -1354,6 +1359,7 @@ rung_b_key_id=kbs:///default/image-key/rung-b
 rung_b_policy_uri=kbs:///default/security-policy/test
 rung_c_policy_uri=kbs:///default/security-policy/rung-c
 repo_git_dirty=false
+trustee_log_since_time=2026-06-29T00:00:00Z
 rung_b_pod=rung-b-encrypted
 rung_c_pod=rung-c-signed
 neg_rung_b_pod=negtest-rung-b
@@ -1599,6 +1605,7 @@ verify_evidence_validation_gate() {
 	local broken_missing_proof="$tmpdir/broken-missing-proof-row-evidence" missing_proof_err="$tmpdir/validate-missing-proof-row-evidence.err"
 	local broken_key_id="$tmpdir/broken-key-id-evidence" key_id_err="$tmpdir/validate-key-id-evidence.err"
 	local broken_mirror="$tmpdir/broken-mirror-evidence" mirror_err="$tmpdir/validate-mirror-evidence.err"
+	local broken_trustee_window="$tmpdir/broken-trustee-window-evidence" trustee_window_err="$tmpdir/validate-trustee-window-evidence.err"
 	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
 	local broken_guest_pull="$tmpdir/broken-guest-pull-evidence" guest_pull_err="$tmpdir/validate-guest-pull-evidence.err"
 	local broken_blob_pull="$tmpdir/broken-blob-pull-evidence" blob_pull_err="$tmpdir/validate-blob-pull-evidence.err"
@@ -1718,6 +1725,13 @@ verify_evidence_validation_gate() {
 		die "evidence validator accepted missing mirror logs"
 	fi
 	expect_grep "mirror logs missing or empty" "$mirror_err" "evidence validator mirror-log failure"
+
+	cp -R "$evidence" "$broken_trustee_window"
+	sed -i '/^trustee_log_since_time=/d' "$broken_trustee_window/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_trustee_window" > /dev/null 2> "$trustee_window_err"; then
+		die "evidence validator accepted unbounded Trustee logs"
+	fi
+	expect_grep "evidence trustee_log_since_time is missing" "$trustee_window_err" "evidence validator Trustee log window failure"
 
 	cp -R "$evidence" "$broken_digest"
 	sed -i 's/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/' \
@@ -1937,13 +1951,13 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
 	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
 	"${RUNG_B_POLICY_URI:-}" "${RUNG_C_POLICY_URI:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
 	"${RUNG_C_POD:-}" "${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
-	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${POD_LOG_TAIL:-}" \
+	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${TRUSTEE_LOG_SINCE_TIME:-}" "${POD_LOG_TAIL:-}" \
 	"${MIRROR_LOG_TAIL:-}" "${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" >> "$CALL_LOG"
 EOF
 	} > "$path"
@@ -1987,6 +2001,7 @@ verify_prove_rung_bc_workflow() {
 		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		TRUSTEE_LOG_TAIL="111" \
+		TRUSTEE_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		POD_LOG_TAIL="222" \
 		MIRROR_LOG_TAIL="333" \
 		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
@@ -2013,6 +2028,7 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "PODS=rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" "$log" "prove-rung-bc evidence pod list"
 	expect_grep "collect-evidence	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc collect evidence step"
 	expect_grep "TRUSTEE_LOG_TAIL=111" "$log" "prove-rung-bc collect Trustee log tail"
+	expect_grep "TRUSTEE_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$log" "prove-rung-bc collect Trustee log since-time"
 	expect_grep "POD_LOG_TAIL=222" "$log" "prove-rung-bc collect pod log tail"
 	expect_grep "MIRROR_LOG_TAIL=333" "$log" "prove-rung-bc collect mirror log tail"
 	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$log" "prove-rung-bc collect mirror log files"
@@ -2077,6 +2093,9 @@ EOF
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$log" "prove-rung-bc loaded rung-b image from env"
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$log" "prove-rung-bc loaded rung-c image from env"
 	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$log" "prove-rung-bc loaded unsigned image from env"
+	if ! grep -Eq 'collect-evidence-env.*TRUSTEE_LOG_SINCE_TIME=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' "$log"; then
+		die "prove-rung-bc did not default Trustee log since-time for evidence collection"
+	fi
 }
 
 need make

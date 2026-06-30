@@ -19,6 +19,7 @@ NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-rung-b: encrypted image decrypted and running}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-rung-c: signed image accepted and running}"
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-1000}"
+TRUSTEE_LOG_SINCE_TIME="${TRUSTEE_LOG_SINCE_TIME:-}"
 POD_LOG_TAIL="${POD_LOG_TAIL:-200}"
 MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-1000}"
 MIRROR_LOG_FILES="${MIRROR_LOG_FILES:-/var/log/nginx/access.log /var/log/nginx/error.log /var/log/mirror-bootstrap.log /opt/mirror/oc-mirror-push.log}"
@@ -83,6 +84,14 @@ record_mirror_container_log() {
 	else
 		printf 'missing container: %s\n' "$name" > "${EVIDENCE_DIR}/mirror/containers/${name}.missing"
 	fi
+}
+
+record_trustee_logs() {
+	local cmd=(oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail="$TRUSTEE_LOG_TAIL")
+	if [[ -n "$TRUSTEE_LOG_SINCE_TIME" ]]; then
+		cmd+=(--since-time="$TRUSTEE_LOG_SINCE_TIME")
+	fi
+	record "trustee/logs.txt" "${cmd[@]}"
 }
 
 redact_secret_json() {
@@ -369,6 +378,7 @@ write_summary() {
 		echo "neg_rung_c_pod=${NEG_RUNG_C_POD}"
 		echo "rung_b_app_log_marker=${RUNG_B_APP_LOG_MARKER}"
 		echo "rung_c_app_log_marker=${RUNG_C_APP_LOG_MARKER}"
+		echo "trustee_log_since_time=${TRUSTEE_LOG_SINCE_TIME}"
 		echo "mirror_log_files=${MIRROR_LOG_FILES}"
 		echo "mirror_container_names=${MIRROR_CONTAINER_NAMES}"
 		echo "oc_user=$(oc whoami 2>/dev/null || true)"
@@ -498,7 +508,7 @@ done
 
 record "trustee/kbsconfig.yaml" oc -n "$TRUSTEE_NS" get kbsconfig kbsconfig -o yaml
 record "trustee/deployment.yaml" oc -n "$TRUSTEE_NS" get deployment trustee-deployment -o yaml
-record "trustee/logs.txt" oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail="$TRUSTEE_LOG_TAIL"
+record_trustee_logs
 for configmap in kbs-config resource-policy attestation-policy rvps-reference-values; do
 	record "trustee/config/${configmap}.yaml" oc -n "$TRUSTEE_NS" get configmap "$configmap" -o yaml
 done
