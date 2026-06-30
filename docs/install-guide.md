@@ -809,7 +809,8 @@ reproduced from these steps AND its negative test fails-closed** — a negative 
 *passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
 Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
 §5 for the full matrix. Rungs b/c have implementation scaffolding; rung-c has live rig
-accept/deny evidence, while rung-b still needs a completed encrypted-image guest-pull proof. Use
+accept/deny evidence, while rung-b still needs a completed encrypted-image guest-pull and
+decryption proof. Use
 [`docs/runbooks/rung-bc-completion-plan.md`](runbooks/rung-bc-completion-plan.md) as the
 execution plan for encrypted-image and signed-image proof artifacts.
 

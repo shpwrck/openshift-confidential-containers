@@ -1,10 +1,14 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T03:05:27Z
+Last updated: 2026-06-30T03:41:00Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `572ea30`
-Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed. Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts pod-status app-start evidence when CC logs are empty. Rung-b is still blocked by CRI-O host-side encrypted-layer pre-pull before the guest can fetch the KBS key.
+Current head before this update: `e432ba8`
+Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
+Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
+pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
+pods are still blocked by CRI-O host-side encrypted-layer pre-pull before guest pull begins, and a
+local-alias diagnostic that forced guest pull reached KBS but failed layer decryption inside CDH.
 
 ## What is already in place
 
@@ -61,15 +65,45 @@ Live rig check on 2026-06-30:
     failure. A tag-ref diagnostic pod changed the message to host-side `missing private key needed
     for decryption`, again with no `image-kek` Trustee fetch.
   - The node config was restored from the backup and the node returned Ready.
+- Additional 2026-06-30 rung-b probes narrowed the remaining blocker:
+  - Patching the digest-pinned pod to `imagePullPolicy: Never` avoided host pull, but kubelet
+    refused the pod with `ErrImageNeverPull`; no KBS image-key fetch occurred.
+  - Temporarily allowing pod annotation `io.kubernetes.cri-o.ImageName` in CRI-O and running an
+    unencrypted carrier image did not redirect Kata's guest-pull source. CRI-O still emitted
+    `image_guest_pull` for the carrier image, the pod ran as the carrier, and no rung-b image-key
+    fetch occurred. The CRI-O config was restored and the node returned Ready.
+  - A diagnostic local-storage alias did get past the host image check: root `podman tag` pointed
+    the already-present unencrypted carrier image at `mirror.rig.local:8443/coco/rung-b:encrypted`,
+    and the pod used that tag with `imagePullPolicy: IfNotPresent`. Kubelet reported the image was
+    already present; CRI-O emitted `image_guest_pull` for `coco/rung-b:encrypted`; Trustee served
+    `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c` with HTTP 200 repeatedly.
+    The pod still stayed `CreateContainerError` because CDH failed to decrypt the image layer
+    (`Failed to decrypt the image layer, please ensure that the decryption key is placed and
+    correct`). The temporary pod and local alias were removed. This proves KBS reachability and
+    key release once guest pull is reached, but it does not prove a successful encrypted-image run.
 
-1. Build and push the rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
+1. Reconcile the rung-b encrypted image, KID, KEK bytes, and guest decryption format:
+
+   - Decode the encrypted layer annotation for
+     `mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c`.
+   - Confirm it references `kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`.
+   - Confirm the Trustee Secret data is byte-for-byte the KEK that the keyprovider used.
+   - If those match, rebuild rung-b with the same guest-components/keyprovider format expected by
+     the rig's CDH/image-rs stack, then rerun the local-alias diagnostic before attempting the full
+     proof.
+
+2. Find a supported OpenShift/CRI-O path that gets direct rung-b pods to `CreateContainer` without
+   host-side encrypted-layer pre-pull. The diagnostic local alias is useful for root-cause work, but
+   it is not a production proof path.
+
+3. Build and push any rebuilt rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 
    ```bash
    COSIGN_PASSWORD='<secret>' make build-rung-images
    . rung-bc-artifacts/rung-bc.env
    ```
 
-2. Seed Trustee with the rung-b image key, rung-c public key, and rung-c signed-image policy, then reconcile Trustee:
+4. Seed Trustee with the rung-b image key, rung-c public key, and rung-c signed-image policy, then reconcile Trustee:
 
    ```bash
    make apply-trustee-rung-bc \
@@ -77,24 +111,32 @@ Live rig check on 2026-06-30:
      RUNG_C_COSIGN_PUB=rung-bc-artifacts/cosign.pub
    ```
 
-3. Run the hardware proof on the disposable rig:
+5. Run the hardware proof on the disposable rig:
 
    ```bash
    make prove-rung-bc
    ```
 
-4. Keep the generated evidence bundle path and make sure validation passes:
+6. Keep the generated evidence bundle path and make sure validation passes:
 
    ```bash
    make validate-rung-bc-evidence EVIDENCE_DIR=<bundle>
    ```
 
-5. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung b/c should not be called complete unless happy pods run and negative pods fail closed with the expected denial signals. Current rig evidence shows rung-c policy enforcement passes, while rung-b still cannot reach the guest/KBS key-release path because CRI-O fails the encrypted-layer pre-pull first.
+7. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung
+   b/c should not be called complete unless happy pods run and negative pods fail closed with the
+   expected denial signals. Current rig evidence shows rung-c policy enforcement passes. Current
+   rung-b evidence shows direct pods fail before guest pull, and a diagnostic guest-pull path reaches
+   KBS but fails layer decryption.
 
-6. Replay on a fresh node or freshly recreated disposable rig. Production sign-off requires replay after regenerating hardware-bound values such as VCEKs, RVPS, Trustee URL/TLS, initdata, image keys, and signing trust material.
+8. Replay on a fresh node or freshly recreated disposable rig. Production sign-off requires replay after regenerating hardware-bound values such as VCEKs, RVPS, Trustee URL/TLS, initdata, image keys, and signing trust material.
 
-7. Move PR #8 out of draft only after rig evidence is attached or referenced, CI/checks are green, Copilot or equivalent machine review has no blocking findings, and `make lint` remains green.
+9. Move PR #8 out of draft only after rig evidence is attached or referenced, CI/checks are green, Copilot or equivalent machine review has no blocking findings, and `make lint` remains green.
 
 ## Current blocker
 
-Rig access is confirmed. Rung-c is functionally proven for signed-image policy acceptance and unsigned-image denial, with pod-status app-start validation covering the empty-log behavior seen on the rig. Rung-b completion remains blocked on CRI-O host-side pre-pull: the host cannot create a guest-pull placeholder for encrypted layers and fails before the guest can request `image-kek/<uuid>` from KBS.
+Rig access is confirmed. Rung-c is functionally proven for signed-image policy acceptance and
+unsigned-image denial, with pod-status app-start validation covering the empty-log behavior seen on
+the rig. Rung-b completion remains blocked on two items: direct CRI-O/Kata pods need a supported way
+past the host encrypted-layer pre-pull, and the diagnostic guest-pull path must be made to decrypt
+successfully after Trustee releases `image-kek/<uuid>`.
