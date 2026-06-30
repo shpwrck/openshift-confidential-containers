@@ -135,6 +135,7 @@ validate_manifest_env_values() {
 		def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
 		def nonempty: type == "string" and length > 0;
 		(.rung_b.digest_ref | digest_ref) and
+		(.rung_b.key_id | nonempty) and
 		(.rung_b.key_file | nonempty) and
 		(.rung_c.digest_ref | digest_ref) and
 		(.rung_c.unsigned_digest_ref | digest_ref) and
@@ -148,6 +149,7 @@ emit_env_from_manifest() {
 	jq -r '
 		[
 			"RUNG_B_IMAGE=" + .rung_b.digest_ref,
+			"RUNG_B_KEY_ID=" + .rung_b.key_id,
 			"RUNG_B_KEY_FILE=" + .rung_b.key_file,
 			"RUNG_C_IMAGE=" + .rung_c.digest_ref,
 			"RUNG_C_UNSIGNED_IMAGE=" + .rung_c.unsigned_digest_ref,
@@ -288,6 +290,7 @@ write_manifest() {
 	echo "Wrote $env_file"
 	jq -r '
 		"RUNG_B_IMAGE=" + .rung_b.digest_ref,
+		"RUNG_B_KEY_ID=" + .rung_b.key_id,
 		"RUNG_B_KEY_FILE=" + .rung_b.key_file,
 		"RUNG_C_IMAGE=" + .rung_c.digest_ref,
 		"RUNG_C_UNSIGNED_IMAGE=" + .rung_c.unsigned_digest_ref,

@@ -260,6 +260,7 @@ verify_manifest_env_emit() {
 {
   "rung_b": {
     "digest_ref": "mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "key_id": "kbs:///default/image-key/rung-b",
     "key_file": "/tmp/rung artifacts/rung-b-image.key"
   },
   "rung_c": {
@@ -271,6 +272,7 @@ verify_manifest_env_emit() {
 EOF
 	bash "$REPO_ROOT/scripts/build-rung-images.sh" emit-env "$manifest" > "$env_file"
 	expect_grep "export RUNG_B_IMAGE=" "$env_file" "rung-b env export"
+	expect_grep "export RUNG_B_KEY_ID=" "$env_file" "rung-b key ID env export"
 	expect_grep "export RUNG_C_IMAGE=" "$env_file" "rung-c env export"
 	expect_grep "export RUNG_C_UNSIGNED_IMAGE=" "$env_file" "rung-c unsigned env export"
 
@@ -279,6 +281,7 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source "$RUNG_ENV_FILE"
 [[ "$RUNG_B_IMAGE" == "mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]]
+[[ "$RUNG_B_KEY_ID" == "kbs:///default/image-key/rung-b" ]]
 [[ "$RUNG_B_KEY_FILE" == "/tmp/rung artifacts/rung-b-image.key" ]]
 [[ "$RUNG_C_IMAGE" == "mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]]
 [[ "$RUNG_C_UNSIGNED_IMAGE" == "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" ]]
@@ -1608,8 +1611,9 @@ verify_prove_rung_bc_loads_artifact_env() {
 	create_prove_stub "$collect" collect-evidence-env
 	create_prove_stub "$validate" validate-evidence-env
 
-	cat > "$artifacts/rung-bc.env" <<'EOF'
+cat > "$artifacts/rung-bc.env" <<'EOF'
 export RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+export RUNG_B_KEY_ID=kbs:///default/image-key/rung-b
 export RUNG_B_KEY_FILE=/tmp/rung-b-image.key
 export RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 export RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
