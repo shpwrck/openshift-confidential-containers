@@ -189,6 +189,30 @@ check_pod_phase() {
 	esac
 }
 
+check_initdata_relationships() {
+	local rung_b_initdata neg_rung_b_initdata rung_c_initdata neg_rung_c_initdata
+	rung_b_initdata="$(pod_col "$RUNG_B_POD" 9 2>/dev/null || true)"
+	neg_rung_b_initdata="$(pod_col "$NEG_RUNG_B_POD" 9 2>/dev/null || true)"
+	rung_c_initdata="$(pod_col "$RUNG_C_POD" 9 2>/dev/null || true)"
+	neg_rung_c_initdata="$(pod_col "$NEG_RUNG_C_POD" 9 2>/dev/null || true)"
+
+	if [[ -z "$rung_b_initdata" || -z "$neg_rung_b_initdata" ]]; then
+		fail "rung-b initdata hashes missing from pod summary"
+	elif [[ "$rung_b_initdata" == "$neg_rung_b_initdata" ]]; then
+		fail "rung-b negative initdata hash matches happy initdata hash"
+	else
+		pass "rung-b negative initdata differs from happy initdata"
+	fi
+
+	if [[ -z "$rung_c_initdata" || -z "$neg_rung_c_initdata" ]]; then
+		fail "rung-c initdata hashes missing from pod summary"
+	elif [[ "$rung_c_initdata" != "$neg_rung_c_initdata" ]]; then
+		fail "rung-c negative initdata hash differs from happy initdata hash"
+	else
+		pass "rung-c negative initdata matches happy initdata"
+	fi
+}
+
 bundle_text_for_pod() {
 	local pod="$1" file
 	for file in \
@@ -309,6 +333,7 @@ check_pod_phase "$RUNG_B_POD" "rung-b" happy
 check_pod_phase "$RUNG_C_POD" "rung-c" happy
 check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
 check_pod_phase "$NEG_RUNG_C_POD" "rung-c negative" denied
+check_initdata_relationships
 check_kbs_logs
 check_mirror_logs
 check_denial_signal "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_DENIAL_RE"

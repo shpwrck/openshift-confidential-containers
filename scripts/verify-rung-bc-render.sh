@@ -1117,7 +1117,7 @@ requested_pod	status	name	namespace	phase	runtime_class	node_name	app_image	init
 rung-b-encrypted	present	rung-b-encrypted	workload-test	Running	kata-cc	snp-worker-0	${rung_b_image}	initdata-a
 rung-c-signed	present	rung-c-signed	workload-test	Running	kata-cc	snp-worker-0	${rung_c_image}	initdata-b
 negtest-rung-b	present	negtest-rung-b	workload-test	Pending	kata-cc	snp-worker-0	${rung_b_image}	initdata-c
-negtest-rung-c	present	negtest-rung-c	workload-test	Pending	kata-cc	snp-worker-0	${rung_c_unsigned_image}	initdata-d
+negtest-rung-c	present	negtest-rung-c	workload-test	Pending	kata-cc	snp-worker-0	${rung_c_unsigned_image}	initdata-b
 EOF
 	cat > "$evidence/trustee/logs.txt" <<'EOF'
 GET /kbs/v0/resource/default/image-key/rung-b 200
@@ -1146,6 +1146,8 @@ verify_evidence_validation_gate() {
 	local broken="$tmpdir/broken-evidence" err="$tmpdir/validate-evidence.err"
 	local broken_mirror="$tmpdir/broken-mirror-evidence" mirror_err="$tmpdir/validate-mirror-evidence.err"
 	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
+	local broken_b_initdata="$tmpdir/broken-b-initdata-evidence" b_initdata_err="$tmpdir/validate-b-initdata-evidence.err"
+	local broken_c_initdata="$tmpdir/broken-c-initdata-evidence" c_initdata_err="$tmpdir/validate-c-initdata-evidence.err"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
@@ -1173,6 +1175,24 @@ verify_evidence_validation_gate() {
 		die "evidence validator accepted a mirror log with the wrong digest"
 	fi
 	expect_grep "mirror logs missing coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$digest_err" "evidence validator mirror digest failure"
+
+	cp -R "$evidence" "$broken_b_initdata"
+	awk -F '\t' 'BEGIN { OFS = FS } $1 == "negtest-rung-b" { $9 = "initdata-a" } { print }' \
+		"$broken_b_initdata/pods/summary.tsv" > "$broken_b_initdata/pods/summary.tsv.tmp"
+	mv "$broken_b_initdata/pods/summary.tsv.tmp" "$broken_b_initdata/pods/summary.tsv"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_b_initdata" > /dev/null 2> "$b_initdata_err"; then
+		die "evidence validator accepted an unchanged rung-b negative initdata hash"
+	fi
+	expect_grep "rung-b negative initdata hash matches happy initdata hash" "$b_initdata_err" "evidence validator rung-b initdata failure"
+
+	cp -R "$evidence" "$broken_c_initdata"
+	awk -F '\t' 'BEGIN { OFS = FS } $1 == "negtest-rung-c" { $9 = "initdata-z" } { print }' \
+		"$broken_c_initdata/pods/summary.tsv" > "$broken_c_initdata/pods/summary.tsv.tmp"
+	mv "$broken_c_initdata/pods/summary.tsv.tmp" "$broken_c_initdata/pods/summary.tsv"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_c_initdata" > /dev/null 2> "$c_initdata_err"; then
+		die "evidence validator accepted a changed rung-c negative initdata hash"
+	fi
+	expect_grep "rung-c negative initdata hash differs from happy initdata hash" "$c_initdata_err" "evidence validator rung-c initdata failure"
 }
 
 verify_evidence_validation_make_env() {
