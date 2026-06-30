@@ -722,6 +722,11 @@ vars=(
 	NEG_RUNG_C_POD
 	RUNG_B_APP_LOG_MARKER
 	RUNG_C_APP_LOG_MARKER
+	TRUSTEE_LOG_TAIL
+	POD_LOG_TAIL
+	MIRROR_LOG_TAIL
+	MIRROR_LOG_FILES
+	MIRROR_CONTAINER_NAMES
 )
 
 for var in "${vars[@]}"; do
@@ -773,6 +778,11 @@ EOF
 		NEG_RUNG_C_POD="custom-neg-rung-c" \
 		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
+		TRUSTEE_LOG_TAIL="111" \
+		POD_LOG_TAIL="222" \
+		MIRROR_LOG_TAIL="333" \
+		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
+		MIRROR_CONTAINER_NAMES="quay-app custom-registry" \
 		> "$evidence_out"
 
 	for out in "$tmpdir/apply-rung-a-env" "$rung_b_out" "$rung_c_out" "$evidence_out"; do
@@ -791,6 +801,11 @@ EOF
 	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$evidence_out" "Makefile evidence negative rung-c pod override"
 	expect_grep "RUNG_B_APP_LOG_MARKER=custom rung-b proof marker" "$evidence_out" "Makefile evidence rung-b app marker override"
 	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$evidence_out" "Makefile evidence rung-c app marker override"
+	expect_grep "TRUSTEE_LOG_TAIL=111" "$evidence_out" "Makefile evidence Trustee log tail override"
+	expect_grep "POD_LOG_TAIL=222" "$evidence_out" "Makefile evidence pod log tail override"
+	expect_grep "MIRROR_LOG_TAIL=333" "$evidence_out" "Makefile evidence mirror log tail override"
+	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$evidence_out" "Makefile evidence mirror log file override"
+	expect_grep "MIRROR_CONTAINER_NAMES=quay-app custom-registry" "$evidence_out" "Makefile evidence mirror container override"
 }
 
 verify_negative_test_air_gap_restores_vceks() {
@@ -1279,12 +1294,13 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
 	"${NS:-}" "${TRUSTEE_NS:-}" "${PODS:-}" "${RUNG_B_POD:-}" "${RUNG_C_POD:-}" \
 	"${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
-	"${RUNG_C_APP_LOG_MARKER:-}" >> "$CALL_LOG"
+	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${POD_LOG_TAIL:-}" \
+	"${MIRROR_LOG_TAIL:-}" "${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" >> "$CALL_LOG"
 EOF
 	} > "$path"
 	chmod +x "$path"
@@ -1322,6 +1338,11 @@ verify_prove_rung_bc_workflow() {
 		NEG_RUNG_C_POD="negtest-rung-c" \
 		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
+		TRUSTEE_LOG_TAIL="111" \
+		POD_LOG_TAIL="222" \
+		MIRROR_LOG_TAIL="333" \
+		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
+		MIRROR_CONTAINER_NAMES="quay-app custom-registry" \
 		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
 		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
@@ -1336,6 +1357,12 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "NS=workload-test" "$log" "prove-rung-bc workload namespace"
 	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-bc Trustee namespace"
 	expect_grep "PODS=rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" "$log" "prove-rung-bc evidence pod list"
+	expect_grep "collect-evidence	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc collect evidence step"
+	expect_grep "TRUSTEE_LOG_TAIL=111" "$log" "prove-rung-bc collect Trustee log tail"
+	expect_grep "POD_LOG_TAIL=222" "$log" "prove-rung-bc collect pod log tail"
+	expect_grep "MIRROR_LOG_TAIL=333" "$log" "prove-rung-bc collect mirror log tail"
+	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$log" "prove-rung-bc collect mirror log files"
+	expect_grep "MIRROR_CONTAINER_NAMES=quay-app custom-registry" "$log" "prove-rung-bc collect mirror containers"
 	expect_grep "validate-evidence	arg=$tmpdir/proof-evidence" "$log" "prove-rung-bc validate evidence step"
 	expect_grep "RUNG_B_APP_LOG_MARKER=custom rung-b proof marker" "$log" "prove-rung-bc validate rung-b app marker"
 	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$log" "prove-rung-bc validate rung-c app marker"

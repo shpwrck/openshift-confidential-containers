@@ -412,12 +412,14 @@ used to collect the bundle. It does not dump Secret data, but still review the b
 sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
-oc-mirror, and quay container log locations. Override as needed:
+oc-mirror, and quay container log locations. Override as needed; the same mirror log and tail
+settings are also honored by `make prove-rung-bc`:
 
 ```bash
 make collect-rung-bc-evidence \
   MIRROR_LOG_FILES="/var/log/nginx/access.log /opt/mirror/custom-access.log" \
-  MIRROR_CONTAINER_NAMES="quay-app"
+  MIRROR_CONTAINER_NAMES="quay-app" \
+  MIRROR_LOG_TAIL=2000
 ```
 
 After both rungs are green on the disposable rig:
