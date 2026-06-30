@@ -700,6 +700,13 @@ if [[ "$cmd" == "get" && "$target" == "events" ]]; then
 	exit 0
 fi
 if [[ "$cmd" == "logs" ]]; then
+	if [[ "${TEST_DENIAL_SIGNAL:-}" == "stale-rung-b" ]]; then
+		[[ "$target" == "deployment/trustee-deployment" ]] || exit 0
+		for arg in "${args[@]}"; do
+			[[ "$arg" == --since-time=* ]] && exit 0
+		done
+		printf '10.128.0.86 "GET /kbs/v0/resource/default/image-kek/uuid HTTP/1.1" 401\n'
+	fi
 	exit 0
 fi
 if [[ "$cmd" == "get" && "$target" == "pod" ]]; then
@@ -742,6 +749,17 @@ EOF
 		die "rung-b negative test accepted a host-side encrypted-layer pull failure"
 	fi
 	expect_grep "no rung-b attestation/image-key denial signal" "$rung_b_host_out" "rung-b host decrypt failure rejection"
+
+	if TEST_DENIAL_SIGNAL=stale-rung-b PATH="$bin:$PATH" \
+		MIRROR_CA="$tmpdir/mirror-ca.pem" \
+		NS="workload-test" \
+		TRUSTEE_NS="trustee-test" \
+		TIMEOUT=0 \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		bash "$REPO_ROOT/scripts/negative-test.sh" rung-b > "$rung_b_host_out" 2>&1; then
+		die "rung-b negative test accepted a stale Trustee denial from an older probe"
+	fi
+	expect_grep "no rung-b attestation/image-key denial signal" "$rung_b_host_out" "rung-b stale Trustee denial rejection"
 
 	if TEST_DENIAL_SIGNAL=unrelated PATH="$bin:$PATH" \
 		MIRROR_CA="$tmpdir/mirror-ca.pem" \

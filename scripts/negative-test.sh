@@ -42,12 +42,12 @@ oc whoami >/dev/null 2>&1 || die "not logged into a cluster (oc whoami failed)"
 oc get runtimeclass kata-cc >/dev/null 2>&1 || die "kata-cc runtimeclass missing — finish Phase 4 first"
 
 denial_signal_seen() {
-  local name="$1" pattern="$2" context
+  local name="$1" pattern="$2" since_time="$3" context
   context="$(
     oc -n "$NS" describe pod "$name" 2>/dev/null || true
     oc -n "$NS" get events --field-selector "involvedObject.name=${name}" --sort-by=.lastTimestamp -o wide 2>/dev/null || true
     oc -n "$NS" logs "pod/${name}" --all-containers --prefix=true --tail=80 2>/dev/null || true
-    oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail=240 2>/dev/null || true
+    oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --since-time="$since_time" --tail=240 2>/dev/null || true
   )"
   grep -qiE "$pattern" <<<"$context"
 }
@@ -55,8 +55,9 @@ denial_signal_seen() {
 # Deploy a workload and assert it FAILS-CLOSED: the pod must NOT reach Running/Succeeded within
 # TIMEOUT (attestation denies the secret/key/pull). If it DOES start, that's the bad case.
 expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label> <denial-pattern> <signal-label>
-  local name="$1" manifest="$2" label="$3" pattern="$4" signal_label="$5"
+  local name="$1" manifest="$2" label="$3" pattern="$4" signal_label="$5" since_time
   oc -n "$NS" delete pod "$name" --ignore-not-found --wait >/dev/null 2>&1 || true
+  since_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if [[ "$manifest" == "-" ]]; then oc -n "$NS" apply -f - >/dev/null; else oc -n "$NS" apply -f "$manifest" >/dev/null; fi
   local deadline=$(( SECONDS + TIMEOUT ))
   while (( SECONDS < deadline )); do
@@ -68,7 +69,7 @@ expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label> <d
     sleep 5
   done
   # never started within the window - confirm this rung's expected denial signal, not a flake
-  if denial_signal_seen "$name" "$pattern"; then
+  if denial_signal_seen "$name" "$pattern" "$since_time"; then
     ok "$label"
   else
     echo "  ⚠️  pod '$name' did not start, but no ${signal_label} signal seen — investigate (could be a flake or the wrong dependency failing)"; bad "$label (no ${signal_label} signal)"

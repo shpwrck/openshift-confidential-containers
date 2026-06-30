@@ -32,7 +32,8 @@ measurement-mismatch negatives are not yet valid on this rig.
   differences.
 - The rung-b negative-test harness now rejects host-side encrypted-layer pull failures as proof
   signals; it requires an attestation, measurement, authorization, or KBS resource-denial signal
-  instead of accepting a generic `decrypt` message.
+  instead of accepting a generic `decrypt` message, and it scopes Trustee logs to the current
+  probe so stale denials from older pods cannot satisfy a new negative test.
 
 ## Local verification completed
 
