@@ -4,9 +4,15 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
-SOURCE_IMAGE="${SOURCE_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63}"
+# Default to the MIRROR copy: this repo targets an air-gapped bastion where the public
+# registry.access.redhat.com is unreachable. The mirror preserves the manifest digest; override
+# SOURCE_IMAGE for a connected build.
+SOURCE_IMAGE="${SOURCE_IMAGE:-${MIRROR_REGISTRY}/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63}"
 SOURCE_IMAGE_REF="${SOURCE_IMAGE_REF:-docker://${SOURCE_IMAGE}}"
 SKOPEO_COPY_ARGS="${SKOPEO_COPY_ARGS:---remove-signatures}"
+# TLS-verify escape for registry reads/inspects, independent of SKOPEO_COPY_ARGS — e.g. on a fresh
+# box that lacks the mirror CA: SKOPEO_INSPECT_ARGS="--tls-verify=false".
+SKOPEO_INSPECT_ARGS="${SKOPEO_INSPECT_ARGS:-}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
@@ -33,6 +39,11 @@ die() {
 need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
 }
+
+# skopeo inspect with the optional TLS-verify escape. $SKOPEO_INSPECT_ARGS is an intentional
+# multi-flag list that must stay unquoted (and vanish when empty), so SC2086 is disabled here only.
+# shellcheck disable=SC2086
+skopeo_inspect() { skopeo inspect $SKOPEO_INSPECT_ARGS "$@"; }
 
 require_script() {
 	local path="$1"
@@ -235,7 +246,7 @@ sign_rung_c() {
 	echo "Pushing rung-c image to sign: $RUNG_C_IMAGE"
 	# shellcheck disable=SC2086
 	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "docker://${RUNG_C_IMAGE}"
-	c_digest="$(skopeo inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
+	c_digest="$(skopeo_inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
 	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
 	echo "Signing rung-c image digest with $COSIGN_KEY: $c_digest_ref"
 	# shellcheck disable=SC2086
@@ -246,9 +257,9 @@ sign_rung_c() {
 
 write_manifest() {
 	local b_digest c_digest c_unsigned_digest b_digest_ref c_digest_ref c_unsigned_digest_ref b_key_sha c_pub_sha manifest env_file
-	b_digest="$(skopeo inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
-	c_digest="$(skopeo inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
-	c_unsigned_digest="$(skopeo inspect "docker://${RUNG_C_UNSIGNED_IMAGE}" | jq -r '.Digest')"
+	b_digest="$(skopeo_inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
+	c_digest="$(skopeo_inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
+	c_unsigned_digest="$(skopeo_inspect "docker://${RUNG_C_UNSIGNED_IMAGE}" | jq -r '.Digest')"
 	b_digest_ref="$(image_digest_ref "$RUNG_B_IMAGE" "$b_digest")"
 	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
 	c_unsigned_digest_ref="$(image_digest_ref "$RUNG_C_UNSIGNED_IMAGE" "$c_unsigned_digest")"
@@ -369,6 +380,11 @@ need sha256sum
 configure_cosign_args
 detect_runtime
 require_keyprovider_image
+
+# Fail fast: rung-c signing always needs COSIGN_PASSWORD. Check it up front so we don't encrypt and
+# push the rung-b image first and only then abort at the signing step (ensure_cosign_keys skips its
+# own check when the key pair already exists).
+[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD (used to generate and sign the rung-c cosign key pair)"
 
 mkdir -p "$ARTIFACT_DIR"
 generate_rung_b_key
