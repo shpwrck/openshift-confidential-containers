@@ -2474,6 +2474,7 @@ EOF
 verify_rung_b_direct_pull_diagnostic_validation() {
 	local diag="$tmpdir/valid-direct-pull-diagnostic" out="$tmpdir/validate-direct-pull.out"
 	local make_out="$tmpdir/validate-direct-pull-make.out"
+	local summary_out="$tmpdir/summarize-direct-pull.out" make_summary_out="$tmpdir/summarize-direct-pull-make.out"
 	local legacy_diag="$tmpdir/legacy-direct-pull-diagnostic" legacy_out="$tmpdir/validate-direct-pull-legacy.out"
 	local broken_guest="$tmpdir/broken-direct-pull-guest" guest_err="$tmpdir/validate-direct-pull-guest.err"
 	local broken_key="$tmpdir/broken-direct-pull-key" key_err="$tmpdir/validate-direct-pull-key.err"
@@ -2488,6 +2489,7 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local broken_manifest_key="$tmpdir/broken-direct-pull-manifest-key" manifest_key_err="$tmpdir/validate-direct-pull-manifest-key.err"
 	local broken_env_image="$tmpdir/broken-direct-pull-env-image" env_image_err="$tmpdir/validate-direct-pull-env-image.err"
 	local broken_env_key="$tmpdir/broken-direct-pull-env-key" env_key_err="$tmpdir/validate-direct-pull-env-key.err"
+	local broken_summary="$tmpdir/broken-direct-pull-summary" summary_err="$tmpdir/summarize-direct-pull-broken.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
@@ -2505,6 +2507,19 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 
 	make -s validate-rung-b-direct-pull DIAG_DIR="$diag" > "$make_out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$make_out" "Makefile direct-pull diagnostic validation"
+
+	bash "$REPO_ROOT/scripts/summarize-rung-b-direct-pull-diagnostic.sh" "$diag" > "$summary_out"
+	expect_grep "## Rung-b direct-pull diagnostic" "$summary_out" "direct-pull diagnostic summary heading"
+	expect_grep "Evidence directory: \`$diag\`" "$summary_out" "direct-pull diagnostic summary evidence dir"
+	expect_grep "Validation: passed with \`REQUIRE_MIRROR_SUMMARY=1\`" "$summary_out" "direct-pull diagnostic summary validation"
+	expect_grep "classification=known-host-pull-blocker" "$summary_out" "direct-pull diagnostic summary classification"
+	expect_grep "image_key_request_seen=0" "$summary_out" "direct-pull diagnostic summary no image key"
+	expect_grep "crio_rung_b_blob=16" "$summary_out" "direct-pull diagnostic summary CRI-O blob"
+	expect_grep "guest_rung_b_blob=0" "$summary_out" "direct-pull diagnostic summary guest blob"
+	expect_grep "Interpretation: CRI-O host-side image handling pulled the encrypted rung-b manifest/blob" "$summary_out" "direct-pull diagnostic summary interpretation"
+
+	make -s summarize-rung-b-direct-pull DIAG_DIR="$diag" > "$make_summary_out"
+	expect_grep "## Rung-b direct-pull diagnostic" "$make_summary_out" "Makefile direct-pull diagnostic summary"
 
 	cp -R "$diag" "$legacy_diag"
 	rm -rf "$legacy_diag/mirror"
@@ -2549,6 +2564,12 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 		die "direct-pull diagnostic validator accepted an image-key request"
 	fi
 	expect_grep "Trustee image-key request signal is 1, expected 0" "$key_err" "direct-pull diagnostic image-key failure"
+
+	cp -R "$broken_key" "$broken_summary"
+	if bash "$REPO_ROOT/scripts/summarize-rung-b-direct-pull-diagnostic.sh" "$broken_summary" > /dev/null 2> "$summary_err"; then
+		die "direct-pull diagnostic summarizer accepted an invalid bundle"
+	fi
+	expect_grep "Rung-b direct-pull diagnostic validation FAILED" "$summary_err" "direct-pull diagnostic summary validation failure"
 
 	cp -R "$diag" "$broken_count"
 	sed -i 's/^mirror_crio_rung_b_manifest_count=16$/mirror_crio_rung_b_manifest_count=15/' "$broken_count/summary.env"

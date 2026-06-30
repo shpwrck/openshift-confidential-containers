@@ -78,6 +78,13 @@ Validate a collected bundle before sharing it:
 make validate-rung-b-direct-pull DIAG_DIR=rung-bc-artifacts/rung-b-direct-pull-<timestamp>
 ```
 
+To generate a compact Markdown summary for a PR or upstream issue comment from the same validated
+bundle:
+
+```bash
+make summarize-rung-b-direct-pull DIAG_DIR=rung-bc-artifacts/rung-b-direct-pull-<timestamp>
+```
+
 For older diagnostic bundles collected before artifact/env handoff, `mirror/summary.tsv`, and
 current log-window metadata existed, set `REQUIRE_MIRROR_SUMMARY=0` while validating; current
 bundles should keep the default strict artifact, summary, and log-window requirements.

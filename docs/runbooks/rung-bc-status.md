@@ -115,6 +115,9 @@ manifest/env-aware diagnostic evidence at `2026-06-30T13:17:44Z`.
   requires `repo_git_dirty=false`. The Make target forwards `REQUIRE_MIRROR_SUMMARY=0` explicitly
   for older bundles collected before manifest handoff, mirror summaries, and current
   log-window/provenance metadata existed, and current bundles should keep the strict default.
+- `make summarize-rung-b-direct-pull DIAG_DIR=<bundle>` validates the same bundle first, then
+  emits a compact Markdown summary for PR or upstream issue comments so the known-blocker evidence
+  is shared from a reproducible command rather than hand-assembled notes.
 - `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
   it passes `--ocp-version`, defaults to the pinned `coco-tools` digest used by VCEK collection,
   treats Veritas `-o` as an output directory, supports a cached `oc debug` image, and can stage a

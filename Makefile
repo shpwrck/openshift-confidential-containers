@@ -56,6 +56,7 @@ PROVE_RUNG_BC_SCRIPT ?= ./scripts/prove-rung-bc.sh
 PROVE_RUNG_C_SCRIPT ?= ./scripts/prove-rung-c.sh
 DIAGNOSE_RUNG_B_DIRECT_PULL_SCRIPT ?= ./scripts/diagnose-rung-b-direct-pull.sh
 VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT ?= ./scripts/validate-rung-b-direct-pull-diagnostic.sh
+SUMMARIZE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT ?= ./scripts/summarize-rung-b-direct-pull-diagnostic.sh
 VERIFY_RUNG_B_KEY_WRAP_SCRIPT ?= ./scripts/verify-rung-b-key-wrap.sh
 VERIFY_RUNG_C_SIGNATURE_SCRIPT ?= ./scripts/verify-rung-c-signature.sh
 VERIFY_RUNG_ARTIFACTS_AFTER_BUILD ?= 1
@@ -256,6 +257,11 @@ diagnose-rung-b-direct-pull: ## Phase 6: reproduce/collect the rung-b direct enc
 validate-rung-b-direct-pull: ## Phase 6: validate a rung-b direct-pull diagnostic bundle (set DIAG_DIR)
 	@test -n "$(DIAG_DIR)" || { echo "set DIAG_DIR=<rung-b direct-pull diagnostic dir>"; exit 2; }
 	DIAG_DIR="$(DIAG_DIR)" REQUIRE_MIRROR_SUMMARY="$(REQUIRE_MIRROR_SUMMARY)" bash "$(VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT)" "$(DIAG_DIR)"
+
+.PHONY: summarize-rung-b-direct-pull
+summarize-rung-b-direct-pull: ## Phase 6: print an issue-ready rung-b direct-pull diagnostic summary (set DIAG_DIR)
+	@test -n "$(DIAG_DIR)" || { echo "set DIAG_DIR=<rung-b direct-pull diagnostic dir>"; exit 2; }
+	DIAG_DIR="$(DIAG_DIR)" REQUIRE_MIRROR_SUMMARY="$(REQUIRE_MIRROR_SUMMARY)" VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT="$(VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT)" bash "$(SUMMARIZE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT)" "$(DIAG_DIR)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

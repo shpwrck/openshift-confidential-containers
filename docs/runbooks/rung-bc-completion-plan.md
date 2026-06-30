@@ -452,6 +452,10 @@ consistent. Current diagnostics also record repo revision, branch, and dirty sta
 only for older diagnostic bundles collected before manifest/env handoff, mirror summaries, and
 current log-window/provenance metadata existed.
 
+After validation passes, use
+`make summarize-rung-b-direct-pull DIAG_DIR=<rung-b-direct-pull-dir>` to generate the upstream/PR
+comment text from the bundle itself.
+
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.
 
