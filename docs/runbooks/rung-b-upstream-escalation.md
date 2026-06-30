@@ -63,30 +63,31 @@ make diagnose-rung-b-direct-pull RUNG_B_IMAGE="$RUNG_B_IMAGE"
 
 The diagnostic exits zero only when it sees the known host-side encrypted-layer blocker before any
 Trustee image-key request. It writes pod, event, Trustee, CRI-O, and mirror-log context under
-`rung-bc-artifacts/rung-b-direct-pull-<timestamp>/`. Mirror-log capture is bounded to the
-diagnostic start time and recorded as `mirror_log_since_time` in `summary.env`. The generated
-`mirror/summary.tsv` and `summary.env` count rung-b manifest/blob pulls by `cri-o` and by the
-guest `oci-client`, which is the quickest way to see whether the host pulled encrypted content
-before the guest path started.
+`rung-bc-artifacts/rung-b-direct-pull-<timestamp>/`. CRI-O node-log and mirror-log capture are
+bounded to the diagnostic start time and recorded as `crio_log_since_time` and
+`mirror_log_since_time` in `summary.env`. The generated `mirror/summary.tsv` and `summary.env`
+count rung-b manifest/blob pulls by `cri-o` and by the guest `oci-client`, which is the quickest
+way to see whether the host pulled encrypted content before the guest path started.
 Validate a collected bundle before sharing it:
 
 ```bash
 make validate-rung-b-direct-pull DIAG_DIR=rung-bc-artifacts/rung-b-direct-pull-<timestamp>
 ```
 
-For older diagnostic bundles collected before `mirror/summary.tsv` existed, set
-`REQUIRE_MIRROR_SUMMARY=0` while validating; current bundles should keep the default strict mirror
-summary requirement.
+For older diagnostic bundles collected before `mirror/summary.tsv` and current log-window metadata
+existed, set `REQUIRE_MIRROR_SUMMARY=0` while validating; current bundles should keep the default
+strict summary and log-window requirements.
 
 Latest validated bounded diagnostic bundle:
 
-- Path: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z`
-- Validator: `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z`
-- Result: passed with the strict default mirror-summary requirement.
+- Path: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z`
+- Validator: `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z`
+- Result: passed with the strict default log-window and mirror-summary requirements.
 - Key values:
   - `classification=known-host-pull-blocker`
-  - `mirror_log_since_time=2026-06-30T08:58:44Z`
   - `image_key_request_seen=0`
+  - `crio_log_since_time=2026-06-30T10:08:54Z`
+  - `mirror_log_since_time=2026-06-30T10:08:54Z`
   - `crio_rung_b_manifest=16`
   - `crio_rung_b_blob=16`
   - `guest_rung_b_manifest=0`

@@ -31,7 +31,7 @@ the cluster. The bundle is expected to come from diagnose-rung-b-direct-pull.sh.
 
 Key env:
   DIAG_DIR                 diagnostic directory when not passed as an argument
-  REQUIRE_MIRROR_SUMMARY   set 0 to accept older bundles without mirror/summary.tsv
+  REQUIRE_MIRROR_SUMMARY   set 0 to accept older bundles without current mirror/log-window metadata
 
 Exit codes:
   0  diagnostic bundle proves the known host-side blocker shape
@@ -97,7 +97,7 @@ check_expected_value() {
 }
 
 check_summary() {
-	local phase image key_id key_resource mirror_since
+	local phase image key_id key_resource mirror_since crio_since
 	require_file "${DIAG_DIR}/summary.env" "diagnostic summary"
 	if [[ ! -s "${DIAG_DIR}/summary.env" ]]; then
 		return
@@ -138,6 +138,15 @@ check_summary() {
 		pass "mirror logs are bounded by since-time=$mirror_since"
 	else
 		fail "mirror_log_since_time is ${mirror_since:-missing}; collect bounded mirror logs for current diagnostic bundles"
+	fi
+
+	crio_since="$(summary_value_or_default crio_log_since_time "")"
+	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
+		pass "CRI-O log since-time not required for legacy diagnostic validation"
+	elif [[ "$crio_since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+		pass "CRI-O logs are bounded by since-time=$crio_since"
+	else
+		fail "crio_log_since_time is ${crio_since:-missing}; collect bounded CRI-O logs for current diagnostic bundles"
 	fi
 }
 

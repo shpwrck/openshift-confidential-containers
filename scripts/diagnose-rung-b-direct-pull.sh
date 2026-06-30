@@ -19,6 +19,7 @@ POLL_SECONDS="${POLL_SECONDS:-5}"
 KEEP_DIAG_POD="${KEEP_DIAG_POD:-0}"
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-600}"
 CRIO_LOG_TAIL="${CRIO_LOG_TAIL:-600}"
+CRIO_LOG_SINCE_TIME="${CRIO_LOG_SINCE_TIME:-}"
 MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-600}"
 MIRROR_LOG_SINCE_TIME="${MIRROR_LOG_SINCE_TIME:-}"
 MIRROR_LOG_FILES="${MIRROR_LOG_FILES:-/var/log/nginx/access.log /var/log/nginx/error.log /var/log/mirror-bootstrap.log /opt/mirror/oc-mirror-push.log}"
@@ -53,6 +54,8 @@ Key env:
   DIAG_DIR              output directory
   WAIT_TIMEOUT          seconds to wait for the known blocker (default: 180)
   KEEP_DIAG_POD         set 1 to keep the diagnostic pod
+  CRIO_LOG_TAIL         CRI-O node log tail lines (default: 600)
+  CRIO_LOG_SINCE_TIME   UTC RFC3339 log lower bound (default: diagnostic start)
   MIRROR_LOG_FILES      host mirror log files to tail when readable
   MIRROR_LOG_SINCE_TIME UTC RFC3339 log lower bound (default: diagnostic start)
   MIRROR_CONTAINER_NAMES mirror container names to inspect with podman/docker
@@ -153,6 +156,15 @@ filter_log_since_time() {
 			printf '%s\n' "$line"
 		fi
 	done
+}
+
+crio_node_log_since() {
+	local since_time="$1"
+	if [[ "$since_time" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2})Z$ ]]; then
+		printf '%s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+	else
+		printf '%s\n' "$since_time"
+	fi
 }
 
 record_mirror_log_file() {
@@ -298,6 +310,8 @@ mirror_crio_rung_b_manifest_count=${MIRROR_CRIO_RUNG_B_MANIFEST_COUNT}
 mirror_crio_rung_b_blob_count=${MIRROR_CRIO_RUNG_B_BLOB_COUNT}
 mirror_guest_rung_b_manifest_count=${MIRROR_GUEST_RUNG_B_MANIFEST_COUNT}
 mirror_guest_rung_b_blob_count=${MIRROR_GUEST_RUNG_B_BLOB_COUNT}
+crio_log_tail=${CRIO_LOG_TAIL}
+crio_log_since_time=${CRIO_LOG_SINCE_TIME}
 mirror_log_since_time=${MIRROR_LOG_SINCE_TIME}
 classification=${exit_class}
 EOF
@@ -317,6 +331,7 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 mkdir -p "$DIAG_DIR"
 RUNG_B_KEY_RESOURCE="$(kbs_uri_resource_path "$RUNG_B_KEY_ID")"
 SINCE_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CRIO_LOG_SINCE_TIME="${CRIO_LOG_SINCE_TIME:-$SINCE_TIME}"
 MIRROR_LOG_SINCE_TIME="${MIRROR_LOG_SINCE_TIME:-$SINCE_TIME}"
 
 echo "Writing diagnostic output to ${DIAG_DIR}"
@@ -357,7 +372,8 @@ record_cmd events.txt oc -n "$NS" get events --field-selector "involvedObject.na
 record_cmd trustee.log oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --since-time="$SINCE_TIME" --tail="$TRUSTEE_LOG_TAIL"
 
 if [[ -n "$node" ]]; then
-	record_cmd crio-node.log oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL"
+	crio_since_arg="$(crio_node_log_since "$CRIO_LOG_SINCE_TIME")"
+	record_cmd crio-node.log oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL" --since="$crio_since_arg"
 fi
 collect_mirror_logs
 write_mirror_summary

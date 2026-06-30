@@ -1007,6 +1007,8 @@ EOF
 		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
 		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
+		CRIO_LOG_TAIL="444" \
+		CRIO_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_TAIL="333" \
 		MIRROR_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
@@ -1049,6 +1051,8 @@ EOF
 	expect_grep "RUNG_B_KEY_ID=kbs:///default/custom-image-key/rung-b" "$diagnose_out" "Makefile diagnose rung-b key ID override"
 	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$diagnose_out" "Makefile diagnose rung-b policy URI override"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$diagnose_out" "Makefile diagnose rung-b image override"
+	expect_grep "CRIO_LOG_TAIL=444" "$diagnose_out" "Makefile diagnose CRI-O log tail override"
+	expect_grep "CRIO_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$diagnose_out" "Makefile diagnose CRI-O log since-time override"
 	expect_grep "MIRROR_LOG_TAIL=333" "$diagnose_out" "Makefile diagnose mirror log tail override"
 	expect_grep "MIRROR_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$diagnose_out" "Makefile diagnose mirror log since-time override"
 	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$diagnose_out" "Makefile diagnose mirror log file override"
@@ -1957,6 +1961,8 @@ mirror_crio_rung_b_manifest_count=16
 mirror_crio_rung_b_blob_count=16
 mirror_guest_rung_b_manifest_count=0
 mirror_guest_rung_b_blob_count=0
+crio_log_tail=600
+crio_log_since_time=2026-06-30T07:32:23Z
 mirror_log_since_time=2026-06-30T07:32:23Z
 classification=known-host-pull-blocker
 EOF
@@ -1986,9 +1992,11 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local broken_guest="$tmpdir/broken-direct-pull-guest" guest_err="$tmpdir/validate-direct-pull-guest.err"
 	local broken_key="$tmpdir/broken-direct-pull-key" key_err="$tmpdir/validate-direct-pull-key.err"
 	local broken_mirror_window="$tmpdir/broken-direct-pull-mirror-window" mirror_window_err="$tmpdir/validate-direct-pull-mirror-window.err"
+	local broken_crio_window="$tmpdir/broken-direct-pull-crio-window" crio_window_err="$tmpdir/validate-direct-pull-crio-window.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
+	expect_grep "CRI-O logs are bounded by since-time=2026-06-30T07:32:23Z" "$out" "direct-pull diagnostic CRI-O log window"
 	expect_grep "mirror summary shows CRI-O rung-b blob pulls" "$out" "direct-pull diagnostic CRI-O blob count"
 	expect_grep "mirror summary shows no guest rung-b blob pulls" "$out" "direct-pull diagnostic guest blob count"
 
@@ -1998,9 +2006,11 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	cp -R "$diag" "$legacy_diag"
 	rm -rf "$legacy_diag/mirror"
 	sed -i '/^mirror_log_since_time=/d' "$legacy_diag/summary.env"
+	sed -i '/^crio_log_since_time=/d' "$legacy_diag/summary.env"
 	make -s validate-rung-b-direct-pull DIAG_DIR="$legacy_diag" REQUIRE_MIRROR_SUMMARY=0 > "$legacy_out"
 	expect_grep "mirror summary not required" "$legacy_out" "Makefile direct-pull legacy diagnostic validation"
 	expect_grep "mirror log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic mirror window"
+	expect_grep "CRI-O log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic CRI-O window"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$legacy_out" "Makefile direct-pull legacy diagnostic result"
 
 	cp -R "$diag" "$broken_mirror_window"
@@ -2009,6 +2019,13 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 		die "direct-pull diagnostic validator accepted unbounded mirror logs"
 	fi
 	expect_grep "mirror_log_since_time is missing" "$mirror_window_err" "direct-pull diagnostic mirror window failure"
+
+	cp -R "$diag" "$broken_crio_window"
+	sed -i '/^crio_log_since_time=/d' "$broken_crio_window/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_crio_window" > /dev/null 2> "$crio_window_err"; then
+		die "direct-pull diagnostic validator accepted unbounded CRI-O logs"
+	fi
+	expect_grep "crio_log_since_time is missing" "$crio_window_err" "direct-pull diagnostic CRI-O window failure"
 
 	cp -R "$diag" "$broken_guest"
 	sed -i 's/^guest_rung_b_blob	0$/guest_rung_b_blob	1/' "$broken_guest/mirror/summary.tsv"

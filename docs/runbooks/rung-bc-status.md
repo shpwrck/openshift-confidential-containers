@@ -67,9 +67,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
 - `make validate-rung-b-direct-pull DIAG_DIR=<bundle>` now validates those direct-pull diagnostic
   bundles offline, including known-blocker classification, no Trustee image-key request, and the
   compact mirror-count shape when `mirror/summary.tsv` is present. Current diagnostic bundles also
-  record bounded mirror-log collection in `summary.env`; the Make target forwards
-  `REQUIRE_MIRROR_SUMMARY=0` explicitly for older bundles collected before mirror summaries
-  existed, and current bundles should keep the strict default.
+  record bounded CRI-O and mirror-log collection in `summary.env`; the Make target forwards
+  `REQUIRE_MIRROR_SUMMARY=0` explicitly for older bundles collected before mirror summaries and
+  current log-window metadata existed, and current bundles should keep the strict default.
 - `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
   it passes `--ocp-version`, defaults to the pinned `coco-tools` digest used by VCEK collection,
   treats Veritas `-o` as an output directory, supports a cached `oc debug` image, and can stage a
@@ -246,11 +246,11 @@ Live rig check on 2026-06-30:
     containers-storage:<encrypted-digest>` refuses the copy because the carrier manifest digest
     would not match the encrypted destination digest.
 - The packaged direct-pull diagnostic bundle
-  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z` validates
+  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z` validates
   with `make validate-rung-b-direct-pull DIAG_DIR=...` on the bastion. The validation confirms the
   known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, bounded
-  mirror-log collection from `2026-06-30T08:58:44Z`, CRI-O rung-b manifest/blob pulls in the
-  mirror log summary, and zero guest `oci-client` rung-b pulls.
+  CRI-O and mirror-log collection from `2026-06-30T10:08:54Z`, CRI-O rung-b manifest/blob pulls
+  in the mirror log summary, and zero guest `oci-client` rung-b pulls.
   - The containerd-style annotation key `io.kubernetes.cri.image-name` cannot be added through
     CRI-O runtime `allowed_annotations`; it is not in CRI-O's `AllAllowedAnnotations` table.
     Runtime-level `default_annotations` did accept
@@ -315,6 +315,20 @@ Live rig check on 2026-06-30:
     `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z`
     passed with the strict default mirror-summary requirement. The helper removed the diagnostic
     pod afterward; the node remained Ready and no debug pods were left behind.
+  - After adding strict CRI-O node-log lower-bound capture to the direct-pull diagnostic, it was
+    rerun at
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z`.
+    The diagnostic again reproduced `classification=known-host-pull-blocker`: pod phase
+    `Pending`, `host_pull_blocker_seen=1`, `image_key_request_seen=0`,
+    `crio_log_since_time=2026-06-30T10:08:54Z`,
+    `mirror_log_since_time=2026-06-30T10:08:54Z`, `crio_rung_b_manifest=16`,
+    `crio_rung_b_blob=16`, `guest_rung_b_manifest=0`, and `guest_rung_b_blob=0`.
+    Running
+    `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z`
+    passed with the strict default log-window and mirror-summary requirements. The prior
+    `085844Z` bounded-mirror bundle now fails strict validation, as intended, because it predates
+    `crio_log_since_time`. The helper removed the diagnostic pod afterward; the node remained
+    Ready and no debug pods were left behind.
 - NRI was inspected as a possible late guest-pull-source override:
   - CRI-O 1.33 calls NRI `CreateContainer` after creating the local image result and before saving
     the final OCI spec/runtime create. The NRI runtime-tools generator can adjust annotations, so
