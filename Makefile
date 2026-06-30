@@ -7,6 +7,16 @@ NS      ?= trustee-operator-system
 WORKLOAD_NS ?= default
 CATALOGSOURCE ?= cs-redhat-operator-index-v4-20
 VCEK_BUNDLE ?= ./vcek-bundle
+TEE ?= snp
+OCP_VERSION ?= 4.20.18
+PULL_SECRET ?= ./pull-secret.json
+INITDATA ?= ./initdata-flavour-b.toml
+RVPS_OUT ?= ./rvps-$(TEE).yaml
+DEBUG_IMAGE ?=
+REGISTRIES_CONF ?=
+REGISTRY_CERTS_DIR ?=
+VERITAS_OC_WRAPPER ?=
+VERITAS_EXTRA_ARGS ?=
 HWID ?=
 HWIDS ?=
 MIRROR_REGISTRY ?= mirror.rig.local:8443
@@ -235,7 +245,7 @@ collect-vcek: ## Collect per-socket VCEK certs into the OfflineStore secret (aut
 
 .PHONY: gen-rvps
 gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware)
-	./scripts/gen-rvps-veritas.sh
+	TEE="$(TEE)" OCP_VERSION="$(OCP_VERSION)" PULL_SECRET="$(PULL_SECRET)" INITDATA="$(INITDATA)" OUT="$(RVPS_OUT)" NODE="$(NODE)" DEBUG_IMAGE="$(DEBUG_IMAGE)" REGISTRIES_CONF="$(REGISTRIES_CONF)" REGISTRY_CERTS_DIR="$(REGISTRY_CERTS_DIR)" VERITAS_OC_WRAPPER="$(VERITAS_OC_WRAPPER)" VERITAS_EXTRA_ARGS="$(VERITAS_EXTRA_ARGS)" ./scripts/gen-rvps-veritas.sh
 
 ## --- Validation (negative tests) -----------------------------------------
 .PHONY: negative-test

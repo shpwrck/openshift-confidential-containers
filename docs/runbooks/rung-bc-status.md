@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T04:45:04Z
+Last updated: 2026-06-30T05:22:39Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `ceb1c9d`
+Current head before this update: `e3f4db0`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -14,7 +14,9 @@ A follow-up CRI-O `default_annotations` probe also failed to redirect the Kata g
 away from the already-present carrier image. Disabling CRI-O's configured host decryption key path
 also did not change the direct digest failure. A controlled tag diagnostic also showed that the
 current Trustee policy remains permissive enough for a tampered-initdata rung-b pod to start, so
-measurement-mismatch negatives are not yet valid on this rig.
+measurement-mismatch negatives are not yet valid on this rig. Veritas RVPS generation is now
+proven on the rig for the current rung-b initdata, but the generated values have not been applied
+as a sign-off policy because the live resource and EAR policies are still permissive.
 
 ## What is already in place
 
@@ -36,6 +38,10 @@ measurement-mismatch negatives are not yet valid on this rig.
   probe so stale denials from older pods cannot satisfy a new negative test.
   A live rig run against the current direct digest failure now exits non-zero with
   `no rung-b attestation/image-key denial signal`, as intended.
+- `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
+  it passes `--ocp-version`, defaults to the pinned `coco-tools` digest used by VCEK collection,
+  treats Veritas `-o` as an output directory, supports a cached `oc debug` image, and can stage a
+  temporary `VERITAS_OC_WRAPPER` for disconnected release-image mirror rewrites.
 
 ## Local verification completed
 
@@ -129,6 +135,28 @@ Live rig check on 2026-06-30:
     attestation policy that affirms all EAR trust claims. That means measured-initdata mismatch is
     not currently enforced on the rig.
   - The temporary pods and local tag alias were removed; the node stayed Ready.
+- Veritas RVPS generation for the current rung-b initdata is now reproducible on the rig:
+  - Current initdata: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rvps-probe-20260630T045611Z/rung-b-initdata.toml`
+    (`sha256:a6ae0bdf358463ff272bba868c06c33a80c0b5a6678fac3936dbd66ab27efae0`).
+  - Direct `veritas --platform baremetal --tee snp` requires `--ocp-version`; without it,
+    Veritas exits with `At least one --ocp-version is required for baremetal`.
+  - In this disconnected rig, Veritas hard-codes
+    `quay.io/openshift-release-dev/ocp-release:<version>-x86_64` through `oc adm release info`.
+    Mounting `/etc/containers/registries.conf` is not enough for that path: tag-shaped release
+    refs ignore IDMS, and public `quay.io` is unreachable.
+  - A temporary `oc` wrapper rewrote the hard-coded release tag to
+    `mirror.rig.local:8443/openshift/release-images:4.20.18-x86_64`, rewrote the extracted
+    `rhel-coreos-extensions` image to `mirror.rig.local:8443/openshift/release@sha256:109247...`,
+    and skipped Veritas's upstream `--verify` component scan after proving the mirror release tag
+    was readable. This is a disconnected-rig workaround, not a substitute for mirror provenance.
+  - Running the patched script with that wrapper and the bastion Docker auth file produced
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rvps-probe-20260630T045611Z/veritas-rung-b-rvps-script.yaml`
+    with `sha256:f80ced520abeabbe823bc9f9e7afc05a7ed657951a7d82befc6990dc51aa307f`.
+    The artifact is a `rvps-reference-values` ConfigMap containing 96
+    `snp_launch_measurement` values and one `init_data` value.
+  - The generated RVPS was inspected but not applied as a sign-off baseline. Live Trustee still
+    has `resource-policy: default allow := true` and an EAR policy that affirms every trust claim,
+    so measured-initdata negatives remain invalid until policy is tightened too.
 - Source inspection and additional pre-stage probes explain why direct digest refs still fail:
   - CRI-O `runtime_pull_image` adds Kata's `image_guest_pull` virtual volume only during
     `CreateContainer`, after CRI-O has already resolved the container image from local storage.
@@ -166,8 +194,10 @@ Live rig check on 2026-06-30:
    paths.
 
 2. Replace the permissive Trustee/RVPS baseline with a restrictive policy/reference-value set
-   before counting measured-initdata mismatch negatives. On the current rig, tampered initdata
-   still receives `image-kek`; this is a sign-off blocker for rung-b negative proof.
+   before counting measured-initdata mismatch negatives. RVPS generation now works for the current
+   rung-b initdata, but RVPS alone is not enough while `resource-policy` allows all resources and
+   the EAR policy affirms all claims. On the current rig, tampered initdata still receives
+   `image-kek`; this is a sign-off blocker for rung-b negative proof.
 
 3. If the rung-b image is rebuilt, rerun the offline unwrap check before seeding Trustee:
 

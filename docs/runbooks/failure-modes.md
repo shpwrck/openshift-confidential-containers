@@ -83,6 +83,7 @@ fast diagnostic → fix**. Read the "Top 7" first — those are the ones I'd bet
 | "works" on rig but will fail at customer | `KDS` left in `vcek_sources` (reached the internet) | grep kbs-config.toml | remove `{type=KDS}` for true offline test |
 | VCEK rejected / wrong chain | ARK/ASK not present or wrong gen (Milan vs Genoa #591) | KBS logs | supply ARK/ASK; confirm Trustee gen mapping |
 | Veritas RVPS mismatch | initdata changed after Veritas run | KBS logs "measurement mismatch" | re-run Veritas with current initdata |
+| Veritas reaches public `quay.io` in a disconnected rig | Baremetal Veritas shells out to `oc adm release info` for a hard-coded public OCP release tag | Veritas logs `unable to read image quay.io/openshift-release-dev/ocp-release:<version>-x86_64` | set `OCP_VERSION`, use a cached `DEBUG_IMAGE` for node mode, pass mirror-capable auth, and supply a short-lived `VERITAS_OC_WRAPPER` that rewrites release/extension refs to the mirror; keep separate release-mirror provenance because the wrapper may bypass upstream `--verify` |
 
 ## Phase 6 — Rungs a→b→c
 

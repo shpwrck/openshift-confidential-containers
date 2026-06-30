@@ -278,7 +278,11 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
       unreachable) KDS instead of the cache → attestation fails. Re-runnable for TCB refresh.
 - [ ] **Generate RVPS reference values with Veritas** (hardware-bound):
       `make gen-rvps` → [`scripts/gen-rvps-veritas.sh`](../../scripts/gen-rvps-veritas.sh)
-      (`coco-tools:1.12 veritas --tee snp`, one run per distinct socket/hardware config).
+      (`coco-tools` pinned by digest, `veritas --tee snp --ocp-version <OCP_VERSION>`, one run
+      per distinct socket/hardware config). On disconnected rigs, set `DEBUG_IMAGE` to a cached
+      image for `oc debug node`; if Veritas's internal `oc adm release info` still reaches public
+      `quay.io`, pass a temporary `VERITAS_OC_WRAPPER` that rewrites the release and
+      `rhel-coreos-extensions` refs to the mirror.
 - [ ] **Wire both into Trustee:** mount the VCEK secrets via
       `KbsConfig.spec.kbsLocalCertCacheSpec` (path
       `…/kds-store/vcek/<hwid>/vcek.der`) and merge the RVPS output into the

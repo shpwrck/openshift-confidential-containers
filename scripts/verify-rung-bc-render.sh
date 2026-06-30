@@ -316,6 +316,72 @@ EOF
 	expect_grep "manifest missing required rung b/c env fields or digest refs" "$err" "rung-b env manifest validation"
 }
 
+verify_gen_rvps_veritas_local_command() {
+	local bin="$tmpdir/gen-rvps-bin" log="$tmpdir/gen-rvps-podman.log" out="$tmpdir/rvps-snp.yaml"
+	local pull_secret="$tmpdir/pull-secret.json" initdata="$tmpdir/initdata.toml"
+	local registries="$tmpdir/registries.conf" wrapper="$tmpdir/oc-wrapper"
+	mkdir -p "$bin"
+	printf '{}\n' > "$pull_secret"
+	printf 'algorithm = "sha256"\nversion = "0.1.0"\n' > "$initdata"
+	printf '[[registry]]\nprefix = "quay.io/openshift-release-dev/ocp-release"\n' > "$registries"
+	printf '#!/usr/bin/env bash\nexec /usr/local/bin/oc "$@"\n' > "$wrapper"
+	chmod +x "$wrapper"
+
+	cat > "$bin/podman" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'podman' >> "$CALL_LOG"
+outdir=""
+while [[ "$#" -gt 0 ]]; do
+	printf '\t%s' "$1" >> "$CALL_LOG"
+	if [[ "$1" == "-v" ]]; then
+		printf '\t%s' "${2:-}" >> "$CALL_LOG"
+		case "${2:-}" in
+			*:/veritas-out:*) outdir="${2%%:/veritas-out:*}" ;;
+		esac
+		shift 2
+		continue
+	fi
+	if [[ "$1" == "-e" ]]; then
+		printf '\t%s' "${2:-}" >> "$CALL_LOG"
+		shift 2
+		continue
+	fi
+	shift
+done
+printf '\n' >> "$CALL_LOG"
+[[ -n "$outdir" ]] || { echo "missing /veritas-out mount" >&2; exit 1; }
+mkdir -p "$outdir"
+cat > "$outdir/rvps-reference-values.yaml" <<'YAML'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rvps-reference-values
+data:
+  reference-values.json: |
+    []
+YAML
+EOF
+	chmod +x "$bin/podman"
+
+	CALL_LOG="$log" PATH="$bin:$PATH" \
+		make -s -C "$REPO_ROOT" gen-rvps \
+		PULL_SECRET="$pull_secret" \
+		INITDATA="$initdata" \
+		RVPS_OUT="$out" \
+		OCP_VERSION="4.20.18" \
+		REGISTRIES_CONF="$registries" \
+		VERITAS_OC_WRAPPER="$wrapper" \
+		>/dev/null
+
+	expect_grep "kind: ConfigMap" "$out" "gen-rvps copied Veritas output file"
+	expect_grep "quay.io/openshift_sandboxed_containers/coco-tools@sha256:89c219d2c7cb8359e8cc86605df1d31ce3be0f2565683b8bff882dba0c8e2605" "$log" "gen-rvps pinned tools image"
+	expect_grep $'--ocp-version\t4.20.18' "$log" "gen-rvps OCP version flag"
+	expect_grep "/etc/containers/registries.conf:ro,z" "$log" "gen-rvps registries.conf mount"
+	expect_grep "/veritas-bin:ro,z" "$log" "gen-rvps oc wrapper mount"
+	expect_grep $'-o\t/veritas-out' "$log" "gen-rvps output directory"
+}
+
 verify_cosign_default_sign_args() {
 	local bin="$tmpdir/cosign-bin" actual
 	mkdir -p "$bin"
@@ -1875,6 +1941,7 @@ verify_build_manifest_fingerprints
 verify_apply_requires_digest_refs
 verify_rung_b_key_size_guard
 verify_manifest_env_emit
+verify_gen_rvps_veritas_local_command
 verify_cosign_default_sign_args
 verify_rung_c_digest_signing
 verify_rung_c_policy_render

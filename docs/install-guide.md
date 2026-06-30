@@ -785,8 +785,14 @@ show vcek-url` → downloaded on an **internet-connected** host (the rig node is
 ### 7.4 Generate RVPS reference values
 
 ```bash
-scripts/gen-rvps-veritas.sh        # coco-tools:1.12 veritas --tee snp — one run per distinct socket/hw config
+OCP_VERSION=4.20.18 scripts/gen-rvps-veritas.sh
 ```
+
+For node-local generation in the disconnected rig, set `NODE=<node>`, `DEBUG_IMAGE=<cached
+mirror image>`, and, if Veritas still tries public `quay.io` release refs through
+`oc adm release info`, provide a temporary `VERITAS_OC_WRAPPER` that rewrites the OpenShift
+release and `rhel-coreos-extensions` images to the mirror. The script expects Veritas's output
+directory and copies `rvps-reference-values.yaml` to `OUT`.
 
 ### 7.5 Wire both into Trustee
 

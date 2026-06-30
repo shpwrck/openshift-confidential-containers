@@ -11,6 +11,9 @@ the CRI-O allowed-annotation and runtime `default_annotations` override paths ha
 ruled out as production proof routes, as has disabling CRI-O's configured host decryption key path.
 The tag-shaped diagnostic path can run the real encrypted image in guest, but current Trustee
 policy/RVPS is permissive enough that tampered measured initdata still receives the image key.
+Veritas RVPS generation for the current rung-b initdata is now proven on the rig, including the
+disconnected release-image workaround, but those reference values still need a restrictive
+resource/EAR policy before they can make the tampered-initdata negative meaningful.
 
 For the latest branch/PR status and remaining proof checklist, see
 `docs/runbooks/rung-bc-status.md`.
@@ -295,6 +298,17 @@ bring-up baseline. The live 2026-06-30 tag diagnostic showed
 policy that affirms every EAR claim; with that state, a tampered-initdata pod still reached
 `Running` and fetched `image-kek`. That is a sign-off blocker, not a successful negative.
 
+RVPS generation itself is no longer the blocker. On 2026-06-30,
+`scripts/gen-rvps-veritas.sh` generated a `rvps-reference-values` ConfigMap for the current
+rung-b initdata on `sno-coco-node` with `OCP_VERSION=4.20.18` and a temporary
+`VERITAS_OC_WRAPPER` that rewrote Veritas's hard-coded public release refs to the rig mirror.
+The output
+`/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rvps-probe-20260630T045611Z/veritas-rung-b-rvps-script.yaml`
+has `sha256:f80ced520abeabbe823bc9f9e7afc05a7ed657951a7d82befc6990dc51aa307f` and contains
+96 SNP launch measurements plus one `init_data` value. Do not apply it as proof by itself:
+pair it with a restrictive resource policy and EAR appraisal policy, then rerun both the happy
+and tampered-initdata pods.
+
 The 2026-06-30 rig used KID
 `kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`. Trustee initially served
 `/home/rocky/rung-b/image-kek.bin` at that KID, but offline unwrap showed the encrypted layer
@@ -523,6 +537,7 @@ make negative-test WHICH=all
 | Pod annotation `io.kubernetes.cri-o.ImageName` is allowed and set to the encrypted image, but guest pull still uses the carrier image | CRI-O writes its internal `ImageName` after sandbox annotations, so the pod annotation does not override the create-time guest-pull source | Do not use this as a workaround. Confirm with CRI-O journal `Adding mount info to pull image ...`; remove the temporary allowed annotation and restore `50-kata-snp`. |
 | Runtime `default_annotations` set `io.kubernetes.cri.image-name` to the encrypted digest, but the pod runs as the carrier and no image-key request appears | CRI-O's create-time app image metadata still resolves from the local carrier image; the containerd-style source annotation does not win for this CRI-O/Kata path | Do not count a carrier `Running` pod as proof. Require both a CRI-O `image_guest_pull` source matching the encrypted ref and a Trustee `image-kek` fetch. Restore `50-kata-snp` after the probe; on the air-gapped rig, use a cached mirror image for `oc debug node` because the default support-tools image can time out. |
 | Tampered-initdata rung-b negative reaches `Running` and fetches `image-kek` | Trustee is still in permissive bring-up mode, so RVPS/resource/attestation policy is not enforcing the measured initdata mismatch | Check `rvps-reference-values`, `resource-policy`, and `attestation-policy`. Empty reference values plus `default allow := true` plus all-affirming EAR claims mean the negative cannot count. Generate/apply restrictive reference values and rerun before sign-off. |
+| `gen-rvps-veritas.sh` fails in a disconnected rig on `quay.io/openshift-release-dev/ocp-release:<version>-x86_64` | Veritas baremetal uses `oc adm release info` against a hard-coded public release tag; mounting `registries.conf` is not enough for that tag path | Set `OCP_VERSION`, use a cached `DEBUG_IMAGE` for `oc debug`, pass mirror-capable auth such as the bastion Docker config, and supply a short-lived `VERITAS_OC_WRAPPER` that rewrites the release and `rhel-coreos-extensions` refs to the mirror. Treat any skipped upstream verify step as a disconnected workaround backed by prior mirror provenance, not as release-integrity proof. |
 | Pre-staging the actual encrypted image into `containers-storage` fails before pod creation | containers/storage validates layer DiffIDs against the image config and cannot store the encrypted layer as a normal local rootfs image | On 2026-06-30, `skopeo copy --preserve-digests docker://...@sha256:69b8... containers-storage:...:encrypted-prestage` failed because encrypted blob `sha256:346e9...` did not match config DiffID `sha256:76c30...`. Clean any partial tag and do not treat this as a viable direct bypass. |
 | Trying to make a digest-pinned carrier alias fails | Podman/containers-storage do not allow creating tags whose target name is a digest reference | On 2026-06-30, `podman tag <carrier> mirror.rig.local:8443/coco/rung-b@sha256:69b8...` failed with `tag by digest not supported`. A tag-only carrier alias can diagnose guest pull, but it cannot satisfy the digest-pinned production proof invariant. |
 | Local node-storage alias reaches KBS but pod stays `CreateContainerError` with `Failed to decrypt the image layer` | Host image check was bypassed, so the remaining issue is guest decryption of the encrypted layer | Treat this only as a diagnostic. Decode layer annotations, compare KID/KEK, and reseed Trustee or rebuild the encrypted image before rerunning direct proof. |
