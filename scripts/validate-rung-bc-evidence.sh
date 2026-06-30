@@ -25,6 +25,7 @@ RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-}"
 RUNG_B_DENIAL_RE="${RUNG_B_DENIAL_RE:-attest|denied|forbidden|measurement|decrypt|image-key|key}"
 RUNG_C_DENIAL_RE="${RUNG_C_DENIAL_RE:-policy|sign|signature|sigstore|reject}"
+VALIDATION_SCOPE="${VALIDATION_SCOPE:-all}"
 
 failures=0
 
@@ -134,43 +135,71 @@ check_manifest() {
 	if [[ ! -s "$manifest" ]]; then
 		return
 	fi
-	if jq -e --arg rung_b_key_id "$RUNG_B_KEY_ID" '
-		def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
-		(.rung_b.digest_ref | digest_ref) and
-		(.rung_b.key_id == $rung_b_key_id) and
-		(.rung_c.digest_ref | digest_ref) and
-		(.rung_c.unsigned_digest_ref | digest_ref) and
-		(.rung_b.key_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
-		(.rung_c.cosign_pub_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
-	' "$manifest" >/dev/null; then
-		pass "rung-bc image manifest has digest refs, expected key ID, and artifact fingerprints"
-	else
-		fail "rung-bc image manifest is missing digest refs/fingerprints or has the wrong rung-b key ID: expected $RUNG_B_KEY_ID"
-	fi
+	case "$VALIDATION_SCOPE" in
+		all)
+			if jq -e --arg rung_b_key_id "$RUNG_B_KEY_ID" '
+				def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
+				(.rung_b.digest_ref | digest_ref) and
+				(.rung_b.key_id == $rung_b_key_id) and
+				(.rung_c.digest_ref | digest_ref) and
+				(.rung_c.unsigned_digest_ref | digest_ref) and
+				(.rung_b.key_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+				(.rung_c.cosign_pub_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+			' "$manifest" >/dev/null; then
+				pass "rung-bc image manifest has digest refs, expected key ID, and artifact fingerprints"
+			else
+				fail "rung-bc image manifest is missing digest refs/fingerprints or has the wrong rung-b key ID: expected $RUNG_B_KEY_ID"
+			fi
+			;;
+		rung-c)
+			if jq -e '
+				def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
+				(.rung_c.digest_ref | digest_ref) and
+				(.rung_c.unsigned_digest_ref | digest_ref) and
+				(.rung_c.cosign_pub_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+			' "$manifest" >/dev/null; then
+				pass "rung-c image manifest has digest refs and artifact fingerprint"
+			else
+				fail "rung-c image manifest is missing digest refs or public-key fingerprint"
+			fi
+			;;
+	esac
 }
 
 check_proof_summary() {
-	local proof="${EVIDENCE_DIR}/rung-bc-proof-summary.tsv" bad_rows required row missing_rows=0
+	local proof="${EVIDENCE_DIR}/rung-bc-proof-summary.tsv" bad_rows="" required row missing_rows=0
+	local -a required_rows
 	require_file "$proof" "rung-bc proof summary"
 	if [[ ! -s "$proof" ]]; then
 		return
 	fi
-	for required in \
-		rung_b_key_secret_sha256 \
-		rung_c_pub_secret_sha256 \
-		rung_b_happy_image \
-		rung_b_negative_image \
-		rung_c_happy_image \
-		rung_c_negative_unsigned_image; do
+	if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+		required_rows=(
+			rung_b_key_secret_sha256
+			rung_c_pub_secret_sha256
+			rung_b_happy_image
+			rung_b_negative_image
+			rung_c_happy_image
+			rung_c_negative_unsigned_image
+		)
+	else
+		required_rows=(
+			rung_c_pub_secret_sha256
+			rung_c_happy_image
+			rung_c_negative_unsigned_image
+		)
+	fi
+	for required in "${required_rows[@]}"; do
 		row="$(awk -F '\t' -v check="$required" 'NR > 1 && $1 == check { print; found = 1; exit } END { if (!found) exit 1 }' "$proof" || true)"
 		if [[ -z "$row" ]]; then
 			fail "rung-bc proof summary missing required row: $required"
 			missing_rows=1
+		elif [[ "$(awk -F '\t' '{ print $4 }' <<<"$row")" != "match" ]]; then
+			bad_rows+="${row}"$'\n'
 		fi
 	done
-	bad_rows="$(awk -F '\t' 'NR > 1 && $4 != "match" { print }' "$proof")"
 	if [[ -z "$bad_rows" && "$missing_rows" == "0" ]]; then
-		pass "rung-bc proof summary rows all match"
+		pass "$VALIDATION_SCOPE proof summary rows all match"
 	else
 		if [[ -n "$bad_rows" ]]; then
 			fail "rung-bc proof summary has non-match rows:"
@@ -288,12 +317,14 @@ check_initdata_relationships() {
 	rung_c_initdata="${EVIDENCE_DIR}/pods/${RUNG_C_POD}.initdata.toml"
 	neg_rung_c_initdata="${EVIDENCE_DIR}/pods/${NEG_RUNG_C_POD}.initdata.toml"
 
-	if [[ ! -s "$rung_b_initdata" || ! -s "$neg_rung_b_initdata" ]]; then
-		fail "rung-b decoded initdata missing for relationship check"
-	elif cmp -s "$rung_b_initdata" "$neg_rung_b_initdata"; then
-		fail "rung-b negative decoded initdata matches happy decoded initdata"
-	else
-		pass "rung-b negative decoded initdata differs from happy decoded initdata"
+	if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+		if [[ ! -s "$rung_b_initdata" || ! -s "$neg_rung_b_initdata" ]]; then
+			fail "rung-b decoded initdata missing for relationship check"
+		elif cmp -s "$rung_b_initdata" "$neg_rung_b_initdata"; then
+			fail "rung-b negative decoded initdata matches happy decoded initdata"
+		else
+			pass "rung-b negative decoded initdata differs from happy decoded initdata"
+		fi
 	fi
 
 	if [[ ! -s "$rung_c_initdata" || ! -s "$neg_rung_c_initdata" ]]; then
@@ -370,21 +401,26 @@ check_denial_signal() {
 
 check_kbs_logs() {
 	local logs="${EVIDENCE_DIR}/trustee/logs.txt" resource rung_b_resource rung_c_policy_resource
+	local -a resources
 	require_file "$logs" "Trustee logs"
 	if [[ ! -s "$logs" ]]; then
 		return
 	fi
-	rung_b_resource="$(kbs_uri_resource_path "$RUNG_B_KEY_ID" || true)"
-	if [[ -z "$rung_b_resource" ]]; then
-		fail "rung-b key ID is not a kbs:/// resource URI: $RUNG_B_KEY_ID"
-		return
+	if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+		rung_b_resource="$(kbs_uri_resource_path "$RUNG_B_KEY_ID" || true)"
+		if [[ -z "$rung_b_resource" ]]; then
+			fail "rung-b key ID is not a kbs:/// resource URI: $RUNG_B_KEY_ID"
+			return
+		fi
+		resources+=("$rung_b_resource")
 	fi
 	rung_c_policy_resource="$(kbs_uri_resource_path "$RUNG_C_POLICY_URI" || true)"
 	if [[ -z "$rung_c_policy_resource" ]]; then
 		fail "rung-c policy URI is not a kbs:/// resource URI: $RUNG_C_POLICY_URI"
 		return
 	fi
-	for resource in "$rung_b_resource" "$rung_c_policy_resource" default/sig-public-key/rung-c; do
+	resources+=("$rung_c_policy_resource" default/sig-public-key/rung-c)
+	for resource in "${resources[@]}"; do
 		if grep -Fq "resource/${resource}" "$logs"; then
 			pass "Trustee logs include resource/${resource}"
 		else
@@ -457,7 +493,9 @@ check_mirror_logs() {
 	rung_b_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest")"
 	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
 	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
-	check_mirror_image_pull "rung-b happy image" "$rung_b_image" "$context" "guest oci-client" "oci-client/" 1
+	if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+		check_mirror_image_pull "rung-b happy image" "$rung_b_image" "$context" "guest oci-client" "oci-client/" 1
+	fi
 	check_mirror_image_pull "rung-c happy image" "$rung_c_image" "$context" "guest oci-client" "oci-client/" 1
 	check_mirror_image_pull "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context" "guest oci-client" "oci-client/" 0
 }
@@ -512,8 +550,10 @@ check_crio_logs() {
 	rung_b_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest")"
 	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
 	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
-	check_crio_image_guest_pull_source "rung-b happy image" "$rung_b_image" "$context"
-	check_crio_image_guest_pull_source "rung-b negative image" "$rung_b_image" "$context"
+	if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+		check_crio_image_guest_pull_source "rung-b happy image" "$rung_b_image" "$context"
+		check_crio_image_guest_pull_source "rung-b negative image" "$rung_b_image" "$context"
+	fi
 	check_crio_image_guest_pull_source "rung-c happy image" "$rung_c_image" "$context"
 	check_crio_image_guest_pull_source "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context"
 }
@@ -552,6 +592,10 @@ check_summary() {
 
 [[ -n "$EVIDENCE_DIR" ]] || die "usage: $0 <evidence-dir> (or set EVIDENCE_DIR)"
 [[ -d "$EVIDENCE_DIR" ]] || die "evidence directory does not exist: $EVIDENCE_DIR"
+case "$VALIDATION_SCOPE" in
+	all|rung-c) ;;
+	*) die "VALIDATION_SCOPE must be all or rung-c, got: $VALIDATION_SCOPE" ;;
+esac
 need jq
 need awk
 need grep
@@ -570,30 +614,44 @@ NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-$(summary_value_or_default neg_rung_c_pod "$DE
 check_summary
 check_manifest
 check_proof_summary
-rung_b_key_secret="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID" || true)"
-if [[ -n "$rung_b_key_secret" ]]; then
-	check_secret_fingerprint "${rung_b_key_secret%%	*}" "${rung_b_key_secret#*	}" "rung-b image key" 32
-else
-	fail "rung-b key ID is not a kbs:///default/<secret>/<key> URI: $RUNG_B_KEY_ID"
+if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+	rung_b_key_secret="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID" || true)"
+	if [[ -n "$rung_b_key_secret" ]]; then
+		check_secret_fingerprint "${rung_b_key_secret%%	*}" "${rung_b_key_secret#*	}" "rung-b image key" 32
+	else
+		fail "rung-b key ID is not a kbs:///default/<secret>/<key> URI: $RUNG_B_KEY_ID"
+	fi
 fi
 check_secret_fingerprint sig-public-key rung-c "rung-c public key"
 check_secret_fingerprint security-policy rung-c "rung-c security policy"
 require_file "${EVIDENCE_DIR}/pods/summary.tsv" "pod summary index"
-check_pod_phase "$RUNG_B_POD" "rung-b" happy
+if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+	check_pod_phase "$RUNG_B_POD" "rung-b" happy
+fi
 check_pod_phase "$RUNG_C_POD" "rung-c" happy
-check_happy_app_started "$RUNG_B_POD" "rung-b" "$RUNG_B_APP_LOG_MARKER"
+if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+	check_happy_app_started "$RUNG_B_POD" "rung-b" "$RUNG_B_APP_LOG_MARKER"
+fi
 check_happy_app_started "$RUNG_C_POD" "rung-c" "$RUNG_C_APP_LOG_MARKER"
-check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
+if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+	check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
+fi
 check_pod_phase "$NEG_RUNG_C_POD" "rung-c negative" denied
 check_initdata_relationships
-check_decoded_initdata "$RUNG_B_POD" "rung-b" "$RUNG_B_POLICY_URI"
+if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+	check_decoded_initdata "$RUNG_B_POD" "rung-b" "$RUNG_B_POLICY_URI"
+fi
 check_decoded_initdata "$RUNG_C_POD" "rung-c" "$RUNG_C_POLICY_URI"
-check_decoded_initdata "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_POLICY_URI" "$RUNG_B_TAMPER_MARKER"
+if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+	check_decoded_initdata "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_POLICY_URI" "$RUNG_B_TAMPER_MARKER"
+fi
 check_decoded_initdata "$NEG_RUNG_C_POD" "rung-c negative" "$RUNG_C_POLICY_URI"
 check_kbs_logs
 check_mirror_logs
 check_crio_logs
-check_denial_signal "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_DENIAL_RE"
+if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+	check_denial_signal "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_DENIAL_RE"
+fi
 check_denial_signal "$NEG_RUNG_C_POD" "rung-c negative" "$RUNG_C_DENIAL_RE"
 
 if (( failures > 0 )); then
@@ -601,4 +659,8 @@ if (( failures > 0 )); then
 	exit 1
 fi
 
-echo "Rung b/c evidence validation OK."
+if [[ "$VALIDATION_SCOPE" == "rung-c" ]]; then
+	echo "Rung c evidence validation OK."
+else
+	echo "Rung b/c evidence validation OK."
+fi

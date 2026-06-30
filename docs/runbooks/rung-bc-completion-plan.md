@@ -515,6 +515,18 @@ make collect-rung-bc-evidence
 make validate-rung-bc-evidence EVIDENCE_DIR=<bundle path printed above>
 ```
 
+When rung-b is still blocked and the run intentionally contains only rung-c happy/unsigned
+negative pods, validate the signed-image proof subset explicitly:
+
+```bash
+make validate-rung-c-evidence EVIDENCE_DIR=<bundle path printed above>
+```
+
+This checks the same clean-checkout, bounded Trustee/CRI-O/mirror, digest-ref, KBS fetch,
+guest-pull, CRI-O source, initdata, app-start, and denial gates for rung-c only. It is not a
+substitute for `make validate-rung-bc-evidence`, which remains the final promotion gate for
+both rungs.
+
 Once Trustee has the rung-b/c resources, the one-shot proof runner loads digest refs from
 `rung-bc-artifacts/rung-bc.env` when `RUNG_B_IMAGE`, `RUNG_C_IMAGE`, and
 `RUNG_C_UNSIGNED_IMAGE` are not already digest-pinned, executes the b/c happy paths, keeps the

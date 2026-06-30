@@ -1687,9 +1687,34 @@ verify_evidence_validation_gate() {
 	local custom_pods="$tmpdir/custom-pods-evidence" custom_pods_out="$tmpdir/validate-custom-pods-evidence.out"
 	local custom_key_id="$tmpdir/custom-key-id-evidence" custom_key_id_out="$tmpdir/validate-custom-key-id-evidence.out"
 	local custom_policy_uri="$tmpdir/custom-policy-uri-evidence" custom_policy_uri_out="$tmpdir/validate-custom-policy-uri-evidence.out"
+	local rung_c_only="$tmpdir/rung-c-only-evidence" rung_c_only_out="$tmpdir/validate-rung-c-only-evidence.out" rung_c_only_full_err="$tmpdir/validate-rung-c-only-full-evidence.err"
+	local broken_rung_c_crio="$tmpdir/broken-rung-c-crio-evidence" rung_c_crio_err="$tmpdir/validate-rung-c-crio-evidence.err"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
+
+	cp -R "$evidence" "$rung_c_only"
+	awk -F '\t' '$1 !~ /^rung_b_/ { print }' \
+		"$rung_c_only/rung-bc-proof-summary.tsv" > "$rung_c_only/rung-bc-proof-summary.tsv.tmp"
+	mv "$rung_c_only/rung-bc-proof-summary.tsv.tmp" "$rung_c_only/rung-bc-proof-summary.tsv"
+	awk -F '\t' 'NR == 1 || ($1 != "rung-b-encrypted" && $1 != "negtest-rung-b") { print }' \
+		"$rung_c_only/pods/summary.tsv" > "$rung_c_only/pods/summary.tsv.tmp"
+	mv "$rung_c_only/pods/summary.tsv.tmp" "$rung_c_only/pods/summary.tsv"
+	rm -f "$rung_c_only"/pods/rung-b-encrypted.* "$rung_c_only"/pods/negtest-rung-b.*
+	VALIDATION_SCOPE=rung-c bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$rung_c_only" > "$rung_c_only_out"
+	expect_grep "Rung c evidence validation OK." "$rung_c_only_out" "rung-c scoped evidence validation summary"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$rung_c_only" > /dev/null 2> "$rung_c_only_full_err"; then
+		die "full evidence validator accepted a rung-c-only bundle"
+	fi
+	expect_grep "rung-bc proof summary missing required row: rung_b_key_secret_sha256" "$rung_c_only_full_err" "rung-c-only full validation failure"
+
+	cp -R "$rung_c_only" "$broken_rung_c_crio"
+	sed -i 's#coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#coco/carrier@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#g' \
+		"$broken_rung_c_crio/crio/snp-worker-0.log"
+	if VALIDATION_SCOPE=rung-c bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_rung_c_crio" > /dev/null 2> "$rung_c_crio_err"; then
+		die "rung-c scoped validator accepted a CRI-O log without the expected rung-c source"
+	fi
+	expect_grep "rung-c happy image CRI-O logs missing image_guest_pull source coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$rung_c_crio_err" "rung-c scoped CRI-O source failure"
 
 	cp -R "$evidence" "$status_app_start"
 	printf '$ oc -n workload-test logs pod/rung-b-encrypted --all-containers --prefix=true --tail=200\n' > "$status_app_start/pods/rung-b-encrypted.logs.txt"
@@ -2001,13 +2026,14 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 }
 
 verify_evidence_validation_make_env() {
-	local stub="$tmpdir/validate-evidence-stub.sh" out="$tmpdir/validate-evidence-make-env"
+	local stub="$tmpdir/validate-evidence-stub.sh" out="$tmpdir/validate-evidence-make-env" rung_c_out="$tmpdir/validate-rung-c-evidence-make-env"
 	cat > "$stub" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'ARG=%s\n' "${1:-}"
 vars=(
 	EVIDENCE_DIR
+	VALIDATION_SCOPE
 	KBS_URL
 	RUNG_B_KEY_ID
 	RUNG_B_POLICY_URI
@@ -2050,6 +2076,24 @@ EOF
 	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$out" "Makefile validate negative rung-c pod override"
 	expect_grep "RUNG_B_APP_LOG_MARKER=custom rung-b proof marker" "$out" "Makefile validate rung-b app marker override"
 	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$out" "Makefile validate rung-c app marker override"
+
+	make -s validate-rung-c-evidence \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$stub" \
+		EVIDENCE_DIR="$tmpdir/evidence-for-rung-c-validation" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
+		RUNG_C_POD="custom-rung-c" \
+		NEG_RUNG_C_POD="custom-neg-rung-c" \
+		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
+		> "$rung_c_out"
+	expect_grep "ARG=$tmpdir/evidence-for-rung-c-validation" "$rung_c_out" "Makefile validate rung-c evidence directory argument"
+	expect_grep "EVIDENCE_DIR=$tmpdir/evidence-for-rung-c-validation" "$rung_c_out" "Makefile validate rung-c evidence dir env"
+	expect_grep "VALIDATION_SCOPE=rung-c" "$rung_c_out" "Makefile validate rung-c scope env"
+	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$rung_c_out" "Makefile validate rung-c KBS URL env"
+	expect_grep "RUNG_C_POLICY_URI=kbs:///custom/security-policy/rung-c" "$rung_c_out" "Makefile validate rung-c policy URI env"
+	expect_grep "RUNG_C_POD=custom-rung-c" "$rung_c_out" "Makefile validate rung-c pod override"
+	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$rung_c_out" "Makefile validate negative rung-c pod override"
+	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$rung_c_out" "Makefile validate rung-c app marker override"
 }
 
 create_prove_stub() {

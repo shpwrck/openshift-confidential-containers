@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T09:49:54Z
+Last updated: 2026-06-30T09:57:32Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest pushed proof-tooling checkpoint verified on the rig: `39d5a5f`
@@ -38,6 +38,10 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
 - Final validation also requires bounded CRI-O node logs showing the `image_guest_pull` source
   for each expected digest ref, so carrier-image or stale-source runs cannot satisfy the
   digest-pinned proof invariant.
+- `make validate-rung-c-evidence` validates the rung-c subset of a collected bundle with the
+  same strict proof-window, guest-pull, CRI-O-source, KBS, initdata, app-start, and denial gates;
+  it is for isolated rung-c replay while rung-b is blocked, not a replacement for the full b/c
+  promotion gate.
 - Evidence bundles record non-secret provenance in `summary.env`, including repo revision, branch, dirty state, KBS URL, policy URIs, pod role names, and app log markers.
 - `make prove-rung-bc` now records the proof start time and collects Trustee, CRI-O, and mirror
   logs with proof-window bounds. Final validation rejects unbounded Trustee, CRI-O, or mirror
@@ -106,7 +110,7 @@ Live rig check on 2026-06-30:
 - Rung-b apply reproduced the CRI-O encrypted-layer blocker: `rung-b-encrypted` stayed `ImagePullBackOff` with kubelet reporting that layer `sha256:346e9...` should be decrypted but the manifest could not be modified because the destination specifies a digest. Trustee logs did not show `resource/default/image-kek/...`, confirming the guest never reached KBS for the image key.
 - Rung-c apply succeeded: `rung-c-signed` reached Ready/Running, Trustee logs showed `security-policy/rung-c` and `sig-public-key/rung-c`, and mirror logs showed the signed image digest pull.
 - Rung-c negative succeeded: `negative-test.sh rung-c` denied `mirror.rig.local:8443/coco/rung-c-unsigned@sha256:4ba374...` as expected and kept `negtest-rung-c` for evidence.
-- Fresh strict rung-c replay evidence: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-strict-20260630T094859Z` on the bastion. It was collected from repo head `39d5a5f` with `repo_git_dirty=false` and proof-window bounds `trustee_log_since_time=crio_log_since_time=mirror_log_since_time=2026-06-30T09:45:53Z`. Full `validate-rung-bc-evidence.sh` still exits non-zero with twelve issues caused by missing/incomplete rung-b direct and negative evidence, but the fresh rung-c signed and unsigned rows pass: happy pod Running, pod-status app-start, same decoded initdata for the unsigned negative, Trustee `security-policy/rung-c` and `sig-public-key/rung-c` fetches, guest `oci-client` manifest/blob pulls for the signed digest, guest `oci-client` manifest pull for the unsigned digest, CRI-O `image_guest_pull` sources for both rung-c digest refs, and the expected negative denial signal.
+- Fresh strict rung-c replay evidence: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-strict-20260630T094859Z` on the bastion. It was collected from repo head `39d5a5f` with `repo_git_dirty=false` and proof-window bounds `trustee_log_since_time=crio_log_since_time=mirror_log_since_time=2026-06-30T09:45:53Z`. Full `validate-rung-bc-evidence.sh` still exits non-zero with twelve issues caused by missing/incomplete rung-b direct and negative evidence, but the scoped rung-c validator passes this bundle: happy pod Running, pod-status app-start, same decoded initdata for the unsigned negative, Trustee `security-policy/rung-c` and `sig-public-key/rung-c` fetches, guest `oci-client` manifest/blob pulls for the signed digest, guest `oci-client` manifest pull for the unsigned digest, CRI-O `image_guest_pull` sources for both rung-c digest refs, and the expected negative denial signal.
 - Older full-bundle evidence remains at `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z`; with the current validator it fails because it predates bounded Trustee/CRI-O/mirror proof windows and because rung-b never reached guest pull. `oc exec` into the rung-c pod remains blocked by policy.
 - Additional rung-b force-guest-pull probes on the same rig did not move the encrypted pull into
   the guest:
