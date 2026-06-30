@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T06:42:17Z
+Last updated: 2026-06-30T07:04:27Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `d3d70d5`
+Current head before this update: `51a7d04`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -44,6 +44,10 @@ encrypted-image path.
   probe so stale denials from older pods cannot satisfy a new negative test.
   A live rig run against the current direct digest failure now exits non-zero with
   `no rung-b attestation/image-key denial signal`, as intended.
+- `make diagnose-rung-b-direct-pull` now renders the direct digest-pinned rung-b pod, waits for
+  the known host-side encrypted-layer blocker, and writes an issue-ready evidence directory with
+  pod, event, Trustee, and CRI-O context. It exits zero only when the blocker appears before any
+  Trustee image-key request.
 - `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
   it passes `--ocp-version`, defaults to the pinned `coco-tools` digest used by VCEK collection,
   treats Veritas `-o` as an output directory, supports a cached `oc debug` image, and can stage a
@@ -226,6 +230,12 @@ Live rig check on 2026-06-30:
     modified because the destination specifies a digest; Trustee logs still had no `image-kek`
     request. The drop-in was removed, CRI-O was restarted, the node returned Ready, and no rung-b
     image remained in node storage.
+  - The new `make diagnose-rung-b-direct-pull` helper was verified on the rig at
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T070116Z`.
+    It reproduced `classification=known-host-pull-blocker` for
+    `rung-b-direct-pull-diag`: pod phase `Pending`, `host_pull_blocker_seen=1`, and
+    `image_key_request_seen=0`. The helper removed the diagnostic pod afterward; the node
+    remained Ready and no debug pods were left behind.
 - NRI was inspected as a possible late guest-pull-source override:
   - CRI-O 1.33 calls NRI `CreateContainer` after creating the local image result and before saving
     the final OCI spec/runtime create. The NRI runtime-tools generator can adjust annotations, so
