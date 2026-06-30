@@ -1,10 +1,10 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T01:58:01Z
+Last updated: 2026-06-30T02:32:34Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `6cc0af8`
-Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed, but hardware proof is blocked by product/runtime behavior rather than missing local automation.
+Current head before this update: `c18bafd`
+Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed. Rung-c now has live happy-path and unsigned-control denial evidence. Rung-b is still blocked by CRI-O host-side encrypted-layer pre-pull before the guest can fetch the KBS key.
 
 ## What is already in place
 
@@ -35,13 +35,17 @@ make lint
 Live rig check on 2026-06-30:
 
 - Bastion access works at `rocky@69.67.151.187`; `oc`, `skopeo`, `cosign`, and root `podman` are present.
-- The SNO node is Ready and Trustee is running. Current KbsConfig is back at the rung-a baseline and does not include rung-b/c Secret resources until `apply-trustee-rung-bc` is run.
+- The SNO node is Ready and Trustee is running. The initial check found KbsConfig at the rung-a baseline; after this pass, `apply-trustee-rung-bc` added `image-kek` and `sig-public-key`.
 - The existing `ghcr.io/confidential-containers/coco-keyprovider:latest` image on the bastion is a runtime keyprovider server with `/usr/local/bin/coco_keyprovider`; it does not contain the `/encrypt.sh` helper assumed by `make build-rung-images`.
 - The bastion mirror rejected source signature attachment writes during `skopeo copy`; the builder now defaults `SKOPEO_COPY_ARGS` to `--remove-signatures`, and rung-c signing still happens after the copy.
 - The rung-c unsigned negative-control default now uses `coco/rung-c-unsigned`, not another tag in the signed `coco/rung-c` repository, so repository-scoped cosign signature storage cannot accidentally satisfy the unsigned control.
 - `rung-bc.env` now exports `RUNG_B_KEY_ID` so apply/prove steps use the exact encrypted-image KID recorded in `rung-bc-images.json` instead of silently reverting to the default key path.
 - Prior rig artifacts under `/home/rocky/rung-b` show encrypted OCI images with `kbs:///default/image-kek/<uuid>` KIDs and 32-byte KEK files. The expected `mirror.rig.local:8443/coco/rung-b` and `coco/rung-c` repos were not present in the mirror at this check.
-- Local/private rig notes record that encrypted-image mechanics and signed-image policy delivery were tested on 2026-06-29, but rung-b execution hit CRI-O host-side encrypted-layer pre-pull and rung-c cosign verification hung after signature fetch in the air-gapped guest.
+- `apply-trustee-rung-bc` succeeded with `RUNG_B_KEY_ID=kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`, creating `image-kek` and `sig-public-key` resources in KbsConfig.
+- Rung-b apply reproduced the CRI-O encrypted-layer blocker: `rung-b-encrypted` stayed `ImagePullBackOff` with kubelet reporting that layer `sha256:346e9...` should be decrypted but the manifest could not be modified because the destination specifies a digest. Trustee logs did not show `resource/default/image-kek/...`, confirming the guest never reached KBS for the image key.
+- Rung-c apply succeeded: `rung-c-signed` reached Ready/Running, Trustee logs showed `security-policy/rung-c` and `sig-public-key/rung-c`, and mirror logs showed the signed image digest pull.
+- Rung-c negative succeeded: `negative-test.sh rung-c` denied `mirror.rig.local:8443/coco/rung-c-unsigned@sha256:4ba374...` as expected and kept `negtest-rung-c` for evidence.
+- Final evidence bundle for this pass: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z` on the bastion. `make validate-rung-bc-evidence` intentionally exits non-zero against this bundle because rung-b is not complete, rung-b negative was not run after the happy-path pre-pull blocker, and `oc logs` is empty for the running rung-c pod even after making the proof marker periodic. `oc exec` into the pod is blocked by policy.
 
 1. Build and push the rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 
@@ -70,7 +74,7 @@ Live rig check on 2026-06-30:
    make validate-rung-bc-evidence EVIDENCE_DIR=<bundle>
    ```
 
-5. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung b/c should not be called complete unless happy pods run and negative pods fail closed with the expected denial signals. The current rig evidence suggests this will not pass on OSC 1.12 without resolving the encrypted-image host pre-pull and offline signature-verification transport blockers.
+5. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung b/c should not be called complete unless happy pods run and negative pods fail closed with the expected denial signals. Current rig evidence shows rung-c policy enforcement passes, while rung-b still cannot reach the guest/KBS key-release path because CRI-O fails the encrypted-layer pre-pull first.
 
 6. Replay on a fresh node or freshly recreated disposable rig. Production sign-off requires replay after regenerating hardware-bound values such as VCEKs, RVPS, Trustee URL/TLS, initdata, image keys, and signing trust material.
 
@@ -78,4 +82,4 @@ Live rig check on 2026-06-30:
 
 ## Current blocker
 
-Rig access is confirmed. Completion is blocked on product/runtime gaps observed on the rig: CRI-O host-side pre-pull cannot create a guest-pull placeholder for encrypted layers, and the current air-gapped signed-image path has not completed offline verification. The repo can now seed and validate the actual generated rung-b KID resource, but the rungs are not complete until those runtime blockers are resolved or a supported workaround is proven end to end.
+Rig access is confirmed. Rung-c is functionally proven for signed-image policy acceptance and unsigned-image denial, but the evidence validator still records an app-log marker gap because CRI-O/Kata returns empty logs for the running pod and `oc exec` is policy-blocked. Rung-b completion remains blocked on CRI-O host-side pre-pull: the host cannot create a guest-pull placeholder for encrypted layers and fails before the guest can request `image-kek/<uuid>` from KBS.
