@@ -1,6 +1,6 @@
 # Rung b upstream escalation packet
 
-Last updated: 2026-06-30T09:07:58Z
+Last updated: 2026-06-30T10:23:33Z
 
 This packet is the upstream summary for the remaining rung-b blocker. It is meant for a CRI-O,
 OpenShift sandboxed containers, Kata, or Confidential Containers maintainer without requiring them
