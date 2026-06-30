@@ -25,6 +25,10 @@ MIRROR_CONTAINER_NAMES="${MIRROR_CONTAINER_NAMES:-quay-app quay registry mirror-
 APPLY_RUNG_B_SCRIPT="${APPLY_RUNG_B_SCRIPT:-${REPO_ROOT}/scripts/apply-rung-b.sh}"
 
 HOST_PULL_BLOCKER_RE='should be decrypted|destination specifies a digest|missing private key needed for decryption|private key needed for decryption'
+MIRROR_CRIO_RUNG_B_MANIFEST_COUNT=0
+MIRROR_CRIO_RUNG_B_BLOB_COUNT=0
+MIRROR_GUEST_RUNG_B_MANIFEST_COUNT=0
+MIRROR_GUEST_RUNG_B_BLOB_COUNT=0
 
 die() {
 	echo "ERROR: $*" >&2
@@ -73,6 +77,27 @@ kbs_uri_resource_path() {
 	path="${uri#kbs:///}"
 	[[ -n "$path" && "$path" != /* ]] || die "RUNG_B_KEY_ID has no resource path: $uri"
 	printf '%s\n' "$path"
+}
+
+image_repo_path() {
+	local image="$1" without_digest last_segment
+	without_digest="${image%@*}"
+	last_segment="${without_digest##*/}"
+	if [[ "$last_segment" == *:* ]]; then
+		without_digest="${without_digest%:*}"
+	fi
+	if [[ "$without_digest" == */* ]]; then
+		printf '%s\n' "${without_digest#*/}"
+	else
+		printf '%s\n' "$without_digest"
+	fi
+}
+
+image_digest() {
+	local image="$1"
+	if [[ "$image" =~ @(sha256:[0-9a-f]{64})$ ]]; then
+		printf '%s\n' "${BASH_REMATCH[1]}"
+	fi
 }
 
 record_cmd() {
@@ -138,6 +163,52 @@ collect_mirror_logs() {
 	done
 }
 
+mirror_log_context() {
+	local file
+	for file in \
+		"${DIAG_DIR}"/mirror/files/* \
+		"${DIAG_DIR}"/mirror/containers/*.log; do
+		[[ -f "$file" ]] && cat "$file"
+		printf '\n'
+	done
+}
+
+mirror_count() {
+	local context="$1" needle="$2" agent="$3"
+	awk -v needle="$needle" -v agent="$agent" '
+		index($0, needle) && index($0, agent) { count++ }
+		END { print count + 0 }
+	' <<<"$context"
+}
+
+write_mirror_summary() {
+	local context repo digest
+	context="$(mirror_log_context)"
+	repo="$(image_repo_path "$RUNG_B_IMAGE")"
+	digest="$(image_digest "$RUNG_B_IMAGE")"
+
+	if [[ -z "$(tr -d '[:space:]' <<<"$context")" || -z "$repo" || -z "$digest" ]]; then
+		cat > "${DIAG_DIR}/mirror/summary.tsv" <<EOF
+signal	count
+mirror_context_available	0
+EOF
+		return
+	fi
+
+	MIRROR_CRIO_RUNG_B_MANIFEST_COUNT="$(mirror_count "$context" "${repo}/manifests/${digest}" "cri-o/")"
+	MIRROR_CRIO_RUNG_B_BLOB_COUNT="$(mirror_count "$context" "${repo}/blobs/" "cri-o/")"
+	MIRROR_GUEST_RUNG_B_MANIFEST_COUNT="$(mirror_count "$context" "${repo}/manifests/${digest}" "oci-client/")"
+	MIRROR_GUEST_RUNG_B_BLOB_COUNT="$(mirror_count "$context" "${repo}/blobs/" "oci-client/")"
+	cat > "${DIAG_DIR}/mirror/summary.tsv" <<EOF
+signal	count
+mirror_context_available	1
+crio_rung_b_manifest	${MIRROR_CRIO_RUNG_B_MANIFEST_COUNT}
+crio_rung_b_blob	${MIRROR_CRIO_RUNG_B_BLOB_COUNT}
+guest_rung_b_manifest	${MIRROR_GUEST_RUNG_B_MANIFEST_COUNT}
+guest_rung_b_blob	${MIRROR_GUEST_RUNG_B_BLOB_COUNT}
+EOF
+}
+
 pod_phase() {
 	oc -n "$NS" get pod "$POD_NAME" -o jsonpath='{.status.phase}' 2>/dev/null || true
 }
@@ -177,6 +248,10 @@ rung_b_policy_uri=${RUNG_B_POLICY_URI}
 phase=${phase}
 host_pull_blocker_seen=${host_blocker}
 image_key_request_seen=${image_key_requested}
+mirror_crio_rung_b_manifest_count=${MIRROR_CRIO_RUNG_B_MANIFEST_COUNT}
+mirror_crio_rung_b_blob_count=${MIRROR_CRIO_RUNG_B_BLOB_COUNT}
+mirror_guest_rung_b_manifest_count=${MIRROR_GUEST_RUNG_B_MANIFEST_COUNT}
+mirror_guest_rung_b_blob_count=${MIRROR_GUEST_RUNG_B_BLOB_COUNT}
 classification=${exit_class}
 EOF
 }
@@ -237,6 +312,7 @@ if [[ -n "$node" ]]; then
 	record_cmd crio-node.log oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL"
 fi
 collect_mirror_logs
+write_mirror_summary
 
 if grep -Eiq "$HOST_PULL_BLOCKER_RE" "${DIAG_DIR}/context.txt"; then
 	host_blocker=1
