@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T08:49:33Z
+Last updated: 2026-06-30T09:02:18Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current branch baseline before this mirror-window update: `08463dd`
+Latest pushed proof-tooling checkpoint verified on the rig before this status note: `550cfe8`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -234,10 +234,11 @@ Live rig check on 2026-06-30:
     containers-storage:<encrypted-digest>` refuses the copy because the carrier manifest digest
     would not match the encrypted destination digest.
 - The packaged direct-pull diagnostic bundle
-  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T074842Z` validates
+  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z` validates
   with `make validate-rung-b-direct-pull DIAG_DIR=...` on the bastion. The validation confirms the
-  known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, CRI-O rung-b
-  manifest/blob pulls in the mirror log summary, and zero guest `oci-client` rung-b pulls.
+  known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, bounded
+  mirror-log collection from `2026-06-30T08:58:44Z`, CRI-O rung-b manifest/blob pulls in the
+  mirror log summary, and zero guest `oci-client` rung-b pulls.
   - The containerd-style annotation key `io.kubernetes.cri.image-name` cannot be added through
     CRI-O runtime `allowed_annotations`; it is not in CRI-O's `AllAllowedAnnotations` table.
     Runtime-level `default_annotations` did accept
@@ -291,6 +292,17 @@ Live rig check on 2026-06-30:
     `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T074842Z`
     passed. The helper removed the diagnostic pod afterward; the node remained Ready and no debug
     pods were left behind.
+  - After bounding direct-pull diagnostic mirror logs to the diagnostic start time, it was rerun
+    at
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z`.
+    The diagnostic again reproduced `classification=known-host-pull-blocker`: pod phase
+    `Pending`, `host_pull_blocker_seen=1`, `image_key_request_seen=0`,
+    `mirror_log_since_time=2026-06-30T08:58:44Z`, `crio_rung_b_manifest=16`,
+    `crio_rung_b_blob=16`, `guest_rung_b_manifest=0`, and `guest_rung_b_blob=0`.
+    Running
+    `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z`
+    passed with the strict default mirror-summary requirement. The helper removed the diagnostic
+    pod afterward; the node remained Ready and no debug pods were left behind.
 - NRI was inspected as a possible late guest-pull-source override:
   - CRI-O 1.33 calls NRI `CreateContainer` after creating the local image result and before saving
     the final OCI spec/runtime create. The NRI runtime-tools generator can adjust annotations, so
