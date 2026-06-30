@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
 SOURCE_IMAGE="${SOURCE_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63}"
 SOURCE_IMAGE_REF="${SOURCE_IMAGE_REF:-docker://${SOURCE_IMAGE}}"
+SKOPEO_COPY_ARGS="${SKOPEO_COPY_ARGS:---remove-signatures}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
@@ -191,7 +192,8 @@ encrypt_rung_b() {
 	mkdir -p "$oci_dir/input" "$oci_dir/output"
 
 	echo "Copying source image to OCI dir: $SOURCE_IMAGE_REF"
-	skopeo copy "$SOURCE_IMAGE_REF" "dir:${oci_dir}/input"
+	# shellcheck disable=SC2086
+	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "dir:${oci_dir}/input"
 
 	echo "Encrypting rung-b image with KID $RUNG_B_KEY_ID"
 	"$CONTAINER_RUNTIME" run --rm \
@@ -210,16 +212,19 @@ encrypt_rung_b() {
 	' >/dev/null
 
 	echo "Pushing encrypted rung-b image: $RUNG_B_IMAGE"
-	skopeo copy "dir:${oci_dir}/output" "docker://${RUNG_B_IMAGE}"
+	# shellcheck disable=SC2086
+	skopeo copy $SKOPEO_COPY_ARGS "dir:${oci_dir}/output" "docker://${RUNG_B_IMAGE}"
 }
 
 sign_rung_c() {
 	local c_digest c_digest_ref
 	[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD to sign the rung-c image"
 	echo "Pushing unsigned rung-c negative-control image: $RUNG_C_UNSIGNED_IMAGE"
-	skopeo copy "$SOURCE_IMAGE_REF" "docker://${RUNG_C_UNSIGNED_IMAGE}"
+	# shellcheck disable=SC2086
+	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "docker://${RUNG_C_UNSIGNED_IMAGE}"
 	echo "Pushing rung-c image to sign: $RUNG_C_IMAGE"
-	skopeo copy "$SOURCE_IMAGE_REF" "docker://${RUNG_C_IMAGE}"
+	# shellcheck disable=SC2086
+	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "docker://${RUNG_C_IMAGE}"
 	c_digest="$(skopeo inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
 	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
 	echo "Signing rung-c image digest with $COSIGN_KEY: $c_digest_ref"

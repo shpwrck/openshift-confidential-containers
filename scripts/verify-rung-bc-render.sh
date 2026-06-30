@@ -391,8 +391,8 @@ EOF
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c:unsigned" \
 		bash "$REPO_ROOT/scripts/build-rung-images.sh" sign-rung-c-only >/dev/null
 
-	expect_grep $'skopeo\tcopy\tdir:/tmp/source-image\tdocker://mirror.test.local:5000/coco/rung-c:unsigned' "$log" "rung-c unsigned image copy"
-	expect_grep $'skopeo\tcopy\tdir:/tmp/source-image\tdocker://mirror.test.local:5000/coco/rung-c:signed' "$log" "rung-c signed image copy"
+	expect_grep $'skopeo\tcopy\t--remove-signatures\tdir:/tmp/source-image\tdocker://mirror.test.local:5000/coco/rung-c:unsigned' "$log" "rung-c unsigned image copy"
+	expect_grep $'skopeo\tcopy\t--remove-signatures\tdir:/tmp/source-image\tdocker://mirror.test.local:5000/coco/rung-c:signed' "$log" "rung-c signed image copy"
 	expect_grep $'skopeo\tinspect\tdocker://mirror.test.local:5000/coco/rung-c:signed' "$log" "rung-c digest inspect"
 	expect_grep $'cosign\tsign\t--yes\t--tlog-upload=false\t--key' "$log" "rung-c cosign sign"
 	expect_grep "$signed_ref" "$log" "rung-c cosign signed digest ref"
@@ -443,6 +443,7 @@ vars=(
 	MIRROR_REGISTRY
 	SOURCE_IMAGE
 	SOURCE_IMAGE_REF
+	SKOPEO_COPY_ARGS
 	ARTIFACT_DIR
 	RUNG_B_IMAGE
 	RUNG_C_IMAGE
@@ -470,6 +471,7 @@ EOF
 		MIRROR_REGISTRY="mirror.test.local:5000" \
 		SOURCE_IMAGE="registry.example.com/base/app:1.0" \
 		SOURCE_IMAGE_REF="dir:/tmp/source-image" \
+		SKOPEO_COPY_ARGS="--remove-signatures --dest-tls-verify=false" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:test" \
 		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:test" \
@@ -489,6 +491,7 @@ EOF
 	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile mirror override"
 	expect_grep "SOURCE_IMAGE=registry.example.com/base/app:1.0" "$out" "Makefile source image override"
 	expect_grep "SOURCE_IMAGE_REF=dir:/tmp/source-image" "$out" "Makefile source ref override"
+	expect_grep "SKOPEO_COPY_ARGS=--remove-signatures --dest-tls-verify=false" "$out" "Makefile skopeo copy args override"
 	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$out" "Makefile artifact dir override"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b:test" "$out" "Makefile rung-b image override"
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c:test" "$out" "Makefile rung-c image override"

@@ -130,6 +130,7 @@ Operator-facing artifact knobs:
 |---|---|---|
 | `SOURCE_IMAGE` | Rung-a UBI image digest | The proof image should start from a different app image. |
 | `SOURCE_IMAGE_REF` | `docker://$(SOURCE_IMAGE)` | The source is local or already staged, e.g. `dir:/path/to/oci`. |
+| `SKOPEO_COPY_ARGS` | `--remove-signatures` | The mirror rejects source signature attachment writes, or a registry needs extra copy flags. Rung-c is signed after copy, so source signatures are intentionally stripped by default. |
 | `ARTIFACT_DIR` | `./rung-bc-artifacts` | You want generated keys/manifests outside the checkout. |
 | `WORKLOAD_NS` | `default` | Rung proof pods should run outside the default namespace. |
 | `KBS_URL` | `http://kbs-service.trustee-operator-system.svc:8080` | The measured initdata must point at a different Trustee/KBS endpoint. |

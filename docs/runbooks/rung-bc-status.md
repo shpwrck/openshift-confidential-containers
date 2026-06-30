@@ -37,6 +37,7 @@ Live rig check on 2026-06-30:
 - Bastion access works at `rocky@69.67.151.187`; `oc`, `skopeo`, `cosign`, and root `podman` are present.
 - The SNO node is Ready and Trustee is running. Current KbsConfig is back at the rung-a baseline and does not include rung-b/c Secret resources until `apply-trustee-rung-bc` is run.
 - The existing `ghcr.io/confidential-containers/coco-keyprovider:latest` image on the bastion is a runtime keyprovider server with `/usr/local/bin/coco_keyprovider`; it does not contain the `/encrypt.sh` helper assumed by `make build-rung-images`.
+- The bastion mirror rejected source signature attachment writes during `skopeo copy`; the builder now defaults `SKOPEO_COPY_ARGS` to `--remove-signatures`, and rung-c signing still happens after the copy.
 - Prior rig artifacts under `/home/rocky/rung-b` show encrypted OCI images with `kbs:///default/image-kek/<uuid>` KIDs and 32-byte KEK files. The expected `mirror.rig.local:8443/coco/rung-b` and `coco/rung-c` repos were not present in the mirror at this check.
 - Local/private rig notes record that encrypted-image mechanics and signed-image policy delivery were tested on 2026-06-29, but rung-b execution hit CRI-O host-side encrypted-layer pre-pull and rung-c cosign verification hung after signature fetch in the air-gapped guest.
 
