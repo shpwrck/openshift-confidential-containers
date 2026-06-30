@@ -9,6 +9,8 @@ Trustee was reseeded with that key. Rung-b still needs a direct digest-pinned pr
 that reaches guest pull without CRI-O host-side encrypted-layer pre-pull blocking it first;
 the CRI-O allowed-annotation and runtime `default_annotations` override paths have also been
 ruled out as production proof routes, as has disabling CRI-O's configured host decryption key path.
+The tag-shaped diagnostic path can run the real encrypted image in guest, but current Trustee
+policy/RVPS is permissive enough that tampered measured initdata still receives the image key.
 
 For the latest branch/PR status and remaining proof checklist, see
 `docs/runbooks/rung-bc-status.md`.
@@ -287,6 +289,12 @@ Secondary diagnostic negative, only if needed: temporarily remove or rename the
 `image-key/rung-b` resource. That proves image decryption depends on KBS material, but it is
 not the sign-off proof because it does not prove measurement enforcement.
 
+Before spending more time on the rung-b negative, verify Trustee is no longer in the permissive
+bring-up baseline. The live 2026-06-30 tag diagnostic showed
+`rvps-reference-values: []`, `resource-policy` as `default allow := true`, and an attestation
+policy that affirms every EAR claim; with that state, a tampered-initdata pod still reached
+`Running` and fetched `image-kek`. That is a sign-off blocker, not a successful negative.
+
 The 2026-06-30 rig used KID
 `kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`. Trustee initially served
 `/home/rocky/rung-b/image-kek.bin` at that KID, but offline unwrap showed the encrypted layer
@@ -514,6 +522,7 @@ make negative-test WHICH=all
 | Setting CRI-O `[crio.runtime] decryption_keys_path = ""` does not change the direct digest failure | The host pull path still attempts encrypted-layer handling before the Kata guest-pull handoff, independent of this config-only toggle | Do not treat the decryption key path as the remaining knob. Confirm the drop-in is removed, CRI-O restarted, and the node Ready after any probe. |
 | Pod annotation `io.kubernetes.cri-o.ImageName` is allowed and set to the encrypted image, but guest pull still uses the carrier image | CRI-O writes its internal `ImageName` after sandbox annotations, so the pod annotation does not override the create-time guest-pull source | Do not use this as a workaround. Confirm with CRI-O journal `Adding mount info to pull image ...`; remove the temporary allowed annotation and restore `50-kata-snp`. |
 | Runtime `default_annotations` set `io.kubernetes.cri.image-name` to the encrypted digest, but the pod runs as the carrier and no image-key request appears | CRI-O's create-time app image metadata still resolves from the local carrier image; the containerd-style source annotation does not win for this CRI-O/Kata path | Do not count a carrier `Running` pod as proof. Require both a CRI-O `image_guest_pull` source matching the encrypted ref and a Trustee `image-kek` fetch. Restore `50-kata-snp` after the probe; on the air-gapped rig, use a cached mirror image for `oc debug node` because the default support-tools image can time out. |
+| Tampered-initdata rung-b negative reaches `Running` and fetches `image-kek` | Trustee is still in permissive bring-up mode, so RVPS/resource/attestation policy is not enforcing the measured initdata mismatch | Check `rvps-reference-values`, `resource-policy`, and `attestation-policy`. Empty reference values plus `default allow := true` plus all-affirming EAR claims mean the negative cannot count. Generate/apply restrictive reference values and rerun before sign-off. |
 | Pre-staging the actual encrypted image into `containers-storage` fails before pod creation | containers/storage validates layer DiffIDs against the image config and cannot store the encrypted layer as a normal local rootfs image | On 2026-06-30, `skopeo copy --preserve-digests docker://...@sha256:69b8... containers-storage:...:encrypted-prestage` failed because encrypted blob `sha256:346e9...` did not match config DiffID `sha256:76c30...`. Clean any partial tag and do not treat this as a viable direct bypass. |
 | Trying to make a digest-pinned carrier alias fails | Podman/containers-storage do not allow creating tags whose target name is a digest reference | On 2026-06-30, `podman tag <carrier> mirror.rig.local:8443/coco/rung-b@sha256:69b8...` failed with `tag by digest not supported`. A tag-only carrier alias can diagnose guest pull, but it cannot satisfy the digest-pinned production proof invariant. |
 | Local node-storage alias reaches KBS but pod stays `CreateContainerError` with `Failed to decrypt the image layer` | Host image check was bypassed, so the remaining issue is guest decryption of the encrypted layer | Treat this only as a diagnostic. Decode layer annotations, compare KID/KEK, and reseed Trustee or rebuild the encrypted image before rerunning direct proof. |

@@ -645,7 +645,9 @@ EOF
 }
 
 verify_negative_test_scoped_denial_signals() {
-	local bin="$tmpdir/scoped-denial-bin" policy_out="$tmpdir/rung-c-policy-denial.out" unrelated_out="$tmpdir/rung-c-unrelated-denial.out"
+	local bin="$tmpdir/scoped-denial-bin"
+	local policy_out="$tmpdir/rung-c-policy-denial.out" unrelated_out="$tmpdir/rung-c-unrelated-denial.out"
+	local rung_b_denial_out="$tmpdir/rung-b-attestation-denial.out" rung_b_host_out="$tmpdir/rung-b-host-decrypt.out"
 	mkdir -p "$bin"
 
 	cat > "$bin/oc" <<'EOF'
@@ -678,11 +680,20 @@ YAML
 	exit 0
 fi
 if [[ "$cmd" == "describe" && "$target" == "pod" ]]; then
-	if [[ "${TEST_DENIAL_SIGNAL:-}" == "policy" ]]; then
-		printf 'Warning: image policy rejected unsigned sigstore signature\n'
-	else
-		printf 'Warning: VCEK cache miss while checking unrelated attestation path\n'
-	fi
+	case "${TEST_DENIAL_SIGNAL:-}" in
+		policy)
+			printf 'Warning: image policy rejected unsigned sigstore signature\n'
+			;;
+		rung-b-attestation)
+			printf 'Warning: attestation failed: measurement mismatch while requesting resource/default/image-kek/uuid HTTP/1.1" 403\n'
+			;;
+		host-decrypt)
+			printf 'Failed to pull image: layer sha256:abc should be decrypted, but we cannot modify the manifest: Destination specifies a digest\n'
+			;;
+		*)
+			printf 'Warning: VCEK cache miss while checking unrelated attestation path\n'
+			;;
+	esac
 	exit 0
 fi
 if [[ "$cmd" == "get" && "$target" == "events" ]]; then
@@ -711,6 +722,26 @@ EOF
 		bash "$REPO_ROOT/scripts/negative-test.sh" rung-c > "$policy_out"
 	expect_grep "negative-test summary: 1 passed, 0 failed, 0 skipped." "$policy_out" "rung-c scoped policy denial summary"
 	expect_grep "keeping denied pod 'negtest-rung-c' for evidence collection" "$policy_out" "negative-test keep denied pod message"
+
+	TEST_DENIAL_SIGNAL=rung-b-attestation PATH="$bin:$PATH" \
+		MIRROR_CA="$tmpdir/mirror-ca.pem" \
+		NS="workload-test" \
+		TRUSTEE_NS="trustee-test" \
+		TIMEOUT=0 \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		bash "$REPO_ROOT/scripts/negative-test.sh" rung-b > "$rung_b_denial_out"
+	expect_grep "negative-test summary: 1 passed, 0 failed, 0 skipped." "$rung_b_denial_out" "rung-b scoped attestation denial summary"
+
+	if TEST_DENIAL_SIGNAL=host-decrypt PATH="$bin:$PATH" \
+		MIRROR_CA="$tmpdir/mirror-ca.pem" \
+		NS="workload-test" \
+		TRUSTEE_NS="trustee-test" \
+		TIMEOUT=0 \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		bash "$REPO_ROOT/scripts/negative-test.sh" rung-b > "$rung_b_host_out" 2>&1; then
+		die "rung-b negative test accepted a host-side encrypted-layer pull failure"
+	fi
+	expect_grep "no rung-b attestation/image-key denial signal" "$rung_b_host_out" "rung-b host decrypt failure rejection"
 
 	if TEST_DENIAL_SIGNAL=unrelated PATH="$bin:$PATH" \
 		MIRROR_CA="$tmpdir/mirror-ca.pem" \

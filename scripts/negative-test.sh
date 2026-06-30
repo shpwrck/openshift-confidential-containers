@@ -28,7 +28,7 @@ RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pass=0 fail=0 skip=0
 RUNG_A_DENIAL_RE='attest|denied|forbidden|measurement|attestation-status|secret'
-RUNG_B_DENIAL_RE='attest|denied|forbidden|measurement|decrypt|image-key|key'
+RUNG_B_DENIAL_RE='attestation.*(denied|failed|error)|failed.*attest|denied|forbidden|measurement|unauthorized|not authorized|HTTP/[0-9.]+" (401|403)|resource/default/image-(kek|key).*(401|403)'
 RUNG_C_DENIAL_RE='policy|sign|signature|sigstore|reject'
 AIR_GAP_DENIAL_RE='attest|denied|forbidden|vcek|kds|offline|cache|certificate'
 

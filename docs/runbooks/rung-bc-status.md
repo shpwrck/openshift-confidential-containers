@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T04:33:10Z
+Last updated: 2026-06-30T04:45:04Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `7666275`
+Current head before this update: `ceb1c9d`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -12,7 +12,9 @@ separate guest decryption blocker is diagnosed: the current image's wrapped laye
 `/home/rocky/rung-b/kek.bin`, not the previously recorded `/home/rocky/rung-b/image-kek.bin`.
 A follow-up CRI-O `default_annotations` probe also failed to redirect the Kata guest-pull source
 away from the already-present carrier image. Disabling CRI-O's configured host decryption key path
-also did not change the direct digest failure.
+also did not change the direct digest failure. A controlled tag diagnostic also showed that the
+current Trustee policy remains permissive enough for a tampered-initdata rung-b pod to start, so
+measurement-mismatch negatives are not yet valid on this rig.
 
 ## What is already in place
 
@@ -28,6 +30,9 @@ also did not change the direct digest failure.
 - Initdata encoding now uses deterministic gzip output, and evidence validation compares decoded
   initdata content for happy/negative relationships so gzip metadata cannot create false
   differences.
+- The rung-b negative-test harness now rejects host-side encrypted-layer pull failures as proof
+  signals; it requires an attestation, measurement, authorization, or KBS resource-denial signal
+  instead of accepting a generic `decrypt` message.
 
 ## Local verification completed
 
@@ -109,6 +114,18 @@ Live rig check on 2026-06-30:
     `Created container` and `Started container` for the app.
   - The temporary pod and local alias were removed; CRI-O config remained restored and the node
     stayed Ready.
+- A controlled tag diagnostic re-confirmed the useful part of that result and exposed the next
+  negative-test blocker:
+  - With the host carrying only a temporary local alias from the unencrypted carrier image to
+    `mirror.rig.local:8443/coco/rung-b:encrypted`, a tag-shaped rung-b pod reached `Running`.
+    CRI-O logged `image_guest_pull mirror.rig.local:8443/coco/rung-b:encrypted`, and Trustee
+    served `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c` with HTTP 200.
+  - A second tag-shaped pod with tampered measured initdata also reached `Running` and fetched the
+    same image key with HTTP 200. Live Trustee config still had empty
+    `rvps-reference-values`, `resource-policy` set to `default allow := true`, and an
+    attestation policy that affirms all EAR trust claims. That means measured-initdata mismatch is
+    not currently enforced on the rig.
+  - The temporary pods and local tag alias were removed; the node stayed Ready.
 - Source inspection and additional pre-stage probes explain why direct digest refs still fail:
   - CRI-O `runtime_pull_image` adds Kata's `image_guest_pull` virtual volume only during
     `CreateContainer`, after CRI-O has already resolved the container image from local storage.
@@ -145,20 +162,24 @@ Live rig check on 2026-06-30:
    host-decryption-key-path probe are useful for root-cause work, but they are not production proof
    paths.
 
-2. If the rung-b image is rebuilt, rerun the offline unwrap check before seeding Trustee:
+2. Replace the permissive Trustee/RVPS baseline with a restrictive policy/reference-value set
+   before counting measured-initdata mismatch negatives. On the current rig, tampered initdata
+   still receives `image-kek`; this is a sign-off blocker for rung-b negative proof.
+
+3. If the rung-b image is rebuilt, rerun the offline unwrap check before seeding Trustee:
 
    - Decode the encrypted layer annotation for the new digest.
    - Confirm it references the intended KID.
    - Confirm the Trustee Secret data is byte-for-byte the KEK that unwraps the layer key.
 
-3. Build and push any rebuilt rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
+4. Build and push any rebuilt rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 
    ```bash
    COSIGN_PASSWORD='<secret>' make build-rung-images
    . rung-bc-artifacts/rung-bc.env
    ```
 
-4. Seed Trustee with the rung-b image key, rung-c public key, and rung-c signed-image policy, then reconcile Trustee:
+5. Seed Trustee with the rung-b image key, rung-c public key, and rung-c signed-image policy, then reconcile Trustee:
 
    ```bash
    make apply-trustee-rung-bc \
@@ -166,28 +187,28 @@ Live rig check on 2026-06-30:
      RUNG_C_COSIGN_PUB=rung-bc-artifacts/cosign.pub
    ```
 
-5. Run the hardware proof on the disposable rig:
+6. Run the hardware proof on the disposable rig:
 
    ```bash
    make prove-rung-bc
    ```
 
-6. Keep the generated evidence bundle path and make sure validation passes:
+7. Keep the generated evidence bundle path and make sure validation passes:
 
    ```bash
    make validate-rung-bc-evidence EVIDENCE_DIR=<bundle>
    ```
 
-7. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung
+8. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung
    b/c should not be called complete unless happy pods run and negative pods fail closed with the
    expected denial signals. Current rig evidence shows rung-c policy enforcement passes. Current
    rung-b evidence shows direct pods fail before guest pull. A diagnostic carrier-tag guest-pull
    path reaches KBS and starts after the Trustee key correction, but it is not a digest-pinned
    production proof.
 
-8. Replay on a fresh node or freshly recreated disposable rig. Production sign-off requires replay after regenerating hardware-bound values such as VCEKs, RVPS, Trustee URL/TLS, initdata, image keys, and signing trust material.
+9. Replay on a fresh node or freshly recreated disposable rig. Production sign-off requires replay after regenerating hardware-bound values such as VCEKs, RVPS, Trustee URL/TLS, initdata, image keys, and signing trust material.
 
-9. Move PR #8 out of draft only after rig evidence is attached or referenced, CI/checks are green, Copilot or equivalent machine review has no blocking findings, and `make lint` remains green.
+10. Move PR #8 out of draft only after rig evidence is attached or referenced, CI/checks are green, Copilot or equivalent machine review has no blocking findings, and `make lint` remains green.
 
 ## Current blocker
 
@@ -200,4 +221,5 @@ indicates CRI-O 1.33 performs the host image pull/status work before Kata's gues
 node containers-storage cannot hold the encrypted OCI layer unchanged for a digest-pinned
 `IfNotPresent` bypass, and CRI-O annotation/default-annotation routes do not override the app
 image source that Kata receives. Overriding CRI-O's host decryption key path to an empty value did
-not change that ordering or move the pull into the guest.
+not change that ordering or move the pull into the guest. Separately, the current rig Trustee
+policy/RVPS state is still permissive, so tampered measured-initdata pods are not denied yet.

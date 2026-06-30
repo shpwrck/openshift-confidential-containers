@@ -814,7 +814,9 @@ proof. The 2026-06-30 rig diagnosed the rung-b KID/KEK mismatch and proved guest
 through a local alias diagnostic, but the production digest-pinned pod is still blocked before
 KBS by CRI-O host-side encrypted-layer pre-pull; CRI-O annotation and runtime
 `default_annotations` override attempts still left guest pull on the carrier image, and disabling
-CRI-O's host decryption key path did not change the direct digest failure. Use
+CRI-O's host decryption key path did not change the direct digest failure. The same rig still had
+permissive RVPS/resource/attestation policy, so tampered-initdata rung-b diagnostics were not
+denied. Use
 [`docs/runbooks/rung-bc-completion-plan.md`](runbooks/rung-bc-completion-plan.md) as the
 execution plan for encrypted-image and signed-image proof artifacts.
 
