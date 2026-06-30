@@ -24,8 +24,10 @@ spec:
         - /bin/sh
         - -c
         - |
-          echo 'rung-b: encrypted image decrypted and running'
-          sleep 3600
+          while true; do
+            echo 'rung-b: encrypted image decrypted and running'
+            sleep 60
+          done
       resources:
         limits:
           memory: "2304Mi"
