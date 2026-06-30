@@ -7,8 +7,10 @@ RUNG_B_POD="${RUNG_B_POD:-rung-b-encrypted}"
 RUNG_C_POD="${RUNG_C_POD:-rung-c-signed}"
 NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-negtest-rung-b}"
 NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
-RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-rung-b: encrypted image decrypted and running}"
-RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-rung-c: signed image accepted and running}"
+DEFAULT_RUNG_B_APP_LOG_MARKER="rung-b: encrypted image decrypted and running"
+DEFAULT_RUNG_C_APP_LOG_MARKER="rung-c: signed image accepted and running"
+RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-}"
+RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-}"
 RUNG_B_DENIAL_RE="${RUNG_B_DENIAL_RE:-attest|denied|forbidden|measurement|decrypt|image-key|key}"
 RUNG_C_DENIAL_RE="${RUNG_C_DENIAL_RE:-policy|sign|signature|sigstore|reject}"
 
@@ -69,6 +71,16 @@ image_digest() {
 summary_value() {
 	local key="$1" file="${EVIDENCE_DIR}/summary.env"
 	awk -F '=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); found = 1; exit } END { if (!found) exit 1 }' "$file"
+}
+
+summary_value_or_default() {
+	local key="$1" fallback="$2" value
+	value="$(summary_value "$key" 2>/dev/null || true)"
+	if [[ -n "$value" ]]; then
+		printf '%s\n' "$value"
+	else
+		printf '%s\n' "$fallback"
+	fi
 }
 
 pod_row() {
@@ -337,6 +349,8 @@ check_summary() {
 need jq
 need awk
 need grep
+RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-$(summary_value_or_default rung_b_app_log_marker "$DEFAULT_RUNG_B_APP_LOG_MARKER")}"
+RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-$(summary_value_or_default rung_c_app_log_marker "$DEFAULT_RUNG_C_APP_LOG_MARKER")}"
 
 check_summary
 check_manifest

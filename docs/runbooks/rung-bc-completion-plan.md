@@ -389,7 +389,9 @@ git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`
 also set `RUNG_B_POD`, `RUNG_C_POD`, `NEG_RUNG_B_POD`, and `NEG_RUNG_C_POD` so
 `rung-bc-proof-summary.tsv` can correlate the right pod JSON files. If the proof image emits
 custom success text, set `RUNG_B_APP_LOG_MARKER` or `RUNG_C_APP_LOG_MARKER` before running
-`make validate-rung-bc-evidence` or `make prove-rung-bc`. The bundle includes pod
+`make collect-rung-bc-evidence`, `make validate-rung-bc-evidence`, or `make prove-rung-bc`;
+the collector records those marker values in `summary.env` so the bundle can be validated
+offline later without repeating the overrides. The bundle includes pod
 YAML/describe/logs, per-pod summary TSVs, decoded initdata, recent Trustee logs, events,
 KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
 Secret metadata plus data-key names and decoded byte lengths, redacted `vcek-*` Secret
@@ -405,9 +407,9 @@ resource fetches, mirror logs lack rung-b/rung-c repository pulls for the expect
 digests, rung-b negative initdata does not differ from the happy pod, rung-c negative initdata
 does not match the happy pod, happy pod logs lack the expected app-start markers, negative
 pods lack denial signals, or the bundle was collected from a dirty checkout. `summary.env`
-records the repo revision, branch, dirty state, and local tool paths used to collect the
-bundle. It does not dump Secret data, but still review the bundle before sharing it outside
-the engagement.
+records the repo revision, branch, dirty state, expected app-log markers, and local tool paths
+used to collect the bundle. It does not dump Secret data, but still review the bundle before
+sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed:

@@ -720,6 +720,8 @@ vars=(
 	RUNG_C_POD
 	NEG_RUNG_B_POD
 	NEG_RUNG_C_POD
+	RUNG_B_APP_LOG_MARKER
+	RUNG_C_APP_LOG_MARKER
 )
 
 for var in "${vars[@]}"; do
@@ -769,6 +771,8 @@ EOF
 		RUNG_C_POD="custom-rung-c" \
 		NEG_RUNG_B_POD="custom-neg-rung-b" \
 		NEG_RUNG_C_POD="custom-neg-rung-c" \
+		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
+		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		> "$evidence_out"
 
 	for out in "$tmpdir/apply-rung-a-env" "$rung_b_out" "$rung_c_out" "$evidence_out"; do
@@ -785,6 +789,8 @@ EOF
 	expect_grep "RUNG_C_POD=custom-rung-c" "$evidence_out" "Makefile evidence rung-c pod override"
 	expect_grep "NEG_RUNG_B_POD=custom-neg-rung-b" "$evidence_out" "Makefile evidence negative rung-b pod override"
 	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$evidence_out" "Makefile evidence negative rung-c pod override"
+	expect_grep "RUNG_B_APP_LOG_MARKER=custom rung-b proof marker" "$evidence_out" "Makefile evidence rung-b app marker override"
+	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$evidence_out" "Makefile evidence rung-c app marker override"
 }
 
 verify_negative_test_air_gap_restores_vceks() {
@@ -960,6 +966,8 @@ verify_evidence_summary_provenance() {
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		PODS="rung-a rung-b" \
+		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
+		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		MIRROR_LOG_FILES="/tmp/mirror.log" \
 		MIRROR_CONTAINER_NAMES="registry" \
 		bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" write-summary "$summary"
@@ -970,6 +978,8 @@ verify_evidence_summary_provenance() {
 	expect_grep "repo_git_head=" "$summary" "evidence summary git head"
 	expect_grep "repo_git_branch=" "$summary" "evidence summary git branch"
 	expect_grep "repo_git_dirty=" "$summary" "evidence summary dirty state"
+	expect_grep "rung_b_app_log_marker=custom rung-b proof marker" "$summary" "evidence summary rung-b app marker"
+	expect_grep "rung_c_app_log_marker=custom rung-c proof marker" "$summary" "evidence summary rung-c app marker"
 	expect_grep "tool_oc=" "$summary" "evidence summary oc path"
 	expect_grep "tool_jq=" "$summary" "evidence summary jq path"
 }
@@ -1083,6 +1093,8 @@ captured_at_utc=2026-06-29T00:00:00Z
 namespace=workload-test
 trustee_namespace=trustee-test
 repo_git_dirty=false
+rung_b_app_log_marker=rung-b: encrypted image decrypted and running
+rung_c_app_log_marker=rung-c: signed image accepted and running
 EOF
 	cat > "$evidence/rung-bc-images.json" <<EOF
 {
@@ -1155,9 +1167,20 @@ verify_evidence_validation_gate() {
 	local broken_b_initdata="$tmpdir/broken-b-initdata-evidence" b_initdata_err="$tmpdir/validate-b-initdata-evidence.err"
 	local broken_c_initdata="$tmpdir/broken-c-initdata-evidence" c_initdata_err="$tmpdir/validate-c-initdata-evidence.err"
 	local broken_app_log="$tmpdir/broken-app-log-evidence" app_log_err="$tmpdir/validate-app-log-evidence.err"
+	local custom_app_log="$tmpdir/custom-app-log-evidence" custom_app_log_out="$tmpdir/validate-custom-app-log-evidence.out"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
+
+	cp -R "$evidence" "$custom_app_log"
+	sed -i \
+		-e 's/^rung_b_app_log_marker=.*/rung_b_app_log_marker=custom rung-b proof marker/' \
+		-e 's/^rung_c_app_log_marker=.*/rung_c_app_log_marker=custom rung-c proof marker/' \
+		"$custom_app_log/summary.env"
+	printf 'app custom rung-b proof marker\n' > "$custom_app_log/pods/rung-b-encrypted.logs.txt"
+	printf 'app custom rung-c proof marker\n' > "$custom_app_log/pods/rung-c-signed.logs.txt"
+	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$custom_app_log" > "$custom_app_log_out"
+	expect_grep "Rung b/c evidence validation OK." "$custom_app_log_out" "summary app marker validation"
 
 	cp -R "$evidence" "$broken"
 	awk -F '\t' 'BEGIN { OFS = FS } $1 == "rung_c_happy_image" { $4 = "mismatch" } { print }' \
