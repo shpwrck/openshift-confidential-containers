@@ -184,12 +184,14 @@ run_air_gap() {
   manifest="$(mktemp)"
 
   air_gap_restore() {
-    local backup
+    local backup name
     [[ "$restore_needed" == "1" ]] || return 0
     echo "  (restoring ${#vceks[@]} VCEK secret(s))"
-    for backup in "$bakdir"/*.yaml; do
+    for backup in "$bakdir"/*.der; do
       [[ -e "$backup" ]] || continue
-      oc -n "$TRUSTEE_NS" apply -f "$backup" >/dev/null || true
+      name="$(basename "$backup" .der)"
+      oc -n "$TRUSTEE_NS" create secret generic "$name" --from-file=vcek.der="$backup" --dry-run=client -o yaml \
+        | oc -n "$TRUSTEE_NS" apply -f - >/dev/null || true
     done
     restart_kbs
     restore_needed=0
@@ -204,7 +206,10 @@ run_air_gap() {
   }
 
   for vcek in "${vceks[@]}"; do
-    oc -n "$TRUSTEE_NS" get "$vcek" -o yaml > "$bakdir/${vcek#secret/}.yaml"
+    # Back up only the vcek.der DATA (not `get -o yaml`): restoring via create|apply avoids the
+    # resourceVersion/managedFields Conflict that `oc apply` of a full backup hits once the swap
+    # below bumps the live secret — which would otherwise leave the OfflineStore holding the wrong cert.
+    oc -n "$TRUSTEE_NS" get "$vcek" -o jsonpath='{.data.vcek\.der}' 2>/dev/null | base64 -d > "$bakdir/${vcek#secret/}.der"
   done
   restore_needed=1
   trap air_gap_exit_cleanup EXIT
