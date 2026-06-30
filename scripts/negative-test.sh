@@ -27,10 +27,17 @@ RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pass=0 fail=0 skip=0
-RUNG_A_DENIAL_RE='attest|denied|forbidden|measurement|attestation-status|secret'
+# Denial-RESPONSE patterns ONLY. These are the load-bearing oracle: a match = "denied as
+# expected" = PASS. They are grepped against pod EVENTS + pod LOGS + Trustee LOGS (NOT
+# `oc describe pod`, which echoes the workload's own spec). Each alternative must be a real
+# denial string, never a word that appears in the pod spec or a benign lifecycle event —
+# a bare `attest` matches the init-container name "attestation-gate", `sign` matches the
+# scheduler's "Successfully a-ssign-ed" event, and `policy`/`secret` match routine KBS log
+# lines; any of those would score a false PASS on a fail-closed proof.
+RUNG_A_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|measurement|HTTP/[0-9.]+" (401|403)|failed to get resource|report data|attestation (failed|error|denied)|Verifier.*(fail|reject)'
 RUNG_B_DENIAL_RE='attestation.*(denied|failed|error)|failed.*attest|denied|forbidden|measurement|unauthorized|not authorized|HTTP/[0-9.]+" (401|403)|resource/default/image-(kek|key).*(401|403)'
-RUNG_C_DENIAL_RE='policy|sign|signature|sigstore|reject'
-AIR_GAP_DENIAL_RE='attest|denied|forbidden|vcek|kds|offline|cache|certificate'
+RUNG_C_DENIAL_RE='signature|sigstore|image security policy|SignatureValidation|signature.*(reject|invalid|missing|verif)|policy.*(reject|deny)|rejected|InvalidImageName'
+AIR_GAP_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|HTTP/[0-9.]+" (401|403)|failed to get resource|vcek|offline|certificate.*(missing|not found)|attestation (failed|error|denied)|Verifier.*(fail|reject)'
 
 die()  { echo "ERROR: $*" >&2; exit 2; }
 ok()   { echo "  ✅ PASS (denied as expected): $*"; pass=$((pass+1)); }
@@ -43,8 +50,12 @@ oc get runtimeclass kata-cc >/dev/null 2>&1 || die "kata-cc runtimeclass missing
 
 denial_signal_seen() {
   local name="$1" pattern="$2" since_time="$3" context
+  # Corpus is deliberately the runtime denial signal only. We do NOT include `oc describe pod`
+  # because it echoes the pod spec (init-container name, the curl command path) verbatim, which
+  # made spec strings match the denial regex and produced false PASSes. Instead we pull the
+  # container waiting reasons/messages (real denial state) plus events + logs.
   context="$(
-    oc -n "$NS" describe pod "$name" 2>/dev/null || true
+    oc -n "$NS" get pod "$name" -o jsonpath='{range .status.containerStatuses[*]}{.state.waiting.reason}{" "}{.state.waiting.message}{"\n"}{end}{range .status.initContainerStatuses[*]}{.state.waiting.reason}{" "}{.state.waiting.message}{"\n"}{end}' 2>/dev/null || true
     oc -n "$NS" get events --field-selector "involvedObject.name=${name}" --sort-by=.lastTimestamp -o wide 2>/dev/null || true
     oc -n "$NS" logs "pod/${name}" --all-containers --prefix=true --tail=80 2>/dev/null || true
     oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --since-time="$since_time" --tail=240 2>/dev/null || true
@@ -69,13 +80,21 @@ expect_fail_closed() {  # expect_fail_closed <name> <manifest-or-"-"> <label> <d
     sleep 5
   done
   # never started within the window - confirm this rung's expected denial signal, not a flake
+  local inconclusive=0
   if denial_signal_seen "$name" "$pattern" "$since_time"; then
     ok "$label"
   else
     echo "  ⚠️  pod '$name' did not start, but no ${signal_label} signal seen — investigate (could be a flake or the wrong dependency failing)"; bad "$label (no ${signal_label} signal)"
+    inconclusive=1
   fi
-  if [[ "$KEEP_DENIED_PODS" == "1" ]]; then
-    echo "  (keeping denied pod '$name' for evidence collection)"
+  # Keep the pod when KEEP_DENIED_PODS=1, OR when the result was inconclusive — deleting the
+  # evidence right after telling the operator to "investigate" would destroy what they need.
+  if [[ "$KEEP_DENIED_PODS" == "1" || "$inconclusive" == "1" ]]; then
+    if [[ "$inconclusive" == "1" ]]; then
+      echo "  (keeping pod '$name' for investigation — no clear denial signal)"
+    else
+      echo "  (keeping denied pod '$name' for evidence collection)"
+    fi
   else
     oc -n "$NS" delete pod "$name" --ignore-not-found >/dev/null 2>&1 || true
   fi
