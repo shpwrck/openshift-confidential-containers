@@ -1598,6 +1598,7 @@ verify_evidence_validation_gate() {
 	local broken_key_id="$tmpdir/broken-key-id-evidence" key_id_err="$tmpdir/validate-key-id-evidence.err"
 	local broken_mirror="$tmpdir/broken-mirror-evidence" mirror_err="$tmpdir/validate-mirror-evidence.err"
 	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
+	local broken_guest_pull="$tmpdir/broken-guest-pull-evidence" guest_pull_err="$tmpdir/validate-guest-pull-evidence.err"
 	local broken_b_initdata="$tmpdir/broken-b-initdata-evidence" b_initdata_err="$tmpdir/validate-b-initdata-evidence.err"
 	local broken_c_initdata="$tmpdir/broken-c-initdata-evidence" c_initdata_err="$tmpdir/validate-c-initdata-evidence.err"
 	local broken_decoded_initdata="$tmpdir/broken-decoded-initdata-evidence" decoded_initdata_err="$tmpdir/validate-decoded-initdata-evidence.err"
@@ -1721,7 +1722,15 @@ verify_evidence_validation_gate() {
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_digest" > /dev/null 2> "$digest_err"; then
 		die "evidence validator accepted a mirror log with the wrong digest"
 	fi
-	expect_grep "mirror logs missing coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$digest_err" "evidence validator mirror digest failure"
+	expect_grep "mirror logs missing guest oci-client pull coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$digest_err" "evidence validator mirror digest failure"
+
+	cp -R "$evidence" "$broken_guest_pull"
+	sed -i '/coco\/rung-b\/manifests/s#"oci-client/0.15.0"#"cri-o/1.33.10 os/linux arch/amd64"#' \
+		"$broken_guest_pull/mirror/files/access.log"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_guest_pull" > /dev/null 2> "$guest_pull_err"; then
+		die "evidence validator accepted a host-only mirror pull for rung-b"
+	fi
+	expect_grep "rung-b happy image mirror logs missing guest oci-client pull coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$guest_pull_err" "evidence validator guest-pull failure"
 
 	cp -R "$evidence" "$broken_b_initdata"
 	cp "$broken_b_initdata/pods/rung-b-encrypted.initdata.toml" "$broken_b_initdata/pods/negtest-rung-b.initdata.toml"

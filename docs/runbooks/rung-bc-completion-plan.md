@@ -549,7 +549,7 @@ those fingerprints and the happy/negative pod image refs against `rung-bc-images
 `make validate-rung-bc-evidence EVIDENCE_DIR=...` fails if the proof summary has missing or
 non-matching required rows, the image manifest has the wrong rung-b KBS key ID, required pod
 phases/images are missing or wrong, Trustee logs lack the expected KBS resource fetches,
-mirror logs lack rung-b/rung-c repository pulls for the expected image digests, rung-b
+mirror logs lack guest `oci-client` pulls for the expected rung-b/rung-c image digests, rung-b
 negative decoded initdata does not differ from the happy pod, rung-c negative decoded initdata
 does not match the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung policy URI, or
 tamper marker, happy pods lack both the expected app-start log markers and pod-status app-start

@@ -404,7 +404,8 @@ mirror_log_context() {
 }
 
 check_mirror_image_pull() {
-	local label="$1" image="$2" context="$3" repo digest digest_hex
+	local label="$1" image="$2" context="$3" agent_label="$4" agent_pattern="$5"
+	local repo digest digest_hex
 	if [[ -z "$image" ]]; then
 		fail "$label mirror image ref missing from manifest"
 		return
@@ -416,11 +417,15 @@ check_mirror_image_pull() {
 		return
 	fi
 	digest_hex="${digest#sha256:}"
-	if awk -v repo="$repo" -v digest="$digest" -v digest_hex="$digest_hex" \
-		'index($0, repo) && (index($0, digest) || index($0, digest_hex)) { found = 1 } END { exit found ? 0 : 1 }' <<<"$context"; then
-		pass "$label mirror logs include ${repo}@${digest}"
+	if awk -v repo="$repo" -v digest="$digest" -v digest_hex="$digest_hex" -v agent="$agent_pattern" '
+		index($0, repo) && (index($0, digest) || index($0, digest_hex)) && index($0, agent) {
+			found = 1
+		}
+		END { exit found ? 0 : 1 }
+	' <<<"$context"; then
+		pass "$label mirror logs include ${agent_label} pull ${repo}@${digest}"
 	else
-		fail "$label mirror logs missing ${repo}@${digest}"
+		fail "$label mirror logs missing ${agent_label} pull ${repo}@${digest}"
 	fi
 }
 
@@ -439,9 +444,9 @@ check_mirror_logs() {
 	rung_b_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest")"
 	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
 	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
-	check_mirror_image_pull "rung-b happy image" "$rung_b_image" "$context"
-	check_mirror_image_pull "rung-c happy image" "$rung_c_image" "$context"
-	check_mirror_image_pull "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context"
+	check_mirror_image_pull "rung-b happy image" "$rung_b_image" "$context" "guest oci-client" "oci-client/"
+	check_mirror_image_pull "rung-c happy image" "$rung_c_image" "$context" "guest oci-client" "oci-client/"
+	check_mirror_image_pull "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context" "guest oci-client" "oci-client/"
 }
 
 check_summary() {
