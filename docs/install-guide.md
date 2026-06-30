@@ -833,8 +833,8 @@ Each rung adds one user-visible capability on top of the same attestation base:
 | Rung | Capability being proven | Secret/resource being protected |
 |------|-------------------------|---------------------------------|
 | a | Attested secret release. | A sample KBS resource requested by the pod after CDH reports success. |
-| b | Attested encrypted-image pull. | The image decryption key. |
-| c | Attested signed-image policy. | The registry credential and image security policy. |
+| b | Attested signed-image policy. | The registry credential and image security policy. |
+| c | Attested encrypted-image pull. | The image decryption key. |
 | Air-gap | No hidden live dependency on AMD KDS. | The VCEK cache path itself. |
 
 - **Rung a — secret release.** Deploy
@@ -844,14 +844,15 @@ Each rung adds one user-visible capability on top of the same attestation base:
   empty RVPS (or tampered initdata) → attestation errors, **secret withheld**, pod does not
   start. Keep `limits.memory ≥ default_memory + 256–512 MiB` or the host OOM-kills the CVM
   (SNP pins all guest RAM at launch). Read `oc describe pod` / `oc get events`, not just logs.
-- **Rung b — encrypted image.** **Happy:** pod Running (image key released after attestation).
-  **Negative:** wrong measurement → key withheld → pod won't start. Plan details: build a
-  digest-pinned encrypted image, serve its actual wrapping key from KBS at the KID embedded in
-  the encrypted layer, then prove a measured-initdata mismatch prevents the key release.
-- **Rung c — signed image.** **Happy:** signed image pulls (mirror pull secret served as
+- **Rung b — signed image.** **Happy:** signed image pulls (mirror pull secret served as
   `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
   Plan details: serve a restrictive signed-image policy and public key from KBS, while still
   allowing or verifying the pause/release images the CVM pulls before the app image.
+- **Rung c — encrypted image** *(upstream-blocked: cri-o/cri-o#10084)*. **Happy:** pod Running
+  (image key released after attestation). **Negative:** wrong measurement → key withheld → pod
+  won't start. Plan details: build a digest-pinned encrypted image, serve its actual wrapping
+  key from KBS at the KID embedded in the encrypted layer, then prove a measured-initdata
+  mismatch prevents the key release.
 - **Air-gap negative test (cross-cutting).** Temporarily remove the Trustee `vcek-*` Secrets,
   then rerun an otherwise happy rung-a request. Attestation **must fail**, and the Secrets must
   be restored. Proves the OfflineStore cache — not a silently-reachable KDS — is load-bearing.

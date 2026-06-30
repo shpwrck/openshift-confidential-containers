@@ -28,8 +28,8 @@ See [`docs/architecture.md`](docs/architecture.md) for component diagrams, the a
 ## Capability rungs (prove on rig → apply to production)
 
 - **a** — KBS secret-resource release (attestation gates a credential)
-- **b** — encrypted container image (wrong measurement → pod won't start)
-- **c** — signed image (`image_security_policy`)
+- **b** — signed image (`image_security_policy`)
+- **c** — encrypted container image (wrong measurement → pod won't start; direct pull is upstream-blocked, cri-o/cri-o#10084)
 
 Each rung is "done" only when (1) reproduced from written steps on a fresh node and (2) its
 **negative test** (the denial) passes. See [`docs/design/engagement-design.md`](docs/design/engagement-design.md).

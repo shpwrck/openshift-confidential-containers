@@ -60,8 +60,8 @@ test passes:
 | Rung | Happy path | **Negative test (the proof)** |
 |------|-----------|-------------------------------|
 | a — secret release | `cdh/resource/.../attestation-status` → `{"status":"success"}` | restrictive policy + wrong/empty RVPS (or tampered initdata) → **error, secret withheld** |
-| b — encrypted image | pod Running | wrong measurement → key withheld → **pod won't start** |
-| c — signed image | signed image pulls | unsigned/tampered image → `image_security_policy` **rejects** |
+| b — signed image | signed image pulls | unsigned/tampered image → `image_security_policy` **rejects** |
+| c — encrypted image *(upstream-blocked: cri-o/cri-o#10084)* | pod Running | wrong measurement → key withheld → **pod won't start** |
 | air-gap | attestation succeeds offline | temporarily remove Trustee `vcek-*` Secrets, then rerun an otherwise happy rung-a request → **attestation fails** and Secrets are restored (proves the cache is load-bearing, not silently hitting a reachable KDS) |
 
 CI (no hardware): `kustomize build`, kubeconform, `conftest`/OPA on the Rego policies, yamllint.

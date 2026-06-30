@@ -140,8 +140,8 @@ the Phase 6 table below for the exact build/apply/negative sequence.
 | Step | What happens / command |
 |---|---|
 | **Rung a — secret release** | Deploy `gitops/base/workloads/rung-a-secret-pod.yaml` (`runtimeClassName: kata-cc`). **Happy:** init `curl …/cdh/resource/default/attestation-status/status` → success → workload runs. **Negative (the proof):** restrictive resource policy + wrong/empty RVPS (or tamper initdata) → attestation errors, **secret withheld**, pod does not start. **Landmine:** keep `limits.memory ≥ default_memory + 256–512 MiB` or the host **OOM-kills the CVM** (DeadlineExceeded, QEMU dies in seconds). Primary signal: `oc describe pod` + `oc get events`, **not** logs. |
-| **Rung b — encrypted image** | `make build-rung-images` then `make deploy-trustee-rung-bc` and `make run-rung-c-encrypted RUNG_C_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-c`). **Negative:** `make negative-test WHICH=rung-c RUNG_C_IMAGE=<digest-ref>` must fail closed from a measured-initdata mismatch, not from a missing key. *(after rung a)* |
-| **Rung c — signed image** | Use the same artifacts, then `make run-rung-b-signed RUNG_B_IMAGE=<digest-ref>`. **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** `make negative-test WHICH=rung-b RUNG_B_UNSIGNED_IMAGE=<unsigned-digest-ref>` must fail closed through `image_security_policy` rejection. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. *(after rung b)* |
+| **Rung b — signed image** | `make build-rung-images` then `make run-rung-b-signed RUNG_B_IMAGE=<digest-ref>`. **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** `make negative-test WHICH=rung-b RUNG_B_UNSIGNED_IMAGE=<unsigned-digest-ref>` must fail closed through `image_security_policy` rejection. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. *(after rung a)* |
+| **Rung c — encrypted image** | Use the same artifacts, then `make deploy-trustee-rung-bc` and `make run-rung-c-encrypted RUNG_C_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-c`). **Negative:** `make negative-test WHICH=rung-c RUNG_C_IMAGE=<digest-ref>` must fail closed from a measured-initdata mismatch, not from a missing key. **⚠ upstream-blocked** (direct encrypted-image pull gated on cri-o/cri-o#10084 — the known frontier). *(after rung b)* |
 | **Air-gap negative test** | `make negative-test WHICH=air-gap`. The harness temporarily removes the Trustee `vcek-*` Secrets, then reruns an otherwise happy rung-a request; attestation **must FAIL** and the Secrets must be restored. This proves the OfflineStore cache — not a leaky KDS — is load-bearing. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
 | **🛑 STOP-gate** | All rung a/b/c happy+negative results green **and** the air-gap VCEK-pull negative test fails-closed as expected. Confirm each rung's happy + negative result on the node before sign-off. |
 
@@ -210,13 +210,13 @@ A rung is **proven only when reproduced from the written steps AND its negative 
 - ✅ Happy: `cdh/resource/.../attestation-status` → `{"status":"success"}`; pod runs.
 - ✅ Negative: restrictive policy + wrong/empty RVPS (or tampered initdata) → **error, secret withheld, pod does not start.**
 
-**Rung b — encrypted image**
-- ✅ Happy: pod reaches `Running` (image key released after attestation).
-- ✅ Negative: wrong measurement → key withheld → **pod won't start.**
-
-**Rung c — signed image**
+**Rung b — signed image**
 - ✅ Happy: signed image pulls (mirror pull secret served as `regcred`).
 - ✅ Negative: unsigned/tampered image → `image_security_policy` **rejects** the pull.
+
+**Rung c — encrypted image** *(upstream-blocked: cri-o/cri-o#10084)*
+- ✅ Happy: pod reaches `Running` (image key released after attestation).
+- ✅ Negative: wrong measurement → key withheld → **pod won't start.**
 
 **Air-gap (cross-cutting)**
 - ✅ Negative: remove one VCEK / wrong-case HWID → **attestation fails** — proving the OfflineStore cache, not a silently-reachable KDS, is load-bearing.
