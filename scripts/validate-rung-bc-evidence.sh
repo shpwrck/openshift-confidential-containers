@@ -7,10 +7,12 @@ DEFAULT_RUNG_B_POD="rung-b-encrypted"
 DEFAULT_RUNG_C_POD="rung-c-signed"
 DEFAULT_NEG_RUNG_B_POD="negtest-rung-b"
 DEFAULT_NEG_RUNG_C_POD="negtest-rung-c"
+DEFAULT_RUNG_B_KEY_ID="kbs:///default/image-key/rung-b"
 RUNG_B_POD="${RUNG_B_POD:-}"
 RUNG_C_POD="${RUNG_C_POD:-}"
 NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-}"
 NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-}"
+RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-}"
 DEFAULT_RUNG_B_APP_LOG_MARKER="rung-b: encrypted image decrypted and running"
 DEFAULT_RUNG_C_APP_LOG_MARKER="rung-c: signed image accepted and running"
 RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
@@ -111,32 +113,48 @@ check_manifest() {
 	if [[ ! -s "$manifest" ]]; then
 		return
 	fi
-	if jq -e '
+	if jq -e --arg rung_b_key_id "$RUNG_B_KEY_ID" '
 		def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
 		(.rung_b.digest_ref | digest_ref) and
+		(.rung_b.key_id == $rung_b_key_id) and
 		(.rung_c.digest_ref | digest_ref) and
 		(.rung_c.unsigned_digest_ref | digest_ref) and
 		(.rung_b.key_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
 		(.rung_c.cosign_pub_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
 	' "$manifest" >/dev/null; then
-		pass "rung-bc image manifest has digest refs and artifact fingerprints"
+		pass "rung-bc image manifest has digest refs, expected key ID, and artifact fingerprints"
 	else
-		fail "rung-bc image manifest is missing digest refs or artifact fingerprints"
+		fail "rung-bc image manifest is missing digest refs/fingerprints or has the wrong rung-b key ID: expected $RUNG_B_KEY_ID"
 	fi
 }
 
 check_proof_summary() {
-	local proof="${EVIDENCE_DIR}/rung-bc-proof-summary.tsv" bad_rows
+	local proof="${EVIDENCE_DIR}/rung-bc-proof-summary.tsv" bad_rows required row missing_rows=0
 	require_file "$proof" "rung-bc proof summary"
 	if [[ ! -s "$proof" ]]; then
 		return
 	fi
+	for required in \
+		rung_b_key_secret_sha256 \
+		rung_c_pub_secret_sha256 \
+		rung_b_happy_image \
+		rung_b_negative_image \
+		rung_c_happy_image \
+		rung_c_negative_unsigned_image; do
+		row="$(awk -F '\t' -v check="$required" 'NR > 1 && $1 == check { print; found = 1; exit } END { if (!found) exit 1 }' "$proof" || true)"
+		if [[ -z "$row" ]]; then
+			fail "rung-bc proof summary missing required row: $required"
+			missing_rows=1
+		fi
+	done
 	bad_rows="$(awk -F '\t' 'NR > 1 && $4 != "match" { print }' "$proof")"
-	if [[ -z "$bad_rows" ]]; then
+	if [[ -z "$bad_rows" && "$missing_rows" == "0" ]]; then
 		pass "rung-bc proof summary rows all match"
 	else
-		fail "rung-bc proof summary has non-match rows:"
-		printf '%s\n' "$bad_rows" >&2
+		if [[ -n "$bad_rows" ]]; then
+			fail "rung-bc proof summary has non-match rows:"
+			printf '%s\n' "$bad_rows" >&2
+		fi
 	fi
 }
 
@@ -400,6 +418,7 @@ need grep
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-$(summary_value_or_default rung_b_app_log_marker "$DEFAULT_RUNG_B_APP_LOG_MARKER")}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-$(summary_value_or_default rung_c_app_log_marker "$DEFAULT_RUNG_C_APP_LOG_MARKER")}"
 KBS_URL="${KBS_URL:-$(summary_value_or_default kbs_url "")}"
+RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-$(summary_value_or_default rung_b_key_id "$DEFAULT_RUNG_B_KEY_ID")}"
 RUNG_B_POD="${RUNG_B_POD:-$(summary_value_or_default rung_b_pod "$DEFAULT_RUNG_B_POD")}"
 RUNG_C_POD="${RUNG_C_POD:-$(summary_value_or_default rung_c_pod "$DEFAULT_RUNG_C_POD")}"
 NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-$(summary_value_or_default neg_rung_b_pod "$DEFAULT_NEG_RUNG_B_POD")}"

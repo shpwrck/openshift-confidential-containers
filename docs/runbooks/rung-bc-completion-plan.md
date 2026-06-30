@@ -404,14 +404,15 @@ runtime class, app image, and initdata annotation hash. `trustee/secrets/rung-bc
 records non-secret decoded lengths and SHA-256 fingerprints for only `image-key/rung-b`,
 `sig-public-key/rung-c`, and `security-policy/rung-c`; `rung-bc-proof-summary.tsv` compares
 those fingerprints and the happy/negative pod image refs against `rung-bc-images.json`.
-`make validate-rung-bc-evidence EVIDENCE_DIR=...` fails if the proof summary has non-matching
-rows, required pod phases/images are missing or wrong, Trustee logs lack the expected KBS
-resource fetches, mirror logs lack rung-b/rung-c repository pulls for the expected image
-digests, rung-b negative initdata does not differ from the happy pod, rung-c negative initdata
-does not match the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung
-policy URI, or tamper marker, happy pod logs lack the expected app-start markers, negative
-pods lack denial signals, or the bundle was collected from a dirty checkout. `summary.env`
-records the repo revision, branch, dirty state, expected KBS URL, expected app-log markers, and
+`make validate-rung-bc-evidence EVIDENCE_DIR=...` fails if the proof summary has missing or
+non-matching required rows, the image manifest has the wrong rung-b KBS key ID, required pod
+phases/images are missing or wrong, Trustee logs lack the expected KBS resource fetches,
+mirror logs lack rung-b/rung-c repository pulls for the expected image digests, rung-b
+negative initdata does not differ from the happy pod, rung-c negative initdata does not match
+the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung policy URI, or
+tamper marker, happy pod logs lack the expected app-start markers, negative pods lack denial
+signals, or the bundle was collected from a dirty checkout. `summary.env` records the repo
+revision, branch, dirty state, expected KBS URL, rung-b key ID, expected app-log markers, and
 local tool paths used to collect the bundle. It does not dump Secret data, but still review the
 bundle before sharing it outside the engagement.
 
