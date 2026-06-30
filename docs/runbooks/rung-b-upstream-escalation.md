@@ -62,7 +62,7 @@ make diagnose-rung-b-direct-pull RUNG_B_IMAGE="$RUNG_B_IMAGE"
 ```
 
 The diagnostic exits zero only when it sees the known host-side encrypted-layer blocker before any
-Trustee image-key request. It writes pod, event, Trustee, and CRI-O context under
+Trustee image-key request. It writes pod, event, Trustee, CRI-O, and mirror-log context under
 `rung-bc-artifacts/rung-b-direct-pull-<timestamp>/`.
 
 Expected behavior:
@@ -129,6 +129,9 @@ this exact `runtime_pull_image` plus encrypted digest failure, so
 
 These findings make the remaining blocker narrower than "encrypted images do not work":
 
+- The same air-gapped CoCo guest-pull path is already proven for a plain digest-pinned image:
+  rung-a reaches `Running`, Trustee releases its resources, and the mirror sees the guest
+  `oci-client` pull image content over HTTPS.
 - The encrypted layer KID is known and the correct 32-byte KEK was identified.
 - Trustee reseeded with that KEK can release the key to a guest.
 - A local tag-shaped carrier alias can cause Kata to perform an `image_guest_pull` for the real

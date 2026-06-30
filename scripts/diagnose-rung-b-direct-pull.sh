@@ -19,6 +19,9 @@ POLL_SECONDS="${POLL_SECONDS:-5}"
 KEEP_DIAG_POD="${KEEP_DIAG_POD:-0}"
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-600}"
 CRIO_LOG_TAIL="${CRIO_LOG_TAIL:-600}"
+MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-600}"
+MIRROR_LOG_FILES="${MIRROR_LOG_FILES:-/var/log/nginx/access.log /var/log/nginx/error.log /var/log/mirror-bootstrap.log /opt/mirror/oc-mirror-push.log}"
+MIRROR_CONTAINER_NAMES="${MIRROR_CONTAINER_NAMES:-quay-app quay registry mirror-registry}"
 APPLY_RUNG_B_SCRIPT="${APPLY_RUNG_B_SCRIPT:-${REPO_ROOT}/scripts/apply-rung-b.sh}"
 
 HOST_PULL_BLOCKER_RE='should be decrypted|destination specifies a digest|missing private key needed for decryption|private key needed for decryption'
@@ -45,6 +48,8 @@ Key env:
   DIAG_DIR              output directory
   WAIT_TIMEOUT          seconds to wait for the known blocker (default: 180)
   KEEP_DIAG_POD         set 1 to keep the diagnostic pod
+  MIRROR_LOG_FILES      host mirror log files to tail when readable
+  MIRROR_CONTAINER_NAMES mirror container names to inspect with podman/docker
 
 Exit codes:
   0  reproduced the known host-side blocker before any image-key request
@@ -79,6 +84,58 @@ record_cmd() {
 		printf '\n'
 		"$@"
 	} > "$out" 2>&1 || true
+}
+
+run_readable() {
+	local path="$1"
+	if [[ -r "$path" ]]; then
+		shift
+		"$@" "$path"
+	elif command -v sudo >/dev/null && sudo -n test -r "$path" 2>/dev/null; then
+		shift
+		sudo -n "$@" "$path"
+	else
+		return 1
+	fi
+}
+
+record_mirror_log_file() {
+	local path="$1" safe_name
+	safe_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9_.-]#_#g')"
+	if ! run_readable "$path" tail -n "$MIRROR_LOG_TAIL" > "${DIAG_DIR}/mirror/files/${safe_name}" 2>&1; then
+		printf 'missing or unreadable: %s\n' "$path" > "${DIAG_DIR}/mirror/files/${safe_name}.missing"
+	fi
+}
+
+record_mirror_container_log() {
+	local name="$1" runtime=""
+	if command -v podman >/dev/null; then
+		runtime=podman
+	elif command -v docker >/dev/null; then
+		runtime=docker
+	else
+		printf 'podman/docker not on PATH\n' > "${DIAG_DIR}/mirror/containers/${name}.missing"
+		return
+	fi
+
+	if "$runtime" container inspect "$name" >/dev/null 2>&1; then
+		"$runtime" logs --tail "$MIRROR_LOG_TAIL" "$name" > "${DIAG_DIR}/mirror/containers/${name}.log" 2>&1 || true
+	elif command -v sudo >/dev/null && sudo -n "$runtime" container inspect "$name" >/dev/null 2>&1; then
+		{ sudo -n "$runtime" logs --tail "$MIRROR_LOG_TAIL" "$name"; } > "${DIAG_DIR}/mirror/containers/${name}.log" 2>&1 || true
+	else
+		printf 'missing container: %s\n' "$name" > "${DIAG_DIR}/mirror/containers/${name}.missing"
+	fi
+}
+
+collect_mirror_logs() {
+	local path name
+	mkdir -p "${DIAG_DIR}/mirror/files" "${DIAG_DIR}/mirror/containers"
+	for path in $MIRROR_LOG_FILES; do
+		record_mirror_log_file "$path"
+	done
+	for name in $MIRROR_CONTAINER_NAMES; do
+		record_mirror_container_log "$name"
+	done
 }
 
 pod_phase() {
@@ -179,6 +236,7 @@ record_cmd trustee.log oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --
 if [[ -n "$node" ]]; then
 	record_cmd crio-node.log oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL"
 fi
+collect_mirror_logs
 
 if grep -Eiq "$HOST_PULL_BLOCKER_RE" "${DIAG_DIR}/context.txt"; then
 	host_blocker=1

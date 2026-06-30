@@ -884,7 +884,8 @@ EOF
 
 verify_workload_namespace_make_env() {
 	local stub="$tmpdir/workload-target-stub.sh"
-	local rung_b_out="$tmpdir/apply-rung-b-env" rung_c_out="$tmpdir/apply-rung-c-env" evidence_out="$tmpdir/collect-evidence-env"
+	local rung_b_out="$tmpdir/apply-rung-b-env" rung_c_out="$tmpdir/apply-rung-c-env"
+	local evidence_out="$tmpdir/collect-evidence-env" diagnose_out="$tmpdir/diagnose-rung-b-direct-pull-env"
 	cat > "$stub" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -980,7 +981,23 @@ EOF
 		MIRROR_CONTAINER_NAMES="quay-app custom-registry" \
 		> "$evidence_out"
 
-	for out in "$tmpdir/apply-rung-a-env" "$rung_b_out" "$rung_c_out" "$evidence_out"; do
+	make -s diagnose-rung-b-direct-pull \
+		DIAGNOSE_RUNG_B_DIRECT_PULL_SCRIPT="$stub" \
+		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		MIRROR_DNS_UPSTREAM="192.0.2.10" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_B_KEY_ID="kbs:///default/custom-image-key/rung-b" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
+		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		ARTIFACT_DIR="$tmpdir/artifacts" \
+		MIRROR_LOG_TAIL="333" \
+		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
+		MIRROR_CONTAINER_NAMES="quay-app custom-registry" \
+		> "$diagnose_out"
+
+	for out in "$tmpdir/apply-rung-a-env" "$rung_b_out" "$rung_c_out" "$evidence_out" "$diagnose_out"; do
 		expect_grep "NS=workload-test" "$out" "Makefile workload namespace override"
 		expect_grep "TRUSTEE_NS=trustee-test" "$out" "Makefile Trustee namespace override"
 	done
@@ -1007,6 +1024,14 @@ EOF
 	expect_grep "MIRROR_LOG_TAIL=333" "$evidence_out" "Makefile evidence mirror log tail override"
 	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$evidence_out" "Makefile evidence mirror log file override"
 	expect_grep "MIRROR_CONTAINER_NAMES=quay-app custom-registry" "$evidence_out" "Makefile evidence mirror container override"
+	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$diagnose_out" "Makefile diagnose artifact dir override"
+	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$diagnose_out" "Makefile diagnose KBS URL override"
+	expect_grep "RUNG_B_KEY_ID=kbs:///default/custom-image-key/rung-b" "$diagnose_out" "Makefile diagnose rung-b key ID override"
+	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$diagnose_out" "Makefile diagnose rung-b policy URI override"
+	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$diagnose_out" "Makefile diagnose rung-b image override"
+	expect_grep "MIRROR_LOG_TAIL=333" "$diagnose_out" "Makefile diagnose mirror log tail override"
+	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$diagnose_out" "Makefile diagnose mirror log file override"
+	expect_grep "MIRROR_CONTAINER_NAMES=quay-app custom-registry" "$diagnose_out" "Makefile diagnose mirror container override"
 }
 
 verify_negative_test_air_gap_restores_vceks() {

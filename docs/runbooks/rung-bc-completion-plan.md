@@ -399,7 +399,9 @@ before Kata guest-pull handoff.
 When the direct-pull behavior needs to be rechecked or attached to an upstream report, run
 `make diagnose-rung-b-direct-pull RUNG_B_IMAGE="$RUNG_B_IMAGE"` after sourcing
 `rung-bc-artifacts/rung-bc.env`. The diagnostic writes a timestamped evidence directory and exits
-zero only for the known host-side encrypted-layer blocker with no Trustee image-key request.
+zero only for the known host-side encrypted-layer blocker with no Trustee image-key request. It
+also tails configured mirror logs/container logs so the evidence bundle includes the registry-side
+view of CRI-O's pre-guest pull attempt when those logs are available on the bastion.
 
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.

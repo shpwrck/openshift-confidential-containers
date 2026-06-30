@@ -215,7 +215,7 @@ prove-rung-bc: ## Phase 6: run rung-b/c happy paths, denial proofs, evidence col
 
 .PHONY: diagnose-rung-b-direct-pull
 diagnose-rung-b-direct-pull: ## Phase 6: reproduce/collect the rung-b direct encrypted-image pull blocker
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_POLICY_URI="$(RUNG_B_POLICY_URI)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" ARTIFACT_DIR="$(ARTIFACT_DIR)" bash "$(DIAGNOSE_RUNG_B_DIRECT_PULL_SCRIPT)"
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_POLICY_URI="$(RUNG_B_POLICY_URI)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" ARTIFACT_DIR="$(ARTIFACT_DIR)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash "$(DIAGNOSE_RUNG_B_DIRECT_PULL_SCRIPT)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)
