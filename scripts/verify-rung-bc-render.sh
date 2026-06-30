@@ -1145,6 +1145,7 @@ verify_evidence_validation_gate() {
 	local evidence="$tmpdir/valid-evidence" out="$tmpdir/validate-evidence.out"
 	local broken="$tmpdir/broken-evidence" err="$tmpdir/validate-evidence.err"
 	local broken_mirror="$tmpdir/broken-mirror-evidence" mirror_err="$tmpdir/validate-mirror-evidence.err"
+	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
@@ -1164,6 +1165,14 @@ verify_evidence_validation_gate() {
 		die "evidence validator accepted missing mirror logs"
 	fi
 	expect_grep "mirror logs missing or empty" "$mirror_err" "evidence validator mirror-log failure"
+
+	cp -R "$evidence" "$broken_digest"
+	sed -i 's/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/' \
+		"$broken_digest/mirror/files/access.log"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_digest" > /dev/null 2> "$digest_err"; then
+		die "evidence validator accepted a mirror log with the wrong digest"
+	fi
+	expect_grep "mirror logs missing coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$digest_err" "evidence validator mirror digest failure"
 }
 
 verify_evidence_validation_make_env() {

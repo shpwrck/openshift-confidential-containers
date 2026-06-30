@@ -57,6 +57,13 @@ image_repo_path() {
 	fi
 }
 
+image_digest() {
+	local image="$1"
+	if [[ "$image" =~ @(sha256:[0-9a-f]{64})$ ]]; then
+		printf '%s\n' "${BASH_REMATCH[1]}"
+	fi
+}
+
 summary_value() {
 	local key="$1" file="${EVIDENCE_DIR}/summary.env"
 	awk -F '=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); found = 1; exit } END { if (!found) exit 1 }' "$file"
@@ -231,16 +238,23 @@ mirror_log_context() {
 }
 
 check_mirror_image_pull() {
-	local label="$1" image="$2" context="$3" repo
+	local label="$1" image="$2" context="$3" repo digest digest_hex
 	if [[ -z "$image" ]]; then
 		fail "$label mirror image ref missing from manifest"
 		return
 	fi
 	repo="$(image_repo_path "$image")"
-	if grep -Fq "/v2/${repo}/" <<<"$context" || grep -Fq "$repo" <<<"$context"; then
-		pass "$label mirror logs include ${repo}"
+	digest="$(image_digest "$image")"
+	if [[ -z "$digest" ]]; then
+		fail "$label mirror image ref is not a sha256 digest ref: $image"
+		return
+	fi
+	digest_hex="${digest#sha256:}"
+	if awk -v repo="$repo" -v digest="$digest" -v digest_hex="$digest_hex" \
+		'index($0, repo) && (index($0, digest) || index($0, digest_hex)) { found = 1 } END { exit found ? 0 : 1 }' <<<"$context"; then
+		pass "$label mirror logs include ${repo}@${digest}"
 	else
-		fail "$label mirror logs missing ${repo}"
+		fail "$label mirror logs missing ${repo}@${digest}"
 	fi
 }
 
