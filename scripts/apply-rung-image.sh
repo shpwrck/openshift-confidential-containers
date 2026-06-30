@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Render and optionally apply the rung-b/rung-c image proof workloads.
+# Render and optionally apply the rung-b/rung-c confidential-image proof workloads.
+#
+# RUNG=b|c selects the workload. Key env knobs (all have rig defaults):
+#   NS=default  TRUSTEE_NS=trustee-operator-system  KBS_URL=http://kbs-service.<ns>.svc:8080
+#   MIRROR_REGISTRY=mirror.rig.local:8443  MIRROR_CA=/opt/mirror/ca/rootCA.pem  MIRROR_DOMAIN=rig.local
+#   RUNG_B_IMAGE / RUNG_C_IMAGE = <digest-ref>  RUNG_B_KEY_ID=  IMAGE_SECURITY_POLICY_URI=
+#   RENDER_ONLY=1      print the rendered pod.yaml and exit (no cluster writes)
+#   TAMPER_INITDATA=1  corrupt the measured initdata (used by the negative tests)
+#   REQUIRE_KBS_RESOURCE_LOGS=1 (default) also assert the KBS resource fetch is visible in logs
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +28,7 @@ REQUIRE_KBS_RESOURCE_LOGS="${REQUIRE_KBS_RESOURCE_LOGS:-1}"
 
 tmpdir=""
 baseline_log=""
+RESOURCE_LOG_SINCE=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -175,8 +184,11 @@ collect_failure_context() {
 }
 
 verify_kbs_resource_logs() {
-	local logs resource missing=0
-	logs="$(oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail=500 2>/dev/null || true)"
+	local logs resource missing=0 since_args=()
+	# Search the whole window since the pod was applied, not a fixed --tail: on a busy KBS the
+	# resource-fetch line can roll past the last 500 lines and abort an otherwise-successful proof.
+	[[ -n "$RESOURCE_LOG_SINCE" ]] && since_args=(--since-time="$RESOURCE_LOG_SINCE")
+	logs="$(oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment "${since_args[@]}" --tail=-1 2>/dev/null || true)"
 	for resource in "${EXPECTED_KBS_RESOURCES[@]}"; do
 		if ! grep -Fq "resource/${resource}" <<<"$logs"; then
 			echo "WARN: did not see KBS resource/${resource} in recent Trustee logs"
@@ -239,6 +251,9 @@ echo "Configuring ${MIRROR_DOMAIN} DNS forwarding to ${MIRROR_DNS_UPSTREAM}"
 ensure_dns_forwarder
 
 oc -n "$NS" delete pod "$POD_NAME" --ignore-not-found --wait=true
+# Mark the start of the Trustee-log search window so verify_kbs_resource_logs finds this run's
+# resource fetch regardless of how much else the KBS has logged since.
+RESOURCE_LOG_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 oc apply -f "$tmpdir/pod.yaml"
 
 if ! wait_until "${POD_NAME} pod Ready" pod_ready; then
