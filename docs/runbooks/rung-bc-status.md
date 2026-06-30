@@ -1,11 +1,11 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T11:53:42Z
+Last updated: 2026-06-30T12:17:24Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest proof-tooling checkpoint verified on the rig: `6f359c0` (`make prove-rung-c` passed and
-validated scoped rung-c evidence at
-`/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T115052Z`)
+Latest proof-tooling checkpoint verified on the rig: `1189cb3` (`make prove-rung-c` passed and
+validated proof-scope-aware rung-c evidence at
+`/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T121314Z`)
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -157,11 +157,14 @@ Live rig check on 2026-06-30:
   unsigned digest, CRI-O `image_guest_pull` sources for both rung-c digest refs, and the expected
   negative denial signal.
 - Fresh `make prove-rung-c` evidence:
-  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T115052Z`.
-  It was collected from clean repo head `6f359c0`; `make prove-rung-c` loaded digest refs from
-  `rung-bc.env`, passed strict signature/manifest preflight, recreated `rung-c-signed`, kept
-  `negtest-rung-c`, collected bounded Trustee/CRI-O/mirror logs since
-  `2026-06-30T11:50:52Z`, and `VALIDATION_SCOPE=rung-c` passed.
+  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T121314Z`.
+  It was collected from clean repo head `1189cb3` with `repo_git_dirty=false` and
+  `proof_scope=rung-c`; `make prove-rung-c` loaded digest refs from `rung-bc.env`, passed strict
+  signature/manifest preflight, recreated `rung-c-signed`, kept `negtest-rung-c`, collected
+  bounded Trustee/CRI-O/mirror logs since `2026-06-30T12:13:14Z`, and
+  `VALIDATION_SCOPE=rung-c` passed. This supersedes the earlier scoped bundle at
+  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T115052Z`,
+  which predates the `proof_scope` provenance field.
 - Older full-bundle evidence remains at `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z`; with the current validator it fails because it predates bounded Trustee/CRI-O/mirror proof windows and because rung-b never reached guest pull. `oc exec` into the rung-c pod remains blocked by policy.
 - Additional rung-b force-guest-pull probes on the same rig did not move the encrypted pull into
   the guest:
