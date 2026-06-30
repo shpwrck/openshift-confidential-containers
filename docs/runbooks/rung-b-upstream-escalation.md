@@ -1,6 +1,6 @@
 # Rung b upstream escalation packet
 
-Last updated: 2026-06-30T07:12:45Z
+Last updated: 2026-06-30T09:07:58Z
 
 This packet is the upstream summary for the remaining rung-b blocker. It is meant for a CRI-O,
 OpenShift sandboxed containers, Kata, or Confidential Containers maintainer without requiring them
@@ -78,6 +78,20 @@ For older diagnostic bundles collected before `mirror/summary.tsv` existed, set
 `REQUIRE_MIRROR_SUMMARY=0` while validating; current bundles should keep the default strict mirror
 summary requirement.
 
+Latest validated bounded diagnostic bundle:
+
+- Path: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z`
+- Validator: `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T085844Z`
+- Result: passed with the strict default mirror-summary requirement.
+- Key values:
+  - `classification=known-host-pull-blocker`
+  - `mirror_log_since_time=2026-06-30T08:58:44Z`
+  - `image_key_request_seen=0`
+  - `crio_rung_b_manifest=16`
+  - `crio_rung_b_blob=16`
+  - `guest_rung_b_manifest=0`
+  - `guest_rung_b_blob=0`
+
 Expected behavior:
 
 - CRI-O/Kata should create the VM-backed container.
@@ -97,16 +111,25 @@ host-side message `missing private key needed for decryption`.
 
 ## Why this appears to be CRI-O ordering
 
-Source inspection of CRI-O release-1.33 and CRI-O main shows the same effective ordering.
+Source inspection of CRI-O release-1.33 and CRI-O main shows the same effective ordering. The
+2026-06-30T09:07Z recheck did not reveal an existing runtime-handler knob that preserves the
+user-requested encrypted digest as the guest-pull source while bypassing host-side encrypted-layer
+handling.
 
 - `server/image_pull.go` calls `getDecryptionKeys(s.config.DecryptionKeysPath)` before
   `pullImageCandidate`, so the host image service still enters containers/image encrypted-layer
   handling during `PullImage`.
-- `server/container_create.go` resolves the local image result before runtime create.
+- `server/container_create.go` calls `resolveAndVerifyContainerImage`, which resolves a local
+  image result, then `createStorageContainer`, before `createContainerPlatform` invokes the VM
+  runtime.
 - `internal/factory/container/container.go` writes `io.kubernetes.cri-o.ImageName` from the local
-  `ImageResult.SomeNameOfThisImage`.
+  `ImageResult.SomeNameOfThisImage`. In CRI-O main, the annotation constant explicitly says this
+  value has no relationship to the user input used to find the image.
 - `internal/oci/runtime_vm.go` later uses `c.Spec().Annotations[io.kubernetes.cri-o.ImageName]` as
-  the Kata `image_guest_pull` source.
+  the Kata `image_guest_pull` source, and `runtime_pull_image` gates only this later
+  `CreateContainer` virtual-volume handoff.
+- Kata's guest-side code consumes storage entries with driver `image_guest_pull`; it does not
+  recover the original CRI image reference if CRI-O has already supplied a carrier/local image name.
 
 Release-1.33 source checked locally at `3c4da7a15593b9e2716bb6c69a3f0ff6f026033f`; CRI-O main was
 checked at `ec15c528e4c25dfbf6e52498c8bda3187b62392b`. Relevant upstream files:
@@ -117,7 +140,10 @@ checked at `ec15c528e4c25dfbf6e52498c8bda3187b62392b`. Relevant upstream files:
 - <https://github.com/cri-o/cri-o/blob/release-1.33/internal/oci/runtime_vm.go>
 - <https://github.com/cri-o/cri-o/blob/main/server/image_pull.go>
 - <https://github.com/cri-o/cri-o/blob/main/server/container_create.go>
+- <https://github.com/cri-o/cri-o/blob/main/internal/factory/container/container.go>
+- <https://github.com/cri-o/cri-o/blob/main/internal/annotations/annotations.go>
 - <https://github.com/cri-o/cri-o/blob/main/internal/oci/runtime_vm.go>
+- <https://github.com/kata-containers/kata-containers/blob/main/src/agent/src/confidential_data_hub/image.rs>
 
 Targeted issue searches on 2026-06-30 did not find an obvious existing CRI-O or Kata issue for
 this exact `runtime_pull_image` plus encrypted digest failure, so

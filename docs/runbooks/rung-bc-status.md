@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T09:02:18Z
+Last updated: 2026-06-30T09:07:58Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest pushed proof-tooling checkpoint verified on the rig before this status note: `550cfe8`
+Latest pushed proof-tooling checkpoint verified on the rig before this source-analysis note: `9f2ea25`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -316,6 +316,15 @@ Live rig check on 2026-06-30:
     status/pull before `CreateContainer`; at most it could diagnose a local carrier-image path by
     changing the later guest-pull source. That remains custom mechanism work, not current rung-b
     proof.
+- A source recheck of CRI-O `release-1.33` and `main`, plus Kata main, still points to the same
+  ordering: CRI-O's `PullImage` path supplies an ocicrypt decrypt config before storage import,
+  `CreateContainer` resolves a local image result and writes `io.kubernetes.cri-o.ImageName` from
+  `ImageResult.SomeNameOfThisImage`, and only then does `runtimeVM.CreateContainer` use that
+  annotation as the Kata `image_guest_pull` source. CRI-O main's annotation constant explicitly
+  says `ImageName` has no relationship to the user input used to find the image, so the source path
+  matches the carrier/default-annotation probe results: there is not an existing config knob here
+  that preserves the user-requested encrypted digest as the guest-pull source while bypassing the
+  host encrypted-layer pull.
 
 1. Find a supported OpenShift/CRI-O path that gets direct rung-b pods to `CreateContainer` without
    host-side encrypted-layer pre-pull. The diagnostic local alias, CRI-O annotation probes, and
