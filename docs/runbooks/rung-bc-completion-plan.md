@@ -393,6 +393,11 @@ drop-in, restarted CRI-O, and recreated the direct digest pod; the pod still fai
 digest-preserving host decrypt error and made no `image-kek` KBS request. The pull still occurs
 before Kata guest-pull handoff.
 
+When the direct-pull behavior needs to be rechecked or attached to an upstream report, run
+`make diagnose-rung-b-direct-pull RUNG_B_IMAGE="$RUNG_B_IMAGE"` after sourcing
+`rung-bc-artifacts/rung-bc.env`. The diagnostic writes a timestamped evidence directory and exits
+zero only for the known host-side encrypted-layer blocker with no Trustee image-key request.
+
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.
 

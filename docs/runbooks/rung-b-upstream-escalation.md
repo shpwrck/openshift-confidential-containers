@@ -52,6 +52,17 @@ Render and apply the normal rung-b pod with the digest-pinned encrypted image:
 make apply-rung-b RUNG_B_IMAGE="$RUNG_B_IMAGE"
 ```
 
+To collect an issue-ready evidence directory for this exact failure:
+
+```bash
+. rung-bc-artifacts/rung-bc.env
+make diagnose-rung-b-direct-pull RUNG_B_IMAGE="$RUNG_B_IMAGE"
+```
+
+The diagnostic exits zero only when it sees the known host-side encrypted-layer blocker before any
+Trustee image-key request. It writes pod, event, Trustee, and CRI-O context under
+`rung-bc-artifacts/rung-b-direct-pull-<timestamp>/`.
+
 Expected behavior:
 
 - CRI-O/Kata should create the VM-backed container.
