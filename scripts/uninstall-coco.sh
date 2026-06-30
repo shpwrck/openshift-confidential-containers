@@ -29,12 +29,21 @@ target_subscriptions=(
 csv_regex='^(nfd|sandboxed-containers-operator|trustee-operator|cert-manager-operator|gatekeeper-operator-product)\.'
 runtimeclasses=(kata kata-cc kata-nvidia-gpu kata-cc-nvidia-gpu)
 
+# Imperatively-applied workload pods (rung happy + negative pods) — NOT in any kustomization, so
+# delete_kustomize never sweeps them; they must be deleted by name (see apply-rung-*.sh and
+# negative-test.sh). They live in WORKLOAD_NS (default `default`), bound to the kata-cc runtimeclass.
+WORKLOAD_NS="${WORKLOAD_NS:-default}"
+workload_pods=(rung-a rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap)
+
 log() {
 	printf '\n== %s ==\n' "$*"
 }
 
 need_cluster() {
 	command -v oc >/dev/null || { echo "ERROR: oc is not on PATH" >&2; exit 2; }
+	# jq is load-bearing for CSV cleanup, the finalizer sweep, and validation — require it up
+	# front so uninstall does not silently degrade to a best-effort no-op on a minimal box.
+	command -v jq >/dev/null || { echo "ERROR: jq is required (CSV cleanup, finalizer sweep, and validation all need it)" >&2; exit 2; }
 	oc whoami >/dev/null 2>&1 || { echo "ERROR: oc is not logged into a cluster" >&2; exit 2; }
 }
 
@@ -115,6 +124,13 @@ uninstall() {
 	need_cluster
 	cd "$REPO_ROOT"
 
+	# Teardown order is load-bearing: workload pods -> Trustee/Gatekeeper/Kata/NFD operands ->
+	# OLM subs/CSVs + namespaces -> force-clear finalizers (retried). Operands go before operators
+	# so the owning controllers can still run their own finalizers; the finalizer sweep at the end
+	# is the last-resort cleanup for anything left Terminating once its operator is gone.
+	log "Deleting imperatively-applied workload pods (rung happy + negative)"
+	oc -n "$WORKLOAD_NS" delete pod "${workload_pods[@]}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+
 	log "Deleting Trustee and workload operands"
 	delete_kustomize gitops/overlays/sno-trustee
 	delete_kustomize gitops/base/workloads
@@ -142,17 +158,37 @@ uninstall() {
 	delete_olm_objects
 	delete_operator_namespaces
 
-	log "Clearing stale finalizers for deleting CoCo custom resources"
-	clear_deleting_finalizers kataconfig.kataconfiguration.openshift.io cluster-kataconfig
-	clear_deleting_finalizers kbsconfig.confidentialcontainers.org kbsconfig trustee-operator-system
-	clear_deleting_finalizers nodefeaturediscovery.nfd.openshift.io nfd-instance openshift-nfd
-	clear_deleting_finalizers gatekeeper.operator.gatekeeper.sh gatekeeper
-	for rc in "${runtimeclasses[@]}"; do
-		clear_deleting_finalizers runtimeclass "$rc"
+	log "Clearing stale finalizers for deleting CoCo custom resources (retry until gone)"
+	# The operators that own these finalizers were just deleted, so anything still Terminating can
+	# never be reconciled — force-clear it. This MUST retry, not fire once: the deletionTimestamp
+	# may not be set the instant we look, a dying operator can re-add a finalizer, and on SNO the
+	# API is briefly unreachable while removing the kata MachineConfig reboots the node. We only
+	# conclude "done" from a SUCCESSFUL query showing the targets are gone — never from an
+	# API-down error (which would otherwise break the loop early mid-reboot and re-strand kata-cc).
+	local fz_deadline=$((SECONDS + WAIT_TIMEOUT)) remaining rc
+	while (( SECONDS < fz_deadline )); do
+		clear_deleting_finalizers kataconfig.kataconfiguration.openshift.io cluster-kataconfig
+		clear_deleting_finalizers kbsconfig.confidentialcontainers.org kbsconfig trustee-operator-system
+		clear_deleting_finalizers nodefeaturediscovery.nfd.openshift.io nfd-instance openshift-nfd
+		clear_deleting_finalizers gatekeeper.operator.gatekeeper.sh gatekeeper
+		for rc in "${runtimeclasses[@]}"; do
+			clear_deleting_finalizers runtimeclass "$rc"
+		done
+		if oc get nodes >/dev/null 2>&1; then
+			remaining=0
+			for rc in "${runtimeclasses[@]}"; do
+				oc get runtimeclass "$rc" >/dev/null 2>&1 && remaining=$((remaining + 1))
+			done
+			oc get kataconfig.kataconfiguration.openshift.io cluster-kataconfig >/dev/null 2>&1 && remaining=$((remaining + 1))
+			(( remaining == 0 )) && break
+		fi
+		sleep "$SLEEP_SECONDS"
 	done
 
-	log "Uninstall submitted"
-	echo "Run 'make validate-coco-uninstalled' until it reports success. On SNO, MachineConfig cleanup may reboot the node."
+	log "Uninstall complete (operands, operators, namespaces deleted; finalizers cleared)"
+	echo "On SNO, removing the kata MachineConfig reboots the node; this step waited for the"
+	echo "Terminating CoCo resources to clear. Run 'make validate-coco-uninstalled' to confirm"
+	echo "the node is Ready and nothing remains."
 }
 
 collect_failures() {
@@ -192,6 +228,7 @@ collect_failures() {
 		"machineconfig 50-enable-sandboxed-containers-extension"
 	)
 	for check in "${checks[@]}"; do
+		# shellcheck disable=SC2086  # $check is a multi-arg oc-get spec (kind name [-n ns]); word-splitting is intentional
 		if oc get $check >/dev/null 2>&1; then
 			echo "FAIL: operand still exists: $check"
 			operands=$((operands + 1))
@@ -225,6 +262,17 @@ collect_failures() {
 		failures=$((failures + live_ns))
 	fi
 
+	local live_pods=0 p
+	for p in "${workload_pods[@]}"; do
+		if oc -n "$WORKLOAD_NS" get pod "$p" >/dev/null 2>&1; then
+			echo "FAIL: workload pod still exists: $WORKLOAD_NS/$p"
+			live_pods=$((live_pods + 1))
+		fi
+	done
+	if (( live_pods > 0 )); then
+		failures=$((failures + live_pods))
+	fi
+
 	if ! oc wait node --all --for=condition=Ready --timeout=30s >/dev/null 2>&1; then
 		echo "FAIL: not all nodes are Ready"
 		failures=$((failures + 1))
@@ -241,20 +289,21 @@ validate_once() {
 validate_wait() {
 	need_cluster
 	local deadline=$((SECONDS + WAIT_TIMEOUT))
-	local last_status=1
 
 	while (( SECONDS < deadline )); do
 		if validate_once; then
 			echo "CoCo uninstall validation OK"
 			return 0
 		fi
-		last_status=$?
 		echo "Waiting ${SLEEP_SECONDS}s for uninstall cleanup to converge..."
 		sleep "$SLEEP_SECONDS"
 	done
 
+	# Timeout is by definition non-convergence = failure. (The previous `last_status=$?` captured
+	# the if-statement's status, which is 0 when validate_once fails with no else branch — so this
+	# used to return 0 and falsely report success.)
 	echo "ERROR: CoCo uninstall validation did not converge within ${WAIT_TIMEOUT}s" >&2
-	return "$last_status"
+	return 1
 }
 
 case "$MODE" in
