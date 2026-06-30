@@ -39,7 +39,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 parse_hwid_from_url() {
   local url="$1" hwid
-  hwid="$(echo "${url}" | sed -E 's#.*/v1/[^/]+/([^?]+).*#\1#' | tr 'A-Z' 'a-z')"
+  hwid="$(echo "${url}" | sed -E 's#.*/v1/[^/]+/([^?]+).*#\1#' | tr '[:upper:]' '[:lower:]')"
   [[ -n "${hwid}" && "${hwid}" != "${url}" ]] || die "could not parse HWID from URL: ${url}"
   [[ "${hwid}" =~ ^[0-9a-f]{128}$ ]] || die "parsed HWID is not 128 lowercase hex chars: ${hwid}"
   printf '%s\n' "${hwid}"
@@ -53,7 +53,8 @@ if [[ "${1:-}" == "--download" ]]; then
   for u in "${urls[@]}"; do
     d="$(dirname "$u")"
     echo ">> downloading VCEK for $(basename "$d")"
-    curl -fsSL "$(cat "$u")" -o "${d}/vcek.der"
+    # atomic: a dropped connection must not leave a truncated vcek.der
+    curl -fsSL "$(cat "$u")" -o "${d}/vcek.der.tmp" && mv -f "${d}/vcek.der.tmp" "${d}/vcek.der"
   done
   echo "Downloaded ${#urls[@]} VCEK cert(s). Carry ${OUT}/ into the air gap and re-run with <node> to create secrets."
   exit 0
@@ -118,13 +119,19 @@ for entry in "${socket_maps[@]}"; do
       continue
     fi
     seen_hwids[$hwid]="$socket"
-    dir="${OUT}/${hwid}"; mkdir -p "${dir}"; echo "${url}" > "${dir}/vcek.url"
+    dir="${OUT}/${hwid}"; mkdir -p "${dir}"
+    # A prior privileged/root collection can leave OUT/<hwid> root-owned; fail with a clear,
+    # actionable message instead of the raw "Permission denied" the redirect below would throw.
+    [[ -w "${dir}" ]] || die "bundle dir not writable: ${dir} (likely root-owned from a prior run — run: sudo chown -R \"\$(id -un)\" \"${OUT}\")"
+    echo "${url}" > "${dir}/vcek.url"
     echo "   hwid ${hwid}"
 
     # Fetch the .der here if KDS is reachable; otherwise defer to the --download step.
     if [[ ! -s "${dir}/vcek.der" ]]; then
       if curl -fsS -m 8 -o /dev/null "https://${KDS_HOST}/" 2>/dev/null; then
-        curl -fsSL "${url}" -o "${dir}/vcek.der"
+        # atomic write: an interrupted curl must not leave a truncated vcek.der that the
+        # `[[ ! -s ]]` guard above would treat as complete on the next run
+        curl -fsSL "${url}" -o "${dir}/vcek.der.tmp" && mv -f "${dir}/vcek.der.tmp" "${dir}/vcek.der"
       else
         echo "   KDS unreachable here — run \`$0 --download\` on a connected host, then re-run this."
         continue
@@ -133,11 +140,22 @@ for entry in "${socket_maps[@]}"; do
   done
 done
 
+# Reconcile two different counts: vcek.der FILES on disk (ders) vs unique HWIDs freshly collected
+# this run (seen_hwids). On a MULTI-SOCKET board these differ today: `snphost show vcek-url` (and
+# host-side PSP queries generally) are answered by the single MASTER PSP and return ONE chip-id
+# regardless of CPU pinning, so this script can only auto-enumerate socket 0's VCEK. A genuine 2P
+# box has a DISTINCT VCEK per socket; the robust way to get socket N's is an SNP attestation report
+# from a guest pinned to that socket (read its CHIP_ID). KNOWN LIMITATION — per-socket VCEK
+# enumeration is a pending redesign; until then, carry the other socket(s)' vcek.der in manually.
 mapfile -t ders < <(find "${OUT}" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
 if [[ "${#ders[@]}" -lt "${SOCKETS}" ]]; then
-  die "bundle has ${#ders[@]} VCEK DER file(s) but ${NODE} reports ${SOCKETS} socket(s). snphost has no --socket flag; add the missing ${OUT}/<hwid>/vcek.der file(s), then re-run."
+  die "bundle has ${#ders[@]} VCEK DER file(s) but ${NODE} reports ${SOCKETS} socket(s).
+  snphost has no --socket flag and the master PSP returns only one chip-id, so per-socket VCEKs
+  cannot be auto-enumerated here. Obtain each remaining socket's VCEK from an SNP report's CHIP_ID
+  (a guest pinned to that socket), drop it at ${OUT}/<hwid>/vcek.der, then re-run."
 fi
 if [[ "${SOCKETS}" -gt 1 && "${#seen_hwids[@]}" -lt "${SOCKETS}" ]]; then
+  # ders >= SOCKETS already passed, so the operator carried the extra der(s) in manually.
   echo "WARN: collected ${#seen_hwids[@]} unique HWID(s) from ${SOCKETS} socket(s); trusting the carried bundle (${#ders[@]} DER file(s))."
 fi
 
@@ -148,6 +166,10 @@ for der in "${ders[@]}"; do
   secret="vcek-snp-${created}"
   # Short secret names are required because the trustee operator uses secretName as a pod volume
   # name (63-char cap). The full HWID belongs in KbsConfig.mountPath, not in the secret name.
+  # KNOWN LIMITATION: this index is POSITIONAL (find/sort order), so on multi-node/multi-socket a
+  # changed hwid set renumbers existing secrets and can remap a KbsConfig entry to the wrong chip.
+  # A stable hwid-derived name is part of the pending per-socket VCEK redesign (must change in
+  # lockstep with seed-trustee-secrets.sh + apply-trustee.sh render_kbsconfig).
   oc create secret generic "${secret}" --from-file=vcek.der="${der}" \
      -n "${NS}" --dry-run=client -o yaml | oc apply -f -
   echo ">> ${secret}: ${hwid}"
