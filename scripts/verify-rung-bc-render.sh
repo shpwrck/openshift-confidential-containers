@@ -1251,6 +1251,7 @@ verify_evidence_validation_gate() {
 	local broken_app_log="$tmpdir/broken-app-log-evidence" app_log_err="$tmpdir/validate-app-log-evidence.err"
 	local custom_app_log="$tmpdir/custom-app-log-evidence" custom_app_log_out="$tmpdir/validate-custom-app-log-evidence.out"
 	local custom_pods="$tmpdir/custom-pods-evidence" custom_pods_out="$tmpdir/validate-custom-pods-evidence.out"
+	local custom_key_id="$tmpdir/custom-key-id-evidence" custom_key_id_out="$tmpdir/validate-custom-key-id-evidence.out"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
@@ -1292,6 +1293,18 @@ verify_evidence_validation_gate() {
 		"$custom_pods/pods/summary.tsv"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$custom_pods" > "$custom_pods_out"
 	expect_grep "Rung b/c evidence validation OK." "$custom_pods_out" "summary pod-role validation"
+
+	cp -R "$evidence" "$custom_key_id"
+	sed -i \
+		-e 's#^rung_b_key_id=.*#rung_b_key_id=kbs:///custom/image-key/rung-b#' \
+		-e 's#resource/default/image-key/rung-b#resource/custom/image-key/rung-b#' \
+		"$custom_key_id/summary.env" \
+		"$custom_key_id/trustee/logs.txt"
+	jq '.rung_b.key_id = "kbs:///custom/image-key/rung-b"' \
+		"$custom_key_id/rung-bc-images.json" > "$custom_key_id/rung-bc-images.json.tmp"
+	mv "$custom_key_id/rung-bc-images.json.tmp" "$custom_key_id/rung-bc-images.json"
+	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$custom_key_id" > "$custom_key_id_out"
+	expect_grep "Trustee logs include resource/custom/image-key/rung-b" "$custom_key_id_out" "summary rung-b custom key ID validation"
 
 	cp -R "$evidence" "$broken"
 	awk -F '\t' 'BEGIN { OFS = FS } $1 == "rung_c_happy_image" { $4 = "mismatch" } { print }' \

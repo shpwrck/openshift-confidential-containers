@@ -78,6 +78,16 @@ image_digest() {
 	fi
 }
 
+kbs_uri_resource_path() {
+	local uri="$1" path
+	if [[ "$uri" != kbs:///* ]]; then
+		return 1
+	fi
+	path="${uri#kbs:///}"
+	[[ -n "$path" && "$path" != /* ]] || return 1
+	printf '%s\n' "$path"
+}
+
 summary_value() {
 	local key="$1" file="${EVIDENCE_DIR}/summary.env"
 	awk -F '=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); found = 1; exit } END { if (!found) exit 1 }' "$file"
@@ -331,16 +341,21 @@ check_denial_signal() {
 }
 
 check_kbs_logs() {
-	local logs="${EVIDENCE_DIR}/trustee/logs.txt" resource
+	local logs="${EVIDENCE_DIR}/trustee/logs.txt" resource rung_b_resource
 	require_file "$logs" "Trustee logs"
 	if [[ ! -s "$logs" ]]; then
 		return
 	fi
-	for resource in image-key/rung-b security-policy/rung-c sig-public-key/rung-c; do
-		if grep -Fq "resource/default/${resource}" "$logs"; then
-			pass "Trustee logs include resource/default/${resource}"
+	rung_b_resource="$(kbs_uri_resource_path "$RUNG_B_KEY_ID" || true)"
+	if [[ -z "$rung_b_resource" ]]; then
+		fail "rung-b key ID is not a kbs:/// resource URI: $RUNG_B_KEY_ID"
+		return
+	fi
+	for resource in "$rung_b_resource" default/security-policy/rung-c default/sig-public-key/rung-c; do
+		if grep -Fq "resource/${resource}" "$logs"; then
+			pass "Trustee logs include resource/${resource}"
 		else
-			fail "Trustee logs missing resource/default/${resource}"
+			fail "Trustee logs missing resource/${resource}"
 		fi
 	done
 }
