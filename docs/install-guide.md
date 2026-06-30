@@ -809,8 +809,10 @@ reproduced from these steps AND its negative test fails-closed** — a negative 
 *passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
 Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
 §5 for the full matrix. Rungs b/c have implementation scaffolding; rung-c has live rig
-accept/deny evidence, while rung-b still needs a completed encrypted-image guest-pull and
-decryption proof. Use
+accept/deny evidence, while rung-b still needs a completed direct encrypted-image guest-pull
+proof. The 2026-06-30 rig diagnosed the rung-b KID/KEK mismatch and proved guest decryption
+through a local alias diagnostic, but the production digest-pinned pod is still blocked before
+KBS by CRI-O host-side encrypted-layer pre-pull. Use
 [`docs/runbooks/rung-bc-completion-plan.md`](runbooks/rung-bc-completion-plan.md) as the
 execution plan for encrypted-image and signed-image proof artifacts.
 
@@ -832,8 +834,8 @@ Each rung adds one user-visible capability on top of the same attestation base:
   (SNP pins all guest RAM at launch). Read `oc describe pod` / `oc get events`, not just logs.
 - **Rung b — encrypted image.** **Happy:** pod Running (image key released after attestation).
   **Negative:** wrong measurement → key withheld → pod won't start. Plan details: build a
-  digest-pinned encrypted image, serve its key from KBS at `image-key/rung-b`, then prove a
-  measured-initdata mismatch prevents the key release.
+  digest-pinned encrypted image, serve its actual wrapping key from KBS at the KID embedded in
+  the encrypted layer, then prove a measured-initdata mismatch prevents the key release.
 - **Rung c — signed image.** **Happy:** signed image pulls (mirror pull secret served as
   `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
   Plan details: serve a restrictive signed-image policy and public key from KBS, while still

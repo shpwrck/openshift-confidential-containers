@@ -1,9 +1,12 @@
 # Rung b/c completion plan
 
-Status: repo scaffolding exists, but this is not proof that the rungs are complete.
+Status: repo scaffolding exists, but this is not proof that both rungs are complete.
 Rung-a and the air-gapped in-guest image pull were proven on the rig on 2026-06-29.
-Rungs b/c still need image artifacts built on the rig, KBS resources enabled with those
-artifacts, and hardware happy/negative test runs.
+Rung-c has live hardware accept/deny evidence. Rung-b has image artifacts and the KID/KEK
+mismatch has been diagnosed: the current encrypted layer unwraps with
+`/home/rocky/rung-b/kek.bin`, and a local-storage alias diagnostic reached `Running` after
+Trustee was reseeded with that key. Rung-b still needs a direct digest-pinned proof path
+that reaches guest pull without CRI-O host-side encrypted-layer pre-pull blocking it first.
 
 For the latest branch/PR status and remaining proof checklist, see
 `docs/runbooks/rung-bc-status.md`.
@@ -244,12 +247,16 @@ Workload shape:
 - Same memory-floor annotations and limits as rung-a.
 - Same rendered initdata pattern as rung-a unless the KBS policy URI changes.
 - App image: digest-pinned encrypted image from `mirror.rig.local:8443/coco/rung-b@sha256:...`
-- `imagePullPolicy: Always` while proving, to avoid stale node snapshotter state.
+- `imagePullPolicy: Always` while proving, to avoid stale node snapshotter state. On the
+  2026-06-30 rig this is also the remaining blocker: direct digest and tag refs are still
+  intercepted by host-side encrypted-layer handling before Kata/CDH can pull in guest.
 
 Happy path:
 
 1. Confirm rung-a still runs.
-2. Confirm `image-key/rung-b` is served by Trustee.
+2. Confirm the KBS resource derived from `RUNG_B_KEY_ID` is served by Trustee. Do not trust
+   the KID string alone; if reusing or importing an image, decode the encrypted layer
+   annotation and confirm the Trustee Secret bytes unwrap that layer key.
 3. Apply rung-b pod:
 
    ```bash
@@ -259,7 +266,7 @@ Happy path:
 4. Wait for `Running`.
 5. Confirm KBS logs show:
    - successful SNP attestation
-   - `GET /kbs/v0/resource/default/image-key/rung-b ... 200`
+   - `GET /kbs/v0/resource/<path-derived-from-RUNG_B_KEY_ID> ... 200`
 6. Confirm mirror logs show encrypted image manifest/layer pulls by `oci-client`.
 7. Confirm the app log, pod/container status, or filesystem evidence proves the decrypted image started.
 
@@ -277,6 +284,14 @@ Use a measurement mismatch, not a missing image key, as the primary proof:
 Secondary diagnostic negative, only if needed: temporarily remove or rename the
 `image-key/rung-b` resource. That proves image decryption depends on KBS material, but it is
 not the sign-off proof because it does not prove measurement enforcement.
+
+The 2026-06-30 rig used KID
+`kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`. Trustee initially served
+`/home/rocky/rung-b/image-kek.bin` at that KID, but offline unwrap showed the encrypted layer
+was wrapped with `/home/rocky/rung-b/kek.bin`. After reseeding Trustee with `kek.bin`, a
+local node-storage alias diagnostic reached `Running`; that diagnostic is not a production
+proof because the container status image ID reflects the local alias/carrier path, not the
+direct digest-pinned encrypted image.
 
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.
@@ -471,10 +486,11 @@ make negative-test WHICH=all
 | Symptom | Most likely cause | First checks |
 |---|---|---|
 | Rung b pod hangs before image-key request | Guest cannot reach KBS or initdata was not delivered | Decode pod annotation; KBS logs; `aa.toml`/`cdh.toml` URL |
-| KBS serves image key but decrypt still fails | Wrong key bytes, wrong KID, guest/keyprovider format mismatch, stale snapshotter cache | Decode encrypted layer annotation; compare KID and KEK bytes against the Trustee Secret; rebuild rung-b with the guest-components/keyprovider format used by the rig's CDH/image-rs stack; rebuild node if cache is suspect |
+| KBS serves image key but decrypt still fails | Wrong key bytes, wrong KID, guest/keyprovider format mismatch, stale snapshotter cache | Decode encrypted layer annotation and run an offline unwrap check without printing key material. On 2026-06-30 the KID was correct, but Trustee served the wrong 32-byte key: `/home/rocky/rung-b/image-kek.bin` failed, while `/home/rocky/rung-b/kek.bin` (`sha256:f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c`) unwrapped the layer. Update Trustee and `rung-bc.env`/`rung-bc-images.json` to the key that actually unwraps the image. |
 | Direct encrypted image never reaches KBS; digest ref says the layer cannot be decrypted because the destination specifies a digest, while tag ref says a private key is missing | CRI-O/containers-image is still performing host-side encrypted-layer handling before Kata/CDH can pull in guest | Do not repeat pod-only `experimental_force_guest_pull` probes; on the 2026-06-30 rig, pod annotation and temporary node-level `experimental_force_guest_pull = true` both still failed before any `image-kek` KBS fetch. `imagePullPolicy: Never` only changed the failure to `ErrImageNeverPull`. Escalate to a supported OSC/CRI-O guest-pull path or a different encrypted-image delivery path. |
 | Pod annotation `io.kubernetes.cri-o.ImageName` is allowed and set to the encrypted image, but guest pull still uses the carrier image | CRI-O writes its internal `ImageName` after sandbox annotations, so the pod annotation does not override the create-time guest-pull source | Do not use this as a workaround. Confirm with CRI-O journal `Adding mount info to pull image ...`; remove the temporary allowed annotation and restore `50-kata-snp`. |
-| Local node-storage alias reaches KBS but pod stays `CreateContainerError` with `Failed to decrypt the image layer` | Host image check was bypassed, so the remaining issue is guest decryption of the encrypted layer | Treat this only as a diagnostic. It proves KBS reachability/key release, not a completed rung-b proof. Decode layer annotations, compare KID/KEK, and rebuild the encrypted image before rerunning direct proof. |
+| Local node-storage alias reaches KBS but pod stays `CreateContainerError` with `Failed to decrypt the image layer` | Host image check was bypassed, so the remaining issue is guest decryption of the encrypted layer | Treat this only as a diagnostic. Decode layer annotations, compare KID/KEK, and reseed Trustee or rebuild the encrypted image before rerunning direct proof. |
+| Local node-storage alias reaches `Running`, but direct encrypted image still never reaches KBS | Guest decryption is fixed, but the production path is still stopped by host-side encrypted-layer pre-pull | Do not count the alias as rung-b completion. Keep the cleanup discipline: remove the temporary pod/tag, restore CRI-O allowed annotations, and continue on a supported OpenShift/CRI-O path that lets the real digest-pinned encrypted image reach guest pull. |
 | Rung c rejects signed app image | Policy reference does not match the image-rs evaluated reference, or wrong public key | Pod events; KBS resource paths; `cosign verify`; exact image string in error |
 | Rung c rejects pause/release image | Strict policy forgot infrastructure image exceptions | Events/logs show rejected OpenShift release/pause image; add explicit allow/verify entry |
 | Negative test reaches Running | RVPS/policy not enforcing measured initdata or wrong manifest was tested | Treat as sign-off blocker; inspect resource policy, RVPS, and rendered initdata bytes |

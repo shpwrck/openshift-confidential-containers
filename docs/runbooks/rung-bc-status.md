@@ -1,14 +1,15 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T03:41:00Z
+Last updated: 2026-06-30T03:56:53Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `e432ba8`
+Current head before this update: `c91d26e`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
-pods are still blocked by CRI-O host-side encrypted-layer pre-pull before guest pull begins, and a
-local-alias diagnostic that forced guest pull reached KBS but failed layer decryption inside CDH.
+pods are still blocked by CRI-O host-side encrypted-layer pre-pull before guest pull begins. The
+separate guest decryption blocker is diagnosed: the current image's wrapped layer key decrypts with
+`/home/rocky/rung-b/kek.bin`, not the previously recorded `/home/rocky/rung-b/image-kek.bin`.
 
 ## What is already in place
 
@@ -81,20 +82,40 @@ Live rig check on 2026-06-30:
     (`Failed to decrypt the image layer, please ensure that the decryption key is placed and
     correct`). The temporary pod and local alias were removed. This proves KBS reachability and
     key release once guest pull is reached, but it does not prove a successful encrypted-image run.
+- The decryption mismatch was then isolated offline without printing key material:
+  - `mirror.rig.local:8443/coco/rung-b:encrypted` and the digest ref both resolve to
+    `sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c`.
+  - The layer provider annotation KID is
+    `kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`.
+  - `/home/rocky/rung-b/image-kek.bin` and the Trustee Secret originally matched each other
+    (`sha256:8cc0cb80012c4a5e1fb618b161fc36d3010be49eddb1a85108775bb5d5aace4b`), but that key
+    failed to unwrap the layer key.
+  - `/home/rocky/rung-b/kek.bin`
+    (`sha256:f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c`) successfully
+    unwrapped the layer key. The trailing 32 bytes of `/home/rocky/rung-b/kek_capture` match this
+    same key.
+- Trustee was reseeded at the existing KID with `/home/rocky/rung-b/kek.bin`; the Secret now has
+  length 32 and SHA-256 `f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c`.
+  The bastion's generated `rung-bc.env` and `rung-bc-images.json` were updated to record that key
+  file/SHA, with timestamped `.before-correct-kek-*` backups left in `rung-bc-artifacts/`.
+- Re-running the local-storage alias diagnostic after reseeding Trustee succeeded:
+  - Pod `rung-b-local-alias-fixed-key` reached `Running` and `Ready`.
+  - Trustee logs showed HTTP 200 responses for
+    `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c` from the diagnostic pod IP.
+  - CRI-O logged `image_guest_pull mirror.rig.local:8443/coco/rung-b:encrypted`, then
+    `Created container` and `Started container` for the app.
+  - The temporary pod and local alias were removed; CRI-O config remained restored and the node
+    stayed Ready.
 
-1. Reconcile the rung-b encrypted image, KID, KEK bytes, and guest decryption format:
-
-   - Decode the encrypted layer annotation for
-     `mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c`.
-   - Confirm it references `kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`.
-   - Confirm the Trustee Secret data is byte-for-byte the KEK that the keyprovider used.
-   - If those match, rebuild rung-b with the same guest-components/keyprovider format expected by
-     the rig's CDH/image-rs stack, then rerun the local-alias diagnostic before attempting the full
-     proof.
-
-2. Find a supported OpenShift/CRI-O path that gets direct rung-b pods to `CreateContainer` without
+1. Find a supported OpenShift/CRI-O path that gets direct rung-b pods to `CreateContainer` without
    host-side encrypted-layer pre-pull. The diagnostic local alias is useful for root-cause work, but
    it is not a production proof path.
+
+2. If the rung-b image is rebuilt, rerun the offline unwrap check before seeding Trustee:
+
+   - Decode the encrypted layer annotation for the new digest.
+   - Confirm it references the intended KID.
+   - Confirm the Trustee Secret data is byte-for-byte the KEK that unwraps the layer key.
 
 3. Build and push any rebuilt rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 
@@ -137,6 +158,6 @@ Live rig check on 2026-06-30:
 
 Rig access is confirmed. Rung-c is functionally proven for signed-image policy acceptance and
 unsigned-image denial, with pod-status app-start validation covering the empty-log behavior seen on
-the rig. Rung-b completion remains blocked on two items: direct CRI-O/Kata pods need a supported way
-past the host encrypted-layer pre-pull, and the diagnostic guest-pull path must be made to decrypt
-successfully after Trustee releases `image-kek/<uuid>`.
+the rig. Rung-b completion remains blocked on the direct CRI-O/Kata path: the production proof still
+needs a supported way past host encrypted-layer pre-pull so the real digest-pinned pod, not the
+diagnostic local alias, reaches guest pull.
