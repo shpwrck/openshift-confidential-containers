@@ -130,10 +130,12 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 ## Phase 6 — Rungs a → b → c (each proven only when reproduced AND its negative test passes)
 **Goal:** every rung's happy path **and** negative test pass, plus the air-gap VCEK-pull negative test. **~1–2 h hands-on, strictly in order.**
 
-Rung-a and the air-gapped guest-pull path have a proven recipe. Rungs b/c now have repo
-scaffolding for image artifacts, workload rendering, KBS resources, and negative-test branches,
-but still need hardware proof; use [`rung-bc-completion-plan.md`](rung-bc-completion-plan.md)
-for the exact sequence.
+Rung-a and the air-gapped guest-pull path have a proven recipe. Rung-c now has live hardware
+accept/deny evidence. Rung-b has repo scaffolding and tag-shaped diagnostics for guest decryption
+and measured-initdata key gating, but the direct digest-pinned encrypted-image pod is still blocked
+by CRI-O host-side encrypted-layer pre-pull before Kata guest pull begins; use
+[`rung-bc-completion-plan.md`](rung-bc-completion-plan.md) for the current blocker and exact
+sequence.
 
 | Step | What happens / command |
 |---|---|

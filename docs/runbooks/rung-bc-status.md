@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T06:34:19Z
+Last updated: 2026-06-30T06:42:17Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `1829cf0`
+Current head before this update: `d3d70d5`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -204,6 +204,12 @@ Live rig check on 2026-06-30:
   - Trying to tag the carrier image with the encrypted digest failed with `tag by digest not
     supported`. Only a tag-shaped carrier alias is possible on this stack, and that remains a
     diagnostic path rather than a digest-pinned production proof.
+  - A safer storage-aware carrier-alias probe also failed: `crictl inspecti` confirms the carrier
+    image is present under rung-c/rung-c-unsigned canonical digest names, but not under the rung-b
+    encrypted digest; `podman tag <carrier> mirror.rig.local:8443/coco/rung-b@sha256:69b8...`
+    still rejects tag-by-digest; and `skopeo copy containers-storage:<carrier-digest>
+    containers-storage:<encrypted-digest>` refuses the copy because the carrier manifest digest
+    would not match the encrypted destination digest.
   - The containerd-style annotation key `io.kubernetes.cri.image-name` cannot be added through
     CRI-O runtime `allowed_annotations`; it is not in CRI-O's `AllAllowedAnnotations` table.
     Runtime-level `default_annotations` did accept

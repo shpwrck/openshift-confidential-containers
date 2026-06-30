@@ -362,7 +362,11 @@ adds Kata's `image_guest_pull` virtual volume during `CreateContainer`, after lo
 succeeds. CRI-O's `PullImage` path still invokes containers/image with a non-nil ocicrypt decrypt
 config, so encrypted digest refs fail before `CreateContainer`; attempting to bypass that by
 copying the encrypted manifest into `containers-storage` fails DiffID validation, and podman cannot
-create a digest-shaped carrier tag.
+create a digest-shaped carrier tag. A safer storage-aware carrier copy does not help either:
+`crictl inspecti` sees the local carrier only under its rung-c/rung-c-unsigned canonical digests,
+`podman tag` rejects the rung-b `repo@sha256` target, and `skopeo copy` refuses to copy the carrier
+to the encrypted digest because the source manifest digest would not match the destination
+reference.
 
 Do not spend more rig time trying to redirect the app image through CRI-O annotations without a
 new mechanism. CRI-O rejects `io.kubernetes.cri.image-name` as a runtime allowed pod annotation,
@@ -593,6 +597,7 @@ make negative-test WHICH=all
 | `gen-rvps-veritas.sh` fails in a disconnected rig on `quay.io/openshift-release-dev/ocp-release:<version>-x86_64` | Veritas baremetal uses `oc adm release info` against a hard-coded public release tag; mounting `registries.conf` is not enough for that tag path | Set `OCP_VERSION`, use a cached `DEBUG_IMAGE` for `oc debug`, pass mirror-capable auth such as the bastion Docker config, and supply a short-lived `VERITAS_OC_WRAPPER` that rewrites the release and `rhel-coreos-extensions` refs to the mirror. Treat any skipped upstream verify step as a disconnected workaround backed by prior mirror provenance, not as release-integrity proof. |
 | Pre-staging the actual encrypted image into `containers-storage` fails before pod creation | containers/storage validates layer DiffIDs against the image config and cannot store the encrypted layer as a normal local rootfs image | On 2026-06-30, `skopeo copy --preserve-digests docker://...@sha256:69b8... containers-storage:...:encrypted-prestage` failed because encrypted blob `sha256:346e9...` did not match config DiffID `sha256:76c30...`. Clean any partial tag and do not treat this as a viable direct bypass. |
 | Trying to make a digest-pinned carrier alias fails | Podman/containers-storage do not allow creating tags whose target name is a digest reference | On 2026-06-30, `podman tag <carrier> mirror.rig.local:8443/coco/rung-b@sha256:69b8...` failed with `tag by digest not supported`. A tag-only carrier alias can diagnose guest pull, but it cannot satisfy the digest-pinned production proof invariant. |
+| Copying the carrier image to the encrypted digest name with `skopeo` fails | containers/image enforces that a destination `repo@sha256` reference matches the copied manifest digest | On 2026-06-30, `skopeo copy containers-storage:<carrier-digest> containers-storage:mirror.rig.local:8443/coco/rung-b@sha256:69b8...` failed with `Digest of source image's manifest would not match destination reference`. Do not use a carrier image to masquerade as the encrypted digest through supported storage tools. |
 | Local node-storage alias reaches KBS but pod stays `CreateContainerError` with `Failed to decrypt the image layer` | Host image check was bypassed, so the remaining issue is guest decryption of the encrypted layer | Treat this only as a diagnostic. Decode layer annotations, compare KID/KEK, and reseed Trustee or rebuild the encrypted image before rerunning direct proof. |
 | Local node-storage alias reaches `Running`, but direct encrypted image still never reaches KBS | Guest decryption is fixed, but the production path is still stopped by host-side encrypted-layer pre-pull | Do not count the alias as rung-b completion. Keep the cleanup discipline: remove the temporary pod/tag, restore CRI-O allowed annotations, and continue on a supported OpenShift/CRI-O path that lets the real digest-pinned encrypted image reach guest pull. |
 | Rung c rejects signed app image | Policy reference does not match the image-rs evaluated reference, or wrong public key | Pod events; KBS resource paths; `cosign verify`; exact image string in error |
