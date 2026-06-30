@@ -128,6 +128,7 @@ Operator-facing artifact knobs:
 | `SOURCE_IMAGE_REF` | `docker://$(SOURCE_IMAGE)` | The source is local or already staged, e.g. `dir:/path/to/oci`. |
 | `ARTIFACT_DIR` | `./rung-bc-artifacts` | You want generated keys/manifests outside the checkout. |
 | `WORKLOAD_NS` | `default` | Rung proof pods should run outside the default namespace. |
+| `KBS_URL` | `http://kbs-service.trustee-operator-system.svc:8080` | The measured initdata must point at a different Trustee/KBS endpoint. |
 | `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. Use the generated digest ref for apply/negative-test. |
 | `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. Use the generated digest ref for apply. |
 | `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. Use the generated digest ref for negative-test. |
@@ -405,12 +406,12 @@ those fingerprints and the happy/negative pod image refs against `rung-bc-images
 rows, required pod phases/images are missing or wrong, Trustee logs lack the expected KBS
 resource fetches, mirror logs lack rung-b/rung-c repository pulls for the expected image
 digests, rung-b negative initdata does not differ from the happy pod, rung-c negative initdata
-does not match the happy pod, decoded initdata is missing or lacks the expected rung policy
-URI/tamper marker, happy pod logs lack the expected app-start markers, negative pods lack
-denial signals, or the bundle was collected from a dirty checkout. `summary.env`
-records the repo revision, branch, dirty state, expected app-log markers, and local tool paths
-used to collect the bundle. It does not dump Secret data, but still review the bundle before
-sharing it outside the engagement.
+does not match the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung
+policy URI, or tamper marker, happy pod logs lack the expected app-start markers, negative
+pods lack denial signals, or the bundle was collected from a dirty checkout. `summary.env`
+records the repo revision, branch, dirty state, expected KBS URL, expected app-log markers, and
+local tool paths used to collect the bundle. It does not dump Secret data, but still review the
+bundle before sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
 oc-mirror, and quay container log locations. Override as needed; the same mirror log and tail

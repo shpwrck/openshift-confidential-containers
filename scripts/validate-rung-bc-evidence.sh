@@ -12,6 +12,7 @@ DEFAULT_RUNG_C_APP_LOG_MARKER="rung-c: signed image accepted and running"
 RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
 RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
 RUNG_B_TAMPER_MARKER="${RUNG_B_TAMPER_MARKER:-# negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS}"
+KBS_URL="${KBS_URL:-}"
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-}"
 RUNG_B_DENIAL_RE="${RUNG_B_DENIAL_RE:-attest|denied|forbidden|measurement|decrypt|image-key|key}"
@@ -248,6 +249,7 @@ check_decoded_initdata() {
 	local pod="$1" label="$2" policy_uri="$3" tamper_marker="${4:-}"
 	local initdata="${EVIDENCE_DIR}/pods/${pod}.initdata.toml"
 	local decode_err="${EVIDENCE_DIR}/pods/${pod}.initdata.decode.err"
+	local kbs_url_count
 	require_file "$initdata" "$label decoded initdata"
 	if [[ ! -s "$initdata" ]]; then
 		return
@@ -265,6 +267,14 @@ check_decoded_initdata() {
 		pass "$label initdata policy URI present"
 	else
 		fail "$label initdata policy URI missing: $policy_uri"
+	fi
+	if [[ -n "$KBS_URL" ]]; then
+		kbs_url_count="$(awk -v needle="url = \"${KBS_URL}\"" 'index($0, needle) { count++ } END { print count + 0 }' "$initdata")"
+		if [[ "$kbs_url_count" -ge 2 ]]; then
+			pass "$label initdata KBS URL present"
+		else
+			fail "$label initdata KBS URL missing or incomplete: $KBS_URL"
+		fi
 	fi
 	if [[ -n "$tamper_marker" ]]; then
 		if grep -Fq "$tamper_marker" "$initdata"; then
@@ -385,6 +395,7 @@ need awk
 need grep
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-$(summary_value_or_default rung_b_app_log_marker "$DEFAULT_RUNG_B_APP_LOG_MARKER")}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-$(summary_value_or_default rung_c_app_log_marker "$DEFAULT_RUNG_C_APP_LOG_MARKER")}"
+KBS_URL="${KBS_URL:-$(summary_value_or_default kbs_url "")}"
 
 check_summary
 check_manifest

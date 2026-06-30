@@ -769,6 +769,7 @@ EOF
 		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$stub" \
 		NS="trustee-test" \
 		WORKLOAD_NS="workload-test" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		EVIDENCE_PODS="rung-a-secret negtest-air-gap custom-proof-pod" \
@@ -794,6 +795,7 @@ EOF
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$rung_c_out" "Makefile apply-rung-c image override"
 	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$evidence_out" "Makefile evidence artifact dir override"
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence" "$evidence_out" "Makefile evidence dir override"
+	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$evidence_out" "Makefile evidence KBS URL override"
 	expect_grep "PODS=rung-a-secret negtest-air-gap custom-proof-pod" "$evidence_out" "Makefile evidence pod override"
 	expect_grep "RUNG_B_POD=custom-rung-b" "$evidence_out" "Makefile evidence rung-b pod override"
 	expect_grep "RUNG_C_POD=custom-rung-c" "$evidence_out" "Makefile evidence rung-c pod override"
@@ -978,6 +980,7 @@ verify_evidence_summary_provenance() {
 	local summary="$tmpdir/summary.env"
 	NS="workload-test" \
 		TRUSTEE_NS="trustee-test" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		PODS="rung-a rung-b" \
@@ -989,6 +992,7 @@ verify_evidence_summary_provenance() {
 
 	expect_grep "namespace=workload-test" "$summary" "evidence summary workload namespace"
 	expect_grep "trustee_namespace=trustee-test" "$summary" "evidence summary Trustee namespace"
+	expect_grep "kbs_url=http://kbs.trustee-test.svc:8080" "$summary" "evidence summary KBS URL"
 	expect_grep "repo_root=$REPO_ROOT" "$summary" "evidence summary repo root"
 	expect_grep "repo_git_head=" "$summary" "evidence summary git head"
 	expect_grep "repo_git_branch=" "$summary" "evidence summary git branch"
@@ -1107,6 +1111,7 @@ write_valid_rung_bc_evidence_bundle() {
 captured_at_utc=2026-06-29T00:00:00Z
 namespace=workload-test
 trustee_namespace=trustee-test
+kbs_url=http://kbs.trustee-test.svc:8080
 repo_git_dirty=false
 rung_b_app_log_marker=rung-b: encrypted image decrypted and running
 rung_c_app_log_marker=rung-c: signed image accepted and running
@@ -1153,20 +1158,36 @@ EOF
 app rung-c: signed image accepted and running
 EOF
 	cat > "$evidence/pods/rung-b-encrypted.initdata.toml" <<'EOF'
+[token_configs.kbs]
+url = "http://kbs.trustee-test.svc:8080"
+[kbc]
+url = "http://kbs.trustee-test.svc:8080"
 [image]
 image_security_policy_uri = "kbs:///default/security-policy/test"
 EOF
 	cat > "$evidence/pods/rung-c-signed.initdata.toml" <<'EOF'
+[token_configs.kbs]
+url = "http://kbs.trustee-test.svc:8080"
+[kbc]
+url = "http://kbs.trustee-test.svc:8080"
 [image]
 image_security_policy_uri = "kbs:///default/security-policy/rung-c"
 EOF
 	cat > "$evidence/pods/negtest-rung-b.initdata.toml" <<'EOF'
+[token_configs.kbs]
+url = "http://kbs.trustee-test.svc:8080"
+[kbc]
+url = "http://kbs.trustee-test.svc:8080"
 [image]
 image_security_policy_uri = "kbs:///default/security-policy/test"
 
 # negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS
 EOF
 	cat > "$evidence/pods/negtest-rung-c.initdata.toml" <<'EOF'
+[token_configs.kbs]
+url = "http://kbs.trustee-test.svc:8080"
+[kbc]
+url = "http://kbs.trustee-test.svc:8080"
 [image]
 image_security_policy_uri = "kbs:///default/security-policy/rung-c"
 EOF
@@ -1204,6 +1225,7 @@ verify_evidence_validation_gate() {
 	local broken_b_initdata="$tmpdir/broken-b-initdata-evidence" b_initdata_err="$tmpdir/validate-b-initdata-evidence.err"
 	local broken_c_initdata="$tmpdir/broken-c-initdata-evidence" c_initdata_err="$tmpdir/validate-c-initdata-evidence.err"
 	local broken_decoded_initdata="$tmpdir/broken-decoded-initdata-evidence" decoded_initdata_err="$tmpdir/validate-decoded-initdata-evidence.err"
+	local broken_kbs_url="$tmpdir/broken-kbs-url-evidence" kbs_url_err="$tmpdir/validate-kbs-url-evidence.err"
 	local broken_app_log="$tmpdir/broken-app-log-evidence" app_log_err="$tmpdir/validate-app-log-evidence.err"
 	local custom_app_log="$tmpdir/custom-app-log-evidence" custom_app_log_out="$tmpdir/validate-custom-app-log-evidence.out"
 	write_valid_rung_bc_evidence_bundle "$evidence"
@@ -1270,6 +1292,14 @@ verify_evidence_validation_gate() {
 	fi
 	expect_grep "rung-c initdata policy URI missing" "$decoded_initdata_err" "evidence validator decoded initdata policy failure"
 
+	cp -R "$evidence" "$broken_kbs_url"
+	sed -i 's#http://kbs.trustee-test.svc:8080#http://wrong-kbs.trustee-test.svc:8080#g' \
+		"$broken_kbs_url/pods/rung-b-encrypted.initdata.toml"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_kbs_url" > /dev/null 2> "$kbs_url_err"; then
+		die "evidence validator accepted a decoded initdata KBS URL mismatch"
+	fi
+	expect_grep "rung-b initdata KBS URL missing or incomplete" "$kbs_url_err" "evidence validator decoded initdata KBS URL failure"
+
 	cp -R "$evidence" "$broken_app_log"
 	printf 'app started without expected proof marker\n' > "$broken_app_log/pods/rung-b-encrypted.logs.txt"
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_app_log" > /dev/null 2> "$app_log_err"; then
@@ -1286,6 +1316,7 @@ set -euo pipefail
 printf 'ARG=%s\n' "${1:-}"
 vars=(
 	EVIDENCE_DIR
+	KBS_URL
 	RUNG_B_POD
 	RUNG_C_POD
 	NEG_RUNG_B_POD
@@ -1301,6 +1332,7 @@ EOF
 	make -s validate-rung-bc-evidence \
 		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$stub" \
 		EVIDENCE_DIR="$tmpdir/evidence-for-validation" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		RUNG_B_POD="custom-rung-b" \
 		RUNG_C_POD="custom-rung-c" \
 		NEG_RUNG_B_POD="custom-neg-rung-b" \
@@ -1310,6 +1342,7 @@ EOF
 		> "$out"
 	expect_grep "ARG=$tmpdir/evidence-for-validation" "$out" "Makefile validate evidence directory argument"
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence-for-validation" "$out" "Makefile validate evidence dir env"
+	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$out" "Makefile validate KBS URL env"
 	expect_grep "RUNG_B_POD=custom-rung-b" "$out" "Makefile validate rung-b pod override"
 	expect_grep "RUNG_C_POD=custom-rung-c" "$out" "Makefile validate rung-c pod override"
 	expect_grep "NEG_RUNG_B_POD=custom-neg-rung-b" "$out" "Makefile validate negative rung-b pod override"
@@ -1325,11 +1358,11 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
-	"${NS:-}" "${TRUSTEE_NS:-}" "${PODS:-}" "${RUNG_B_POD:-}" "${RUNG_C_POD:-}" \
-	"${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
+	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
+	"${RUNG_C_POD:-}" "${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
 	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${POD_LOG_TAIL:-}" \
 	"${MIRROR_LOG_TAIL:-}" "${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" >> "$CALL_LOG"
 EOF
@@ -1360,6 +1393,7 @@ verify_prove_rung_bc_workflow() {
 		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
 		NS="trustee-test" \
 		WORKLOAD_NS="workload-test" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/proof-evidence" \
 		EVIDENCE_PODS="rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" \
@@ -1387,6 +1421,7 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "validate-evidence	arg=$tmpdir/proof-evidence	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc validate evidence dir"
 	expect_grep "NS=workload-test" "$log" "prove-rung-bc workload namespace"
 	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-bc Trustee namespace"
+	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$log" "prove-rung-bc KBS URL"
 	expect_grep "PODS=rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" "$log" "prove-rung-bc evidence pod list"
 	expect_grep "collect-evidence	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc collect evidence step"
 	expect_grep "TRUSTEE_LOG_TAIL=111" "$log" "prove-rung-bc collect Trustee log tail"
