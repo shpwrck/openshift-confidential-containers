@@ -66,6 +66,11 @@ Trustee image-key request. It writes pod, event, Trustee, CRI-O, and mirror-log 
 `rung-bc-artifacts/rung-b-direct-pull-<timestamp>/`. The generated `mirror/summary.tsv` and
 `summary.env` count rung-b manifest/blob pulls by `cri-o` and by the guest `oci-client`, which is
 the quickest way to see whether the host pulled encrypted content before the guest path started.
+Validate a collected bundle before sharing it:
+
+```bash
+make validate-rung-b-direct-pull DIAG_DIR=rung-bc-artifacts/rung-b-direct-pull-<timestamp>
+```
 
 Expected behavior:
 

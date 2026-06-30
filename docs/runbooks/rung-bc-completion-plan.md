@@ -402,7 +402,10 @@ When the direct-pull behavior needs to be rechecked or attached to an upstream r
 zero only for the known host-side encrypted-layer blocker with no Trustee image-key request. It
 also tails configured mirror logs/container logs so the evidence bundle includes the registry-side
 view of CRI-O's pre-guest pull attempt when those logs are available on the bastion. Check
-`mirror/summary.tsv` for compact CRI-O-versus-guest rung-b manifest/blob pull counts.
+`mirror/summary.tsv` for compact CRI-O-versus-guest rung-b manifest/blob pull counts. Before
+attaching a diagnostic bundle upstream, run
+`make validate-rung-b-direct-pull DIAG_DIR=<rung-b-direct-pull-dir>` to verify the known blocker,
+absence of Trustee image-key requests, and mirror-count shape.
 
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.

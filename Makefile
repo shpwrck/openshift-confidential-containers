@@ -54,10 +54,12 @@ COLLECT_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/collect-rung-bc-evidence.sh
 VALIDATE_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/validate-rung-bc-evidence.sh
 PROVE_RUNG_BC_SCRIPT ?= ./scripts/prove-rung-bc.sh
 DIAGNOSE_RUNG_B_DIRECT_PULL_SCRIPT ?= ./scripts/diagnose-rung-b-direct-pull.sh
+VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT ?= ./scripts/validate-rung-b-direct-pull-diagnostic.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
 EVIDENCE_DIR ?=
+DIAG_DIR ?=
 EVIDENCE_PODS ?= rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap
 RUNG_B_POD ?= rung-b-encrypted
 RUNG_C_POD ?= rung-c-signed
@@ -216,6 +218,11 @@ prove-rung-bc: ## Phase 6: run rung-b/c happy paths, denial proofs, evidence col
 .PHONY: diagnose-rung-b-direct-pull
 diagnose-rung-b-direct-pull: ## Phase 6: reproduce/collect the rung-b direct encrypted-image pull blocker
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_POLICY_URI="$(RUNG_B_POLICY_URI)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" ARTIFACT_DIR="$(ARTIFACT_DIR)" MIRROR_LOG_TAIL="$(MIRROR_LOG_TAIL)" MIRROR_LOG_FILES="$(MIRROR_LOG_FILES)" MIRROR_CONTAINER_NAMES="$(MIRROR_CONTAINER_NAMES)" bash "$(DIAGNOSE_RUNG_B_DIRECT_PULL_SCRIPT)"
+
+.PHONY: validate-rung-b-direct-pull
+validate-rung-b-direct-pull: ## Phase 6: validate a rung-b direct-pull diagnostic bundle (set DIAG_DIR)
+	@test -n "$(DIAG_DIR)" || { echo "set DIAG_DIR=<rung-b direct-pull diagnostic dir>"; exit 2; }
+	DIAG_DIR="$(DIAG_DIR)" bash "$(VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT)" "$(DIAG_DIR)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

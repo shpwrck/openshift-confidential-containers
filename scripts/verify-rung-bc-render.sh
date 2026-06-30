@@ -1782,6 +1782,76 @@ verify_evidence_validation_gate() {
 	expect_grep "rung-b app start evidence missing" "$app_log_err" "evidence validator app-start failure"
 }
 
+write_valid_rung_b_direct_pull_diagnostic() {
+	local diag="$1"
+	mkdir -p "$diag/mirror"
+	cat > "$diag/summary.env" <<'EOF'
+timestamp_utc=2026-06-30T07:32:23Z
+namespace=default
+trustee_namespace=trustee-operator-system
+pod_name=rung-b-direct-pull-diag
+node=sno-coco-node
+rung_b_image=mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c
+rung_b_key_id=kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c
+rung_b_key_resource=default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c
+rung_b_policy_uri=kbs:///default/security-policy/test
+phase=Pending
+host_pull_blocker_seen=1
+image_key_request_seen=0
+mirror_crio_rung_b_manifest_count=16
+mirror_crio_rung_b_blob_count=16
+mirror_guest_rung_b_manifest_count=0
+mirror_guest_rung_b_blob_count=0
+classification=known-host-pull-blocker
+EOF
+	cat > "$diag/classification.txt" <<'EOF'
+REPRODUCED: host-side encrypted-layer pull blocked before guest image-key request.
+EOF
+	cat > "$diag/context.txt" <<'EOF'
+Warning  Failed  kubelet  encrypted layer sha256:346e9... should be decrypted, but we can't modify the manifest: Destination specifies a digest
+EOF
+	cat > "$diag/trustee.log" <<'EOF'
+GET /kbs/v0/resource/default/security-policy/test 200
+EOF
+	cat > "$diag/mirror/summary.tsv" <<'EOF'
+signal	count
+mirror_context_available	1
+crio_rung_b_manifest	16
+crio_rung_b_blob	16
+guest_rung_b_manifest	0
+guest_rung_b_blob	0
+EOF
+}
+
+verify_rung_b_direct_pull_diagnostic_validation() {
+	local diag="$tmpdir/valid-direct-pull-diagnostic" out="$tmpdir/validate-direct-pull.out"
+	local make_out="$tmpdir/validate-direct-pull-make.out"
+	local broken_guest="$tmpdir/broken-direct-pull-guest" guest_err="$tmpdir/validate-direct-pull-guest.err"
+	local broken_key="$tmpdir/broken-direct-pull-key" key_err="$tmpdir/validate-direct-pull-key.err"
+	write_valid_rung_b_direct_pull_diagnostic "$diag"
+	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
+	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
+	expect_grep "mirror summary shows CRI-O rung-b blob pulls" "$out" "direct-pull diagnostic CRI-O blob count"
+	expect_grep "mirror summary shows no guest rung-b blob pulls" "$out" "direct-pull diagnostic guest blob count"
+
+	make -s validate-rung-b-direct-pull DIAG_DIR="$diag" > "$make_out"
+	expect_grep "Rung-b direct-pull diagnostic validation OK." "$make_out" "Makefile direct-pull diagnostic validation"
+
+	cp -R "$diag" "$broken_guest"
+	sed -i 's/^guest_rung_b_blob	0$/guest_rung_b_blob	1/' "$broken_guest/mirror/summary.tsv"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_guest" > /dev/null 2> "$guest_err"; then
+		die "direct-pull diagnostic validator accepted a guest rung-b blob pull"
+	fi
+	expect_grep "guest rung-b blob count is 1, expected 0" "$guest_err" "direct-pull diagnostic guest pull failure"
+
+	cp -R "$diag" "$broken_key"
+	sed -i 's/^image_key_request_seen=0$/image_key_request_seen=1/' "$broken_key/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_key" > /dev/null 2> "$key_err"; then
+		die "direct-pull diagnostic validator accepted an image-key request"
+	fi
+	expect_grep "Trustee image-key request signal is 1, expected 0" "$key_err" "direct-pull diagnostic image-key failure"
+}
+
 verify_evidence_validation_make_env() {
 	local stub="$tmpdir/validate-evidence-stub.sh" out="$tmpdir/validate-evidence-make-env"
 	cat > "$stub" <<'EOF'
@@ -2026,6 +2096,7 @@ verify_evidence_summary_provenance
 verify_evidence_pod_summary
 verify_evidence_rung_bc_proof_summary
 verify_evidence_validation_gate
+verify_rung_b_direct_pull_diagnostic_validation
 verify_evidence_validation_make_env
 verify_prove_rung_bc_workflow
 verify_prove_rung_bc_loads_artifact_env
