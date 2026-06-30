@@ -546,8 +546,11 @@ both rungs.
 
 Once Trustee has the rung-b/c resources, the one-shot proof runner loads digest refs from
 `rung-bc-artifacts/rung-bc.env` when `RUNG_B_IMAGE`, `RUNG_C_IMAGE`, and
-`RUNG_C_UNSIGNED_IMAGE` are not already digest-pinned, executes the b/c happy paths, keeps the
-b/c denied pods for collection, collects a timestamped evidence bundle, and validates it:
+`RUNG_C_UNSIGNED_IMAGE` are not already digest-pinned. It then runs `verify-rung-b-key-wrap`
+with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1`, so the selected rung-b digest, KID, key fingerprint,
+and KEK unwrap are checked before any proof pods are created. After that preflight, it executes
+the b/c happy paths, keeps the b/c denied pods for collection, collects a timestamped evidence
+bundle, and validates it:
 
 ```bash
 make prove-rung-bc

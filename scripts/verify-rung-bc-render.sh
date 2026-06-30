@@ -2269,10 +2269,11 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tRUNG_B_KEY_FILE=%s\tRUNG_BC_IMAGES_MANIFEST=%s\tREQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
-	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
+	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${RUNG_B_KEY_FILE:-}" \
+	"${RUNG_BC_IMAGES_MANIFEST:-}" "${REQUIRE_RUNG_BC_IMAGES_MANIFEST:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
 	"${RUNG_B_POLICY_URI:-}" "${RUNG_C_POLICY_URI:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
 	"${RUNG_C_POD:-}" "${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
 	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${TRUSTEE_LOG_SINCE_TIME:-}" "${POD_LOG_TAIL:-}" \
@@ -2285,13 +2286,15 @@ EOF
 
 verify_prove_rung_bc_workflow() {
 	local dir="$tmpdir/prove-rung-bc" log="$tmpdir/prove-rung-bc-calls.tsv" err="$tmpdir/prove-rung-bc.err" bad_log="$tmpdir/prove-rung-bc-bad-calls.tsv"
-	local apply_b apply_c negative collect validate
+	local key_wrap apply_b apply_c negative collect validate first_call
 	mkdir -p "$dir"
+	key_wrap="$dir/key-wrap.sh"
 	apply_b="$dir/apply-b.sh"
 	apply_c="$dir/apply-c.sh"
 	negative="$dir/negative-test.sh"
 	collect="$dir/collect-evidence.sh"
 	validate="$dir/validate-evidence.sh"
+	create_prove_stub "$key_wrap" key-wrap
 	create_prove_stub "$apply_b" apply-b
 	create_prove_stub "$apply_c" apply-c
 	create_prove_stub "$negative" negative-test
@@ -2304,10 +2307,13 @@ verify_prove_rung_bc_workflow() {
 		NEGATIVE_TEST_SCRIPT="$negative" \
 		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
 		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap" \
 		NS="trustee-test" \
 		WORKLOAD_NS="workload-test" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		RUNG_B_KEY_ID="kbs:///default/custom-image-key/rung-b" \
+		RUNG_B_KEY_FILE="$tmpdir/custom-rung-b.key" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
 		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
 		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
@@ -2333,6 +2339,13 @@ verify_prove_rung_bc_workflow() {
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
 		> /dev/null
 
+	first_call="$(sed -n '1p' "$log")"
+	[[ "$first_call" == key-wrap$'\t'* ]] || die "prove-rung-bc did not run key-wrap preflight before applying pods"
+	[[ "$first_call" == *$'\tRUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t'* ]] ||
+		die "prove-rung-bc key-wrap preflight did not receive the digest-pinned rung-b image"
+	expect_grep "RUNG_B_KEY_FILE=$tmpdir/custom-rung-b.key" "$log" "prove-rung-bc key-wrap key file"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$log" "prove-rung-bc key-wrap manifest"
+	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$log" "prove-rung-bc requires image manifest during key-wrap preflight"
 	expect_grep "apply-b	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc apply-b step"
 	expect_grep "apply-c	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc apply-c step"
 	expect_grep $'negative-test\targ=rung-b\tKEEP_DENIED_PODS=1' "$log" "prove-rung-bc rung-b negative step"
@@ -2380,13 +2393,15 @@ verify_prove_rung_bc_workflow() {
 
 verify_prove_rung_bc_loads_artifact_env() {
 	local dir="$tmpdir/prove-rung-bc-env" artifacts="$tmpdir/prove-rung-bc-artifacts" log="$tmpdir/prove-rung-bc-env-calls.tsv"
-	local apply_b apply_c negative collect validate
+	local key_wrap apply_b apply_c negative collect validate first_call
 	mkdir -p "$dir" "$artifacts"
+	key_wrap="$dir/key-wrap.sh"
 	apply_b="$dir/apply-b.sh"
 	apply_c="$dir/apply-c.sh"
 	negative="$dir/negative-test.sh"
 	collect="$dir/collect-evidence.sh"
 	validate="$dir/validate-evidence.sh"
+	create_prove_stub "$key_wrap" key-wrap-env
 	create_prove_stub "$apply_b" apply-b-env
 	create_prove_stub "$apply_c" apply-c-env
 	create_prove_stub "$negative" negative-test-env
@@ -2408,12 +2423,20 @@ EOF
 		NEGATIVE_TEST_SCRIPT="$negative" \
 		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
 		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap" \
 		ARTIFACT_DIR="$artifacts" \
 		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
 		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c:unsigned" \
 		> /dev/null
 
+	first_call="$(sed -n '1p' "$log")"
+	[[ "$first_call" == key-wrap-env$'\t'* ]] || die "prove-rung-bc did not run artifact-env key-wrap preflight first"
+	[[ "$first_call" == *$'\tRUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t'* ]] ||
+		die "prove-rung-bc artifact-env key-wrap preflight did not receive the digest-pinned rung-b image"
+	expect_grep "RUNG_B_KEY_FILE=/tmp/rung-b-image.key" "$log" "prove-rung-bc artifact env key file"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$artifacts/rung-bc-images.json" "$log" "prove-rung-bc artifact env image manifest"
+	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$log" "prove-rung-bc artifact env requires image manifest"
 	expect_grep "apply-b-env	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$artifacts/evidence-rung-bc-proof-" "$log" "prove-rung-bc artifact env apply-b step"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$log" "prove-rung-bc loaded rung-b image from env"
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$log" "prove-rung-bc loaded rung-c image from env"

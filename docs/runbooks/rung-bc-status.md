@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T10:50:58Z
+Last updated: 2026-06-30T10:55:25Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest proof-tooling checkpoint verified on the rig: `28e34e9` (`make verify-rung-b-key-wrap`
@@ -59,6 +59,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
 - `make seed-rung-bc-secrets` and `make apply-trustee-rung-bc` now run
   `verify-rung-b-key-wrap` first, so a wrong rung-b KEK fails before Trustee Secrets or KbsConfig
   are updated.
+- `make prove-rung-bc` now runs the same key-wrap verifier after loading `rung-bc.env` and before
+  creating proof pods, with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` so the proof run cannot proceed
+  with an untracked or mismatched rung-b digest/key pair.
 - Initdata encoding now uses deterministic gzip output, and evidence validation compares decoded
   initdata content for happy/negative relationships so gzip metadata cannot create false
   differences.
