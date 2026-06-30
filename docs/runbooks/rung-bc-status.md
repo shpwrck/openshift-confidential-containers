@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T03:56:53Z
+Last updated: 2026-06-30T04:07:04Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `c91d26e`
+Current head before this update: `131c2ed`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -106,6 +106,20 @@ Live rig check on 2026-06-30:
     `Created container` and `Started container` for the app.
   - The temporary pod and local alias were removed; CRI-O config remained restored and the node
     stayed Ready.
+- Source inspection and additional pre-stage probes explain why direct digest refs still fail:
+  - CRI-O `runtime_pull_image` adds Kata's `image_guest_pull` virtual volume only during
+    `CreateContainer`, after CRI-O has already resolved the container image from local storage.
+    It populates `io.kubernetes.cri-o.ImageName` from that local image status result, so a
+    pod-supplied annotation cannot override the guest-pull source.
+  - CRI-O `PullImage` always passes a non-nil ocicrypt decrypt config from
+    `decryption_keys_path`; for the encrypted digest ref, containers/image tries to decrypt the
+    layer and aborts because digest-preserving destinations cannot accept the modified manifest.
+  - Pre-staging the actual encrypted image into node `containers-storage` with `skopeo copy
+    --preserve-digests` failed because the encrypted blob digest does not match the image config
+    DiffID expected by containers/storage.
+  - Trying to tag the carrier image with the encrypted digest failed with `tag by digest not
+    supported`. Only a tag-shaped carrier alias is possible on this stack, and that remains a
+    diagnostic path rather than a digest-pinned production proof.
 
 1. Find a supported OpenShift/CRI-O path that gets direct rung-b pods to `CreateContainer` without
    host-side encrypted-layer pre-pull. The diagnostic local alias is useful for root-cause work, but
@@ -147,8 +161,9 @@ Live rig check on 2026-06-30:
 7. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung
    b/c should not be called complete unless happy pods run and negative pods fail closed with the
    expected denial signals. Current rig evidence shows rung-c policy enforcement passes. Current
-   rung-b evidence shows direct pods fail before guest pull, and a diagnostic guest-pull path reaches
-   KBS but fails layer decryption.
+   rung-b evidence shows direct pods fail before guest pull. A diagnostic carrier-tag guest-pull
+   path reaches KBS and starts after the Trustee key correction, but it is not a digest-pinned
+   production proof.
 
 8. Replay on a fresh node or freshly recreated disposable rig. Production sign-off requires replay after regenerating hardware-bound values such as VCEKs, RVPS, Trustee URL/TLS, initdata, image keys, and signing trust material.
 
@@ -160,4 +175,6 @@ Rig access is confirmed. Rung-c is functionally proven for signed-image policy a
 unsigned-image denial, with pod-status app-start validation covering the empty-log behavior seen on
 the rig. Rung-b completion remains blocked on the direct CRI-O/Kata path: the production proof still
 needs a supported way past host encrypted-layer pre-pull so the real digest-pinned pod, not the
-diagnostic local alias, reaches guest pull.
+diagnostic local alias, reaches guest pull. Source inspection indicates CRI-O 1.33 performs the
+host image pull/status work before Kata's guest-pull handoff, and node containers-storage cannot
+hold the encrypted OCI layer unchanged for a digest-pinned `IfNotPresent` bypass.
