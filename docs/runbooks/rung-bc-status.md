@@ -1,10 +1,11 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T11:09:02Z
+Last updated: 2026-06-30T11:13:17Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest proof-tooling checkpoint verified on the rig: `3b7dd9b` (`make prove-rung-bc` smoke with
-the real key-wrap preflight and stubbed pod/evidence steps)
+Latest proof-tooling checkpoint verified on the rig: `e4faafa` (`make verify-rung-c-signature`,
+then `make prove-rung-bc` smoke with real rung-b key-wrap and rung-c signature preflights plus
+stubbed pod/evidence steps)
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
