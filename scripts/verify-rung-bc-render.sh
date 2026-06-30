@@ -1361,6 +1361,7 @@ vars=(
 	RUNG_A_IMAGE
 	RUNG_B_IMAGE
 	RUNG_C_IMAGE
+	RUNG_BC_IMAGES_MANIFEST
 	ARTIFACT_DIR
 	EVIDENCE_DIR
 	PODS
@@ -1459,6 +1460,7 @@ EOF
 		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
 		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/artifacts/custom-rung-bc-images.json" \
 		CRIO_LOG_TAIL="444" \
 		CRIO_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_TAIL="333" \
@@ -1474,6 +1476,7 @@ EOF
 	expect_grep "RUNG_A_IMAGE=mirror.test.local:5000/custom/rung-a@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$tmpdir/apply-rung-a-env" "Makefile apply-rung-a image override"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$rung_b_out" "Makefile apply-rung-b image override"
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$rung_c_out" "Makefile apply-rung-c image override"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$tmpdir/artifacts/custom-rung-bc-images.json" "$diagnose_out" "Makefile direct-pull diagnostic image manifest"
 	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-b" "$rung_b_out" "Makefile apply-rung-b policy URI override"
 	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-c" "$rung_c_out" "Makefile apply-rung-c policy URI override"
 	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$evidence_out" "Makefile evidence artifact dir override"
@@ -2424,7 +2427,25 @@ repo_root=/tmp/occ-rung-bc-proof
 repo_git_head=0123456789abcdef0123456789abcdef01234567
 repo_git_branch=codex/rung-bc-support
 repo_git_dirty=false
+rung_bc_images_manifest=/tmp/occ-rung-bc-proof/rung-bc-artifacts/rung-bc-images.json
+rung_bc_env_file=/tmp/occ-rung-bc-proof/rung-bc-artifacts/rung-bc.env
 classification=known-host-pull-blocker
+EOF
+	cat > "$diag/rung-bc-images.json" <<'EOF'
+{
+  "rung_b": {
+    "image": "mirror.rig.local:8443/coco/rung-b:encrypted",
+    "digest": "sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c",
+    "digest_ref": "mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c",
+    "key_id": "kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c",
+    "key_file": "/home/rocky/rung-b/kek.bin",
+    "key_sha256": "f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c"
+  }
+}
+EOF
+	cat > "$diag/rung-bc.env" <<'EOF'
+export RUNG_B_IMAGE=mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c
+export RUNG_B_KEY_ID=kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c
 EOF
 	cat > "$diag/classification.txt" <<'EOF'
 REPRODUCED: host-side encrypted-layer pull blocked before guest image-key request.
@@ -2463,11 +2484,15 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local broken_guest_source="$tmpdir/broken-direct-pull-guest-source" guest_source_err="$tmpdir/validate-direct-pull-guest-source.err"
 	local broken_dirty="$tmpdir/broken-direct-pull-dirty" dirty_err="$tmpdir/validate-direct-pull-dirty.err"
 	local broken_repo_head="$tmpdir/broken-direct-pull-repo-head" repo_head_err="$tmpdir/validate-direct-pull-repo-head.err"
+	local broken_manifest_digest="$tmpdir/broken-direct-pull-manifest-digest" manifest_digest_err="$tmpdir/validate-direct-pull-manifest-digest.err"
+	local broken_manifest_key="$tmpdir/broken-direct-pull-manifest-key" manifest_key_err="$tmpdir/validate-direct-pull-manifest-key.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
 	expect_grep "repo git head recorded" "$out" "direct-pull diagnostic repo head"
 	expect_grep "diagnostic was collected from a clean git worktree" "$out" "direct-pull diagnostic clean repo"
+	expect_grep "rung-bc manifest matches diagnostic rung-b digest ref" "$out" "direct-pull diagnostic manifest image"
+	expect_grep "rung-bc manifest matches diagnostic rung-b key ID" "$out" "direct-pull diagnostic manifest key"
 	expect_grep "CRI-O logs are bounded by since-time=2026-06-30T07:32:23Z" "$out" "direct-pull diagnostic CRI-O log window"
 	expect_grep "CRI-O node log includes host pull for rung-b digest" "$out" "direct-pull diagnostic CRI-O host pull"
 	expect_grep "CRI-O node log does not include rung-b digest as guest-pull source" "$out" "direct-pull diagnostic no guest-pull source"
@@ -2480,10 +2505,12 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	cp -R "$diag" "$legacy_diag"
 	rm -rf "$legacy_diag/mirror"
 	rm -f "$legacy_diag/crio-node.log"
+	rm -f "$legacy_diag/rung-bc-images.json"
 	sed -i '/^mirror_log_since_time=/d' "$legacy_diag/summary.env"
 	sed -i '/^crio_log_since_time=/d' "$legacy_diag/summary.env"
 	make -s validate-rung-b-direct-pull DIAG_DIR="$legacy_diag" REQUIRE_MIRROR_SUMMARY=0 > "$legacy_out"
 	expect_grep "mirror summary not required" "$legacy_out" "Makefile direct-pull legacy diagnostic validation"
+	expect_grep "rung-bc image manifest not required" "$legacy_out" "Makefile direct-pull legacy diagnostic manifest"
 	expect_grep "mirror log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic mirror window"
 	expect_grep "CRI-O log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic CRI-O window"
 	expect_grep "CRI-O node log not required" "$legacy_out" "Makefile direct-pull legacy diagnostic CRI-O log"
@@ -2553,6 +2580,24 @@ EOF
 		die "direct-pull diagnostic validator accepted missing repo git head"
 	fi
 	expect_grep "repo_git_head is missing" "$repo_head_err" "direct-pull diagnostic repo head failure"
+
+	cp -R "$diag" "$broken_manifest_digest"
+	jq '.rung_b.digest_ref = "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' \
+		"$broken_manifest_digest/rung-bc-images.json" > "$broken_manifest_digest/rung-bc-images.json.tmp"
+	mv "$broken_manifest_digest/rung-bc-images.json.tmp" "$broken_manifest_digest/rung-bc-images.json"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_manifest_digest" > /dev/null 2> "$manifest_digest_err"; then
+		die "direct-pull diagnostic validator accepted mismatched manifest digest"
+	fi
+	expect_grep "rung-bc manifest rung_b.digest_ref is mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$manifest_digest_err" "direct-pull diagnostic manifest digest failure"
+
+	cp -R "$diag" "$broken_manifest_key"
+	jq '.rung_b.key_id = "kbs:///default/image-kek/wrong"' \
+		"$broken_manifest_key/rung-bc-images.json" > "$broken_manifest_key/rung-bc-images.json.tmp"
+	mv "$broken_manifest_key/rung-bc-images.json.tmp" "$broken_manifest_key/rung-bc-images.json"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_manifest_key" > /dev/null 2> "$manifest_key_err"; then
+		die "direct-pull diagnostic validator accepted mismatched manifest key ID"
+	fi
+	expect_grep "rung-bc manifest rung_b.key_id is kbs:///default/image-kek/wrong" "$manifest_key_err" "direct-pull diagnostic manifest key failure"
 }
 
 verify_evidence_validation_make_env() {

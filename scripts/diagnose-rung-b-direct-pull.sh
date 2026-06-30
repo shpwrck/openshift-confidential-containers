@@ -13,6 +13,8 @@ RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
 RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
 DIAG_DIR="${DIAG_DIR:-${ARTIFACT_DIR}/rung-b-direct-pull-$(date -u +%Y%m%dT%H%M%SZ)}"
+RUNG_BC_IMAGES_MANIFEST="${RUNG_BC_IMAGES_MANIFEST:-${ARTIFACT_DIR}/rung-bc-images.json}"
+RUNG_BC_ENV_FILE="${RUNG_BC_ENV_FILE:-${ARTIFACT_DIR}/rung-bc.env}"
 POD_NAME="${POD_NAME:-rung-b-direct-pull-diag}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-180}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
@@ -59,6 +61,8 @@ Key env:
   MIRROR_LOG_FILES      host mirror log files to tail when readable
   MIRROR_LOG_SINCE_TIME UTC RFC3339 log lower bound (default: diagnostic start)
   MIRROR_CONTAINER_NAMES mirror container names to inspect with podman/docker
+  RUNG_BC_IMAGES_MANIFEST rung-b/c artifact manifest to copy into the bundle
+  RUNG_BC_ENV_FILE      rung-b/c env handoff file to copy into the bundle
 
 Exit codes:
   0  reproduced the known host-side blocker before any image-key request
@@ -221,6 +225,15 @@ collect_mirror_logs() {
 	done
 }
 
+copy_artifact_handoff() {
+	if [[ -f "$RUNG_BC_IMAGES_MANIFEST" ]]; then
+		cp "$RUNG_BC_IMAGES_MANIFEST" "${DIAG_DIR}/rung-bc-images.json"
+	fi
+	if [[ -f "$RUNG_BC_ENV_FILE" ]]; then
+		cp "$RUNG_BC_ENV_FILE" "${DIAG_DIR}/rung-bc.env"
+	fi
+}
+
 mirror_log_context() {
 	local file
 	for file in \
@@ -323,6 +336,8 @@ mirror_guest_rung_b_blob_count=${MIRROR_GUEST_RUNG_B_BLOB_COUNT}
 crio_log_tail=${CRIO_LOG_TAIL}
 crio_log_since_time=${CRIO_LOG_SINCE_TIME}
 mirror_log_since_time=${MIRROR_LOG_SINCE_TIME}
+rung_bc_images_manifest=${RUNG_BC_IMAGES_MANIFEST}
+rung_bc_env_file=${RUNG_BC_ENV_FILE}
 repo_root=${REPO_ROOT}
 repo_git_head=${git_head}
 repo_git_branch=${git_branch}
@@ -343,6 +358,7 @@ require_digest_ref "$RUNG_B_IMAGE"
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 mkdir -p "$DIAG_DIR"
+copy_artifact_handoff
 RUNG_B_KEY_RESOURCE="$(kbs_uri_resource_path "$RUNG_B_KEY_ID")"
 SINCE_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CRIO_LOG_SINCE_TIME="${CRIO_LOG_SINCE_TIME:-$SINCE_TIME}"

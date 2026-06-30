@@ -216,6 +216,44 @@ check_context() {
 	fi
 }
 
+check_artifact_manifest() {
+	local manifest="${DIAG_DIR}/rung-bc-images.json"
+	local image key_id manifest_image manifest_key_id manifest_key_sha
+	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
+		pass "rung-bc image manifest not required for legacy diagnostic validation"
+		return
+	fi
+
+	require_file "$manifest" "rung-bc image manifest"
+	[[ -s "$manifest" ]] || return
+	if ! command -v jq >/dev/null; then
+		fail "jq is required to validate rung-bc image manifest"
+		return
+	fi
+
+	image="$(summary_value_or_default rung_b_image "")"
+	key_id="$(summary_value_or_default rung_b_key_id "")"
+	manifest_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest" 2>/dev/null || true)"
+	manifest_key_id="$(jq -r '.rung_b.key_id // ""' "$manifest" 2>/dev/null || true)"
+	manifest_key_sha="$(jq -r '.rung_b.key_sha256 // ""' "$manifest" 2>/dev/null || true)"
+
+	if [[ "$manifest_image" == "$image" && "$manifest_image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+		pass "rung-bc manifest matches diagnostic rung-b digest ref"
+	else
+		fail "rung-bc manifest rung_b.digest_ref is ${manifest_image:-missing}, expected $image"
+	fi
+	if [[ "$manifest_key_id" == "$key_id" && "$manifest_key_id" == kbs:///* ]]; then
+		pass "rung-bc manifest matches diagnostic rung-b key ID"
+	else
+		fail "rung-bc manifest rung_b.key_id is ${manifest_key_id:-missing}, expected $key_id"
+	fi
+	if [[ "$manifest_key_sha" =~ ^[0-9a-f]{64}$ ]]; then
+		pass "rung-bc manifest records non-secret rung-b key fingerprint"
+	else
+		fail "rung-bc manifest missing valid rung-b key fingerprint"
+	fi
+}
+
 check_crio_log() {
 	local crio_log="${DIAG_DIR}/crio-node.log" image
 	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
@@ -304,6 +342,7 @@ fi
 [[ -d "$DIAG_DIR" ]] || die "diagnostic directory does not exist: $DIAG_DIR"
 
 check_summary
+check_artifact_manifest
 check_context
 check_crio_log
 check_mirror_summary
