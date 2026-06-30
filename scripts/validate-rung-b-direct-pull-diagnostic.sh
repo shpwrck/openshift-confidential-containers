@@ -31,6 +31,15 @@ require_file() {
 	fi
 }
 
+require_file_may_be_empty() {
+	local path="$1" label="$2"
+	if [[ -f "$path" ]]; then
+		pass "$label present"
+	else
+		fail "$label missing: $path"
+	fi
+}
+
 summary_value() {
 	local key="$1" file="${DIAG_DIR}/summary.env"
 	awk -F '=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); found = 1; exit } END { if (!found) exit 1 }' "$file"
@@ -106,6 +115,7 @@ check_summary() {
 }
 
 check_context() {
+	local key_resource
 	require_file "${DIAG_DIR}/classification.txt" "classification text"
 	if [[ -s "${DIAG_DIR}/classification.txt" ]]; then
 		if grep -Fq "REPRODUCED: host-side encrypted-layer pull blocked before guest image-key request." "${DIAG_DIR}/classification.txt"; then
@@ -124,7 +134,15 @@ check_context() {
 		fi
 	fi
 
-	require_file "${DIAG_DIR}/trustee.log" "Trustee log"
+	require_file_may_be_empty "${DIAG_DIR}/trustee.log" "Trustee log"
+	key_resource="$(summary_value_or_default rung_b_key_resource "")"
+	if [[ -n "$key_resource" && -f "${DIAG_DIR}/trustee.log" && -f "${DIAG_DIR}/context.txt" ]]; then
+		if grep -Fq "resource/${key_resource}" "${DIAG_DIR}/trustee.log" "${DIAG_DIR}/context.txt" 2>/dev/null; then
+			fail "Trustee/context logs include unexpected image-key request: resource/${key_resource}"
+		else
+			pass "Trustee/context logs do not include image-key request"
+		fi
+	fi
 }
 
 check_mirror_summary() {
