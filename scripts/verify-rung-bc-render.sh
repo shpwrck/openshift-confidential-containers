@@ -1119,6 +1119,12 @@ rung-c-signed	present	rung-c-signed	workload-test	Running	kata-cc	snp-worker-0	$
 negtest-rung-b	present	negtest-rung-b	workload-test	Pending	kata-cc	snp-worker-0	${rung_b_image}	initdata-c
 negtest-rung-c	present	negtest-rung-c	workload-test	Pending	kata-cc	snp-worker-0	${rung_c_unsigned_image}	initdata-b
 EOF
+	cat > "$evidence/pods/rung-b-encrypted.logs.txt" <<'EOF'
+app rung-b: encrypted image decrypted and running
+EOF
+	cat > "$evidence/pods/rung-c-signed.logs.txt" <<'EOF'
+app rung-c: signed image accepted and running
+EOF
 	cat > "$evidence/trustee/logs.txt" <<'EOF'
 GET /kbs/v0/resource/default/image-key/rung-b 200
 GET /kbs/v0/resource/default/security-policy/rung-c 200
@@ -1148,6 +1154,7 @@ verify_evidence_validation_gate() {
 	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
 	local broken_b_initdata="$tmpdir/broken-b-initdata-evidence" b_initdata_err="$tmpdir/validate-b-initdata-evidence.err"
 	local broken_c_initdata="$tmpdir/broken-c-initdata-evidence" c_initdata_err="$tmpdir/validate-c-initdata-evidence.err"
+	local broken_app_log="$tmpdir/broken-app-log-evidence" app_log_err="$tmpdir/validate-app-log-evidence.err"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
@@ -1193,6 +1200,13 @@ verify_evidence_validation_gate() {
 		die "evidence validator accepted a changed rung-c negative initdata hash"
 	fi
 	expect_grep "rung-c negative initdata hash differs from happy initdata hash" "$c_initdata_err" "evidence validator rung-c initdata failure"
+
+	cp -R "$evidence" "$broken_app_log"
+	printf 'app started without expected proof marker\n' > "$broken_app_log/pods/rung-b-encrypted.logs.txt"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_app_log" > /dev/null 2> "$app_log_err"; then
+		die "evidence validator accepted a missing rung-b app log marker"
+	fi
+	expect_grep "rung-b app log marker missing" "$app_log_err" "evidence validator app-log failure"
 }
 
 verify_evidence_validation_make_env() {

@@ -7,6 +7,8 @@ RUNG_B_POD="${RUNG_B_POD:-rung-b-encrypted}"
 RUNG_C_POD="${RUNG_C_POD:-rung-c-signed}"
 NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-negtest-rung-b}"
 NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
+RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-rung-b: encrypted image decrypted and running}"
+RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-rung-c: signed image accepted and running}"
 RUNG_B_DENIAL_RE="${RUNG_B_DENIAL_RE:-attest|denied|forbidden|measurement|decrypt|image-key|key}"
 RUNG_C_DENIAL_RE="${RUNG_C_DENIAL_RE:-policy|sign|signature|sigstore|reject}"
 
@@ -189,6 +191,20 @@ check_pod_phase() {
 	esac
 }
 
+check_happy_app_log() {
+	local pod="$1" label="$2" marker="$3"
+	local logs="${EVIDENCE_DIR}/pods/${pod}.logs.txt"
+	require_file "$logs" "$label pod logs"
+	if [[ ! -s "$logs" ]]; then
+		return
+	fi
+	if grep -Fq "$marker" "$logs"; then
+		pass "$label app log marker present"
+	else
+		fail "$label app log marker missing: $marker"
+	fi
+}
+
 check_initdata_relationships() {
 	local rung_b_initdata neg_rung_b_initdata rung_c_initdata neg_rung_c_initdata
 	rung_b_initdata="$(pod_col "$RUNG_B_POD" 9 2>/dev/null || true)"
@@ -331,6 +347,8 @@ check_secret_fingerprint security-policy rung-c "rung-c security policy"
 require_file "${EVIDENCE_DIR}/pods/summary.tsv" "pod summary index"
 check_pod_phase "$RUNG_B_POD" "rung-b" happy
 check_pod_phase "$RUNG_C_POD" "rung-c" happy
+check_happy_app_log "$RUNG_B_POD" "rung-b" "$RUNG_B_APP_LOG_MARKER"
+check_happy_app_log "$RUNG_C_POD" "rung-c" "$RUNG_C_APP_LOG_MARKER"
 check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
 check_pod_phase "$NEG_RUNG_C_POD" "rung-c negative" denied
 check_initdata_relationships
