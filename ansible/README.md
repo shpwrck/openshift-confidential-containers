@@ -16,7 +16,7 @@ rewrite — see [Portability](#portability).
 | **Terraform** | bastion, SNP node, VLAN, inbound firewall, netboot (`operating_system = ipxe`, `ipxe_url`) | `infra/latitude/`, `infra/latitude/bastion/` |
 | **Ansible** | bastion host config (egress, tools, mirror push, dns/ntp) + the OpenShift install (render, pxe-serve, reinstall+wait) | this tree |
 
-`make up` (root Makefile) interleaves them; `ansible/up.sh` is the same sequence standalone.
+`make bringup-sno-airgapped` (root Makefile) interleaves them; `ansible/up.sh` is the same sequence standalone.
 
 ## What runs, in phase order
 
@@ -83,7 +83,7 @@ The public console edge is enabled by default after the cluster is Available. Op
 Or the single entrypoint (prints the TF commands; add `--apply-tf` to run them):
 
 ```bash
-make up ARGS="-e bastion_ansible_host=$BAS_IP -e bastion_public_ipv4_override=$BAS_IP \
+make bringup-sno-airgapped ARGS="-e bastion_ansible_host=$BAS_IP -e bastion_public_ipv4_override=$BAS_IP \
   -e vlan_vid_override=$VID -e node_server_id=$SRV -e boot_artifacts_token=$TOKEN"
 ```
 

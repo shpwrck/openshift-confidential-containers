@@ -27,7 +27,7 @@ cp terraform.tfvars.example terraform.tfvars   # FILL: plan (cheap metal SKU), s
 export LATITUDESH_AUTH_TOKEN=...
 terraform init
 terraform apply                                  # <-- spends money; approve explicitly
-terraform output mirror_endpoint                 # DNS name:8443 -> MIRROR_REGISTRY for `make mirror`
+terraform output mirror_endpoint                 # DNS name:8443 -> MIRROR_REGISTRY for `make mirror-content`
 terraform output node_hosts_entry                # "<bastion-vlan-ip> <mirror-name>" -> node agent-config
 ```
 

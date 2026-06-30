@@ -94,13 +94,13 @@ help: ## List targets
 
 ## --- Hands-off bring-up (Ansible automation) -----------------------------
 # TF owns infra (bastion, node, VLAN, firewall, netboot OS=ipxe); Ansible owns the bastion host
-# config + the OpenShift install. `make up` sequences both, pausing only at the SEV-SNP BIOS step.
+# config + the OpenShift install. `make bringup-sno-airgapped` sequences both, pausing only at the SEV-SNP BIOS step.
 # Requires: LATITUDESH_AUTH_TOKEN in env; RH pull-secret on the bastion (~/pull-secret.json);
 # and -e overrides from terraform output (see ansible/README.md). Pass extra args via ARGS=.
 # Public console publishing is default-on; opt out with -e public_console_enabled=false.
-#   make up ARGS="--apply-tf -e vlan_vid_override=123 -e node_server_id=sv_x -e boot_artifacts_token=$(openssl rand -hex 16)"
-.PHONY: up
-up: ## Hands-off air-gapped SNO bring-up via Ansible (stops at the SEV-SNP BIOS step)
+#   make bringup-sno-airgapped ARGS="--apply-tf -e vlan_vid_override=123 -e node_server_id=sv_x -e boot_artifacts_token=$(openssl rand -hex 16)"
+.PHONY: bringup-sno-airgapped
+bringup-sno-airgapped: ## Hands-off air-gapped SNO bring-up via Ansible (stops at the SEV-SNP BIOS step)
 	cd ansible && ./up.sh $(ARGS)
 
 .PHONY: ansible-lint
@@ -112,13 +112,13 @@ pxe-stop: ## Close the boot-artifact endpoint after the node has booted (issue #
 	cd ansible && ansible-playbook playbooks/site.yml --tags pxe-stop $(ARGS)
 
 ## --- Prereqs / tooling (Phase 0) -----------------------------------------
-.PHONY: tools
-tools: ## Fetch version-pinned oc / openshift-install / oc-mirror into ./bin (Phase 0)
+.PHONY: fetch-cli-tools
+fetch-cli-tools: ## Fetch version-pinned oc / openshift-install / oc-mirror into ./bin (Phase 0)
 	./scripts/install-tools.sh
 
 ## --- Mirror (Phase 2 — the ~1-2h bottleneck, cacheable) ------------------
-.PHONY: mirror
-mirror: ## oc-mirror v2 push to the bastion (needs MIRROR_REGISTRY=<host:port>)
+.PHONY: mirror-content
+mirror-content: ## oc-mirror v2 push to the bastion (needs MIRROR_REGISTRY=<host:port>)
 	@test -n "$(MIRROR_REGISTRY)" || { echo "set MIRROR_REGISTRY=<host:port>"; exit 2; }
 	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ./scripts/mirror.sh mirror
 
@@ -169,16 +169,16 @@ lint: ## kustomize build + kubeconform + conftest over all overlays
 	./scripts/lint.sh
 
 ## --- Apply (rig) ---------------------------------------------------------
-.PHONY: apply
-apply: ## oc apply -k the selected OVERLAY (default: sno-workers)
+.PHONY: apply-overlay
+apply-overlay: ## oc apply -k the selected OVERLAY (default: sno-workers)
 	oc apply -k gitops/overlays/$(OVERLAY)
 
-.PHONY: apply-sno
-apply-sno: ## Phase 4: operators (NFD->cert-manager->OSC->Trustee) + KataConfig (reboots node)
+.PHONY: install-coco-operators
+install-coco-operators: ## Phase 4: operators (NFD->cert-manager->OSC->Trustee) + KataConfig (reboots node)
 	CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/apply-sno.sh
 
-.PHONY: apply-trustee
-apply-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RVPS after)
+.PHONY: deploy-trustee
+deploy-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RVPS after)
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/apply-trustee.sh
 
 .PHONY: seed-trustee-secrets
@@ -204,20 +204,20 @@ verify-rung-bc-artifacts: verify-rung-b-key-wrap verify-rung-c-signature ## Phas
 seed-rung-bc-secrets: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
 
-.PHONY: apply-trustee-rung-bc
-apply-trustee-rung-bc: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
+.PHONY: deploy-trustee-rung-bc
+deploy-trustee-rung-bc: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
 
-.PHONY: apply-rung-a
-apply-rung-a: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
+.PHONY: run-rung-a-secret
+run-rung-a-secret: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash "$(APPLY_RUNG_A_SCRIPT)"
 
-.PHONY: apply-rung-b
-apply-rung-b: ## Phase 6: render initdata, launch rung-b, and wait for the encrypted-image pod
+.PHONY: run-rung-b-encrypted
+run-rung-b-encrypted: ## Phase 6: render initdata, launch rung-b, and wait for the encrypted-image pod
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" IMAGE_SECURITY_POLICY_URI="$(RUNG_B_POLICY_URI)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" bash "$(APPLY_RUNG_B_SCRIPT)"
 
-.PHONY: apply-rung-c
-apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signed-image pod
+.PHONY: run-rung-c-signed
+run-rung-c-signed: ## Phase 6: render initdata, launch rung-c, and wait for the signed-image pod
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" IMAGE_SECURITY_POLICY_URI="$(RUNG_C_POLICY_URI)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" bash "$(APPLY_RUNG_C_SCRIPT)"
 
 .PHONY: uninstall-coco
@@ -228,8 +228,8 @@ uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekee
 validate-coco-uninstalled: ## Verify CoCo operators/operands are absent and the SNO node is Ready
 	bash ./scripts/uninstall-coco.sh validate
 
-.PHONY: diff
-diff: ## Server-side diff of the selected OVERLAY
+.PHONY: diff-overlay
+diff-overlay: ## Server-side diff of the selected OVERLAY
 	oc diff -k gitops/overlays/$(OVERLAY) || true
 
 ## --- Air-gap data pipelines ----------------------------------------------

@@ -37,7 +37,7 @@ design §4):
 
 Done on the **bastion / admin host**, not the node.
 
-- [ ] **Fetch pinned tooling:** `make tools` → [`scripts/install-tools.sh`](../../scripts/install-tools.sh)
+- [ ] **Fetch pinned tooling:** `make fetch-cli-tools` → [`scripts/install-tools.sh`](../../scripts/install-tools.sh)
       pulls `oc`, `openshift-install`, `oc-mirror` (all 4.20.18 / linux-amd64) into `./bin`.
       Then `export PATH="$PWD/bin:$PATH"`.
       `# VERIFY` `OCP_VERSION` matches the [`install/imageset-config.yaml`](../../install/imageset-config.yaml) pin.
@@ -150,7 +150,7 @@ mirror; the node does not run this).
 - [ ] **Fill `MIRROR_REGISTRY` and mirror:**
       ```bash
       export MIRROR_REGISTRY=$(cd infra/latitude/bastion && terraform output -raw mirror_endpoint)
-      make mirror                                           # -> scripts/mirror.sh mirror (oc-mirror --v2)
+      make mirror-content                                           # -> scripts/mirror.sh mirror (oc-mirror --v2)
       ```
       This is the long pole. It is **cacheable** — the oc-mirror v2 workspace (`./mirror`)
       persists, so re-runs only fetch deltas. Mirror *before* you need the cluster.
@@ -234,7 +234,7 @@ Reference: [`install/README.md`](../../install/README.md),
       > STOP-gate: do not apply GitOps until this is green.
 
 - [ ] **Apply workers overlay** (unattended apply, then CSVs settle ~10–15 min):
-      `make apply-sno` → `oc apply -k gitops/overlays/sno-workers`
+      `make install-coco-operators` → `oc apply -k gitops/overlays/sno-workers`
       ([overlay](../../gitops/overlays/sno-workers/kustomization.yaml) = operators + kataconfig
       + workloads). Wait for all four CSVs `Succeeded`:
       ```bash
@@ -267,7 +267,7 @@ Reference: [`install/README.md`](../../install/README.md),
 Both pipelines run **on this hardware** and produce **environment-bound** data (design §4).
 The operator ships nothing for these; VCEK automation is a **production sign-off gate**.
 
-- [ ] **Stand up the rig Trustee** (unattended apply): `make apply-trustee` →
+- [ ] **Stand up the rig Trustee** (unattended apply): `make deploy-trustee` →
       `oc apply -k gitops/overlays/sno-trustee`
       ([overlay](../../gitops/overlays/sno-trustee/kustomization.yaml) = `base/trustee`). Out-of-band
       secrets per [`gitops/base/trustee/secret-stubs.example.yaml`](../../gitops/base/trustee/secret-stubs.example.yaml).
@@ -359,14 +359,14 @@ destroy after each spike).
 
 ## Per-phase quick checklist
 
-- [ ] **0 Prereqs** — `make tools`; `infra/latitude/bastion` (mirror-registry, persistent) + CA + internal git; RH pull secret.
+- [ ] **0 Prereqs** — `make fetch-cli-tools`; `infra/latitude/bastion` (mirror-registry, persistent) + CA + internal git; RH pull secret.
 - [ ] **1 Provision + rung-0** — bastion `apply` first, then node `apply`; SNP BIOS recipe; `host-snp-check.sh` green; egress-lockdown probe. **STOP.**
-- [ ] **2 Mirror** — `# VERIFY` channels; `MIRROR_REGISTRY=… make mirror`; keep cluster-resources.
+- [ ] **2 Mirror** — `# VERIFY` channels; `MIRROR_REGISTRY=… make mirror-content`; keep cluster-resources.
 - [ ] **3 SNO install** — fill templates; `make agent-image`; boot (IPMI vmedia / iPXE);
       `make install-wait`; apply mirror cluster-resources.
-- [ ] **4 Operators** — `make verify-snp-host` (STOP); `make apply-sno`; CSVs Succeeded; MCP
+- [ ] **4 Operators** — `make verify-snp-host` (STOP); `make install-coco-operators`; CSVs Succeeded; MCP
       reboot; `kata` + `kata-cc` RuntimeClasses.
-- [ ] **5 Attestation data** — `make apply-trustee`; `make collect-vcek` (lowercase HWID);
+- [ ] **5 Attestation data** — `make deploy-trustee`; `make collect-vcek` (lowercase HWID);
       `make gen-rvps`; wire into KbsConfig + RVPS ConfigMap.
 - [ ] **6 Rungs a→b→c** — each happy path **+** negative test; air-gap VCEK-pull negative test.
 - [ ] **7 Teardown** — `terraform destroy`; BIOS resets on re-provision.

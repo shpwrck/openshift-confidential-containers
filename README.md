@@ -45,7 +45,7 @@ docs/runbooks/         phase checklists for the automated path + failure modes
 docs/design/           design notes + pre-deployment scoping list
 docs/notes/            hardware bring-up + air-gap guest-pull reference notes
 infra/                 Terraform (node, bastion, VLAN, firewall, netboot)
-ansible/               bastion config + OpenShift install automation (`make up`)
+ansible/               bastion config + OpenShift install automation (`make bringup-sno-airgapped`)
 gitops/                Kustomize base/ + overlays {sno,customer} × {workers,trustee}
 scripts/               rung-0 SNP-host gate, VCEK collection, Veritas RVPS
 Makefile               rig driver (verify gates, apply rungs)

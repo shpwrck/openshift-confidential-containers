@@ -28,7 +28,7 @@ Before replaying the operator install, also run the read-only baseline gate:
 make validate-sno-baseline
 ```
 
-This must pass before `make apply-sno`: the node must be `Ready`, MachineConfigPools must be
+This must pass before `make install-coco-operators`: the node must be `Ready`, MachineConfigPools must be
 stable (`Updated=True`, `Updating=False`, `Degraded=False`), and the mirrored CatalogSource must
 be `READY`. A degraded MCP is a stop condition for KataConfig because OSC drives a node-level
 MachineConfig rollout.
@@ -54,16 +54,16 @@ Replay the rig CoCo install through the scripted Make targets only:
 
 ```bash
 make verify-snp-host NODE=<node-name>
-make apply-sno
-make apply-trustee
-make apply-rung-a
+make install-coco-operators
+make deploy-trustee
+make run-rung-a-secret
 ```
 
-`make apply-sno` installs and validates the worker-side CoCo stack: operator CSVs, NFD SNP label,
+`make install-coco-operators` installs and validates the worker-side CoCo stack: operator CSVs, NFD SNP label,
 KataConfig, `kata-cc` (`kata-snp`) RuntimeClass, and Gatekeeper memory policy. It intentionally
 does not launch the workload.
 
-`make apply-trustee` seeds the rig Trustee secrets from bastion-local files, renders the live SNP
+`make deploy-trustee` seeds the rig Trustee secrets from bastion-local files, renders the live SNP
 HWID(s) into `KbsConfig.spec.kbsLocalCertCacheSpec`, applies the KBS ConfigMaps/KbsConfig, and
 waits for the KBS deployment. Defaults match the Latitude rig:
 
@@ -73,14 +73,14 @@ MIRROR_REGISTRY=mirror.rig.local:8443
 ```
 
 For multi-socket or multi-node hardware, carry every required VCEK into
-`VCEK_BUNDLE/<lowercase-hwid>/vcek.der` before running `make apply-trustee`. The script renders
+`VCEK_BUNDLE/<lowercase-hwid>/vcek.der` before running `make deploy-trustee`. The script renders
 one short secret/mount pair per bundle entry (`vcek-snp-0`, `vcek-snp-1`, ...). Do not rely on a
 `snphost --socket` flag: the coco-tools snphost used here has no socket selector. `make
 collect-vcek` builds a socket-to-CPU map with `lscpu -p=CPU,SOCKET`, runs the coco-tools container
 once per socket with `podman --cpuset-cpus=<socket-cpus>`, records the resulting HWIDs, and fails
 if a multi-socket node reports more sockets than the carried bundle covers.
 
-`make apply-rung-a` generates environment-bound initdata at runtime, configures the `rig.local`
+`make run-rung-a-secret` generates environment-bound initdata at runtime, configures the `rig.local`
 DNS forwarder to the bastion, applies the digest-pinned rung-a pod, and waits until the
 confidential pod is `Ready`.
 
