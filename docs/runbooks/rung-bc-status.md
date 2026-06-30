@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T06:16:40Z
+Last updated: 2026-06-30T06:34:19Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `88b1f59`
+Current head before this update: `1829cf0`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -220,11 +220,25 @@ Live rig check on 2026-06-30:
     modified because the destination specifies a digest; Trustee logs still had no `image-kek`
     request. The drop-in was removed, CRI-O was restarted, the node returned Ready, and no rung-b
     image remained in node storage.
+- NRI was inspected as a possible late guest-pull-source override:
+  - CRI-O 1.33 calls NRI `CreateContainer` after creating the local image result and before saving
+    the final OCI spec/runtime create. The NRI runtime-tools generator can adjust annotations, so
+    it is late enough to affect Kata's `image_guest_pull` annotation source.
+  - CRI-O filters NRI-adjusted annotations through runtime `allowed_annotations`, so changing
+    `io.kubernetes.cri-o.ImageName` would still require a temporary CRI-O allow-list entry.
+  - On the rig, `/var/run/nri/nri.sock` exists, but `/opt/nri`, `/etc/nri`, and
+    `/usr/libexec/nri` do not contain reusable plugin files. The live `kata-snp` runtime still
+    allows only `io.kubernetes.cri-o.Devices`.
+  - NRI cannot prevent the original direct encrypted digest from failing in CRI-O host image
+    status/pull before `CreateContainer`; at most it could diagnose a local carrier-image path by
+    changing the later guest-pull source. That remains custom mechanism work, not current rung-b
+    proof.
 
 1. Find a supported OpenShift/CRI-O path that gets direct rung-b pods to `CreateContainer` without
    host-side encrypted-layer pre-pull. The diagnostic local alias, CRI-O annotation probes, and
    host-decryption-key-path probe are useful for root-cause work, but they are not production proof
-   paths.
+   paths. A custom NRI probe is now source-plausible only as a carrier-path diagnostic; it cannot
+   close rung b unless it becomes a supported path that preserves digest-pinned proof inputs.
 
 2. Replay the restrictive measured-initdata policy with the next viable direct encrypted-image
    path before counting rung-b negatives. RVPS generation now works for the current rung-b initdata,
@@ -290,5 +304,6 @@ indicates CRI-O 1.33 performs the host image pull/status work before Kata's gues
 node containers-storage cannot hold the encrypted OCI layer unchanged for a digest-pinned
 `IfNotPresent` bypass, and CRI-O annotation/default-annotation routes do not override the app
 image source that Kata receives. Overriding CRI-O's host decryption key path to an empty value did
-not change that ordering or move the pull into the guest. Separately, the current rig Trustee
-policy/RVPS state is still permissive, so tampered measured-initdata pods are not denied yet.
+not change that ordering or move the pull into the guest. The rig Trustee baseline is restored to
+permissive after probes, but the restrictive measured-initdata policy renderer has been proven in a
+tag-shaped diagnostic and should be replayed when a direct encrypted-image path is available.

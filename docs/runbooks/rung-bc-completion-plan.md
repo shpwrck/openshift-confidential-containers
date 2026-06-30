@@ -9,11 +9,11 @@ Trustee was reseeded with that key. Rung-b still needs a direct digest-pinned pr
 that reaches guest pull without CRI-O host-side encrypted-layer pre-pull blocking it first;
 the CRI-O allowed-annotation and runtime `default_annotations` override paths have also been
 ruled out as production proof routes, as has disabling CRI-O's configured host decryption key path.
-The tag-shaped diagnostic path can run the real encrypted image in guest, but current Trustee
-policy/RVPS starts permissive enough that tampered measured initdata receives the image key.
-Veritas RVPS generation for the current rung-b initdata is now proven on the rig, including the
-disconnected release-image workaround. A later tag-shaped diagnostic also proved that key release
-can be made selective: Trustee's resource policy must inspect
+The tag-shaped diagnostic path can run the real encrypted image in guest. The rig baseline is
+restored to permissive Trustee policy/RVPS after probes, but the restrictive proof window is now
+understood: Veritas RVPS generation for the current rung-b initdata is proven on the rig, including
+the disconnected release-image workaround, and a later tag-shaped diagnostic proved key release
+can be made selective. Trustee's resource policy must inspect
 `input.submods[*]["ear.trustworthiness-vector"].configuration`, and the EAR policy must compare
 the live SNP HOST_DATA claim exposed as SHA-256 `input.init_data`, not the SHA-384 Veritas
 `init_data` value for the same TOML. The repo now renders that policy pair, but the policy result
@@ -371,6 +371,17 @@ and a temporary runtime `default_annotations` entry for
 digest>` still produced a carrier-sourced Kata `image_guest_pull`, no `image-kek` KBS fetch,
 and a carrier `Running` pod. That is another diagnostic-only path, not rung-b proof.
 
+Do not treat a custom NRI hook as a proven production route yet. Source inspection of CRI-O 1.33
+shows NRI `CreateContainer` adjustments can update OCI annotations after CRI-O has written its
+internal `io.kubernetes.cri-o.ImageName` value and before the VM runtime create call, but the
+adjusted annotations are still filtered through the runtime `allowed_annotations` list. The rig
+has `/var/run/nri/nri.sock`, but no reusable `/opt/nri`, `/etc/nri`, or `/usr/libexec/nri` plugin
+setup. More importantly, NRI runs after CRI-O's image status/pull work, so it cannot prevent the
+host-side pull failure for a pod whose original image is the encrypted digest. At most, a custom
+NRI probe could diagnose a local carrier-image path by changing the later Kata `image_guest_pull`
+source; it would not count as rung-b completion unless adopted as a supported, digest-pinned
+OpenShift/CRI-O route and validated with the same happy plus measured-initdata-negative evidence.
+
 Do not spend more rig time trying to disable host-side decrypt by setting CRI-O
 `decryption_keys_path` to an empty string without a new mechanism. A 2026-06-30 probe added that
 drop-in, restarted CRI-O, and recreated the direct digest pod; the pod still failed with the same
@@ -575,6 +586,7 @@ make negative-test WHICH=all
 | Setting CRI-O `[crio.runtime] decryption_keys_path = ""` does not change the direct digest failure | The host pull path still attempts encrypted-layer handling before the Kata guest-pull handoff, independent of this config-only toggle | Do not treat the decryption key path as the remaining knob. Confirm the drop-in is removed, CRI-O restarted, and the node Ready after any probe. |
 | Pod annotation `io.kubernetes.cri-o.ImageName` is allowed and set to the encrypted image, but guest pull still uses the carrier image | CRI-O writes its internal `ImageName` after sandbox annotations, so the pod annotation does not override the create-time guest-pull source | Do not use this as a workaround. Confirm with CRI-O journal `Adding mount info to pull image ...`; remove the temporary allowed annotation and restore `50-kata-snp`. |
 | Runtime `default_annotations` set `io.kubernetes.cri.image-name` to the encrypted digest, but the pod runs as the carrier and no image-key request appears | CRI-O's create-time app image metadata still resolves from the local carrier image; the containerd-style source annotation does not win for this CRI-O/Kata path | Do not count a carrier `Running` pod as proof. Require both a CRI-O `image_guest_pull` source matching the encrypted ref and a Trustee `image-kek` fetch. Restore `50-kata-snp` after the probe; on the air-gapped rig, use a cached mirror image for `oc debug node` because the default support-tools image can time out. |
+| A custom NRI hook appears able to adjust `io.kubernetes.cri-o.ImageName` before Kata create | NRI adjustments are applied after CRI-O creates the local image result and before VM runtime create, but still after the host pull/status decision | Treat this as unproven custom mechanism work, not current proof. A probe would need a temporary runtime `allowed_annotations` entry and a signed/owned NRI plugin; it still cannot stop the direct encrypted digest from failing before `CreateContainer`, so only a supported implementation that preserves the digest-pinned proof invariant can close rung b. |
 | Tampered-initdata rung-b negative reaches `Running` and fetches `image-kek` | Trustee is still in permissive bring-up mode, so RVPS/resource/attestation policy is not enforcing the measured initdata mismatch | Check `rvps-reference-values`, `resource-policy`, and `attestation-policy`. Empty reference values plus `default allow := true` plus all-affirming EAR claims mean the negative cannot count. Generate/apply restrictive reference values and rerun before sign-off. |
 | Happy rung-b pod is denied by restrictive resource policy even though the EAR policy should affirm `configuration` | The resource policy is reading the wrong EAR field | Use `input["submods"][sm]["ear.trustworthiness-vector"]["configuration"] == 2`; do not use `ear.status.configuration`. A 2026-06-30 probe proved the corrected path releases `image-kek` for the happy tag-shaped diagnostic. |
 | Happy rung-b pod is denied by an EAR policy using `query_reference_value("init_data")` | Veritas `init_data` and Trustee SNP HOST_DATA are different hashes for this initdata shape | The Veritas output recorded the SHA-384 of the TOML, while Trustee exposed the live SNP HOST_DATA as the SHA-256 `input.init_data` because the TOML declares `algorithm = "sha256"`. Render the SHA-256 from the exact initdata TOML into the EAR policy, or change the initdata/RVPS generation strategy deliberately and revalidate both happy and tampered pods. |
