@@ -21,11 +21,13 @@ case "$MODE" in
       echo "REFUSING: $ARG still has __KBS_URL__/__TRUSTEE_CA_PEM__ placeholders — fill them first." >&2
       exit 3
     fi
-    gzip -n -c "$ARG" | base64 -w0; echo
+    gzip -n -c "$ARG" | base64 | tr -d '\n'; echo   # `base64 | tr` is portable; `-w0` is GNU-only
     ;;
   decode)
     [ -n "$ARG" ] || { echo "usage: $0 decode <annotation-value|-> (use - to read stdin)" >&2; exit 2; }
-    { [ "$ARG" = "-" ] && cat || printf '%s' "$ARG"; } | base64 -d | gunzip -c
+    # portable decode flag: GNU base64 uses -d, BSD/macOS uses -D
+    if printf '' | base64 -d >/dev/null 2>&1; then _d=-d; else _d=-D; fi
+    { [ "$ARG" = "-" ] && cat || printf '%s' "$ARG"; } | base64 "$_d" | gunzip -c
     ;;
   *)
     echo "usage: $0 {encode <file.toml>|decode <value|->}" >&2; exit 2 ;;

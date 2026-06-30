@@ -65,6 +65,7 @@ kbs_uri_default_secret_key() {
 	printf '%s\t%s\n' "$secret" "$key"
 }
 
+# shellcheck disable=SC2329  # invoked indirectly via the EXIT trap below
 cleanup() {
 	if [[ -n "$tmpdir" ]]; then
 		rm -rf "$tmpdir"
@@ -280,3 +281,8 @@ echo "VCEK_COUNT=${#vcek_hwids[@]}"
 [[ -s "$tmpdir/rung-b-image.key" ]] && echo "RUNG_B_KEY_RESOURCE=${RUNG_B_KEY_SECRET}/${RUNG_B_KEY_NAME}"
 [[ -s "$tmpdir/cosign.pub" ]] && echo "RUNG_C_PUBLIC_KEY_RESOURCE=sig-public-key/rung-c"
 [[ -s "$tmpdir/security-policy-rung-c.json" ]] && echo "RUNG_C_POLICY_RESOURCE=security-policy/rung-c"
+
+# The optional `[[ -s ... ]] && echo` summary lines above are false in the plain (no-b/c)
+# case, which would otherwise leave this script's exit status at 1 and abort the caller
+# (apply-trustee.sh runs under `set -e`). Force success.
+exit 0

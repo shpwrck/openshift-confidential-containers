@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# Apply the rig Trustee with the live SNP HWID rendered into KbsConfig.
+# Stand up the rig Trustee KBS (Phase 5 — `make deploy-trustee`).
+#
+# Flow:
+#   1. Load the VCEK bundle (one .der per SNP chip HWID) for the air-gap OfflineStore
+#   2. Seed all Trustee secrets idempotently (delegates to seed-trustee-secrets.sh)
+#   3. Render KbsConfig — expand the vcek-snp-0 placeholder into one OfflineStore mount
+#      per HWID, and (optionally) inject rung-b/c KBS resources
+#   4. Apply issuers + KBS ConfigMaps + KbsConfig
+#   5. Wait for the trustee-deployment rollout
+# Set RENDER_KBSCONFIG_ONLY=1 to print the rendered KbsConfig and exit (no cluster writes).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,6 +25,9 @@ RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 
+# Where Trustee's attestation-service OfflineStore resolves each chip's VCEK, keyed by HWID.
+readonly VCEK_OFFLINESTORE_BASE="/opt/confidential-containers/attestation-service/kds-store/vcek"
+
 tmpdir=""
 vcek_hwids=()
 extra_secret_resources=()
@@ -30,6 +42,11 @@ need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
 }
 
+log() {
+	printf '\n== %s ==\n' "$*"
+}
+
+# wc -c on a file, with a sudo fallback because some key material is root-owned.
 file_size_bytes() {
 	local path="$1"
 	if [[ -r "$path" ]]; then
@@ -47,6 +64,8 @@ require_rung_b_key_size() {
 	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $path (${size} bytes)"
 }
 
+# Parse a `kbs:///default/<secret>/<key>` URI into the backing k8s Secret name and
+# data key, validating both. Prints "<secret>\t<key>" (tab-separated).
 kbs_uri_default_secret_key() {
 	local uri="$1" path repo secret key extra
 	[[ "$uri" == kbs:///* ]] || die "KBS URI must start with kbs:///: $uri"
@@ -106,12 +125,16 @@ load_extra_secret_resources() {
 	fi
 }
 
+# Render KbsConfig from the template, expanding two regions:
+#   - the single `vcek-snp-0` OfflineStore entry -> one entry per HWID (the awk replaces the
+#     placeholder block, matched from `- secretName: vcek-snp-0` through its mountPath line);
+#   - extra rung-b/c KBS resources injected right after the `- registry-configuration` line.
 render_kbsconfig() {
 	local out="$1" block="" extra_block="" i hwid resource
 	for i in "${!vcek_hwids[@]}"; do
 		hwid="${vcek_hwids[$i]}"
 		block+="      - secretName: vcek-snp-${i}"$'\n'
-		block+="        mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/${hwid}"$'\n'
+		block+="        mountPath: ${VCEK_OFFLINESTORE_BASE}/${hwid}"$'\n'
 	done
 	for resource in "${extra_secret_resources[@]}"; do
 		extra_block+="    - ${resource}"$'\n'
@@ -161,6 +184,8 @@ trustee_rollout_available() {
 }
 
 cd "$REPO_ROOT"
+
+log "Load VCEK bundle + render KbsConfig"
 load_vcek_bundle
 load_extra_secret_resources
 tmpdir="$(mktemp -d)"
@@ -171,9 +196,11 @@ if [[ "${RENDER_KBSCONFIG_ONLY:-}" == "1" ]]; then
 	exit 0
 fi
 
+# --- Preconditions -----------------------------------------------------------
 need oc
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
+log "Seed Trustee secrets (VCEK OfflineStore, credentials, policy)"
 NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
 	RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" \
 	RUNG_B_KEY_ID="$RUNG_B_KEY_ID" \
@@ -183,10 +210,12 @@ NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
 	RUNG_C_POLICY_IMAGE_PREFIX="$RUNG_C_POLICY_IMAGE_PREFIX" \
 	bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
 
+log "Apply Trustee CRs (issuers, KBS ConfigMaps, KbsConfig)"
 oc apply -f gitops/base/trustee/issuers.yaml
 oc apply -f gitops/base/trustee/kbs-configmaps.yaml
 oc apply -f "$tmpdir/kbsconfig.yaml"
 
+log "Wait for Trustee KBS rollout"
 wait_until "Trustee deployment exists" trustee_deployment_exists
 wait_until "Trustee deployment available" trustee_rollout_available
 

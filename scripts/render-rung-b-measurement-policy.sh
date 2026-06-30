@@ -40,13 +40,22 @@ render() {
 	[[ -f "$initdata_file" ]] || die "initdata file not found: $initdata_file"
 	need jq
 
-	if grep -q '__KBS_URL__\|__TRUSTEE_CA_PEM__' "$initdata_file"; then
-		die "$initdata_file still has unresolved initdata placeholders"
+	# Reject ANY unresolved __PLACEHOLDER__ (__KBS_URL__, __TRUSTEE_CA_PEM__, __MIRROR_CA_PEM__, …).
+	# The earlier guard listed only two and missed __MIRROR_CA_PEM__ that the example initdata carries.
+	if grep -Eq '__[A-Z][A-Z0-9_]*__' "$initdata_file"; then
+		die "$initdata_file still has unresolved initdata placeholders (__...__)"
 	fi
-	if ! grep -Eq '^algorithm[[:space:]]*=[[:space:]]*"sha256"[[:space:]]*$' "$initdata_file"; then
+	# Allow an optional trailing TOML inline comment after the algorithm line (the example file has one).
+	if ! grep -Eq '^algorithm[[:space:]]*=[[:space:]]*"sha256"[[:space:]]*(#.*)?$' "$initdata_file"; then
 		die "$initdata_file must declare algorithm = \"sha256\" for this SNP HOST_DATA policy renderer"
 	fi
 
+	# CAVEAT (verify on the rung-b path — currently upstream-blocked): this is the sha256 of the
+	# initdata FILE as-is. The policy below gates the image key on the attestation report's init_data
+	# matching this digest, so it is correct ONLY if OSC measures these same bytes into init_data /
+	# HOST_DATA. If OSC measures a different encoding (e.g. the gzip+base64 annotation value, or a
+	# canonicalized form), the digest never matches and the key is silently withheld. Confirm against
+	# a real rung-b attestation report before relying on this.
 	initdata_sha256="$(sha256sum "$initdata_file" | awk '{print $1}')"
 	key_path="$(kbs_uri_resource_path "$RUNG_B_KEY_ID")"
 	key_path_rego="$(rego_array_for_path "$key_path")"
@@ -63,6 +72,11 @@ data:
 
     import rego.v1
 
+    # AR4SI (RATS EAR) trustworthiness tiers: 2 = "Affirming" (claim verified/trusted); higher
+    # tiers (32+, e.g. 36) are "Warning"/not-affirmed. The image key is released (resource-policy
+    # below) only when 'configuration' is 2 — which happens ONLY if the measured init_data matches
+    # our digest. The 36 default keeps 'configuration' un-affirmed until that match, so a measured-
+    # initdata mismatch leaves it at 36 and the key is withheld. Other claims default to 2 (affirmed).
     default hardware := 2
     default executables := 2
     default configuration := 36
