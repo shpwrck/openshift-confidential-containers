@@ -1,10 +1,12 @@
 # Rung b upstream escalation packet
 
-Last updated: 2026-06-30T06:49:14Z
+Last updated: 2026-06-30T07:12:45Z
 
-This packet is the issue-ready summary for the remaining rung-b blocker. It is meant for a CRI-O,
+This packet is the upstream summary for the remaining rung-b blocker. It is meant for a CRI-O,
 OpenShift sandboxed containers, Kata, or Confidential Containers maintainer without requiring them
 to read the whole engagement runbook first.
+
+Upstream issue: <https://github.com/cri-o/cri-o/issues/10084>
 
 ## Short version
 
@@ -105,7 +107,8 @@ checked at `ec15c528e4c25dfbf6e52498c8bda3187b62392b`. Relevant upstream files:
 - <https://github.com/cri-o/cri-o/blob/main/internal/oci/runtime_vm.go>
 
 Targeted issue searches on 2026-06-30 did not find an obvious existing CRI-O or Kata issue for
-this exact `runtime_pull_image` plus encrypted digest failure.
+this exact `runtime_pull_image` plus encrypted digest failure, so
+<https://github.com/cri-o/cri-o/issues/10084> was filed with the current rig evidence.
 
 ## Workarounds ruled out
 

@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T07:04:27Z
+Last updated: 2026-06-30T07:12:45Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `51a7d04`
+Current head before this update: `818dc4d`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -22,7 +22,8 @@ temporary SHA-256 literal EAR policy, the happy diagnostic pod received `image-k
 stayed `CreateContainerError`. This proves the intended key-release gate can be made selective,
 and `scripts/render-rung-b-measurement-policy.sh` now renders that policy pair from a rendered
 initdata file. The result is still diagnostic only until it is paired with a direct digest-pinned
-encrypted-image path.
+encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstream in
+<https://github.com/cri-o/cri-o/issues/10084>.
 
 ## What is already in place
 
@@ -255,7 +256,8 @@ Live rig check on 2026-06-30:
    host-decryption-key-path probe are useful for root-cause work, but they are not production proof
    paths. A custom NRI probe is now source-plausible only as a carrier-path diagnostic; it cannot
    close rung b unless it becomes a supported path that preserves digest-pinned proof inputs. The
-   issue-ready escalation packet is in `docs/runbooks/rung-b-upstream-escalation.md`.
+   upstream issue is <https://github.com/cri-o/cri-o/issues/10084>, and the repo-local escalation
+   packet is in `docs/runbooks/rung-b-upstream-escalation.md`.
 
 2. Replay the restrictive measured-initdata policy with the next viable direct encrypted-image
    path before counting rung-b negatives. RVPS generation now works for the current rung-b initdata,
@@ -323,4 +325,5 @@ node containers-storage cannot hold the encrypted OCI layer unchanged for a dige
 image source that Kata receives. Overriding CRI-O's host decryption key path to an empty value did
 not change that ordering or move the pull into the guest. The rig Trustee baseline is restored to
 permissive after probes, but the restrictive measured-initdata policy renderer has been proven in a
-tag-shaped diagnostic and should be replayed when a direct encrypted-image path is available.
+tag-shaped diagnostic and should be replayed when a direct encrypted-image path is available. The
+direct-pull blocker is tracked upstream in <https://github.com/cri-o/cri-o/issues/10084>.

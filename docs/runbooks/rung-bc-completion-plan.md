@@ -9,6 +9,8 @@ Trustee was reseeded with that key. Rung-b still needs a direct digest-pinned pr
 that reaches guest pull without CRI-O host-side encrypted-layer pre-pull blocking it first;
 the CRI-O allowed-annotation and runtime `default_annotations` override paths have also been
 ruled out as production proof routes, as has disabling CRI-O's configured host decryption key path.
+The remaining direct-pull blocker is tracked upstream in
+<https://github.com/cri-o/cri-o/issues/10084>.
 The tag-shaped diagnostic path can run the real encrypted image in guest. The rig baseline is
 restored to permissive Trustee policy/RVPS after probes, but the restrictive proof window is now
 understood: Veritas RVPS generation for the current rung-b initdata is proven on the rig, including
@@ -20,8 +22,9 @@ the live SNP HOST_DATA claim exposed as SHA-256 `input.init_data`, not the SHA-3
 is still diagnostic until it is replayed with a direct digest-pinned encrypted-image path.
 
 For the latest branch/PR status and remaining proof checklist, see
-`docs/runbooks/rung-bc-status.md`. For the issue-ready upstream summary of the remaining direct
-encrypted-image blocker, see `docs/runbooks/rung-b-upstream-escalation.md`.
+`docs/runbooks/rung-bc-status.md`. For the filed upstream summary of the remaining direct
+encrypted-image blocker, see `docs/runbooks/rung-b-upstream-escalation.md` and
+<https://github.com/cri-o/cri-o/issues/10084>.
 
 Upstream mechanics to keep close while implementing:
 
