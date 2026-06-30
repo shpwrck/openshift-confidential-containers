@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T04:19:48Z
+Last updated: 2026-06-30T04:33:10Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `8295103`
+Current head before this update: `7666275`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -11,7 +11,8 @@ pods are still blocked by CRI-O host-side encrypted-layer pre-pull before guest 
 separate guest decryption blocker is diagnosed: the current image's wrapped layer key decrypts with
 `/home/rocky/rung-b/kek.bin`, not the previously recorded `/home/rocky/rung-b/image-kek.bin`.
 A follow-up CRI-O `default_annotations` probe also failed to redirect the Kata guest-pull source
-away from the already-present carrier image.
+away from the already-present carrier image. Disabling CRI-O's configured host decryption key path
+also did not change the direct digest failure.
 
 ## What is already in place
 
@@ -132,10 +133,17 @@ Live rig check on 2026-06-30:
   - After CRI-O restarts on this air-gapped rig, `oc debug node` should use a cached mirror image
     such as `mirror.rig.local:8443/coco/rung-c-unsigned@sha256:4ba374...`; the default
     `registry.redhat.io/rhel9/support-tools` image can time out before the restore command runs.
+  - Temporarily adding a CRI-O drop-in with `[crio.runtime] decryption_keys_path = ""`,
+    restarting CRI-O, and recreating the direct digest pod did not change the failure. The pod
+    still reported layer `sha256:346e9...` should be decrypted but the manifest could not be
+    modified because the destination specifies a digest; Trustee logs still had no `image-kek`
+    request. The drop-in was removed, CRI-O was restarted, the node returned Ready, and no rung-b
+    image remained in node storage.
 
 1. Find a supported OpenShift/CRI-O path that gets direct rung-b pods to `CreateContainer` without
-   host-side encrypted-layer pre-pull. The diagnostic local alias and CRI-O annotation probes are
-   useful for root-cause work, but they are not production proof paths.
+   host-side encrypted-layer pre-pull. The diagnostic local alias, CRI-O annotation probes, and
+   host-decryption-key-path probe are useful for root-cause work, but they are not production proof
+   paths.
 
 2. If the rung-b image is rebuilt, rerun the offline unwrap check before seeding Trustee:
 
@@ -191,4 +199,5 @@ diagnostic local alias or carrier/default-annotation probe, reaches guest pull. 
 indicates CRI-O 1.33 performs the host image pull/status work before Kata's guest-pull handoff,
 node containers-storage cannot hold the encrypted OCI layer unchanged for a digest-pinned
 `IfNotPresent` bypass, and CRI-O annotation/default-annotation routes do not override the app
-image source that Kata receives.
+image source that Kata receives. Overriding CRI-O's host decryption key path to an empty value did
+not change that ordering or move the pull into the guest.
