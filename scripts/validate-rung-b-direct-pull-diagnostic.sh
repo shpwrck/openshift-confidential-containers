@@ -109,7 +109,7 @@ check_summary_count_matches() {
 }
 
 check_summary() {
-	local phase image key_id key_resource mirror_since crio_since
+	local phase image key_id key_resource mirror_since crio_since repo_root repo_head repo_dirty
 	require_file "${DIAG_DIR}/summary.env" "diagnostic summary"
 	if [[ ! -s "${DIAG_DIR}/summary.env" ]]; then
 		return
@@ -141,6 +141,29 @@ check_summary() {
 		pass "rung-b key resource recorded"
 	else
 		fail "rung-b key ID/resource missing or invalid"
+	fi
+
+	repo_root="$(summary_value_or_default repo_root "")"
+	repo_head="$(summary_value_or_default repo_git_head "")"
+	repo_dirty="$(summary_value_or_default repo_git_dirty "")"
+	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
+		pass "repo provenance not required for legacy diagnostic validation"
+	else
+		if [[ -n "$repo_root" ]]; then
+			pass "repo root recorded"
+		else
+			fail "repo_root missing; collect current diagnostic bundles from a git checkout"
+		fi
+		if [[ "$repo_head" =~ ^[0-9a-f]{40}$ ]]; then
+			pass "repo git head recorded"
+		else
+			fail "repo_git_head is ${repo_head:-missing}; collect current diagnostic bundles from a git checkout"
+		fi
+		if [[ "$repo_dirty" == "false" ]]; then
+			pass "diagnostic was collected from a clean git worktree"
+		else
+			fail "diagnostic repo_git_dirty is ${repo_dirty:-missing}; collect current diagnostic bundles from a clean checkout"
+		fi
 	fi
 
 	mirror_since="$(summary_value_or_default mirror_log_since_time "")"

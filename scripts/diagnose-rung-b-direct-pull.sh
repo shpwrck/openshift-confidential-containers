@@ -293,6 +293,16 @@ collect_text_context() {
 
 write_summary() {
 	local phase="$1" node="$2" host_blocker="$3" image_key_requested="$4" exit_class="$5"
+	local git_head="" git_branch="" git_dirty=""
+	if command -v git >/dev/null && git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+		git_head="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+		git_branch="$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || true)"
+		if [[ -n "$(git -C "$REPO_ROOT" status --short 2>/dev/null)" ]]; then
+			git_dirty=true
+		else
+			git_dirty=false
+		fi
+	fi
 	cat > "${DIAG_DIR}/summary.env" <<EOF
 timestamp_utc=${SINCE_TIME}
 namespace=${NS}
@@ -313,6 +323,10 @@ mirror_guest_rung_b_blob_count=${MIRROR_GUEST_RUNG_B_BLOB_COUNT}
 crio_log_tail=${CRIO_LOG_TAIL}
 crio_log_since_time=${CRIO_LOG_SINCE_TIME}
 mirror_log_since_time=${MIRROR_LOG_SINCE_TIME}
+repo_root=${REPO_ROOT}
+repo_git_head=${git_head}
+repo_git_branch=${git_branch}
+repo_git_dirty=${git_dirty}
 classification=${exit_class}
 EOF
 }

@@ -442,8 +442,10 @@ absence of Trustee image-key requests, bounded CRI-O and mirror-log capture, and
 shape. For current bundles the validator requires `crio-node.log` to show the host-side pull
 attempt for the exact rung-b digest and no Kata `image_guest_pull` source for that same digest.
 It also requires the mirror-count fields in `summary.env` to match `mirror/summary.tsv`, so the
-compact diagnostic evidence stays internally consistent. Use `REQUIRE_MIRROR_SUMMARY=0` only for
-older diagnostic bundles collected before mirror summaries and current log-window metadata existed.
+compact diagnostic evidence stays internally consistent. Current diagnostics also record repo
+revision, branch, and dirty state in `summary.env`; strict validation requires
+`repo_git_dirty=false`. Use `REQUIRE_MIRROR_SUMMARY=0` only for older diagnostic bundles collected
+before mirror summaries and current log-window/provenance metadata existed.
 
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.

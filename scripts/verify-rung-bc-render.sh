@@ -2420,6 +2420,10 @@ mirror_guest_rung_b_blob_count=0
 crio_log_tail=600
 crio_log_since_time=2026-06-30T07:32:23Z
 mirror_log_since_time=2026-06-30T07:32:23Z
+repo_root=/tmp/occ-rung-bc-proof
+repo_git_head=0123456789abcdef0123456789abcdef01234567
+repo_git_branch=codex/rung-bc-support
+repo_git_dirty=false
 classification=known-host-pull-blocker
 EOF
 	cat > "$diag/classification.txt" <<'EOF'
@@ -2457,9 +2461,13 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local broken_count="$tmpdir/broken-direct-pull-count" count_err="$tmpdir/validate-direct-pull-count.err"
 	local broken_crio_log="$tmpdir/broken-direct-pull-crio-log" crio_log_err="$tmpdir/validate-direct-pull-crio-log.err"
 	local broken_guest_source="$tmpdir/broken-direct-pull-guest-source" guest_source_err="$tmpdir/validate-direct-pull-guest-source.err"
+	local broken_dirty="$tmpdir/broken-direct-pull-dirty" dirty_err="$tmpdir/validate-direct-pull-dirty.err"
+	local broken_repo_head="$tmpdir/broken-direct-pull-repo-head" repo_head_err="$tmpdir/validate-direct-pull-repo-head.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
+	expect_grep "repo git head recorded" "$out" "direct-pull diagnostic repo head"
+	expect_grep "diagnostic was collected from a clean git worktree" "$out" "direct-pull diagnostic clean repo"
 	expect_grep "CRI-O logs are bounded by since-time=2026-06-30T07:32:23Z" "$out" "direct-pull diagnostic CRI-O log window"
 	expect_grep "CRI-O node log includes host pull for rung-b digest" "$out" "direct-pull diagnostic CRI-O host pull"
 	expect_grep "CRI-O node log does not include rung-b digest as guest-pull source" "$out" "direct-pull diagnostic no guest-pull source"
@@ -2531,6 +2539,20 @@ EOF
 		die "direct-pull diagnostic validator accepted a rung-b guest-pull CRI-O source"
 	fi
 	expect_grep "CRI-O node log includes unexpected guest-pull source for rung-b digest" "$guest_source_err" "direct-pull diagnostic CRI-O guest-pull source failure"
+
+	cp -R "$diag" "$broken_dirty"
+	sed -i 's/^repo_git_dirty=false$/repo_git_dirty=true/' "$broken_dirty/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_dirty" > /dev/null 2> "$dirty_err"; then
+		die "direct-pull diagnostic validator accepted a dirty repo provenance"
+	fi
+	expect_grep "diagnostic repo_git_dirty is true" "$dirty_err" "direct-pull diagnostic dirty repo failure"
+
+	cp -R "$diag" "$broken_repo_head"
+	sed -i '/^repo_git_head=/d' "$broken_repo_head/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_repo_head" > /dev/null 2> "$repo_head_err"; then
+		die "direct-pull diagnostic validator accepted missing repo git head"
+	fi
+	expect_grep "repo_git_head is missing" "$repo_head_err" "direct-pull diagnostic repo head failure"
 }
 
 verify_evidence_validation_make_env() {
