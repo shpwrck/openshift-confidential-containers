@@ -5,6 +5,9 @@ Rung-a and the air-gapped in-guest image pull were proven on the rig on 2026-06-
 Rungs b/c still need image artifacts built on the rig, KBS resources enabled with those
 artifacts, and hardware happy/negative test runs.
 
+For the latest branch/PR status and remaining proof checklist, see
+`docs/runbooks/rung-bc-status.md`.
+
 Upstream mechanics to keep close while implementing:
 
 - Encrypted images: <https://confidentialcontainers.org/docs/features/encrypted-images/>
