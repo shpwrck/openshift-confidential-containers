@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T02:44:34Z
+Last updated: 2026-06-30T03:05:27Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `132ca0b`
+Current head before this update: `572ea30`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed. Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts pod-status app-start evidence when CC logs are empty. Rung-b is still blocked by CRI-O host-side encrypted-layer pre-pull before the guest can fetch the KBS key.
 
 ## What is already in place
@@ -49,6 +49,18 @@ Live rig check on 2026-06-30:
 - Rung-c apply succeeded: `rung-c-signed` reached Ready/Running, Trustee logs showed `security-policy/rung-c` and `sig-public-key/rung-c`, and mirror logs showed the signed image digest pull.
 - Rung-c negative succeeded: `negative-test.sh rung-c` denied `mirror.rig.local:8443/coco/rung-c-unsigned@sha256:4ba374...` as expected and kept `negtest-rung-c` for evidence.
 - Final evidence bundle for this pass: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z` on the bastion. With the current validator, this bundle passes the rung-c happy pod, pod-status app-start, same decoded initdata, Trustee fetch, unsigned image, and denial checks. It still exits non-zero on seven rung-b items: missing rung-b negative image proof-summary row, happy pod Pending, app container not started, missing rung-b negative pod, missing rung-b decoded negative relationship, missing rung-b negative decoded initdata, and missing Trustee fetch for `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`. `oc exec` into the rung-c pod remains blocked by policy.
+- Additional rung-b force-guest-pull probes on the same rig did not move the encrypted pull into
+  the guest:
+  - The live `kata-snp` config had `experimental_force_guest_pull = false`; `runtime_pull_image =
+    true` was already set in CRI-O's `50-kata-snp` runtime config.
+  - Adding pod annotation `io.katacontainers.config.runtime.experimental_force_guest_pull=true`
+    to a separate `rung-b-force-guest-pull` pod still failed with the digest-ref encrypted-layer
+    host-pull error and no `image-kek` Trustee fetch.
+  - Temporarily setting `/etc/kata-containers/kata-snp/configuration.toml` to
+    `experimental_force_guest_pull = true` and restarting CRI-O did not change the digest-ref
+    failure. A tag-ref diagnostic pod changed the message to host-side `missing private key needed
+    for decryption`, again with no `image-kek` Trustee fetch.
+  - The node config was restored from the backup and the node returned Ready.
 
 1. Build and push the rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 
