@@ -103,6 +103,10 @@ image_digest() {
 record_cmd() {
 	local out="$1"
 	shift
+	if [[ "$out" != /* ]]; then
+		out="${DIAG_DIR}/${out}"
+	fi
+	mkdir -p "$(dirname "$out")"
 	{
 		printf '$'
 		printf ' %q' "$@"
