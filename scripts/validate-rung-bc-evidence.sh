@@ -9,6 +9,9 @@ NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-negtest-rung-b}"
 NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
 DEFAULT_RUNG_B_APP_LOG_MARKER="rung-b: encrypted image decrypted and running"
 DEFAULT_RUNG_C_APP_LOG_MARKER="rung-c: signed image accepted and running"
+RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
+RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
+RUNG_B_TAMPER_MARKER="${RUNG_B_TAMPER_MARKER:-# negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS}"
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-}"
 RUNG_B_DENIAL_RE="${RUNG_B_DENIAL_RE:-attest|denied|forbidden|measurement|decrypt|image-key|key}"
@@ -241,6 +244,37 @@ check_initdata_relationships() {
 	fi
 }
 
+check_decoded_initdata() {
+	local pod="$1" label="$2" policy_uri="$3" tamper_marker="${4:-}"
+	local initdata="${EVIDENCE_DIR}/pods/${pod}.initdata.toml"
+	local decode_err="${EVIDENCE_DIR}/pods/${pod}.initdata.decode.err"
+	require_file "$initdata" "$label decoded initdata"
+	if [[ ! -s "$initdata" ]]; then
+		return
+	fi
+	if [[ -f "$decode_err" ]]; then
+		if [[ -s "$decode_err" ]]; then
+			fail "$label initdata decode stderr is not empty: $decode_err"
+		else
+			pass "$label initdata decoded without stderr"
+		fi
+	else
+		fail "$label initdata decode stderr file missing: $decode_err"
+	fi
+	if grep -Fq "image_security_policy_uri = \"${policy_uri}\"" "$initdata"; then
+		pass "$label initdata policy URI present"
+	else
+		fail "$label initdata policy URI missing: $policy_uri"
+	fi
+	if [[ -n "$tamper_marker" ]]; then
+		if grep -Fq "$tamper_marker" "$initdata"; then
+			pass "$label initdata tamper marker present"
+		else
+			fail "$label initdata tamper marker missing"
+		fi
+	fi
+}
+
 bundle_text_for_pod() {
 	local pod="$1" file
 	for file in \
@@ -366,6 +400,10 @@ check_happy_app_log "$RUNG_C_POD" "rung-c" "$RUNG_C_APP_LOG_MARKER"
 check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
 check_pod_phase "$NEG_RUNG_C_POD" "rung-c negative" denied
 check_initdata_relationships
+check_decoded_initdata "$RUNG_B_POD" "rung-b" "$RUNG_B_POLICY_URI"
+check_decoded_initdata "$RUNG_C_POD" "rung-c" "$RUNG_C_POLICY_URI"
+check_decoded_initdata "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_POLICY_URI" "$RUNG_B_TAMPER_MARKER"
+check_decoded_initdata "$NEG_RUNG_C_POD" "rung-c negative" "$RUNG_C_POLICY_URI"
 check_kbs_logs
 check_mirror_logs
 check_denial_signal "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_DENIAL_RE"

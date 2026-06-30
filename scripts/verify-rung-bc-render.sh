@@ -1152,6 +1152,28 @@ EOF
 	cat > "$evidence/pods/rung-c-signed.logs.txt" <<'EOF'
 app rung-c: signed image accepted and running
 EOF
+	cat > "$evidence/pods/rung-b-encrypted.initdata.toml" <<'EOF'
+[image]
+image_security_policy_uri = "kbs:///default/security-policy/test"
+EOF
+	cat > "$evidence/pods/rung-c-signed.initdata.toml" <<'EOF'
+[image]
+image_security_policy_uri = "kbs:///default/security-policy/rung-c"
+EOF
+	cat > "$evidence/pods/negtest-rung-b.initdata.toml" <<'EOF'
+[image]
+image_security_policy_uri = "kbs:///default/security-policy/test"
+
+# negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS
+EOF
+	cat > "$evidence/pods/negtest-rung-c.initdata.toml" <<'EOF'
+[image]
+image_security_policy_uri = "kbs:///default/security-policy/rung-c"
+EOF
+	: > "$evidence/pods/rung-b-encrypted.initdata.decode.err"
+	: > "$evidence/pods/rung-c-signed.initdata.decode.err"
+	: > "$evidence/pods/negtest-rung-b.initdata.decode.err"
+	: > "$evidence/pods/negtest-rung-c.initdata.decode.err"
 	cat > "$evidence/trustee/logs.txt" <<'EOF'
 GET /kbs/v0/resource/default/image-key/rung-b 200
 GET /kbs/v0/resource/default/security-policy/rung-c 200
@@ -1181,6 +1203,7 @@ verify_evidence_validation_gate() {
 	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
 	local broken_b_initdata="$tmpdir/broken-b-initdata-evidence" b_initdata_err="$tmpdir/validate-b-initdata-evidence.err"
 	local broken_c_initdata="$tmpdir/broken-c-initdata-evidence" c_initdata_err="$tmpdir/validate-c-initdata-evidence.err"
+	local broken_decoded_initdata="$tmpdir/broken-decoded-initdata-evidence" decoded_initdata_err="$tmpdir/validate-decoded-initdata-evidence.err"
 	local broken_app_log="$tmpdir/broken-app-log-evidence" app_log_err="$tmpdir/validate-app-log-evidence.err"
 	local custom_app_log="$tmpdir/custom-app-log-evidence" custom_app_log_out="$tmpdir/validate-custom-app-log-evidence.out"
 	write_valid_rung_bc_evidence_bundle "$evidence"
@@ -1238,6 +1261,14 @@ verify_evidence_validation_gate() {
 		die "evidence validator accepted a changed rung-c negative initdata hash"
 	fi
 	expect_grep "rung-c negative initdata hash differs from happy initdata hash" "$c_initdata_err" "evidence validator rung-c initdata failure"
+
+	cp -R "$evidence" "$broken_decoded_initdata"
+	sed -i 's#kbs:///default/security-policy/rung-c#kbs:///default/security-policy/test#' \
+		"$broken_decoded_initdata/pods/rung-c-signed.initdata.toml"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_decoded_initdata" > /dev/null 2> "$decoded_initdata_err"; then
+		die "evidence validator accepted a rung-c decoded initdata policy mismatch"
+	fi
+	expect_grep "rung-c initdata policy URI missing" "$decoded_initdata_err" "evidence validator decoded initdata policy failure"
 
 	cp -R "$evidence" "$broken_app_log"
 	printf 'app started without expected proof marker\n' > "$broken_app_log/pods/rung-b-encrypted.logs.txt"

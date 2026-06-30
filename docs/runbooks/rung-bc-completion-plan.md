@@ -405,8 +405,9 @@ those fingerprints and the happy/negative pod image refs against `rung-bc-images
 rows, required pod phases/images are missing or wrong, Trustee logs lack the expected KBS
 resource fetches, mirror logs lack rung-b/rung-c repository pulls for the expected image
 digests, rung-b negative initdata does not differ from the happy pod, rung-c negative initdata
-does not match the happy pod, happy pod logs lack the expected app-start markers, negative
-pods lack denial signals, or the bundle was collected from a dirty checkout. `summary.env`
+does not match the happy pod, decoded initdata is missing or lacks the expected rung policy
+URI/tamper marker, happy pod logs lack the expected app-start markers, negative pods lack
+denial signals, or the bundle was collected from a dirty checkout. `summary.env`
 records the repo revision, branch, dirty state, expected app-log markers, and local tool paths
 used to collect the bundle. It does not dump Secret data, but still review the bundle before
 sharing it outside the engagement.
