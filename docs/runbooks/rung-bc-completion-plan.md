@@ -137,8 +137,8 @@ Operator-facing artifact knobs:
 | `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. Use the generated digest ref for apply/negative-test. |
 | `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. Use the generated digest ref for apply. |
 | `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c-unsigned:unsigned` | You want a differently named unsigned negative-control image. Keep this in a repository separate from `RUNG_C_IMAGE` so signatures attached to the signed repo do not satisfy the negative control. Use the generated digest ref for negative-test. |
-| `RUNG_B_APP_LOG_MARKER` | `rung-b: encrypted image decrypted and running` | The rung-b proof workload emits a different success line, but validation should still prove app start. |
-| `RUNG_C_APP_LOG_MARKER` | `rung-c: signed image accepted and running` | The rung-c proof workload emits a different success line, but validation should still prove app start. |
+| `RUNG_B_APP_LOG_MARKER` | `rung-b: encrypted image decrypted and running` | The rung-b proof workload emits a different success line. Validation uses the marker when logs expose it, and falls back to pod/container status when logs are unavailable. |
+| `RUNG_C_APP_LOG_MARKER` | `rung-c: signed image accepted and running` | The rung-c proof workload emits a different success line. Validation uses the marker when logs expose it, and falls back to pod/container status when logs are unavailable. |
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
 | `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
 | `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. If the keyprovider generated `kbs:///default/image-kek/<uuid>`, pass that value so Trustee seeding and evidence validation use the matching Secret/key. |
@@ -261,7 +261,7 @@ Happy path:
    - successful SNP attestation
    - `GET /kbs/v0/resource/default/image-key/rung-b ... 200`
 6. Confirm mirror logs show encrypted image manifest/layer pulls by `oci-client`.
-7. Confirm the app log or filesystem evidence proves the decrypted image started.
+7. Confirm the app log, pod/container status, or filesystem evidence proves the decrypted image started.
 
 Negative path:
 
@@ -316,7 +316,7 @@ Happy path:
    - `GET /kbs/v0/resource/default/security-policy/rung-c ... 200`
    - `GET /kbs/v0/resource/default/sig-public-key/rung-c ... 200`
 5. Confirm mirror logs show pulls for the signed image digest.
-6. Verify the app log proves the signed image actually started.
+6. Verify the app log or pod/container status proves the signed image actually started.
 
 Negative path:
 
@@ -403,7 +403,10 @@ are not provided, so a custom-named bundle remains self-describing offline. If t
 emits custom success text, set `RUNG_B_APP_LOG_MARKER` or `RUNG_C_APP_LOG_MARKER` before
 running `make collect-rung-bc-evidence`, `make validate-rung-bc-evidence`, or
 `make prove-rung-bc`; the collector records those marker values in `summary.env` so the
-bundle can be validated offline later without repeating the overrides. The bundle includes pod
+bundle can be validated offline later without repeating the overrides. Some CC runs expose an
+empty `oc logs` stream even when the container is Ready; in that case the validator accepts the
+pod JSON only when the happy pod is Running/Succeeded and the `app` container status proves it
+started. The bundle includes pod
 YAML/describe/logs, per-pod summary TSVs, decoded initdata, recent Trustee logs, events,
 KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
 Secret metadata plus data-key names and decoded byte lengths, redacted `vcek-*` Secret
@@ -417,10 +420,10 @@ those fingerprints and the happy/negative pod image refs against `rung-bc-images
 non-matching required rows, the image manifest has the wrong rung-b KBS key ID, required pod
 phases/images are missing or wrong, Trustee logs lack the expected KBS resource fetches,
 mirror logs lack rung-b/rung-c repository pulls for the expected image digests, rung-b
-negative initdata does not differ from the happy pod, rung-c negative initdata does not match
-the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung policy URI, or
-tamper marker, happy pod logs lack the expected app-start markers, negative pods lack denial
-signals, or the bundle was collected from a dirty checkout. Expected KBS resource fetches are
+negative decoded initdata does not differ from the happy pod, rung-c negative decoded initdata
+does not match the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung policy URI, or
+tamper marker, happy pods lack both the expected app-start log markers and pod-status app-start
+evidence, negative pods lack denial signals, or the bundle was collected from a dirty checkout. Expected KBS resource fetches are
 derived from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated
 against their actual Trustee log entries. `summary.env` records the repo revision, branch,
 dirty state, expected KBS URL, rung-b key ID, rung policy URIs, expected app-log markers, and

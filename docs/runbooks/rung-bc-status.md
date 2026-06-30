@@ -1,22 +1,25 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T02:32:34Z
+Last updated: 2026-06-30T02:44:34Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `c18bafd`
-Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed. Rung-c now has live happy-path and unsigned-control denial evidence. Rung-b is still blocked by CRI-O host-side encrypted-layer pre-pull before the guest can fetch the KBS key.
+Current head before this update: `132ca0b`
+Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed. Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts pod-status app-start evidence when CC logs are empty. Rung-b is still blocked by CRI-O host-side encrypted-layer pre-pull before the guest can fetch the KBS key.
 
 ## What is already in place
 
 - Rung-b and rung-c build, seed, apply, negative-test, collect, validate, and one-shot proof targets exist.
 - Proof runs require digest-pinned image refs; tag-only proof refs are rejected before apply.
-- Rung-b evidence tracks encrypted image key ID, initdata policy URI, Trustee resource fetches, mirror pulls, pod state, app-start marker, and fail-closed tampered-initdata behavior.
-- Rung-c evidence tracks signed image policy URI, public key resource fetch, mirror pulls, pod state, app-start marker, and fail-closed unsigned-image behavior.
+- Rung-b evidence tracks encrypted image key ID, initdata policy URI, Trustee resource fetches, mirror pulls, pod state, app-start evidence, and fail-closed tampered-initdata behavior.
+- Rung-c evidence tracks signed image policy URI, public key resource fetch, mirror pulls, pod state, app-start evidence, and fail-closed unsigned-image behavior.
 - Evidence bundles record non-secret provenance in `summary.env`, including repo revision, branch, dirty state, KBS URL, policy URIs, pod role names, and app log markers.
 - Offline validation derives expected KBS resource log entries from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated against the actual run configuration.
 - Trustee seeding now derives the rung-b Secret resource/key from `RUNG_B_KEY_ID`, so a
   keyprovider-generated URI such as `kbs:///default/image-kek/<uuid>` can be seeded and
   fingerprinted instead of forcing every proof into `image-key/rung-b`.
+- Initdata encoding now uses deterministic gzip output, and evidence validation compares decoded
+  initdata content for happy/negative relationships so gzip metadata cannot create false
+  differences.
 
 ## Local verification completed
 
@@ -45,7 +48,7 @@ Live rig check on 2026-06-30:
 - Rung-b apply reproduced the CRI-O encrypted-layer blocker: `rung-b-encrypted` stayed `ImagePullBackOff` with kubelet reporting that layer `sha256:346e9...` should be decrypted but the manifest could not be modified because the destination specifies a digest. Trustee logs did not show `resource/default/image-kek/...`, confirming the guest never reached KBS for the image key.
 - Rung-c apply succeeded: `rung-c-signed` reached Ready/Running, Trustee logs showed `security-policy/rung-c` and `sig-public-key/rung-c`, and mirror logs showed the signed image digest pull.
 - Rung-c negative succeeded: `negative-test.sh rung-c` denied `mirror.rig.local:8443/coco/rung-c-unsigned@sha256:4ba374...` as expected and kept `negtest-rung-c` for evidence.
-- Final evidence bundle for this pass: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z` on the bastion. `make validate-rung-bc-evidence` intentionally exits non-zero against this bundle because rung-b is not complete, rung-b negative was not run after the happy-path pre-pull blocker, and `oc logs` is empty for the running rung-c pod even after making the proof marker periodic. `oc exec` into the pod is blocked by policy.
+- Final evidence bundle for this pass: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z` on the bastion. With the current validator, this bundle passes the rung-c happy pod, pod-status app-start, same decoded initdata, Trustee fetch, unsigned image, and denial checks. It still exits non-zero on seven rung-b items: missing rung-b negative image proof-summary row, happy pod Pending, app container not started, missing rung-b negative pod, missing rung-b decoded negative relationship, missing rung-b negative decoded initdata, and missing Trustee fetch for `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`. `oc exec` into the rung-c pod remains blocked by policy.
 
 1. Build and push the rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 
@@ -82,4 +85,4 @@ Live rig check on 2026-06-30:
 
 ## Current blocker
 
-Rig access is confirmed. Rung-c is functionally proven for signed-image policy acceptance and unsigned-image denial, but the evidence validator still records an app-log marker gap because CRI-O/Kata returns empty logs for the running pod and `oc exec` is policy-blocked. Rung-b completion remains blocked on CRI-O host-side pre-pull: the host cannot create a guest-pull placeholder for encrypted layers and fails before the guest can request `image-kek/<uuid>` from KBS.
+Rig access is confirmed. Rung-c is functionally proven for signed-image policy acceptance and unsigned-image denial, with pod-status app-start validation covering the empty-log behavior seen on the rig. Rung-b completion remains blocked on CRI-O host-side pre-pull: the host cannot create a guest-pull placeholder for encrypted layers and fails before the guest can request `image-kek/<uuid>` from KBS.

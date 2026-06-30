@@ -73,6 +73,15 @@ verify_artifact_file_sha256() {
 	[[ "$actual" == "$expected" ]] || die "artifact sha256 mismatch: got $actual expected $expected"
 }
 
+verify_deterministic_initdata_encoding() {
+	local first="$tmpdir/initdata-first.toml" second="$tmpdir/initdata-second.toml" first_encoded second_encoded
+	printf 'algorithm = "sha256"\nversion = "0.1.0"\n' > "$first"
+	cp "$first" "$second"
+	first_encoded="$(bash "$REPO_ROOT/scripts/encode-initdata.sh" encode "$first")"
+	second_encoded="$(bash "$REPO_ROOT/scripts/encode-initdata.sh" encode "$second")"
+	[[ "$first_encoded" == "$second_encoded" ]] || die "initdata encoding should be deterministic for identical TOML"
+}
+
 verify_build_manifest_fingerprints() {
 	local bin="$tmpdir/build-manifest-bin" artifacts="$tmpdir/build-manifest-artifacts" manifest
 	local key_sha pub_sha
@@ -1205,6 +1214,134 @@ rung-c-signed	present	rung-c-signed	workload-test	Running	kata-cc	snp-worker-0	$
 negtest-rung-b	present	negtest-rung-b	workload-test	Pending	kata-cc	snp-worker-0	${rung_b_image}	initdata-c
 negtest-rung-c	present	negtest-rung-c	workload-test	Pending	kata-cc	snp-worker-0	${rung_c_unsigned_image}	initdata-b
 EOF
+	cat > "$evidence/pods/rung-b-encrypted.json" <<EOF
+{
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "${rung_b_image}"
+      }
+    ]
+  },
+  "status": {
+    "phase": "Running",
+    "conditions": [
+      {
+        "type": "Ready",
+        "status": "True"
+      },
+      {
+        "type": "ContainersReady",
+        "status": "True"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "name": "app",
+        "ready": true,
+        "started": true,
+        "state": {
+          "running": {
+            "startedAt": "2026-06-29T00:01:00Z"
+          }
+        }
+      }
+    ]
+  }
+}
+EOF
+	cat > "$evidence/pods/rung-c-signed.json" <<EOF
+{
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "${rung_c_image}"
+      }
+    ]
+  },
+  "status": {
+    "phase": "Running",
+    "conditions": [
+      {
+        "type": "Ready",
+        "status": "True"
+      },
+      {
+        "type": "ContainersReady",
+        "status": "True"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "name": "app",
+        "ready": true,
+        "started": true,
+        "state": {
+          "running": {
+            "startedAt": "2026-06-29T00:01:00Z"
+          }
+        }
+      }
+    ]
+  }
+}
+EOF
+	cat > "$evidence/pods/negtest-rung-b.json" <<EOF
+{
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "${rung_b_image}"
+      }
+    ]
+  },
+  "status": {
+    "phase": "Pending",
+    "containerStatuses": [
+      {
+        "name": "app",
+        "ready": false,
+        "started": false,
+        "state": {
+          "waiting": {
+            "reason": "CreateContainerError"
+          }
+        }
+      }
+    ]
+  }
+}
+EOF
+	cat > "$evidence/pods/negtest-rung-c.json" <<EOF
+{
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "${rung_c_unsigned_image}"
+      }
+    ]
+  },
+  "status": {
+    "phase": "Pending",
+    "containerStatuses": [
+      {
+        "name": "app",
+        "ready": false,
+        "started": false,
+        "state": {
+          "waiting": {
+            "reason": "CreateContainerError"
+          }
+        }
+      }
+    ]
+  }
+}
+EOF
 	cat > "$evidence/pods/rung-b-encrypted.logs.txt" <<'EOF'
 app rung-b: encrypted image decrypted and running
 EOF
@@ -1283,6 +1420,7 @@ verify_evidence_validation_gate() {
 	local broken_decoded_initdata="$tmpdir/broken-decoded-initdata-evidence" decoded_initdata_err="$tmpdir/validate-decoded-initdata-evidence.err"
 	local broken_kbs_url="$tmpdir/broken-kbs-url-evidence" kbs_url_err="$tmpdir/validate-kbs-url-evidence.err"
 	local broken_app_log="$tmpdir/broken-app-log-evidence" app_log_err="$tmpdir/validate-app-log-evidence.err"
+	local status_app_start="$tmpdir/status-app-start-evidence" status_app_start_out="$tmpdir/validate-status-app-start-evidence.out"
 	local custom_app_log="$tmpdir/custom-app-log-evidence" custom_app_log_out="$tmpdir/validate-custom-app-log-evidence.out"
 	local custom_pods="$tmpdir/custom-pods-evidence" custom_pods_out="$tmpdir/validate-custom-pods-evidence.out"
 	local custom_key_id="$tmpdir/custom-key-id-evidence" custom_key_id_out="$tmpdir/validate-custom-key-id-evidence.out"
@@ -1290,6 +1428,13 @@ verify_evidence_validation_gate() {
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
+
+	cp -R "$evidence" "$status_app_start"
+	printf '$ oc -n workload-test logs pod/rung-b-encrypted --all-containers --prefix=true --tail=200\n' > "$status_app_start/pods/rung-b-encrypted.logs.txt"
+	printf '$ oc -n workload-test logs pod/rung-c-signed --all-containers --prefix=true --tail=200\n' > "$status_app_start/pods/rung-c-signed.logs.txt"
+	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$status_app_start" > "$status_app_start_out"
+	expect_grep "rung-b app start proven by pod status" "$status_app_start_out" "status-based rung-b app-start validation"
+	expect_grep "rung-c app start proven by pod status" "$status_app_start_out" "status-based rung-c app-start validation"
 
 	cp -R "$evidence" "$custom_app_log"
 	sed -i \
@@ -1396,22 +1541,18 @@ verify_evidence_validation_gate() {
 	expect_grep "mirror logs missing coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$digest_err" "evidence validator mirror digest failure"
 
 	cp -R "$evidence" "$broken_b_initdata"
-	awk -F '\t' 'BEGIN { OFS = FS } $1 == "negtest-rung-b" { $9 = "initdata-a" } { print }' \
-		"$broken_b_initdata/pods/summary.tsv" > "$broken_b_initdata/pods/summary.tsv.tmp"
-	mv "$broken_b_initdata/pods/summary.tsv.tmp" "$broken_b_initdata/pods/summary.tsv"
+	cp "$broken_b_initdata/pods/rung-b-encrypted.initdata.toml" "$broken_b_initdata/pods/negtest-rung-b.initdata.toml"
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_b_initdata" > /dev/null 2> "$b_initdata_err"; then
-		die "evidence validator accepted an unchanged rung-b negative initdata hash"
+		die "evidence validator accepted an unchanged rung-b negative decoded initdata"
 	fi
-	expect_grep "rung-b negative initdata hash matches happy initdata hash" "$b_initdata_err" "evidence validator rung-b initdata failure"
+	expect_grep "rung-b negative decoded initdata matches happy decoded initdata" "$b_initdata_err" "evidence validator rung-b initdata failure"
 
 	cp -R "$evidence" "$broken_c_initdata"
-	awk -F '\t' 'BEGIN { OFS = FS } $1 == "negtest-rung-c" { $9 = "initdata-z" } { print }' \
-		"$broken_c_initdata/pods/summary.tsv" > "$broken_c_initdata/pods/summary.tsv.tmp"
-	mv "$broken_c_initdata/pods/summary.tsv.tmp" "$broken_c_initdata/pods/summary.tsv"
+	printf '\n# unexpected policy mutation\n' >> "$broken_c_initdata/pods/negtest-rung-c.initdata.toml"
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_c_initdata" > /dev/null 2> "$c_initdata_err"; then
-		die "evidence validator accepted a changed rung-c negative initdata hash"
+		die "evidence validator accepted a changed rung-c negative decoded initdata"
 	fi
-	expect_grep "rung-c negative initdata hash differs from happy initdata hash" "$c_initdata_err" "evidence validator rung-c initdata failure"
+	expect_grep "rung-c negative decoded initdata differs from happy decoded initdata" "$c_initdata_err" "evidence validator rung-c initdata failure"
 
 	cp -R "$evidence" "$broken_decoded_initdata"
 	sed -i 's#kbs:///default/security-policy/rung-c#kbs:///default/security-policy/test#' \
@@ -1431,10 +1572,31 @@ verify_evidence_validation_gate() {
 
 	cp -R "$evidence" "$broken_app_log"
 	printf 'app started without expected proof marker\n' > "$broken_app_log/pods/rung-b-encrypted.logs.txt"
+	jq '
+		.status.phase = "Pending" |
+		.status.conditions = [
+			{
+				"type": "Ready",
+				"status": "False"
+			},
+			{
+				"type": "ContainersReady",
+				"status": "False"
+			}
+		] |
+		.status.containerStatuses[0].ready = false |
+		.status.containerStatuses[0].started = false |
+		.status.containerStatuses[0].state = {
+			"waiting": {
+				"reason": "ImagePullBackOff"
+			}
+		}
+	' "$broken_app_log/pods/rung-b-encrypted.json" > "$broken_app_log/pods/rung-b-encrypted.json.tmp"
+	mv "$broken_app_log/pods/rung-b-encrypted.json.tmp" "$broken_app_log/pods/rung-b-encrypted.json"
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_app_log" > /dev/null 2> "$app_log_err"; then
 		die "evidence validator accepted a missing rung-b app log marker"
 	fi
-	expect_grep "rung-b app log marker missing" "$app_log_err" "evidence validator app-log failure"
+	expect_grep "rung-b app start evidence missing" "$app_log_err" "evidence validator app-start failure"
 }
 
 verify_evidence_validation_make_env() {
@@ -1659,6 +1821,7 @@ expect_digest_ref "mirror.rig.local:8443/coco/rung-b:encrypted" "$digest" "mirro
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.local:8443/coco/rung-b@$digest"
 verify_artifact_file_sha256
+verify_deterministic_initdata_encoding
 verify_build_manifest_fingerprints
 verify_apply_requires_digest_refs
 verify_rung_b_key_size_guard

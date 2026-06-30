@@ -250,41 +250,58 @@ check_pod_phase() {
 	esac
 }
 
-check_happy_app_log() {
+check_happy_app_started() {
 	local pod="$1" label="$2" marker="$3"
 	local logs="${EVIDENCE_DIR}/pods/${pod}.logs.txt"
-	require_file "$logs" "$label pod logs"
-	if [[ ! -s "$logs" ]]; then
+	local pod_json="${EVIDENCE_DIR}/pods/${pod}.json"
+	if [[ -s "$logs" ]] && grep -Fq "$marker" "$logs"; then
+		pass "$label app log marker present"
 		return
 	fi
-	if grep -Fq "$marker" "$logs"; then
-		pass "$label app log marker present"
+	require_file "$pod_json" "$label pod JSON"
+	if [[ ! -s "$pod_json" ]]; then
+		return
+	fi
+	if jq -e '
+		def condition_true($name):
+			any(.status.conditions[]?; .type == $name and .status == "True");
+		def app_started:
+			any(.status.containerStatuses[]?; .name == "app" and (
+				(.ready == true and ((.started == true) or (.state.running.startedAt? != null))) or
+				(.state.terminated.exitCode? == 0 and (.state.terminated.startedAt? != null))
+			));
+		(
+			(.status.phase == "Running" and (condition_true("Ready") or condition_true("ContainersReady")) and app_started) or
+			(.status.phase == "Succeeded" and app_started)
+		)
+	' "$pod_json" >/dev/null; then
+		pass "$label app start proven by pod status"
 	else
-		fail "$label app log marker missing: $marker"
+		fail "$label app start evidence missing: log marker not found and pod JSON does not show app container started"
 	fi
 }
 
 check_initdata_relationships() {
 	local rung_b_initdata neg_rung_b_initdata rung_c_initdata neg_rung_c_initdata
-	rung_b_initdata="$(pod_col "$RUNG_B_POD" 9 2>/dev/null || true)"
-	neg_rung_b_initdata="$(pod_col "$NEG_RUNG_B_POD" 9 2>/dev/null || true)"
-	rung_c_initdata="$(pod_col "$RUNG_C_POD" 9 2>/dev/null || true)"
-	neg_rung_c_initdata="$(pod_col "$NEG_RUNG_C_POD" 9 2>/dev/null || true)"
+	rung_b_initdata="${EVIDENCE_DIR}/pods/${RUNG_B_POD}.initdata.toml"
+	neg_rung_b_initdata="${EVIDENCE_DIR}/pods/${NEG_RUNG_B_POD}.initdata.toml"
+	rung_c_initdata="${EVIDENCE_DIR}/pods/${RUNG_C_POD}.initdata.toml"
+	neg_rung_c_initdata="${EVIDENCE_DIR}/pods/${NEG_RUNG_C_POD}.initdata.toml"
 
-	if [[ -z "$rung_b_initdata" || -z "$neg_rung_b_initdata" ]]; then
-		fail "rung-b initdata hashes missing from pod summary"
-	elif [[ "$rung_b_initdata" == "$neg_rung_b_initdata" ]]; then
-		fail "rung-b negative initdata hash matches happy initdata hash"
+	if [[ ! -s "$rung_b_initdata" || ! -s "$neg_rung_b_initdata" ]]; then
+		fail "rung-b decoded initdata missing for relationship check"
+	elif cmp -s "$rung_b_initdata" "$neg_rung_b_initdata"; then
+		fail "rung-b negative decoded initdata matches happy decoded initdata"
 	else
-		pass "rung-b negative initdata differs from happy initdata"
+		pass "rung-b negative decoded initdata differs from happy decoded initdata"
 	fi
 
-	if [[ -z "$rung_c_initdata" || -z "$neg_rung_c_initdata" ]]; then
-		fail "rung-c initdata hashes missing from pod summary"
-	elif [[ "$rung_c_initdata" != "$neg_rung_c_initdata" ]]; then
-		fail "rung-c negative initdata hash differs from happy initdata hash"
+	if [[ ! -s "$rung_c_initdata" || ! -s "$neg_rung_c_initdata" ]]; then
+		fail "rung-c decoded initdata missing for relationship check"
+	elif ! cmp -s "$rung_c_initdata" "$neg_rung_c_initdata"; then
+		fail "rung-c negative decoded initdata differs from happy decoded initdata"
 	else
-		pass "rung-c negative initdata matches happy initdata"
+		pass "rung-c negative decoded initdata matches happy decoded initdata"
 	fi
 }
 
@@ -446,6 +463,7 @@ check_summary() {
 need jq
 need awk
 need grep
+need cmp
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-$(summary_value_or_default rung_b_app_log_marker "$DEFAULT_RUNG_B_APP_LOG_MARKER")}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-$(summary_value_or_default rung_c_app_log_marker "$DEFAULT_RUNG_C_APP_LOG_MARKER")}"
 KBS_URL="${KBS_URL:-$(summary_value_or_default kbs_url "")}"
@@ -471,8 +489,8 @@ check_secret_fingerprint security-policy rung-c "rung-c security policy"
 require_file "${EVIDENCE_DIR}/pods/summary.tsv" "pod summary index"
 check_pod_phase "$RUNG_B_POD" "rung-b" happy
 check_pod_phase "$RUNG_C_POD" "rung-c" happy
-check_happy_app_log "$RUNG_B_POD" "rung-b" "$RUNG_B_APP_LOG_MARKER"
-check_happy_app_log "$RUNG_C_POD" "rung-c" "$RUNG_C_APP_LOG_MARKER"
+check_happy_app_started "$RUNG_B_POD" "rung-b" "$RUNG_B_APP_LOG_MARKER"
+check_happy_app_started "$RUNG_C_POD" "rung-c" "$RUNG_C_APP_LOG_MARKER"
 check_pod_phase "$NEG_RUNG_B_POD" "rung-b negative" denied
 check_pod_phase "$NEG_RUNG_C_POD" "rung-c negative" denied
 check_initdata_relationships

@@ -21,7 +21,7 @@ case "$MODE" in
       echo "REFUSING: $ARG still has __KBS_URL__/__TRUSTEE_CA_PEM__ placeholders — fill them first." >&2
       exit 3
     fi
-    gzip -c "$ARG" | base64 -w0; echo
+    gzip -n -c "$ARG" | base64 -w0; echo
     ;;
   decode)
     [ -n "$ARG" ] || { echo "usage: $0 decode <annotation-value|-> (use - to read stdin)" >&2; exit 2; }
