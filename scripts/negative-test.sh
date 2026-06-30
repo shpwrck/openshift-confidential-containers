@@ -116,8 +116,17 @@ render_or_skip() { # render_or_skip <label> <output-file> <command...>
 }
 
 run_rung_a() {
-  echo "[rung-a] secret release — tamper so attestation cannot succeed → secret withheld"
+  echo "[rung-a] secret release — tamper measured initdata (HOST_DATA) so attestation is not affirmed → secret withheld"
   local manifest
+  # The init-data tamper only DENIES if a RESTRICTIVE attestation policy gates the configuration
+  # claim on init_data/HOST_DATA. The base policy is permissive by design (attestation-policy:
+  # `default configuration := 2` with no init_data check; resource-policy: `allow := true`), so the
+  # tamper changes HOST_DATA but nothing gates on it → attestation still affirms → the pod RUNS.
+  # Skip honestly (not a false sign-off FAIL) until the restrictive Step-5/6 policy is applied.
+  if ! oc -n "$TRUSTEE_NS" get configmap attestation-policy -o jsonpath='{.data.default_cpu\.rego}' 2>/dev/null | grep -q 'init_data'; then
+    skipt "rung-a: attestation-policy does not gate on init_data (permissive base) — apply the restrictive measured-initdata policy (make render-rung-b-measurement-policy / Step 5-6) before this negative, or use WHICH=air-gap which denies via a wrong VCEK against the base policy"
+    return
+  fi
   manifest="$(mktemp)"
   if ! render_or_skip "rung-a negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
