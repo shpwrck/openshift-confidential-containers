@@ -984,6 +984,10 @@ verify_evidence_summary_provenance() {
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		PODS="rung-a rung-b" \
+		RUNG_B_POD="custom-rung-b" \
+		RUNG_C_POD="custom-rung-c" \
+		NEG_RUNG_B_POD="custom-neg-rung-b" \
+		NEG_RUNG_C_POD="custom-neg-rung-c" \
 		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		MIRROR_LOG_FILES="/tmp/mirror.log" \
@@ -997,6 +1001,10 @@ verify_evidence_summary_provenance() {
 	expect_grep "repo_git_head=" "$summary" "evidence summary git head"
 	expect_grep "repo_git_branch=" "$summary" "evidence summary git branch"
 	expect_grep "repo_git_dirty=" "$summary" "evidence summary dirty state"
+	expect_grep "rung_b_pod=custom-rung-b" "$summary" "evidence summary rung-b pod role"
+	expect_grep "rung_c_pod=custom-rung-c" "$summary" "evidence summary rung-c pod role"
+	expect_grep "neg_rung_b_pod=custom-neg-rung-b" "$summary" "evidence summary negative rung-b pod role"
+	expect_grep "neg_rung_c_pod=custom-neg-rung-c" "$summary" "evidence summary negative rung-c pod role"
 	expect_grep "rung_b_app_log_marker=custom rung-b proof marker" "$summary" "evidence summary rung-b app marker"
 	expect_grep "rung_c_app_log_marker=custom rung-c proof marker" "$summary" "evidence summary rung-c app marker"
 	expect_grep "tool_oc=" "$summary" "evidence summary oc path"
@@ -1113,6 +1121,10 @@ namespace=workload-test
 trustee_namespace=trustee-test
 kbs_url=http://kbs.trustee-test.svc:8080
 repo_git_dirty=false
+rung_b_pod=rung-b-encrypted
+rung_c_pod=rung-c-signed
+neg_rung_b_pod=negtest-rung-b
+neg_rung_c_pod=negtest-rung-c
 rung_b_app_log_marker=rung-b: encrypted image decrypted and running
 rung_c_app_log_marker=rung-c: signed image accepted and running
 EOF
@@ -1228,6 +1240,7 @@ verify_evidence_validation_gate() {
 	local broken_kbs_url="$tmpdir/broken-kbs-url-evidence" kbs_url_err="$tmpdir/validate-kbs-url-evidence.err"
 	local broken_app_log="$tmpdir/broken-app-log-evidence" app_log_err="$tmpdir/validate-app-log-evidence.err"
 	local custom_app_log="$tmpdir/custom-app-log-evidence" custom_app_log_out="$tmpdir/validate-custom-app-log-evidence.out"
+	local custom_pods="$tmpdir/custom-pods-evidence" custom_pods_out="$tmpdir/validate-custom-pods-evidence.out"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
@@ -1241,6 +1254,34 @@ verify_evidence_validation_gate() {
 	printf 'app custom rung-c proof marker\n' > "$custom_app_log/pods/rung-c-signed.logs.txt"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$custom_app_log" > "$custom_app_log_out"
 	expect_grep "Rung b/c evidence validation OK." "$custom_app_log_out" "summary app marker validation"
+
+	cp -R "$evidence" "$custom_pods"
+	mv "$custom_pods/pods/rung-b-encrypted.logs.txt" "$custom_pods/pods/custom-rung-b.logs.txt"
+	mv "$custom_pods/pods/rung-c-signed.logs.txt" "$custom_pods/pods/custom-rung-c.logs.txt"
+	mv "$custom_pods/pods/rung-b-encrypted.initdata.toml" "$custom_pods/pods/custom-rung-b.initdata.toml"
+	mv "$custom_pods/pods/rung-c-signed.initdata.toml" "$custom_pods/pods/custom-rung-c.initdata.toml"
+	mv "$custom_pods/pods/negtest-rung-b.initdata.toml" "$custom_pods/pods/custom-neg-rung-b.initdata.toml"
+	mv "$custom_pods/pods/negtest-rung-c.initdata.toml" "$custom_pods/pods/custom-neg-rung-c.initdata.toml"
+	mv "$custom_pods/pods/rung-b-encrypted.initdata.decode.err" "$custom_pods/pods/custom-rung-b.initdata.decode.err"
+	mv "$custom_pods/pods/rung-c-signed.initdata.decode.err" "$custom_pods/pods/custom-rung-c.initdata.decode.err"
+	mv "$custom_pods/pods/negtest-rung-b.initdata.decode.err" "$custom_pods/pods/custom-neg-rung-b.initdata.decode.err"
+	mv "$custom_pods/pods/negtest-rung-c.initdata.decode.err" "$custom_pods/pods/custom-neg-rung-c.initdata.decode.err"
+	mv "$custom_pods/pods/negtest-rung-b.describe.txt" "$custom_pods/pods/custom-neg-rung-b.describe.txt"
+	mv "$custom_pods/pods/negtest-rung-c.describe.txt" "$custom_pods/pods/custom-neg-rung-c.describe.txt"
+	sed -i \
+		-e 's/^rung_b_pod=.*/rung_b_pod=custom-rung-b/' \
+		-e 's/^rung_c_pod=.*/rung_c_pod=custom-rung-c/' \
+		-e 's/^neg_rung_b_pod=.*/neg_rung_b_pod=custom-neg-rung-b/' \
+		-e 's/^neg_rung_c_pod=.*/neg_rung_c_pod=custom-neg-rung-c/' \
+		"$custom_pods/summary.env"
+	sed -i \
+		-e 's/rung-b-encrypted/custom-rung-b/g' \
+		-e 's/rung-c-signed/custom-rung-c/g' \
+		-e 's/negtest-rung-b/custom-neg-rung-b/g' \
+		-e 's/negtest-rung-c/custom-neg-rung-c/g' \
+		"$custom_pods/pods/summary.tsv"
+	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$custom_pods" > "$custom_pods_out"
+	expect_grep "Rung b/c evidence validation OK." "$custom_pods_out" "summary pod-role validation"
 
 	cp -R "$evidence" "$broken"
 	awk -F '\t' 'BEGIN { OFS = FS } $1 == "rung_c_happy_image" { $4 = "mismatch" } { print }' \

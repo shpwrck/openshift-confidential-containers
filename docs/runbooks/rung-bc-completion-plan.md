@@ -388,11 +388,13 @@ git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`
 `negtest-rung-a`, `negtest-rung-b`, `negtest-rung-c`, and `negtest-air-gap`; override with
 `EVIDENCE_PODS="..."` when a rig run uses custom pod names. If the rung-b/c pod names change,
 also set `RUNG_B_POD`, `RUNG_C_POD`, `NEG_RUNG_B_POD`, and `NEG_RUNG_C_POD` so
-`rung-bc-proof-summary.tsv` can correlate the right pod JSON files. If the proof image emits
-custom success text, set `RUNG_B_APP_LOG_MARKER` or `RUNG_C_APP_LOG_MARKER` before running
-`make collect-rung-bc-evidence`, `make validate-rung-bc-evidence`, or `make prove-rung-bc`;
-the collector records those marker values in `summary.env` so the bundle can be validated
-offline later without repeating the overrides. The bundle includes pod
+`rung-bc-proof-summary.tsv` can correlate the right pod JSON files. The collector records
+those pod role names in `summary.env`, and the validator reuses them when explicit overrides
+are not provided, so a custom-named bundle remains self-describing offline. If the proof image
+emits custom success text, set `RUNG_B_APP_LOG_MARKER` or `RUNG_C_APP_LOG_MARKER` before
+running `make collect-rung-bc-evidence`, `make validate-rung-bc-evidence`, or
+`make prove-rung-bc`; the collector records those marker values in `summary.env` so the
+bundle can be validated offline later without repeating the overrides. The bundle includes pod
 YAML/describe/logs, per-pod summary TSVs, decoded initdata, recent Trustee logs, events,
 KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
 Secret metadata plus data-key names and decoded byte lengths, redacted `vcek-*` Secret

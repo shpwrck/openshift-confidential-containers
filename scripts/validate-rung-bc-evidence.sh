@@ -3,10 +3,14 @@
 set -euo pipefail
 
 EVIDENCE_DIR="${1:-${EVIDENCE_DIR:-}}"
-RUNG_B_POD="${RUNG_B_POD:-rung-b-encrypted}"
-RUNG_C_POD="${RUNG_C_POD:-rung-c-signed}"
-NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-negtest-rung-b}"
-NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
+DEFAULT_RUNG_B_POD="rung-b-encrypted"
+DEFAULT_RUNG_C_POD="rung-c-signed"
+DEFAULT_NEG_RUNG_B_POD="negtest-rung-b"
+DEFAULT_NEG_RUNG_C_POD="negtest-rung-c"
+RUNG_B_POD="${RUNG_B_POD:-}"
+RUNG_C_POD="${RUNG_C_POD:-}"
+NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-}"
+NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-}"
 DEFAULT_RUNG_B_APP_LOG_MARKER="rung-b: encrypted image decrypted and running"
 DEFAULT_RUNG_C_APP_LOG_MARKER="rung-c: signed image accepted and running"
 RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
@@ -396,6 +400,10 @@ need grep
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-$(summary_value_or_default rung_b_app_log_marker "$DEFAULT_RUNG_B_APP_LOG_MARKER")}"
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-$(summary_value_or_default rung_c_app_log_marker "$DEFAULT_RUNG_C_APP_LOG_MARKER")}"
 KBS_URL="${KBS_URL:-$(summary_value_or_default kbs_url "")}"
+RUNG_B_POD="${RUNG_B_POD:-$(summary_value_or_default rung_b_pod "$DEFAULT_RUNG_B_POD")}"
+RUNG_C_POD="${RUNG_C_POD:-$(summary_value_or_default rung_c_pod "$DEFAULT_RUNG_C_POD")}"
+NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-$(summary_value_or_default neg_rung_b_pod "$DEFAULT_NEG_RUNG_B_POD")}"
+NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-$(summary_value_or_default neg_rung_c_pod "$DEFAULT_NEG_RUNG_C_POD")}"
 
 check_summary
 check_manifest
