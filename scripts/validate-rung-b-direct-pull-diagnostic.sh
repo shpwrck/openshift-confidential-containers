@@ -96,6 +96,18 @@ check_expected_value() {
 	fi
 }
 
+check_summary_count_matches() {
+	local key="$1" expected="$2" label="$3" actual
+	actual="$(summary_value "$key" 2>/dev/null || true)"
+	if [[ ! "$actual" =~ ^[0-9]+$ ]]; then
+		fail "summary.env missing numeric $key"
+	elif [[ "$actual" == "$expected" ]]; then
+		pass "summary.env $key matches mirror summary ($expected)"
+	else
+		fail "summary.env $key is $actual, expected $expected from mirror summary for $label"
+	fi
+}
+
 check_summary() {
 	local phase image key_id key_resource mirror_since crio_since
 	require_file "${DIAG_DIR}/summary.env" "diagnostic summary"
@@ -227,18 +239,10 @@ check_mirror_summary() {
 		fail "mirror summary guest rung-b blob count is ${guest_blob:-missing}, expected 0"
 	fi
 
-	for key in \
-		mirror_crio_rung_b_manifest_count \
-		mirror_crio_rung_b_blob_count \
-		mirror_guest_rung_b_manifest_count \
-		mirror_guest_rung_b_blob_count; do
-		value="$(summary_value "$key" 2>/dev/null || true)"
-		if is_nonnegative_int "$value"; then
-			pass "summary.env records $key"
-		else
-			fail "summary.env missing numeric $key"
-		fi
-	done
+	check_summary_count_matches mirror_crio_rung_b_manifest_count "$crio_manifest" "CRI-O manifest pulls"
+	check_summary_count_matches mirror_crio_rung_b_blob_count "$crio_blob" "CRI-O blob pulls"
+	check_summary_count_matches mirror_guest_rung_b_manifest_count "$guest_manifest" "guest manifest pulls"
+	check_summary_count_matches mirror_guest_rung_b_blob_count "$guest_blob" "guest blob pulls"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then

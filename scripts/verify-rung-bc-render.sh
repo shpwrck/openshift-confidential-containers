@@ -2449,6 +2449,7 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local broken_key="$tmpdir/broken-direct-pull-key" key_err="$tmpdir/validate-direct-pull-key.err"
 	local broken_mirror_window="$tmpdir/broken-direct-pull-mirror-window" mirror_window_err="$tmpdir/validate-direct-pull-mirror-window.err"
 	local broken_crio_window="$tmpdir/broken-direct-pull-crio-window" crio_window_err="$tmpdir/validate-direct-pull-crio-window.err"
+	local broken_count="$tmpdir/broken-direct-pull-count" count_err="$tmpdir/validate-direct-pull-count.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
@@ -2496,6 +2497,13 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 		die "direct-pull diagnostic validator accepted an image-key request"
 	fi
 	expect_grep "Trustee image-key request signal is 1, expected 0" "$key_err" "direct-pull diagnostic image-key failure"
+
+	cp -R "$diag" "$broken_count"
+	sed -i 's/^mirror_crio_rung_b_manifest_count=16$/mirror_crio_rung_b_manifest_count=15/' "$broken_count/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_count" > /dev/null 2> "$count_err"; then
+		die "direct-pull diagnostic validator accepted mismatched mirror counts"
+	fi
+	expect_grep "summary.env mirror_crio_rung_b_manifest_count is 15, expected 16 from mirror summary" "$count_err" "direct-pull diagnostic mirror count mismatch"
 }
 
 verify_evidence_validation_make_env() {

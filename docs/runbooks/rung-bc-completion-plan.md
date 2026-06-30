@@ -439,8 +439,10 @@ CRI-O-versus-guest rung-b manifest/blob pull counts. Before attaching a diagnost
 run
 `make validate-rung-b-direct-pull DIAG_DIR=<rung-b-direct-pull-dir>` to verify the known blocker,
 absence of Trustee image-key requests, bounded CRI-O and mirror-log capture, and mirror-count
-shape. Use `REQUIRE_MIRROR_SUMMARY=0` only for older diagnostic bundles collected before mirror
-summaries and current log-window metadata existed.
+shape. The validator also requires the mirror-count fields in `summary.env` to match
+`mirror/summary.tsv`, so the compact diagnostic evidence stays internally consistent. Use
+`REQUIRE_MIRROR_SUMMARY=0` only for older diagnostic bundles collected before mirror summaries and
+current log-window metadata existed.
 
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.

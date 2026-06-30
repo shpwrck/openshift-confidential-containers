@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T12:17:24Z
+Last updated: 2026-06-30T12:22:11Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest proof-tooling checkpoint verified on the rig: `1189cb3` (`make prove-rung-c` passed and
@@ -100,8 +100,10 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   before any Trustee image-key request.
 - `make validate-rung-b-direct-pull DIAG_DIR=<bundle>` now validates those direct-pull diagnostic
   bundles offline, including known-blocker classification, no Trustee image-key request, and the
-  compact mirror-count shape when `mirror/summary.tsv` is present. Current diagnostic bundles also
-  record bounded CRI-O and mirror-log collection in `summary.env`; the Make target forwards
+  compact mirror-count shape when `mirror/summary.tsv` is present. It also cross-checks the
+  mirror-count fields in `summary.env` against `mirror/summary.tsv`, so contradictory compact
+  evidence fails validation before the bundle is attached upstream. Current diagnostic bundles
+  also record bounded CRI-O and mirror-log collection in `summary.env`; the Make target forwards
   `REQUIRE_MIRROR_SUMMARY=0` explicitly for older bundles collected before mirror summaries and
   current log-window metadata existed, and current bundles should keep the strict default.
 - `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
