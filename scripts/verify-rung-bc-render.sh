@@ -1687,6 +1687,7 @@ verify_evidence_summary_provenance() {
 		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
+		PROOF_SCOPE="rung-c" \
 		PODS="rung-a rung-b" \
 		RUNG_B_POD="custom-rung-b" \
 		RUNG_C_POD="custom-rung-c" \
@@ -1704,6 +1705,7 @@ verify_evidence_summary_provenance() {
 	expect_grep "namespace=workload-test" "$summary" "evidence summary workload namespace"
 	expect_grep "trustee_namespace=trustee-test" "$summary" "evidence summary Trustee namespace"
 	expect_grep "kbs_url=http://kbs.trustee-test.svc:8080" "$summary" "evidence summary KBS URL"
+	expect_grep "proof_scope=rung-c" "$summary" "evidence summary proof scope"
 	expect_grep "rung_b_key_id=kbs:///default/custom-image-key/rung-b" "$summary" "evidence summary rung-b key ID"
 	expect_grep "rung_b_policy_uri=kbs:///custom/security-policy/rung-b" "$summary" "evidence summary rung-b policy URI"
 	expect_grep "rung_c_policy_uri=kbs:///custom/security-policy/rung-c" "$summary" "evidence summary rung-c policy URI"
@@ -1866,6 +1868,7 @@ captured_at_utc=2026-06-29T00:00:00Z
 namespace=workload-test
 trustee_namespace=trustee-test
 kbs_url=http://kbs.trustee-test.svc:8080
+proof_scope=all
 rung_b_key_id=kbs:///default/image-key/rung-b
 rung_b_policy_uri=kbs:///default/security-policy/test
 rung_c_policy_uri=kbs:///default/security-policy/rung-c
@@ -2150,6 +2153,7 @@ verify_evidence_validation_gate() {
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
 
 	cp -R "$evidence" "$rung_c_only"
+	sed -i 's/^proof_scope=all$/proof_scope=rung-c/' "$rung_c_only/summary.env"
 	awk -F '\t' '$1 !~ /^rung_b_/ { print }' \
 		"$rung_c_only/rung-bc-proof-summary.tsv" > "$rung_c_only/rung-bc-proof-summary.tsv.tmp"
 	mv "$rung_c_only/rung-bc-proof-summary.tsv.tmp" "$rung_c_only/rung-bc-proof-summary.tsv"
@@ -2162,7 +2166,7 @@ verify_evidence_validation_gate() {
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$rung_c_only" > /dev/null 2> "$rung_c_only_full_err"; then
 		die "full evidence validator accepted a rung-c-only bundle"
 	fi
-	expect_grep "rung-bc proof summary missing required row: rung_b_key_secret_sha256" "$rung_c_only_full_err" "rung-c-only full validation failure"
+	expect_grep "evidence proof scope is rung-c, but full rung-b/c validation requires all" "$rung_c_only_full_err" "rung-c-only proof scope full validation failure"
 
 	cp -R "$rung_c_only" "$broken_rung_c_crio"
 	sed -i 's#coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#coco/carrier@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#g' \
@@ -2572,10 +2576,10 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tRUNG_B_KEY_FILE=%s\tRUNG_C_COSIGN_PUB=%s\tRUNG_BC_IMAGES_MANIFEST=%s\tREQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\tCOSIGN_VERIFY_ARGS=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\tVALIDATION_SCOPE=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tPROOF_SCOPE=%s\tRUNG_B_KEY_ID=%s\tRUNG_B_KEY_FILE=%s\tRUNG_C_COSIGN_PUB=%s\tRUNG_BC_IMAGES_MANIFEST=%s\tREQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\tCOSIGN_VERIFY_ARGS=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\tVALIDATION_SCOPE=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
-	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${RUNG_B_KEY_FILE:-}" \
+	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${PROOF_SCOPE:-}" "${RUNG_B_KEY_ID:-}" "${RUNG_B_KEY_FILE:-}" \
 	"${RUNG_C_COSIGN_PUB:-}" "${RUNG_BC_IMAGES_MANIFEST:-}" "${REQUIRE_RUNG_BC_IMAGES_MANIFEST:-}" \
 	"${COSIGN_VERIFY_ARGS:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
 	"${RUNG_B_POLICY_URI:-}" "${RUNG_C_POLICY_URI:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
@@ -2671,6 +2675,7 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "NS=workload-test" "$log" "prove-rung-bc workload namespace"
 	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-bc Trustee namespace"
 	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$log" "prove-rung-bc KBS URL"
+	expect_grep "PROOF_SCOPE=all" "$log" "prove-rung-bc proof scope"
 	expect_grep "RUNG_B_KEY_ID=kbs:///default/custom-image-key/rung-b" "$log" "prove-rung-bc rung-b key ID"
 	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-b" "$log" "prove-rung-bc apply rung-b policy URI"
 	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-c" "$log" "prove-rung-bc apply rung-c policy URI"
@@ -2844,6 +2849,7 @@ verify_prove_rung_c_workflow() {
 	expect_grep "NS=workload-test" "$log" "prove-rung-c workload namespace"
 	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-c Trustee namespace"
 	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$log" "prove-rung-c KBS URL"
+	expect_grep "PROOF_SCOPE=rung-c" "$log" "prove-rung-c proof scope"
 	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-c" "$log" "prove-rung-c apply rung-c policy URI"
 	expect_grep "RUNG_B_KEY_ID=kbs:///default/custom-image-key/rung-b" "$log" "prove-rung-c collected rung-b key ID provenance"
 	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$log" "prove-rung-c collected rung-b policy provenance"
@@ -2921,6 +2927,7 @@ EOF
 	expect_grep "RUNG_BC_IMAGES_MANIFEST=$artifacts/rung-bc-images.json" "$log" "prove-rung-c artifact env image manifest"
 	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$log" "prove-rung-c artifact env requires image manifest"
 	expect_grep "apply-c-rung-c-env	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$artifacts/evidence-rung-c-proof-" "$log" "prove-rung-c artifact env apply-c step"
+	expect_grep "PROOF_SCOPE=rung-c" "$log" "prove-rung-c artifact env proof scope"
 	expect_grep "VALIDATION_SCOPE=rung-c" "$log" "prove-rung-c artifact env scoped validation"
 	if ! grep -Eq 'collect-evidence-rung-c-env.*TRUSTEE_LOG_SINCE_TIME=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' "$log"; then
 		die "prove-rung-c did not default Trustee log since-time for evidence collection"

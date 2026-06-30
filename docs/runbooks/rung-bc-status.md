@@ -48,6 +48,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   proof: strict signature/manifest preflight, signed happy pod, unsigned denial pod, bounded
   evidence collection, and `VALIDATION_SCOPE=rung-c` validation.
 - Evidence bundles record non-secret provenance in `summary.env`, including repo revision, branch, dirty state, KBS URL, policy URIs, pod role names, and app log markers.
+- Evidence bundles now record `proof_scope`; new scoped rung-c bundles carry `proof_scope=rung-c`,
+  while full b/c proof bundles carry `proof_scope=all`. Full validation rejects a scoped bundle
+  before it can be mistaken for final b/c promotion evidence.
 - `make prove-rung-bc` now records the proof start time and collects Trustee, CRI-O, and mirror
   logs with proof-window bounds. Final validation rejects unbounded Trustee, CRI-O, or mirror
   logs so stale KBS resource fetches, stale CRI-O sources, or stale registry pulls cannot satisfy

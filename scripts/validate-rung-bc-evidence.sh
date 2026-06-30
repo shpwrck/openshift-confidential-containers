@@ -559,11 +559,29 @@ check_crio_logs() {
 }
 
 check_summary() {
-	local summary="${EVIDENCE_DIR}/summary.env" dirty trustee_since crio_since mirror_since
+	local summary="${EVIDENCE_DIR}/summary.env" dirty proof_scope trustee_since crio_since mirror_since
 	require_file "$summary" "evidence summary"
 	if [[ ! -s "$summary" ]]; then
 		return
 	fi
+	proof_scope="$(summary_value proof_scope 2>/dev/null || true)"
+	case "$proof_scope" in
+		"")
+			;;
+		all)
+			pass "evidence proof scope is all"
+			;;
+		rung-c)
+			if [[ "$VALIDATION_SCOPE" == "all" ]]; then
+				fail "evidence proof scope is rung-c, but full rung-b/c validation requires all"
+			else
+				pass "evidence proof scope is rung-c"
+			fi
+			;;
+		*)
+			fail "evidence proof_scope is invalid: $proof_scope"
+			;;
+	esac
 	dirty="$(summary_value repo_git_dirty 2>/dev/null || true)"
 	if [[ "$dirty" == "false" ]]; then
 		pass "evidence was collected from a clean git worktree"

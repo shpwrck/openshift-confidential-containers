@@ -559,7 +559,8 @@ It loads `RUNG_C_IMAGE`, `RUNG_C_UNSIGNED_IMAGE`, and `RUNG_C_COSIGN_PUB` from
 `verify-rung-c-signature` with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1`, applies the signed happy pod,
 keeps the unsigned negative pod for collection, collects a bounded evidence bundle under
 `rung-bc-artifacts/evidence-rung-c-proof-<timestamp>/`, and validates it with
-`VALIDATION_SCOPE=rung-c`.
+`VALIDATION_SCOPE=rung-c`. The collected `summary.env` records `proof_scope=rung-c`; full
+`make validate-rung-bc-evidence` rejects that scoped bundle as the final b/c promotion evidence.
 
 If you collect rung-c-only evidence manually, validate the signed-image proof subset explicitly:
 
@@ -633,8 +634,8 @@ tamper marker, happy pods lack both the expected app-start log markers and pod-s
 evidence, negative pods lack denial signals, or the bundle was collected from a dirty checkout. Expected KBS resource fetches are
 derived from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated
 against their actual Trustee log entries. `summary.env` records the repo revision, branch,
-dirty state, expected KBS URL, rung-b key ID, rung policy URIs, expected app-log markers, Trustee,
-CRI-O, and mirror log `--since-time` values, and local tool paths used to collect the bundle. It does not dump Secret data, but still review the
+dirty state, proof scope, expected KBS URL, rung-b key ID, rung policy URIs, expected app-log
+markers, Trustee, CRI-O, and mirror log `--since-time` values, and local tool paths used to collect the bundle. It does not dump Secret data, but still review the
 bundle before sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
