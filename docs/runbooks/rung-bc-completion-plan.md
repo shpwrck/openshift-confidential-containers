@@ -371,9 +371,10 @@ make collect-rung-bc-evidence
 make validate-rung-bc-evidence EVIDENCE_DIR=<bundle path printed above>
 ```
 
-Once `rung-bc.env` has been sourced and Trustee has the rung-b/c resources, the one-shot proof
-runner executes the b/c happy paths, keeps the b/c denied pods for collection, collects a
-timestamped evidence bundle, and validates it:
+Once Trustee has the rung-b/c resources, the one-shot proof runner loads digest refs from
+`rung-bc-artifacts/rung-bc.env` when `RUNG_B_IMAGE`, `RUNG_C_IMAGE`, and
+`RUNG_C_UNSIGNED_IMAGE` are not already digest-pinned, executes the b/c happy paths, keeps the
+b/c denied pods for collection, collects a timestamped evidence bundle, and validates it:
 
 ```bash
 make prove-rung-bc

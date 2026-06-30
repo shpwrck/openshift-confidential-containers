@@ -1287,6 +1287,47 @@ verify_prove_rung_bc_workflow() {
 	[[ ! -s "$bad_log" ]] || die "prove-rung-bc called child scripts after digest-ref guard failed"
 }
 
+verify_prove_rung_bc_loads_artifact_env() {
+	local dir="$tmpdir/prove-rung-bc-env" artifacts="$tmpdir/prove-rung-bc-artifacts" log="$tmpdir/prove-rung-bc-env-calls.tsv"
+	local apply_b apply_c negative collect validate
+	mkdir -p "$dir" "$artifacts"
+	apply_b="$dir/apply-b.sh"
+	apply_c="$dir/apply-c.sh"
+	negative="$dir/negative-test.sh"
+	collect="$dir/collect-evidence.sh"
+	validate="$dir/validate-evidence.sh"
+	create_prove_stub "$apply_b" apply-b-env
+	create_prove_stub "$apply_c" apply-c-env
+	create_prove_stub "$negative" negative-test-env
+	create_prove_stub "$collect" collect-evidence-env
+	create_prove_stub "$validate" validate-evidence-env
+
+	cat > "$artifacts/rung-bc.env" <<'EOF'
+export RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+export RUNG_B_KEY_FILE=/tmp/rung-b-image.key
+export RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+export RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+export RUNG_C_COSIGN_PUB=/tmp/cosign.pub
+EOF
+
+	CALL_LOG="$log" make -s prove-rung-bc \
+		APPLY_RUNG_B_SCRIPT="$apply_b" \
+		APPLY_RUNG_C_SCRIPT="$apply_c" \
+		NEGATIVE_TEST_SCRIPT="$negative" \
+		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		ARTIFACT_DIR="$artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c:unsigned" \
+		> /dev/null
+
+	expect_grep "apply-b-env	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$artifacts/evidence-rung-bc-proof-" "$log" "prove-rung-bc artifact env apply-b step"
+	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$log" "prove-rung-bc loaded rung-b image from env"
+	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$log" "prove-rung-bc loaded rung-c image from env"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$log" "prove-rung-bc loaded unsigned image from env"
+}
+
 need make
 need oc
 need jq
@@ -1329,6 +1370,7 @@ verify_evidence_rung_bc_proof_summary
 verify_evidence_validation_gate
 verify_evidence_validation_make_env
 verify_prove_rung_bc_workflow
+verify_prove_rung_bc_loads_artifact_env
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

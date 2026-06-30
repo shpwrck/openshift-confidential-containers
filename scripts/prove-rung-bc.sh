@@ -5,6 +5,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-${ARTIFACT_DIR}/evidence-rung-bc-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
+RUNG_ENV_FILE="${RUNG_ENV_FILE:-${ARTIFACT_DIR}/rung-bc.env}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-}"
 RUNG_C_IMAGE="${RUNG_C_IMAGE:-}"
 RUNG_C_UNSIGNED_IMAGE="${RUNG_C_UNSIGNED_IMAGE:-}"
@@ -27,11 +28,30 @@ require_digest_ref() {
 	die "${var_name} must be a sha256 digest ref for proof runs: ${image:-<unset>}. Source ${ARTIFACT_DIR}/rung-bc.env after make build-rung-images."
 }
 
+all_image_refs_are_digest_pinned() {
+	[[ "$RUNG_B_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] &&
+		[[ "$RUNG_C_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] &&
+		[[ "$RUNG_C_UNSIGNED_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]
+}
+
+load_rung_env_if_needed() {
+	if all_image_refs_are_digest_pinned; then
+		return
+	fi
+	if [[ ! -f "$RUNG_ENV_FILE" ]]; then
+		return
+	fi
+	echo "Loading rung b/c digest refs from $RUNG_ENV_FILE"
+	# shellcheck source=/dev/null
+	source "$RUNG_ENV_FILE"
+}
+
 require_script() {
 	local path="$1"
 	[[ -f "$path" ]] || die "missing script: $path"
 }
 
+load_rung_env_if_needed
 require_digest_ref RUNG_B_IMAGE "$RUNG_B_IMAGE"
 require_digest_ref RUNG_C_IMAGE "$RUNG_C_IMAGE"
 require_digest_ref RUNG_C_UNSIGNED_IMAGE "$RUNG_C_UNSIGNED_IMAGE"
