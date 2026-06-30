@@ -28,7 +28,7 @@ spec:
   # Secret-backed resources served to attested clients. NB (known issue): KBS resource names must
   # NOT contain dots — registry pull secret is named `regcred`, not `.dockerconfigjson`.
   kbsSecretResources:
-    - regcred         # mirror-registry pull secret (rung c image pulls).
+    - regcred         # mirror-registry pull secret (rung b image pulls).
     - attestation-cert
     - attestation-status # rung-a gate resource at kbs:///default/attestation-status/status.
     - sample          # the rung-a demo secret released via cdh/resource/default/...

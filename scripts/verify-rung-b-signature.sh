@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Verify that the configured rung-c public key accepts only the signed image ref.
+# Verify that the configured rung-b public key accepts only the signed image ref.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
-RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
-RUNG_C_UNSIGNED_IMAGE="${RUNG_C_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c-unsigned:unsigned}"
-RUNG_C_IMAGE_REF="${RUNG_C_IMAGE_REF:-}"
-RUNG_C_UNSIGNED_IMAGE_REF="${RUNG_C_UNSIGNED_IMAGE_REF:-}"
-RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
+RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
+RUNG_B_UNSIGNED_IMAGE="${RUNG_B_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b-unsigned:unsigned}"
+RUNG_B_IMAGE_REF="${RUNG_B_IMAGE_REF:-}"
+RUNG_B_UNSIGNED_IMAGE_REF="${RUNG_B_UNSIGNED_IMAGE_REF:-}"
+RUNG_B_COSIGN_PUB="${RUNG_B_COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
 RUNG_BC_IMAGES_MANIFEST="${RUNG_BC_IMAGES_MANIFEST:-${ARTIFACT_DIR}/rung-bc-images.json}"
 REQUIRE_RUNG_BC_IMAGES_MANIFEST="${REQUIRE_RUNG_BC_IMAGES_MANIFEST:-0}"
 COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:---insecure-ignore-tlog=true}"
@@ -34,18 +34,18 @@ need() {
 
 usage() {
 	cat <<EOF
-Usage: verify-rung-c-signature.sh
+Usage: verify-rung-b-signature.sh
 
-Inspect the rung-c signed image and unsigned negative-control image, verify the
-signed digest with RUNG_C_COSIGN_PUB, and require the unsigned control not to
+Inspect the rung-b signed image and unsigned negative-control image, verify the
+signed digest with RUNG_B_COSIGN_PUB, and require the unsigned control not to
 verify with that same key.
 
 Key env:
-  RUNG_C_IMAGE                    signed image ref without transport
-  RUNG_C_UNSIGNED_IMAGE           unsigned negative-control image ref without transport
-  RUNG_C_IMAGE_REF                full skopeo ref override for the signed image
-  RUNG_C_UNSIGNED_IMAGE_REF       full skopeo ref override for the unsigned control
-  RUNG_C_COSIGN_PUB               cosign public key file
+  RUNG_B_IMAGE                    signed image ref without transport
+  RUNG_B_UNSIGNED_IMAGE           unsigned negative-control image ref without transport
+  RUNG_B_IMAGE_REF                full skopeo ref override for the signed image
+  RUNG_B_UNSIGNED_IMAGE_REF       full skopeo ref override for the unsigned control
+  RUNG_B_COSIGN_PUB               cosign public key file
   COSIGN_VERIFY_ARGS              extra cosign verify flags
   RUNG_BC_IMAGES_MANIFEST         optional rung-bc-images.json consistency check
   REQUIRE_RUNG_BC_IMAGES_MANIFEST set 1 to fail when the manifest is missing
@@ -109,11 +109,11 @@ verify_manifest_consistency() {
 		--arg signed_digest_ref "$signed_digest_ref" \
 		--arg unsigned_digest_ref "$unsigned_digest_ref" \
 		--arg pub_sha "$pub_sha" '
-		.rung_c.digest_ref == $signed_digest_ref and
-		.rung_c.unsigned_digest_ref == $unsigned_digest_ref and
-		.rung_c.cosign_pub_sha256 == $pub_sha
-	' "$manifest" >/dev/null || fail "rung-b/c manifest does not match rung-c signed digest, unsigned digest, or public key fingerprint: $manifest"
-	pass "rung-b/c manifest matches rung-c signed digest, unsigned digest, and public key fingerprint"
+		.rung_b.digest_ref == $signed_digest_ref and
+		.rung_b.unsigned_digest_ref == $unsigned_digest_ref and
+		.rung_b.cosign_pub_sha256 == $pub_sha
+	' "$manifest" >/dev/null || fail "rung-b/c manifest does not match rung-b signed digest, unsigned digest, or public key fingerprint: $manifest"
+	pass "rung-b/c manifest matches rung-b signed digest, unsigned digest, and public key fingerprint"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -126,25 +126,25 @@ need jq
 need sha256sum
 need cosign
 
-[[ -s "$RUNG_C_COSIGN_PUB" ]] || die "missing rung-c cosign public key: $RUNG_C_COSIGN_PUB"
-pub_sha="$(file_sha256 "$RUNG_C_COSIGN_PUB")"
-pass "rung-c cosign public key is readable"
+[[ -s "$RUNG_B_COSIGN_PUB" ]] || die "missing rung-b cosign public key: $RUNG_B_COSIGN_PUB"
+pub_sha="$(file_sha256 "$RUNG_B_COSIGN_PUB")"
+pass "rung-b cosign public key is readable"
 
-signed_digest_ref="$(inspect_digest_ref "$RUNG_C_IMAGE" "$RUNG_C_IMAGE_REF" "rung-c signed")"
-pass "rung-c signed image digest resolved to $signed_digest_ref"
-unsigned_digest_ref="$(inspect_digest_ref "$RUNG_C_UNSIGNED_IMAGE" "$RUNG_C_UNSIGNED_IMAGE_REF" "rung-c unsigned")"
-pass "rung-c unsigned image digest resolved to $unsigned_digest_ref"
-[[ "$signed_digest_ref" != "$unsigned_digest_ref" ]] || fail "rung-c signed and unsigned image refs resolve to the same digest ref: $signed_digest_ref"
+signed_digest_ref="$(inspect_digest_ref "$RUNG_B_IMAGE" "$RUNG_B_IMAGE_REF" "rung-b signed")"
+pass "rung-b signed image digest resolved to $signed_digest_ref"
+unsigned_digest_ref="$(inspect_digest_ref "$RUNG_B_UNSIGNED_IMAGE" "$RUNG_B_UNSIGNED_IMAGE_REF" "rung-b unsigned")"
+pass "rung-b unsigned image digest resolved to $unsigned_digest_ref"
+[[ "$signed_digest_ref" != "$unsigned_digest_ref" ]] || fail "rung-b signed and unsigned image refs resolve to the same digest ref: $signed_digest_ref"
 
 verify_manifest_consistency "$RUNG_BC_IMAGES_MANIFEST" "$signed_digest_ref" "$unsigned_digest_ref" "$pub_sha"
 
 # shellcheck disable=SC2086
-cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_C_COSIGN_PUB" "$signed_digest_ref" >/dev/null
-pass "configured public key verifies rung-c signed image"
+cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_B_COSIGN_PUB" "$signed_digest_ref" >/dev/null
+pass "configured public key verifies rung-b signed image"
 
 # shellcheck disable=SC2086
-if cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_C_COSIGN_PUB" "$unsigned_digest_ref" >/dev/null 2>&1; then
-	fail "rung-c unsigned negative-control image unexpectedly verifies with the configured public key: $unsigned_digest_ref"
+if cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_B_COSIGN_PUB" "$unsigned_digest_ref" >/dev/null 2>&1; then
+	fail "rung-b unsigned negative-control image unexpectedly verifies with the configured public key: $unsigned_digest_ref"
 fi
-pass "rung-c unsigned negative-control image does not verify with the configured public key"
+pass "rung-b unsigned negative-control image does not verify with the configured public key"
 echo "Rung-c signature verification OK."

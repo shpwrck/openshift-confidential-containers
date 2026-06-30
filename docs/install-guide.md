@@ -809,14 +809,14 @@ won't exist in production.
 
 ## Phase 8 — Capability rungs (a → b → c) + negative tests
 
-Manual equivalent of the rig targets `make run-rung-a-secret`, `make run-rung-b-encrypted`,
-`make run-rung-c-signed`, and `make negative-test WHICH=all`. A rung is **proven only when
+Manual equivalent of the rig targets `make run-rung-a-secret`, `make run-rung-c-encrypted`,
+`make run-rung-b-signed`, and `make negative-test WHICH=all`. A rung is **proven only when
 reproduced from these steps AND its negative test fails-closed** — a negative test that
 *passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
 Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
-§5 for the full matrix. Rungs b/c have implementation scaffolding; rung-c has live rig
-accept/deny evidence, while rung-b still needs a completed direct encrypted-image guest-pull
-proof. The 2026-06-30 rig diagnosed the rung-b KID/KEK mismatch and proved guest decryption
+§5 for the full matrix. Rungs b/c have implementation scaffolding; rung-b has live rig
+accept/deny evidence, while rung-c still needs a completed direct encrypted-image guest-pull
+proof. The 2026-06-30 rig diagnosed the rung-c KID/KEK mismatch and proved guest decryption
 through a local alias diagnostic, but the production digest-pinned pod is still blocked before
 KBS by CRI-O host-side encrypted-layer pre-pull; CRI-O annotation and runtime
 `default_annotations` override attempts still left guest pull on the carrier image, and disabling
@@ -833,8 +833,8 @@ Each rung adds one user-visible capability on top of the same attestation base:
 | Rung | Capability being proven | Secret/resource being protected |
 |------|-------------------------|---------------------------------|
 | a | Attested secret release. | A sample KBS resource requested by the pod after CDH reports success. |
-| b | Attested encrypted-image pull. | The image decryption key. |
-| c | Attested signed-image policy. | The registry credential and image security policy. |
+| b | Attested signed-image policy. | The registry credential and image security policy. |
+| c | Attested encrypted-image pull. | The image decryption key. |
 | Air-gap | No hidden live dependency on AMD KDS. | The VCEK cache path itself. |
 
 - **Rung a — secret release.** Deploy
@@ -844,14 +844,15 @@ Each rung adds one user-visible capability on top of the same attestation base:
   empty RVPS (or tampered initdata) → attestation errors, **secret withheld**, pod does not
   start. Keep `limits.memory ≥ default_memory + 256–512 MiB` or the host OOM-kills the CVM
   (SNP pins all guest RAM at launch). Read `oc describe pod` / `oc get events`, not just logs.
-- **Rung b — encrypted image.** **Happy:** pod Running (image key released after attestation).
-  **Negative:** wrong measurement → key withheld → pod won't start. Plan details: build a
-  digest-pinned encrypted image, serve its actual wrapping key from KBS at the KID embedded in
-  the encrypted layer, then prove a measured-initdata mismatch prevents the key release.
-- **Rung c — signed image.** **Happy:** signed image pulls (mirror pull secret served as
+- **Rung b — signed image.** **Happy:** signed image pulls (mirror pull secret served as
   `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
   Plan details: serve a restrictive signed-image policy and public key from KBS, while still
   allowing or verifying the pause/release images the CVM pulls before the app image.
+- **Rung c — encrypted image** *(upstream-blocked: cri-o/cri-o#10084)*. **Happy:** pod Running
+  (image key released after attestation). **Negative:** wrong measurement → key withheld → pod
+  won't start. Plan details: build a digest-pinned encrypted image, serve its actual wrapping
+  key from KBS at the KID embedded in the encrypted layer, then prove a measured-initdata
+  mismatch prevents the key release.
 - **Air-gap negative test (cross-cutting).** Temporarily remove the Trustee `vcek-*` Secrets,
   then rerun an otherwise happy rung-a request. Attestation **must fail**, and the Secrets must
   be restored. Proves the OfflineStore cache — not a silently-reachable KDS — is load-bearing.

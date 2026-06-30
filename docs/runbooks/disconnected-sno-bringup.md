@@ -315,17 +315,17 @@ below.
         start. *(initdata `# FILL`s — `default_memory`, HOST_DATA — are per-overlay and
         environment-bound; keep the pod memory limit ≥ `default_memory` + 256 MiB or the host
         OOM-kills the CVM.)*
-- [ ] **Rung b — encrypted image.**
-      - **Happy path:** pod reaches `Running` (image key released after attestation).
-      - **Negative test:** wrong measurement → key withheld → **pod won't start**.
-      - **Implementation note:** use a digest-pinned encrypted image and KBS resource
-        `image-key/rung-b`; do not count missing-key failure as the primary sign-off proof.
-- [ ] **Rung c — signed image.**
+- [ ] **Rung b — signed image.**
       - **Happy path:** signed image pulls (mirror pull secret served as `regcred`, per
         `kbsconfig.yaml` `kbsSecretResources`).
       - **Negative test:** unsigned/tampered image → `image_security_policy` **rejects** the pull.
       - **Implementation note:** the signed policy must account for the app image and every
         infrastructure image pulled inside the CVM, including release/pause images.
+- [ ] **Rung c — encrypted image.** *(upstream-blocked: cri-o/cri-o#10084)*
+      - **Happy path:** pod reaches `Running` (image key released after attestation).
+      - **Negative test:** wrong measurement → key withheld → **pod won't start**.
+      - **Implementation note:** use a digest-pinned encrypted image and KBS resource
+        `image-key/rung-c`; do not count missing-key failure as the primary sign-off proof.
 - [ ] **Air-gap negative test (proves the cache is load-bearing):** temporarily remove the
       Trustee `vcek-*` Secrets, then rerun an otherwise happy rung-a request →
       **attestation fails** and the Secrets are restored. This proves the OfflineStore — not

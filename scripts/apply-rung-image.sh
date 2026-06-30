@@ -4,7 +4,7 @@
 # RUNG=b|c selects the workload. Key env knobs (all have rig defaults):
 #   NS=default  TRUSTEE_NS=trustee-operator-system  KBS_URL=http://kbs-service.<ns>.svc:8080
 #   MIRROR_REGISTRY=mirror.rig.local:8443  MIRROR_CA=/opt/mirror/ca/rootCA.pem  MIRROR_DOMAIN=rig.local
-#   RUNG_B_IMAGE / RUNG_C_IMAGE = <digest-ref>  RUNG_B_KEY_ID=  IMAGE_SECURITY_POLICY_URI=
+#   RUNG_C_IMAGE / RUNG_B_IMAGE = <digest-ref>  RUNG_C_KEY_ID=  IMAGE_SECURITY_POLICY_URI=
 #   RENDER_ONLY=1      print the rendered pod.yaml and exit (no cluster writes)
 #   TAMPER_INITDATA=1  corrupt the measured initdata (used by the negative tests)
 #   REQUIRE_KBS_RESOURCE_LOGS=1 (default) also assert the KBS resource fetch is visible in logs
@@ -203,22 +203,22 @@ verify_kbs_resource_logs() {
 }
 
 case "$RUNG" in
-	b)
-		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-b-encrypted-pod.yaml}"
-		POD_NAME="${POD_NAME:-rung-b-encrypted}"
-		RUNG_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
-		RUNG_IMAGE_VAR=RUNG_B_IMAGE
-		RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
-		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/test}"
-		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$RUNG_B_KEY_ID")")
-		;;
 	c)
-		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-c-signed-pod.yaml}"
-		POD_NAME="${POD_NAME:-rung-c-signed}"
-		RUNG_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
+		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-c-encrypted-pod.yaml}"
+		POD_NAME="${POD_NAME:-rung-c-encrypted}"
+		RUNG_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
 		RUNG_IMAGE_VAR=RUNG_C_IMAGE
-		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/rung-c}"
-		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$IMAGE_SECURITY_POLICY_URI")" default/sig-public-key/rung-c)
+		RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
+		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/test}"
+		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$RUNG_C_KEY_ID")")
+		;;
+	b)
+		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-b-signed-pod.yaml}"
+		POD_NAME="${POD_NAME:-rung-b-signed}"
+		RUNG_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
+		RUNG_IMAGE_VAR=RUNG_B_IMAGE
+		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/rung-b}"
+		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$IMAGE_SECURITY_POLICY_URI")" default/sig-public-key/rung-b)
 		;;
 	*) die "set RUNG=b or RUNG=c" ;;
 esac
