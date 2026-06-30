@@ -49,6 +49,7 @@ NEGATIVE_TEST_SCRIPT ?= ./scripts/negative-test.sh
 APPLY_RUNG_A_SCRIPT ?= ./scripts/apply-rung-a.sh
 APPLY_RUNG_B_SCRIPT ?= ./scripts/apply-rung-b.sh
 APPLY_RUNG_C_SCRIPT ?= ./scripts/apply-rung-c.sh
+RENDER_RUNG_B_MEASUREMENT_POLICY_SCRIPT ?= ./scripts/render-rung-b-measurement-policy.sh
 COLLECT_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/collect-rung-bc-evidence.sh
 VALIDATE_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/validate-rung-bc-evidence.sh
 PROVE_RUNG_BC_SCRIPT ?= ./scripts/prove-rung-bc.sh
@@ -246,6 +247,10 @@ collect-vcek: ## Collect per-socket VCEK certs into the OfflineStore secret (aut
 .PHONY: gen-rvps
 gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware)
 	TEE="$(TEE)" OCP_VERSION="$(OCP_VERSION)" PULL_SECRET="$(PULL_SECRET)" INITDATA="$(INITDATA)" OUT="$(RVPS_OUT)" NODE="$(NODE)" DEBUG_IMAGE="$(DEBUG_IMAGE)" REGISTRIES_CONF="$(REGISTRIES_CONF)" REGISTRY_CERTS_DIR="$(REGISTRY_CERTS_DIR)" VERITAS_OC_WRAPPER="$(VERITAS_OC_WRAPPER)" VERITAS_EXTRA_ARGS="$(VERITAS_EXTRA_ARGS)" ./scripts/gen-rvps-veritas.sh
+
+.PHONY: render-rung-b-measurement-policy
+render-rung-b-measurement-policy: ## Render restrictive rung-b HOST_DATA and image-key policies (set INITDATA)
+	NS="$(NS)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" bash "$(RENDER_RUNG_B_MEASUREMENT_POLICY_SCRIPT)" "$(INITDATA)"
 
 ## --- Validation (negative tests) -----------------------------------------
 .PHONY: negative-test

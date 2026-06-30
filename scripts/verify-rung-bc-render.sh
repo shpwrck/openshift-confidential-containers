@@ -382,6 +382,49 @@ EOF
 	expect_grep $'-o\t/veritas-out' "$log" "gen-rvps output directory"
 }
 
+verify_rung_b_measurement_policy_render() {
+	local initdata="$tmpdir/rung-b-policy-initdata.toml" placeholder="$tmpdir/rung-b-policy-placeholder.toml"
+	local wrong_algorithm="$tmpdir/rung-b-policy-wrong-algorithm.toml"
+	local out="$tmpdir/rung-b-measurement-policy.yaml" err="$tmpdir/rung-b-measurement-policy.err"
+	local expected_sha
+	cat > "$initdata" <<'EOF'
+algorithm = "sha256"
+version = "0.1.0"
+
+[data]
+"aa.toml" = '''
+[token_configs]
+[token_configs.kbs]
+url = "http://kbs-service.trustee-operator-system.svc:8080"
+'''
+EOF
+	expected_sha="$(sha256sum "$initdata" | awk '{print $1}')"
+
+	NS="trustee-test" \
+		RUNG_B_KEY_ID="kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c" \
+		bash "$REPO_ROOT/scripts/render-rung-b-measurement-policy.sh" "$initdata" > "$out"
+
+	expect_grep "namespace: trustee-test" "$out" "rung-b measurement policy namespace"
+	expect_grep "input.init_data == \"$expected_sha\"" "$out" "rung-b measurement policy HOST_DATA hash"
+	expect_grep 'image_key_path := ["default","image-kek","380af3e3-69f8-4985-9196-e9261a19072c"]' "$out" "rung-b measurement policy key path"
+	expect_grep 'input["submods"][sm]["ear.trustworthiness-vector"]["configuration"] == 2' "$out" "rung-b measurement policy EAR TV path"
+	if grep -Fq 'ear.status.configuration' "$out"; then
+		die "rung-b measurement policy used the stale ear.status.configuration path"
+	fi
+
+	printf 'algorithm = "sha256"\n[data]\n"aa.toml" = "__KBS_URL__"\n' > "$placeholder"
+	if bash "$REPO_ROOT/scripts/render-rung-b-measurement-policy.sh" "$placeholder" > /dev/null 2> "$err"; then
+		die "rung-b measurement policy renderer accepted unresolved placeholders"
+	fi
+	expect_grep "unresolved initdata placeholders" "$err" "rung-b measurement policy placeholder guard"
+
+	printf 'algorithm = "sha384"\nversion = "0.1.0"\n' > "$wrong_algorithm"
+	if bash "$REPO_ROOT/scripts/render-rung-b-measurement-policy.sh" "$wrong_algorithm" > /dev/null 2> "$err"; then
+		die "rung-b measurement policy renderer accepted non-sha256 initdata"
+	fi
+	expect_grep 'must declare algorithm = "sha256"' "$err" "rung-b measurement policy algorithm guard"
+}
+
 verify_cosign_default_sign_args() {
 	local bin="$tmpdir/cosign-bin" actual
 	mkdir -p "$bin"
@@ -1942,6 +1985,7 @@ verify_apply_requires_digest_refs
 verify_rung_b_key_size_guard
 verify_manifest_env_emit
 verify_gen_rvps_veritas_local_command
+verify_rung_b_measurement_policy_render
 verify_cosign_default_sign_args
 verify_rung_c_digest_signing
 verify_rung_c_policy_render

@@ -10,10 +10,14 @@ that reaches guest pull without CRI-O host-side encrypted-layer pre-pull blockin
 the CRI-O allowed-annotation and runtime `default_annotations` override paths have also been
 ruled out as production proof routes, as has disabling CRI-O's configured host decryption key path.
 The tag-shaped diagnostic path can run the real encrypted image in guest, but current Trustee
-policy/RVPS is permissive enough that tampered measured initdata still receives the image key.
+policy/RVPS starts permissive enough that tampered measured initdata receives the image key.
 Veritas RVPS generation for the current rung-b initdata is now proven on the rig, including the
-disconnected release-image workaround, but those reference values still need a restrictive
-resource/EAR policy before they can make the tampered-initdata negative meaningful.
+disconnected release-image workaround. A later tag-shaped diagnostic also proved that key release
+can be made selective: Trustee's resource policy must inspect
+`input.submods[*]["ear.trustworthiness-vector"].configuration`, and the EAR policy must compare
+the live SNP HOST_DATA claim exposed as SHA-256 `input.init_data`, not the SHA-384 Veritas
+`init_data` value for the same TOML. The repo now renders that policy pair, but the policy result
+is still diagnostic until it is replayed with a direct digest-pinned encrypted-image path.
 
 For the latest branch/PR status and remaining proof checklist, see
 `docs/runbooks/rung-bc-status.md`.
@@ -45,8 +49,9 @@ Rung b must prove key-gated encrypted layers. Rung c must prove signature policy
    sign-off blocker.
 2. Use digest-pinned images for all proof runs. Tags are only labels for humans.
 3. Do not edit measured initdata casually. Any KBS URL, CA, registry config, image policy URI,
-   or policy choice changes HOST_DATA and requires fresh Veritas RVPS before enforcing a
-   restrictive measurement policy.
+   or policy choice changes HOST_DATA. For this SNP/OSC path, the enforced HOST_DATA claim is the
+   SHA-256 of the TOML because the initdata declares `algorithm = "sha256"`; regenerate both the
+   Veritas launch measurements and the SHA-256 policy input when initdata changes.
 4. Keep real secrets out of git. KBS resource shape belongs in docs/scripts; keys and passwords
    are created out-of-band on the target cluster.
 5. Do not make the pause/release image the accidental failing image. Any restrictive
@@ -305,9 +310,43 @@ rung-b initdata on `sno-coco-node` with `OCP_VERSION=4.20.18` and a temporary
 The output
 `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rvps-probe-20260630T045611Z/veritas-rung-b-rvps-script.yaml`
 has `sha256:f80ced520abeabbe823bc9f9e7afc05a7ed657951a7d82befc6990dc51aa307f` and contains
-96 SNP launch measurements plus one `init_data` value. Do not apply it as proof by itself:
-pair it with a restrictive resource policy and EAR appraisal policy, then rerun both the happy
-and tampered-initdata pods.
+96 SNP launch measurements plus one `init_data` value. That `init_data` value is the SHA-384 of
+the TOML, while Trustee's SNP verifier exposes the live HOST_DATA claim as the 32-byte SHA-256
+`input.init_data` value when the initdata TOML says `algorithm = "sha256"`. Do not apply the
+Veritas output as proof by itself: pair the launch measurements with a restrictive resource policy
+and render the HOST_DATA/SHA-256 value into the EAR appraisal policy, then rerun both the happy and
+tampered-initdata pods.
+
+Render the policy pair with `make render-rung-b-measurement-policy INITDATA=<rendered-initdata.toml>
+RUNG_B_KEY_ID=<kbs-uri>`, then apply the output only for the restrictive proof window.
+
+The minimal policy shape proven in the tag-shaped diagnostic path was:
+
+```rego
+# attestation-policy default_cpu.rego excerpt
+default configuration := 36
+
+configuration := 2 if {
+  input.init_data == "<sha256-of-rendered-initdata-toml>"
+}
+```
+
+```rego
+# resource-policy policy.rego excerpt
+allow if {
+  image_key_request
+  some sm
+  input["submods"][sm]["ear.trustworthiness-vector"]["configuration"] == 2
+}
+```
+
+Do not use `input["submods"][sm]["ear.status.configuration"]`; `ear.status` is a status string,
+not the numeric trustworthiness vector. On 2026-06-30, the current happy initdata SHA-256 was
+`a6ae0bdf358463ff272bba868c06c33a80c0b5a6678fac3936dbd66ab27efae0`. The tag diagnostic with
+that literal reached `Running` and got `image-kek` HTTP 200; the same policy denied a tampered
+initdata pod with `image-kek` HTTP 401/`PolicyDeny`. This proves the policy gate, but it remains
+diagnostic because it used the local tag alias rather than the direct digest-pinned encrypted
+image.
 
 The 2026-06-30 rig used KID
 `kbs:///default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`. Trustee initially served
@@ -537,6 +576,8 @@ make negative-test WHICH=all
 | Pod annotation `io.kubernetes.cri-o.ImageName` is allowed and set to the encrypted image, but guest pull still uses the carrier image | CRI-O writes its internal `ImageName` after sandbox annotations, so the pod annotation does not override the create-time guest-pull source | Do not use this as a workaround. Confirm with CRI-O journal `Adding mount info to pull image ...`; remove the temporary allowed annotation and restore `50-kata-snp`. |
 | Runtime `default_annotations` set `io.kubernetes.cri.image-name` to the encrypted digest, but the pod runs as the carrier and no image-key request appears | CRI-O's create-time app image metadata still resolves from the local carrier image; the containerd-style source annotation does not win for this CRI-O/Kata path | Do not count a carrier `Running` pod as proof. Require both a CRI-O `image_guest_pull` source matching the encrypted ref and a Trustee `image-kek` fetch. Restore `50-kata-snp` after the probe; on the air-gapped rig, use a cached mirror image for `oc debug node` because the default support-tools image can time out. |
 | Tampered-initdata rung-b negative reaches `Running` and fetches `image-kek` | Trustee is still in permissive bring-up mode, so RVPS/resource/attestation policy is not enforcing the measured initdata mismatch | Check `rvps-reference-values`, `resource-policy`, and `attestation-policy`. Empty reference values plus `default allow := true` plus all-affirming EAR claims mean the negative cannot count. Generate/apply restrictive reference values and rerun before sign-off. |
+| Happy rung-b pod is denied by restrictive resource policy even though the EAR policy should affirm `configuration` | The resource policy is reading the wrong EAR field | Use `input["submods"][sm]["ear.trustworthiness-vector"]["configuration"] == 2`; do not use `ear.status.configuration`. A 2026-06-30 probe proved the corrected path releases `image-kek` for the happy tag-shaped diagnostic. |
+| Happy rung-b pod is denied by an EAR policy using `query_reference_value("init_data")` | Veritas `init_data` and Trustee SNP HOST_DATA are different hashes for this initdata shape | The Veritas output recorded the SHA-384 of the TOML, while Trustee exposed the live SNP HOST_DATA as the SHA-256 `input.init_data` because the TOML declares `algorithm = "sha256"`. Render the SHA-256 from the exact initdata TOML into the EAR policy, or change the initdata/RVPS generation strategy deliberately and revalidate both happy and tampered pods. |
 | `gen-rvps-veritas.sh` fails in a disconnected rig on `quay.io/openshift-release-dev/ocp-release:<version>-x86_64` | Veritas baremetal uses `oc adm release info` against a hard-coded public release tag; mounting `registries.conf` is not enough for that tag path | Set `OCP_VERSION`, use a cached `DEBUG_IMAGE` for `oc debug`, pass mirror-capable auth such as the bastion Docker config, and supply a short-lived `VERITAS_OC_WRAPPER` that rewrites the release and `rhel-coreos-extensions` refs to the mirror. Treat any skipped upstream verify step as a disconnected workaround backed by prior mirror provenance, not as release-integrity proof. |
 | Pre-staging the actual encrypted image into `containers-storage` fails before pod creation | containers/storage validates layer DiffIDs against the image config and cannot store the encrypted layer as a normal local rootfs image | On 2026-06-30, `skopeo copy --preserve-digests docker://...@sha256:69b8... containers-storage:...:encrypted-prestage` failed because encrypted blob `sha256:346e9...` did not match config DiffID `sha256:76c30...`. Clean any partial tag and do not treat this as a viable direct bypass. |
 | Trying to make a digest-pinned carrier alias fails | Podman/containers-storage do not allow creating tags whose target name is a digest reference | On 2026-06-30, `podman tag <carrier> mirror.rig.local:8443/coco/rung-b@sha256:69b8...` failed with `tag by digest not supported`. A tag-only carrier alias can diagnose guest pull, but it cannot satisfy the digest-pinned production proof invariant. |

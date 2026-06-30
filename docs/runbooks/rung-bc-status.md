@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T05:22:39Z
+Last updated: 2026-06-30T06:16:40Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `e3f4db0`
+Current head before this update: `88b1f59`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -12,11 +12,17 @@ separate guest decryption blocker is diagnosed: the current image's wrapped laye
 `/home/rocky/rung-b/kek.bin`, not the previously recorded `/home/rocky/rung-b/image-kek.bin`.
 A follow-up CRI-O `default_annotations` probe also failed to redirect the Kata guest-pull source
 away from the already-present carrier image. Disabling CRI-O's configured host decryption key path
-also did not change the direct digest failure. A controlled tag diagnostic also showed that the
-current Trustee policy remains permissive enough for a tampered-initdata rung-b pod to start, so
-measurement-mismatch negatives are not yet valid on this rig. Veritas RVPS generation is now
-proven on the rig for the current rung-b initdata, but the generated values have not been applied
-as a sign-off policy because the live resource and EAR policies are still permissive.
+also did not change the direct digest failure. The measured-initdata policy mechanics are now
+diagnosed in the tag-shaped diagnostic path: a resource policy must read
+`input.submods[*]["ear.trustworthiness-vector"].configuration`, and this OSC/SNP stack exposes
+the live HOST_DATA claim as the SHA-256 `input.init_data` value from the initdata TOML
+`algorithm`, not the SHA-384 `init_data` value emitted by Veritas for the same TOML. With a
+temporary SHA-256 literal EAR policy, the happy diagnostic pod received `image-kek` and reached
+`Running`, while the tampered-initdata diagnostic pod received `image-kek` 401/`PolicyDeny` and
+stayed `CreateContainerError`. This proves the intended key-release gate can be made selective,
+and `scripts/render-rung-b-measurement-policy.sh` now renders that policy pair from a rendered
+initdata file. The result is still diagnostic only until it is paired with a direct digest-pinned
+encrypted-image path.
 
 ## What is already in place
 
@@ -157,6 +163,33 @@ Live rig check on 2026-06-30:
   - The generated RVPS was inspected but not applied as a sign-off baseline. Live Trustee still
     has `resource-policy: default allow := true` and an EAR policy that affirms every trust claim,
     so measured-initdata negatives remain invalid until policy is tightened too.
+- A follow-up policy probe converted the permissive measured-initdata finding into a scoped
+  diagnostic pass/fail result:
+  - A resource policy checking `input["submods"][sm]["ear.status.configuration"] == 2`, even for
+    all submodule names, denied the happy pod. Trustee EAR tokens expose the numeric AR4SI value at
+    `input["submods"][sm]["ear.trustworthiness-vector"]["configuration"]`; `ear.status` is a
+    string status, not the numeric vector.
+  - With the corrected resource policy and an unconditional EAR `configuration := 2`, the
+    tag-shaped happy pod reached `Running` and Trustee served
+    `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c` with HTTP 200.
+    Artifact: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/policy-probe-20260630T055938Z-resource-tv`.
+  - The rendered happy initdata file still matched the Veritas input exactly:
+    SHA-256 `a6ae0bdf358463ff272bba868c06c33a80c0b5a6678fac3936dbd66ab27efae0`,
+    SHA-384 `e85af2d3a78cb298bb2838560567d726f9af503fd9606c35b0be6d233a836d797e5053b70c7aef7ed25601417bb29ae0`.
+    However, `input.init_data in query_reference_value("init_data")` and literal checks against
+    the SHA-384 or its base64 encoding denied the happy pod. Source inspection explains the
+    mismatch: for SNP, Trustee verifies HOST_DATA from the initdata TOML hash algorithm and
+    exposes the report's 32-byte HOST_DATA as `input.init_data`.
+  - A temporary EAR policy using the SHA-256 HOST_DATA literal made the tag-shaped happy pod reach
+    `Running` with `image-kek` HTTP 200. Artifact:
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/policy-probe-20260630T061331Z-initdata-sha256`.
+  - The same policy denied the tag-shaped tampered-initdata pod: it stayed
+    `CreateContainerError`, Trustee returned repeated `PolicyDeny`/HTTP 401 for the same
+    `image-kek` resource, and the pod never became Ready. Artifact:
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/policy-probe-20260630T061409Z-tampered-sha256`.
+  - The rig was restored afterward: `rvps-reference-values` back to `[]`, `resource-policy` back
+    to `default allow := true`, diagnostic pods deleted, local `coco/rung-b:encrypted` alias
+    removed, and `sno-coco-node` Ready.
 - Source inspection and additional pre-stage probes explain why direct digest refs still fail:
   - CRI-O `runtime_pull_image` adds Kata's `image_guest_pull` virtual volume only during
     `CreateContainer`, after CRI-O has already resolved the container image from local storage.
@@ -193,11 +226,14 @@ Live rig check on 2026-06-30:
    host-decryption-key-path probe are useful for root-cause work, but they are not production proof
    paths.
 
-2. Replace the permissive Trustee/RVPS baseline with a restrictive policy/reference-value set
-   before counting measured-initdata mismatch negatives. RVPS generation now works for the current
-   rung-b initdata, but RVPS alone is not enough while `resource-policy` allows all resources and
-   the EAR policy affirms all claims. On the current rig, tampered initdata still receives
-   `image-kek`; this is a sign-off blocker for rung-b negative proof.
+2. Replay the restrictive measured-initdata policy with the next viable direct encrypted-image
+   path before counting rung-b negatives. RVPS generation now works for the current rung-b initdata,
+   but its `init_data` value is the
+   SHA-384 of the TOML, while this SNP/OSC path gates HOST_DATA through the SHA-256
+   `input.init_data` claim because the initdata TOML declares `algorithm = "sha256"`. The
+   renderer now emits the SHA-256 literal and a resource policy keyed on
+   `ear.trustworthiness-vector.configuration`; use it for the proof window and restore the
+   permissive baseline afterward.
 
 3. If the rung-b image is rebuilt, rerun the offline unwrap check before seeding Trustee:
 
