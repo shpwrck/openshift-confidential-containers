@@ -160,6 +160,7 @@ Operator-facing artifact knobs:
 | `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. Use the generated digest ref for apply/negative-test. |
 | `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. Use the generated digest ref for apply. |
 | `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c-unsigned:unsigned` | You want a differently named unsigned negative-control image. Keep this in a repository separate from `RUNG_C_IMAGE` so signatures attached to the signed repo do not satisfy the negative control. Use the generated digest ref for negative-test. |
+| `RUNG_C_EVIDENCE_PODS` | `$(RUNG_C_POD) $(NEG_RUNG_C_POD)` | `make prove-rung-c` should collect extra or differently named pods in the scoped evidence bundle. |
 | `RUNG_B_APP_LOG_MARKER` | `rung-b: encrypted image decrypted and running` | The rung-b proof workload emits a different success line. Validation uses the marker when logs expose it, and falls back to pod/container status when logs are unavailable. |
 | `RUNG_C_APP_LOG_MARKER` | `rung-c: signed image accepted and running` | The rung-c proof workload emits a different success line. Validation uses the marker when logs expose it, and falls back to pod/container status when logs are unavailable. |
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
@@ -591,7 +592,9 @@ git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`
 also set `RUNG_B_POD`, `RUNG_C_POD`, `NEG_RUNG_B_POD`, and `NEG_RUNG_C_POD` so
 `rung-bc-proof-summary.tsv` can correlate the right pod JSON files. The collector records
 those pod role names in `summary.env`, and the validator reuses them when explicit overrides
-are not provided, so a custom-named bundle remains self-describing offline. If the proof image
+are not provided, so a custom-named bundle remains self-describing offline. For the scoped
+`make prove-rung-c` runner, use `RUNG_C_EVIDENCE_PODS` when extra pod names should be collected
+with the happy and unsigned negative pods. If the proof image
 emits custom success text, set `RUNG_B_APP_LOG_MARKER` or `RUNG_C_APP_LOG_MARKER` before
 running `make collect-rung-bc-evidence`, `make validate-rung-bc-evidence`, or
 `make prove-rung-bc`; the collector records those marker values in `summary.env` so the

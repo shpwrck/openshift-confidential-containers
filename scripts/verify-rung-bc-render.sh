@@ -2807,7 +2807,7 @@ verify_prove_rung_c_workflow() {
 		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/rung-c-proof-evidence" \
-		PODS="custom-rung-c custom-neg-rung-c" \
+		RUNG_C_EVIDENCE_PODS="custom-rung-c custom-neg-rung-c" \
 		RUNG_C_POD="custom-rung-c" \
 		NEG_RUNG_C_POD="custom-neg-rung-c" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
