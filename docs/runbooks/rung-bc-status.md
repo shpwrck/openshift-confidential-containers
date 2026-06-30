@@ -1,11 +1,10 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T11:32:46Z
+Last updated: 2026-06-30T11:54:23Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest proof-tooling checkpoint verified on the rig: `89c7502` (strict `make verify-rung-b-key-wrap`
-and `make verify-rung-c-signature` with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` against the current
-`rung-bc-images.json`)
+Latest proof-tooling checkpoint verified on the rig: `89c7502` (strict artifact verification
+with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` against the current `rung-bc-images.json`)
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -65,6 +64,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   `make verify-rung-b-key-wrap`, `make verify-rung-c-signature`, and their seed/apply
   prerequisites fail if the artifact manifest is missing instead of silently downgrading to
   metadata-only checks.
+- `make verify-rung-bc-artifacts` now gives operators one strict preflight target for the full
+  rung-b/c artifact contract: encrypted layer KID plus KEK unwrap, signed rung-c verification,
+  unsigned-control rejection, and `rung-bc-images.json` consistency.
 - `make build-rung-images` now runs the rung-b key-wrap and rung-c signature verifiers after
   writing `rung-bc-images.json`, so a newly built artifact set fails before any Trustee or pod
   step if the pushed images, keys, signatures, or manifest disagree.
@@ -414,11 +416,12 @@ Live rig check on 2026-06-30:
 
    ```bash
    . rung-bc-artifacts/rung-bc.env
-   make verify-rung-b-key-wrap
+   make verify-rung-bc-artifacts
    ```
 
    This confirms the new digest's encrypted layer annotation references the intended KID, the
-   artifact manifest matches the selected image/key, and the configured KEK unwraps the layer key.
+   artifact manifest matches the selected image/key/signature tuple, the configured KEK unwraps
+   the layer key, the rung-c signed image verifies, and the unsigned-control image does not.
 
 4. Build and push any rebuilt rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 

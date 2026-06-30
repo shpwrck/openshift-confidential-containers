@@ -452,6 +452,85 @@ EOF
 	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$out" "Makefile rung-c signature verify args override"
 }
 
+verify_rung_bc_artifacts_make_target() {
+	local key_wrap_stub="$tmpdir/key-wrap-artifact-target-stub.sh"
+	local c_signature_stub="$tmpdir/rung-c-signature-artifact-target-stub.sh"
+	local out="$tmpdir/rung-bc-artifacts-make-target"
+
+	cat > "$key_wrap_stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'KEY_WRAP_CALLED=1\n'
+vars=(
+	MIRROR_REGISTRY
+	ARTIFACT_DIR
+	RUNG_B_IMAGE
+	RUNG_B_KEY_ID
+	RUNG_B_KEY_FILE
+	RUNG_BC_IMAGES_MANIFEST
+	REQUIRE_RUNG_BC_IMAGES_MANIFEST
+)
+for var in "${vars[@]}"; do
+	printf 'KEY_WRAP_%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$key_wrap_stub"
+
+	cat > "$c_signature_stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'C_SIGNATURE_CALLED=1\n'
+vars=(
+	MIRROR_REGISTRY
+	ARTIFACT_DIR
+	RUNG_C_IMAGE
+	RUNG_C_UNSIGNED_IMAGE
+	RUNG_C_COSIGN_PUB
+	RUNG_BC_IMAGES_MANIFEST
+	REQUIRE_RUNG_BC_IMAGES_MANIFEST
+	COSIGN_VERIFY_ARGS
+)
+for var in "${vars[@]}"; do
+	printf 'C_SIGNATURE_%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$c_signature_stub"
+
+	make -s verify-rung-bc-artifacts \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap_stub" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature_stub" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		ARTIFACT_DIR="$tmpdir/custom-artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		RUNG_B_KEY_FILE="$tmpdir/rung-b.key" \
+		RUNG_B_KEY_ID="kbs:///default/custom-image-kek/custom-rung-b" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
+		REQUIRE_RUNG_BC_IMAGES_MANIFEST="1" \
+		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/custom/rung-c-unsigned@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
+		RUNG_C_COSIGN_PUB="$tmpdir/cosign.pub" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
+		> "$out"
+
+	expect_grep "KEY_WRAP_CALLED=1" "$out" "Makefile artifact target runs rung-b key-wrap verifier"
+	expect_grep "KEY_WRAP_MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile artifact target key-wrap mirror override"
+	expect_grep "KEY_WRAP_ARTIFACT_DIR=$tmpdir/custom-artifacts" "$out" "Makefile artifact target key-wrap artifact dir override"
+	expect_grep "KEY_WRAP_RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$out" "Makefile artifact target key-wrap image override"
+	expect_grep "KEY_WRAP_RUNG_B_KEY_FILE=$tmpdir/rung-b.key" "$out" "Makefile artifact target key-wrap key file override"
+	expect_grep "KEY_WRAP_RUNG_B_KEY_ID=kbs:///default/custom-image-kek/custom-rung-b" "$out" "Makefile artifact target key-wrap key ID override"
+	expect_grep "KEY_WRAP_RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile artifact target key-wrap manifest override"
+	expect_grep "KEY_WRAP_REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$out" "Makefile artifact target key-wrap manifest requirement override"
+	expect_grep "C_SIGNATURE_CALLED=1" "$out" "Makefile artifact target runs rung-c signature verifier"
+	expect_grep "C_SIGNATURE_MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile artifact target rung-c signature mirror override"
+	expect_grep "C_SIGNATURE_ARTIFACT_DIR=$tmpdir/custom-artifacts" "$out" "Makefile artifact target rung-c signature artifact dir override"
+	expect_grep "C_SIGNATURE_RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" "$out" "Makefile artifact target rung-c signature image override"
+	expect_grep "C_SIGNATURE_RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/custom/rung-c-unsigned@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" "$out" "Makefile artifact target rung-c signature unsigned image override"
+	expect_grep "C_SIGNATURE_RUNG_C_COSIGN_PUB=$tmpdir/cosign.pub" "$out" "Makefile artifact target rung-c signature public key override"
+	expect_grep "C_SIGNATURE_RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile artifact target rung-c signature manifest override"
+	expect_grep "C_SIGNATURE_REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$out" "Makefile artifact target rung-c signature manifest requirement override"
+	expect_grep "C_SIGNATURE_COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$out" "Makefile artifact target rung-c signature verify args override"
+}
+
 verify_apply_requires_digest_refs() {
 	local err="$tmpdir/tagged-image.err"
 
@@ -2736,6 +2815,7 @@ verify_rung_c_policy_render
 verify_build_make_env
 verify_rung_b_key_wrap_make_env
 verify_rung_c_signature_make_env
+verify_rung_bc_artifacts_make_target
 verify_trustee_make_env
 verify_negative_test_make_env
 verify_negative_test_scoped_denial_signals

@@ -200,6 +200,10 @@ Dry-run acceptance:
   `make apply-trustee-rung-bc` run this verifier with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` before
   Trustee resources are changed. Override that variable to `0` only for narrow diagnostics where
   the artifact manifest is intentionally absent.
+- `make verify-rung-bc-artifacts` is the operator-facing aggregate preflight for both checks. Run
+  it after `make build-rung-images` or any manual artifact change; it fails unless the selected
+  rung-b digest/KID/KEK and rung-c signed/unsigned/public-key tuple agree with
+  `rung-bc-images.json`.
 - No private key, image key, registry credential, or generated initdata lands in git.
 
 ## Phase 2 - add Trustee resources deliberately
@@ -215,11 +219,11 @@ Sequence:
 
    ```bash
    . rung-bc-artifacts/rung-bc.env
-   make verify-rung-b-key-wrap
+   make verify-rung-bc-artifacts
    ```
 
 2. Create or update Secrets and render Trustee with the extra KBS resource names. This reruns
-   `verify-rung-b-key-wrap` with the same image/key inputs before applying changes:
+   both artifact verifiers with the same image/key/signature inputs before applying changes:
 
    ```bash
    make apply-trustee-rung-bc \

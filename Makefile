@@ -200,6 +200,9 @@ verify-rung-b-key-wrap: ## Phase 6: verify rung-b encrypted layer KID and KEK un
 verify-rung-c-signature: ## Phase 6: verify rung-c signed image and unsigned negative-control signature state
 	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_BC_IMAGES_MANIFEST="$(RUNG_BC_IMAGES_MANIFEST)" REQUIRE_RUNG_BC_IMAGES_MANIFEST="$(REQUIRE_RUNG_BC_IMAGES_MANIFEST)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(VERIFY_RUNG_C_SIGNATURE_SCRIPT)"
 
+.PHONY: verify-rung-bc-artifacts
+verify-rung-bc-artifacts: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: verify rung-b/c image artifact manifest, key unwrap, and signature state
+
 .PHONY: seed-rung-bc-secrets
 seed-rung-bc-secrets: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"

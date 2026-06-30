@@ -2,7 +2,7 @@
 
 **Target:** OCP **4.20.18** · OSC **1.12** · Trustee **1.1** · TEE = **AMD SEV-SNP (Genoa)** · Single-Node OpenShift on disposable Latitude bare metal, behind a persistent mirror bastion.
 
-This is the disposable verification rig that proves each CoCo capability (secret release → encrypted image → signed image) under a *real* air gap before any of it touches a production cluster. **Current state: nothing is applied.** PR #4 (Rocky-10 bastion automation + VLAN L3) is merged to `main`, but no Terraform has been run, no node exists, no mirror is up. Rung-0 SNP-host was proven *once* on Ubuntu 26.04 — it is **unproven on the Rocky 10 image we now standardize on**, and re-proving it is a hard gate.
+This is the disposable verification rig that proves each CoCo capability (secret release → encrypted image → signed image) under a *real* air gap before any of it touches a production cluster. For a fresh rig, start at Phase 0 and treat every stop-gate below as live. For the active rung b/c proof effort, use [`rung-bc-status.md`](rung-bc-status.md) as the current state record: the SNO/Trustee rig is up, rung-c has scoped happy/unsigned-denial evidence, and rung-b remains blocked on the direct CRI-O/Kata encrypted-image pull path tracked upstream.
 
 **Estimated total wall time:** ~5–7 h, of which **~1–2 h is the unattended mirror** (paid once; the bastion persists across node churn). **Billing note:** two hourly-billed bare-metal hosts (persistent bastion + disposable node) — every `terraform apply` starts hourly billing; destroy when done. **Hands-on note:** the BIOS recipe, the ISO boot, and the IPMI console are browser/console actions that require physical/console access — they cannot be automated from the CLI.
 
