@@ -1,7 +1,8 @@
 # Secrets & hardware-bound artifacts — never commit
 pull-secret.json
 auth.json
-.codex/          # local Codex CLI config — may hold MCP bearer tokens (e.g. latitudesh)
+# local Codex CLI config — may hold MCP bearer tokens (e.g. latitudesh)
+.codex/
 *.der
 *.pem
 adminPrivateKey
