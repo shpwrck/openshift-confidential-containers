@@ -131,6 +131,8 @@ Operator-facing artifact knobs:
 | `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. Use the generated digest ref for apply/negative-test. |
 | `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. Use the generated digest ref for apply. |
 | `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. Use the generated digest ref for negative-test. |
+| `RUNG_B_APP_LOG_MARKER` | `rung-b: encrypted image decrypted and running` | The rung-b proof workload emits a different success line, but validation should still prove app start. |
+| `RUNG_C_APP_LOG_MARKER` | `rung-c: signed image accepted and running` | The rung-c proof workload emits a different success line, but validation should still prove app start. |
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
 | `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
 | `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. |
@@ -385,7 +387,9 @@ git. The default pod set is `rung-a-secret`, `rung-b-encrypted`, `rung-c-signed`
 `negtest-rung-a`, `negtest-rung-b`, `negtest-rung-c`, and `negtest-air-gap`; override with
 `EVIDENCE_PODS="..."` when a rig run uses custom pod names. If the rung-b/c pod names change,
 also set `RUNG_B_POD`, `RUNG_C_POD`, `NEG_RUNG_B_POD`, and `NEG_RUNG_C_POD` so
-`rung-bc-proof-summary.tsv` can correlate the right pod JSON files. The bundle includes pod
+`rung-bc-proof-summary.tsv` can correlate the right pod JSON files. If the proof image emits
+custom success text, set `RUNG_B_APP_LOG_MARKER` or `RUNG_C_APP_LOG_MARKER` before running
+`make validate-rung-bc-evidence` or `make prove-rung-bc`. The bundle includes pod
 YAML/describe/logs, per-pod summary TSVs, decoded initdata, recent Trustee logs, events,
 KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
 Secret metadata plus data-key names and decoded byte lengths, redacted `vcek-*` Secret

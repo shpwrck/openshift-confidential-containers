@@ -1221,6 +1221,8 @@ vars=(
 	RUNG_C_POD
 	NEG_RUNG_B_POD
 	NEG_RUNG_C_POD
+	RUNG_B_APP_LOG_MARKER
+	RUNG_C_APP_LOG_MARKER
 )
 for var in "${vars[@]}"; do
 	printf '%s=%s\n' "$var" "${!var-}"
@@ -1234,6 +1236,8 @@ EOF
 		RUNG_C_POD="custom-rung-c" \
 		NEG_RUNG_B_POD="custom-neg-rung-b" \
 		NEG_RUNG_C_POD="custom-neg-rung-c" \
+		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
+		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		> "$out"
 	expect_grep "ARG=$tmpdir/evidence-for-validation" "$out" "Makefile validate evidence directory argument"
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence-for-validation" "$out" "Makefile validate evidence dir env"
@@ -1241,6 +1245,8 @@ EOF
 	expect_grep "RUNG_C_POD=custom-rung-c" "$out" "Makefile validate rung-c pod override"
 	expect_grep "NEG_RUNG_B_POD=custom-neg-rung-b" "$out" "Makefile validate negative rung-b pod override"
 	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$out" "Makefile validate negative rung-c pod override"
+	expect_grep "RUNG_B_APP_LOG_MARKER=custom rung-b proof marker" "$out" "Makefile validate rung-b app marker override"
+	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$out" "Makefile validate rung-c app marker override"
 }
 
 create_prove_stub() {
@@ -1250,11 +1256,12 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
 	"${NS:-}" "${TRUSTEE_NS:-}" "${PODS:-}" "${RUNG_B_POD:-}" "${RUNG_C_POD:-}" \
-	"${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" >> "$CALL_LOG"
+	"${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
+	"${RUNG_C_APP_LOG_MARKER:-}" >> "$CALL_LOG"
 EOF
 	} > "$path"
 	chmod +x "$path"
@@ -1290,6 +1297,8 @@ verify_prove_rung_bc_workflow() {
 		RUNG_C_POD="rung-c-signed" \
 		NEG_RUNG_B_POD="negtest-rung-b" \
 		NEG_RUNG_C_POD="negtest-rung-c" \
+		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
+		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
 		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
@@ -1304,6 +1313,9 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "NS=workload-test" "$log" "prove-rung-bc workload namespace"
 	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-bc Trustee namespace"
 	expect_grep "PODS=rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" "$log" "prove-rung-bc evidence pod list"
+	expect_grep "validate-evidence	arg=$tmpdir/proof-evidence" "$log" "prove-rung-bc validate evidence step"
+	expect_grep "RUNG_B_APP_LOG_MARKER=custom rung-b proof marker" "$log" "prove-rung-bc validate rung-b app marker"
+	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$log" "prove-rung-bc validate rung-c app marker"
 
 	if CALL_LOG="$bad_log" make -s prove-rung-bc \
 		APPLY_RUNG_B_SCRIPT="$apply_b" \

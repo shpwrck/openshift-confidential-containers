@@ -9,6 +9,8 @@ RUNG_ENV_FILE="${RUNG_ENV_FILE:-${ARTIFACT_DIR}/rung-bc.env}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-}"
 RUNG_C_IMAGE="${RUNG_C_IMAGE:-}"
 RUNG_C_UNSIGNED_IMAGE="${RUNG_C_UNSIGNED_IMAGE:-}"
+RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-rung-b: encrypted image decrypted and running}"
+RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-rung-c: signed image accepted and running}"
 APPLY_RUNG_B_SCRIPT="${APPLY_RUNG_B_SCRIPT:-${REPO_ROOT}/scripts/apply-rung-b.sh}"
 APPLY_RUNG_C_SCRIPT="${APPLY_RUNG_C_SCRIPT:-${REPO_ROOT}/scripts/apply-rung-c.sh}"
 NEGATIVE_TEST_SCRIPT="${NEGATIVE_TEST_SCRIPT:-${REPO_ROOT}/scripts/negative-test.sh}"
@@ -82,7 +84,8 @@ EVIDENCE_DIR="$EVIDENCE_DIR" bash "$COLLECT_RUNG_BC_EVIDENCE_SCRIPT"
 
 echo
 echo "== validate rung-b/c evidence =="
-bash "$VALIDATE_RUNG_BC_EVIDENCE_SCRIPT" "$EVIDENCE_DIR"
+RUNG_B_APP_LOG_MARKER="$RUNG_B_APP_LOG_MARKER" RUNG_C_APP_LOG_MARKER="$RUNG_C_APP_LOG_MARKER" \
+	bash "$VALIDATE_RUNG_BC_EVIDENCE_SCRIPT" "$EVIDENCE_DIR"
 
 echo
 echo "Rung b/c proof workflow complete. Evidence: $EVIDENCE_DIR"
