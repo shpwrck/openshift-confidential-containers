@@ -21,6 +21,9 @@ COSIGN_KEY="${COSIGN_KEY:-${ARTIFACT_DIR}/cosign.key}"
 COSIGN_PUB="${COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
 COSIGN_SIGN_ARGS="${COSIGN_SIGN_ARGS:-}"
 COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:-}"
+VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="${VERIFY_RUNG_ARTIFACTS_AFTER_BUILD:-1}"
+VERIFY_RUNG_B_KEY_WRAP_SCRIPT="${VERIFY_RUNG_B_KEY_WRAP_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-b-key-wrap.sh}"
+VERIFY_RUNG_C_SIGNATURE_SCRIPT="${VERIFY_RUNG_C_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-c-signature.sh}"
 
 die() {
 	echo "ERROR: $*" >&2
@@ -29,6 +32,11 @@ die() {
 
 need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
+}
+
+require_script() {
+	local path="$1"
+	[[ -f "$path" ]] || die "missing script: $path"
 }
 
 file_size_bytes() {
@@ -298,6 +306,24 @@ write_manifest() {
 	' "$manifest"
 }
 
+verify_built_artifacts() {
+	local manifest="$ARTIFACT_DIR/rung-bc-images.json"
+	if [[ "$VERIFY_RUNG_ARTIFACTS_AFTER_BUILD" == "0" ]]; then
+		echo "Skipping post-build rung-b/c artifact verification."
+		return
+	fi
+	require_script "$VERIFY_RUNG_B_KEY_WRAP_SCRIPT"
+	require_script "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
+	echo "Verifying built rung-b encrypted image metadata and key wrap"
+	ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_B_IMAGE="$RUNG_B_IMAGE" RUNG_B_KEY_ID="$RUNG_B_KEY_ID" \
+		RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" RUNG_BC_IMAGES_MANIFEST="$manifest" \
+		REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_B_KEY_WRAP_SCRIPT"
+	echo "Verifying built rung-c signed image and unsigned negative control"
+	ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_C_IMAGE="$RUNG_C_IMAGE" RUNG_C_UNSIGNED_IMAGE="$RUNG_C_UNSIGNED_IMAGE" \
+		RUNG_C_COSIGN_PUB="$COSIGN_PUB" RUNG_BC_IMAGES_MANIFEST="$manifest" COSIGN_VERIFY_ARGS="$COSIGN_VERIFY_ARGS" \
+		REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
+}
+
 if [[ "${1:-}" == "digest-ref" ]]; then
 	[[ "$#" -eq 3 ]] || die "usage: $0 digest-ref <image-ref> <sha256:digest>"
 	image_digest_ref "$2" "$3"
@@ -351,3 +377,4 @@ ensure_cosign_keys
 encrypt_rung_b
 sign_rung_c
 write_manifest
+verify_built_artifacts

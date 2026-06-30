@@ -84,8 +84,11 @@ verify_deterministic_initdata_encoding() {
 
 verify_build_manifest_fingerprints() {
 	local bin="$tmpdir/build-manifest-bin" artifacts="$tmpdir/build-manifest-artifacts" manifest
-	local key_sha pub_sha
+	local key_sha pub_sha post_verify_log key_wrap_stub c_signature_stub
 	mkdir -p "$bin" "$artifacts"
+	post_verify_log="$tmpdir/build-manifest-post-verify.log"
+	key_wrap_stub="$bin/key-wrap-post-build.sh"
+	c_signature_stub="$bin/rung-c-signature-post-build.sh"
 	printf '01234567890123456789012345678901' > "$artifacts/rung-b-image.key"
 	printf 'cosign-public-key' > "$artifacts/cosign.pub"
 	printf 'cosign-private-key' > "$artifacts/cosign.key"
@@ -142,6 +145,35 @@ exit 0
 EOF
 	chmod +x "$bin/cosign"
 
+	cat > "$key_wrap_stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+{
+	printf 'key-wrap\n'
+	printf 'RUNG_B_IMAGE=%s\n' "$RUNG_B_IMAGE"
+	printf 'RUNG_B_KEY_ID=%s\n' "$RUNG_B_KEY_ID"
+	printf 'RUNG_B_KEY_FILE=%s\n' "$RUNG_B_KEY_FILE"
+	printf 'RUNG_BC_IMAGES_MANIFEST=%s\n' "$RUNG_BC_IMAGES_MANIFEST"
+	printf 'REQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\n' "$REQUIRE_RUNG_BC_IMAGES_MANIFEST"
+} >> "$POST_VERIFY_LOG"
+EOF
+	chmod +x "$key_wrap_stub"
+
+	cat > "$c_signature_stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+{
+	printf 'c-signature\n'
+	printf 'RUNG_C_IMAGE=%s\n' "$RUNG_C_IMAGE"
+	printf 'RUNG_C_UNSIGNED_IMAGE=%s\n' "$RUNG_C_UNSIGNED_IMAGE"
+	printf 'RUNG_C_COSIGN_PUB=%s\n' "$RUNG_C_COSIGN_PUB"
+	printf 'RUNG_BC_IMAGES_MANIFEST=%s\n' "$RUNG_BC_IMAGES_MANIFEST"
+	printf 'COSIGN_VERIFY_ARGS=%s\n' "$COSIGN_VERIFY_ARGS"
+	printf 'REQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\n' "$REQUIRE_RUNG_BC_IMAGES_MANIFEST"
+} >> "$POST_VERIFY_LOG"
+EOF
+	chmod +x "$c_signature_stub"
+
 	TEST_RUNG_B_KEY_ID="kbs:///default/image-key/rung-b" PATH="$bin:$PATH" \
 		ARTIFACT_DIR="$artifacts" \
 		CONTAINER_RUNTIME=podman \
@@ -151,6 +183,9 @@ EOF
 		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
 		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c:unsigned" \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap_stub" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature_stub" \
+		POST_VERIFY_LOG="$post_verify_log" \
 		bash "$REPO_ROOT/scripts/build-rung-images.sh" >/dev/null
 
 	manifest="$artifacts/rung-bc-images.json"
@@ -162,6 +197,12 @@ EOF
 		.rung_c.digest_ref == "mirror.test.local:5000/coco/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" and
 		.rung_c.unsigned_digest_ref == "mirror.test.local:5000/coco/rung-c@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	' "$manifest" >/dev/null || die "rung-bc manifest did not include expected fingerprints and digest refs"
+	expect_grep "key-wrap" "$post_verify_log" "build-rung-images post-build key-wrap verifier"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$manifest" "$post_verify_log" "build-rung-images key-wrap manifest"
+	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$post_verify_log" "build-rung-images key-wrap manifest requirement"
+	expect_grep "c-signature" "$post_verify_log" "build-rung-images post-build rung-c signature verifier"
+	expect_grep "RUNG_C_COSIGN_PUB=$artifacts/cosign.pub" "$post_verify_log" "build-rung-images rung-c public key"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c:unsigned" "$post_verify_log" "build-rung-images rung-c unsigned image"
 }
 
 verify_rung_b_key_wrap_verifier() {
@@ -827,6 +868,9 @@ vars=(
 	COSIGN_PUB
 	COSIGN_SIGN_ARGS
 	COSIGN_VERIFY_ARGS
+	VERIFY_RUNG_ARTIFACTS_AFTER_BUILD
+	VERIFY_RUNG_B_KEY_WRAP_SCRIPT
+	VERIFY_RUNG_C_SIGNATURE_SCRIPT
 )
 
 for var in "${vars[@]}"; do
@@ -855,6 +899,9 @@ EOF
 		COSIGN_PUB="$tmpdir/custom-cosign.pub" \
 		COSIGN_SIGN_ARGS="--yes --tlog-upload=false --allow-insecure-registry" \
 		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
+		VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="0" \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$tmpdir/custom-key-wrap.sh" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$tmpdir/custom-rung-c-signature.sh" \
 		> "$out"
 
 	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile mirror override"
@@ -875,6 +922,9 @@ EOF
 	expect_grep "COSIGN_PUB=$tmpdir/custom-cosign.pub" "$out" "Makefile cosign pub override"
 	expect_grep "COSIGN_SIGN_ARGS=--yes --tlog-upload=false --allow-insecure-registry" "$out" "Makefile cosign sign args override"
 	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$out" "Makefile cosign verify args override"
+	expect_grep "VERIFY_RUNG_ARTIFACTS_AFTER_BUILD=0" "$out" "Makefile post-build verification toggle override"
+	expect_grep "VERIFY_RUNG_B_KEY_WRAP_SCRIPT=$tmpdir/custom-key-wrap.sh" "$out" "Makefile post-build key-wrap verifier override"
+	expect_grep "VERIFY_RUNG_C_SIGNATURE_SCRIPT=$tmpdir/custom-rung-c-signature.sh" "$out" "Makefile post-build rung-c signature verifier override"
 }
 
 verify_trustee_make_env() {

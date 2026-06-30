@@ -102,6 +102,9 @@ The repo now carries the dry-run friendly tooling:
   - Writes `rung-bc-artifacts/rung-bc.env`, a sourceable non-secret env file with the digest
     refs, rung-b KID, and artifact paths needed by the apply and negative-test targets;
     malformed manifests or tag-only image refs fail closed instead of producing exports.
+  - Runs the rung-b key-wrap and rung-c signature verifiers after writing the manifest by default;
+    set `VERIFY_RUNG_ARTIFACTS_AFTER_BUILD=0` only for narrow troubleshooting where the artifact
+    set is intentionally incomplete.
 - `scripts/seed-trustee-secrets.sh`
   - `RUNG_B_KEY_FILE` creates the Secret/key derived from `RUNG_B_KEY_ID`, defaulting to
     Secret `image-key` with key `rung-b`.

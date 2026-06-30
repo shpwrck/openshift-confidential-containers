@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T11:13:17Z
+Last updated: 2026-06-30T11:19:43Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest proof-tooling checkpoint verified on the rig: `e4faafa` (`make verify-rung-c-signature`,
@@ -61,6 +61,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   check: it validates `rung-bc-images.json` against the signed digest, unsigned-control digest,
   and public-key fingerprint, verifies the signed digest with the configured public key, and
   requires the unsigned negative-control ref not to verify with that same key.
+- `make build-rung-images` now runs the rung-b key-wrap and rung-c signature verifiers after
+  writing `rung-bc-images.json`, so a newly built artifact set fails before any Trustee or pod
+  step if the pushed images, keys, signatures, or manifest disagree.
 - `make seed-rung-bc-secrets` and `make apply-trustee-rung-bc` now run
   `verify-rung-b-key-wrap` and `verify-rung-c-signature` first, so wrong rung-b KEK bytes or a
   wrong rung-c public key/unsigned-control setup fail before Trustee Secrets or KbsConfig are
