@@ -63,9 +63,11 @@ make diagnose-rung-b-direct-pull RUNG_B_IMAGE="$RUNG_B_IMAGE"
 
 The diagnostic exits zero only when it sees the known host-side encrypted-layer blocker before any
 Trustee image-key request. It writes pod, event, Trustee, CRI-O, and mirror-log context under
-`rung-bc-artifacts/rung-b-direct-pull-<timestamp>/`. The generated `mirror/summary.tsv` and
-`summary.env` count rung-b manifest/blob pulls by `cri-o` and by the guest `oci-client`, which is
-the quickest way to see whether the host pulled encrypted content before the guest path started.
+`rung-bc-artifacts/rung-b-direct-pull-<timestamp>/`. Mirror-log capture is bounded to the
+diagnostic start time and recorded as `mirror_log_since_time` in `summary.env`. The generated
+`mirror/summary.tsv` and `summary.env` count rung-b manifest/blob pulls by `cri-o` and by the
+guest `oci-client`, which is the quickest way to see whether the host pulled encrypted content
+before the guest path started.
 Validate a collected bundle before sharing it:
 
 ```bash

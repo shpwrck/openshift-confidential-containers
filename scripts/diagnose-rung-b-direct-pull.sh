@@ -20,6 +20,7 @@ KEEP_DIAG_POD="${KEEP_DIAG_POD:-0}"
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-600}"
 CRIO_LOG_TAIL="${CRIO_LOG_TAIL:-600}"
 MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-600}"
+MIRROR_LOG_SINCE_TIME="${MIRROR_LOG_SINCE_TIME:-}"
 MIRROR_LOG_FILES="${MIRROR_LOG_FILES:-/var/log/nginx/access.log /var/log/nginx/error.log /var/log/mirror-bootstrap.log /opt/mirror/oc-mirror-push.log}"
 MIRROR_CONTAINER_NAMES="${MIRROR_CONTAINER_NAMES:-quay-app quay registry mirror-registry}"
 APPLY_RUNG_B_SCRIPT="${APPLY_RUNG_B_SCRIPT:-${REPO_ROOT}/scripts/apply-rung-b.sh}"
@@ -53,6 +54,7 @@ Key env:
   WAIT_TIMEOUT          seconds to wait for the known blocker (default: 180)
   KEEP_DIAG_POD         set 1 to keep the diagnostic pod
   MIRROR_LOG_FILES      host mirror log files to tail when readable
+  MIRROR_LOG_SINCE_TIME UTC RFC3339 log lower bound (default: diagnostic start)
   MIRROR_CONTAINER_NAMES mirror container names to inspect with podman/docker
 
 Exit codes:
@@ -128,16 +130,51 @@ run_readable() {
 	fi
 }
 
-record_mirror_log_file() {
-	local path="$1" safe_name
-	safe_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9_.-]#_#g')"
-	if ! run_readable "$path" tail -n "$MIRROR_LOG_TAIL" > "${DIAG_DIR}/mirror/files/${safe_name}" 2>&1; then
-		printf 'missing or unreadable: %s\n' "$path" > "${DIAG_DIR}/mirror/files/${safe_name}.missing"
+filter_log_since_time() {
+	local since="$1" since_epoch line stamp epoch
+	if [[ -z "$since" ]]; then
+		cat
+		return
 	fi
+	if ! since_epoch="$(date -u -d "$since" +%s 2>/dev/null)"; then
+		cat
+		return
+	fi
+	while IFS= read -r line; do
+		stamp=""
+		if [[ "$line" =~ \[([0-9]{1,2})/([A-Za-z]{3})/([0-9]{4}):([0-9]{2}:[0-9]{2}:[0-9]{2})[[:space:]]([+-][0-9]{4})\] ]]; then
+			stamp="${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]} ${BASH_REMATCH[4]} ${BASH_REMATCH[5]}"
+		elif [[ "$line" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}[T[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:?[0-9]{2})?) ]]; then
+			stamp="${BASH_REMATCH[1]}"
+		fi
+		[[ -n "$stamp" ]] || continue
+		epoch="$(date -u -d "$stamp" +%s 2>/dev/null || true)"
+		if [[ "$epoch" =~ ^[0-9]+$ ]] && (( epoch >= since_epoch )); then
+			printf '%s\n' "$line"
+		fi
+	done
+}
+
+record_mirror_log_file() {
+	local path="$1" safe_name tmp
+	safe_name="$(printf '%s' "$path" | sed 's#^/##; s#[^A-Za-z0-9_.-]#_#g')"
+	tmp="$(mktemp)"
+	if ! run_readable "$path" tail -n "$MIRROR_LOG_TAIL" > "$tmp" 2>&1; then
+		printf 'missing or unreadable: %s\n' "$path" > "${DIAG_DIR}/mirror/files/${safe_name}.missing"
+		rm -f "$tmp"
+		return
+	fi
+	if [[ -n "$MIRROR_LOG_SINCE_TIME" ]]; then
+		filter_log_since_time "$MIRROR_LOG_SINCE_TIME" < "$tmp" > "${DIAG_DIR}/mirror/files/${safe_name}"
+	else
+		cp "$tmp" "${DIAG_DIR}/mirror/files/${safe_name}"
+	fi
+	rm -f "$tmp"
 }
 
 record_mirror_container_log() {
 	local name="$1" runtime=""
+	local -a log_args
 	if command -v podman >/dev/null; then
 		runtime=podman
 	elif command -v docker >/dev/null; then
@@ -146,11 +183,16 @@ record_mirror_container_log() {
 		printf 'podman/docker not on PATH\n' > "${DIAG_DIR}/mirror/containers/${name}.missing"
 		return
 	fi
+	log_args=(logs --tail "$MIRROR_LOG_TAIL")
+	if [[ -n "$MIRROR_LOG_SINCE_TIME" ]]; then
+		log_args+=(--since "$MIRROR_LOG_SINCE_TIME")
+	fi
+	log_args+=("$name")
 
 	if "$runtime" container inspect "$name" >/dev/null 2>&1; then
-		"$runtime" logs --tail "$MIRROR_LOG_TAIL" "$name" > "${DIAG_DIR}/mirror/containers/${name}.log" 2>&1 || true
+		"$runtime" "${log_args[@]}" > "${DIAG_DIR}/mirror/containers/${name}.log" 2>&1 || true
 	elif command -v sudo >/dev/null && sudo -n "$runtime" container inspect "$name" >/dev/null 2>&1; then
-		{ sudo -n "$runtime" logs --tail "$MIRROR_LOG_TAIL" "$name"; } > "${DIAG_DIR}/mirror/containers/${name}.log" 2>&1 || true
+		{ sudo -n "$runtime" "${log_args[@]}"; } > "${DIAG_DIR}/mirror/containers/${name}.log" 2>&1 || true
 	else
 		printf 'missing container: %s\n' "$name" > "${DIAG_DIR}/mirror/containers/${name}.missing"
 	fi
@@ -256,6 +298,7 @@ mirror_crio_rung_b_manifest_count=${MIRROR_CRIO_RUNG_B_MANIFEST_COUNT}
 mirror_crio_rung_b_blob_count=${MIRROR_CRIO_RUNG_B_BLOB_COUNT}
 mirror_guest_rung_b_manifest_count=${MIRROR_GUEST_RUNG_B_MANIFEST_COUNT}
 mirror_guest_rung_b_blob_count=${MIRROR_GUEST_RUNG_B_BLOB_COUNT}
+mirror_log_since_time=${MIRROR_LOG_SINCE_TIME}
 classification=${exit_class}
 EOF
 }
@@ -274,6 +317,7 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 mkdir -p "$DIAG_DIR"
 RUNG_B_KEY_RESOURCE="$(kbs_uri_resource_path "$RUNG_B_KEY_ID")"
 SINCE_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+MIRROR_LOG_SINCE_TIME="${MIRROR_LOG_SINCE_TIME:-$SINCE_TIME}"
 
 echo "Writing diagnostic output to ${DIAG_DIR}"
 env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \

@@ -997,6 +997,7 @@ EOF
 		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		MIRROR_LOG_TAIL="333" \
+		MIRROR_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
 		MIRROR_CONTAINER_NAMES="quay-app custom-registry" \
 		> "$diagnose_out"
@@ -1036,6 +1037,7 @@ EOF
 	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$diagnose_out" "Makefile diagnose rung-b policy URI override"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$diagnose_out" "Makefile diagnose rung-b image override"
 	expect_grep "MIRROR_LOG_TAIL=333" "$diagnose_out" "Makefile diagnose mirror log tail override"
+	expect_grep "MIRROR_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$diagnose_out" "Makefile diagnose mirror log since-time override"
 	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$diagnose_out" "Makefile diagnose mirror log file override"
 	expect_grep "MIRROR_CONTAINER_NAMES=quay-app custom-registry" "$diagnose_out" "Makefile diagnose mirror container override"
 }
@@ -1868,6 +1870,7 @@ mirror_crio_rung_b_manifest_count=16
 mirror_crio_rung_b_blob_count=16
 mirror_guest_rung_b_manifest_count=0
 mirror_guest_rung_b_blob_count=0
+mirror_log_since_time=2026-06-30T07:32:23Z
 classification=known-host-pull-blocker
 EOF
 	cat > "$diag/classification.txt" <<'EOF'
@@ -1895,6 +1898,7 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local legacy_diag="$tmpdir/legacy-direct-pull-diagnostic" legacy_out="$tmpdir/validate-direct-pull-legacy.out"
 	local broken_guest="$tmpdir/broken-direct-pull-guest" guest_err="$tmpdir/validate-direct-pull-guest.err"
 	local broken_key="$tmpdir/broken-direct-pull-key" key_err="$tmpdir/validate-direct-pull-key.err"
+	local broken_mirror_window="$tmpdir/broken-direct-pull-mirror-window" mirror_window_err="$tmpdir/validate-direct-pull-mirror-window.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
@@ -1906,9 +1910,18 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 
 	cp -R "$diag" "$legacy_diag"
 	rm -rf "$legacy_diag/mirror"
+	sed -i '/^mirror_log_since_time=/d' "$legacy_diag/summary.env"
 	make -s validate-rung-b-direct-pull DIAG_DIR="$legacy_diag" REQUIRE_MIRROR_SUMMARY=0 > "$legacy_out"
 	expect_grep "mirror summary not required" "$legacy_out" "Makefile direct-pull legacy diagnostic validation"
+	expect_grep "mirror log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic mirror window"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$legacy_out" "Makefile direct-pull legacy diagnostic result"
+
+	cp -R "$diag" "$broken_mirror_window"
+	sed -i '/^mirror_log_since_time=/d' "$broken_mirror_window/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_mirror_window" > /dev/null 2> "$mirror_window_err"; then
+		die "direct-pull diagnostic validator accepted unbounded mirror logs"
+	fi
+	expect_grep "mirror_log_since_time is missing" "$mirror_window_err" "direct-pull diagnostic mirror window failure"
 
 	cp -R "$diag" "$broken_guest"
 	sed -i 's/^guest_rung_b_blob	0$/guest_rung_b_blob	1/' "$broken_guest/mirror/summary.tsv"

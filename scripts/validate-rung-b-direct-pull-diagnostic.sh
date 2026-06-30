@@ -97,7 +97,7 @@ check_expected_value() {
 }
 
 check_summary() {
-	local phase image key_id key_resource
+	local phase image key_id key_resource mirror_since
 	require_file "${DIAG_DIR}/summary.env" "diagnostic summary"
 	if [[ ! -s "${DIAG_DIR}/summary.env" ]]; then
 		return
@@ -129,6 +129,15 @@ check_summary() {
 		pass "rung-b key resource recorded"
 	else
 		fail "rung-b key ID/resource missing or invalid"
+	fi
+
+	mirror_since="$(summary_value_or_default mirror_log_since_time "")"
+	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
+		pass "mirror log since-time not required for legacy diagnostic validation"
+	elif [[ "$mirror_since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+		pass "mirror logs are bounded by since-time=$mirror_since"
+	else
+		fail "mirror_log_since_time is ${mirror_since:-missing}; collect bounded mirror logs for current diagnostic bundles"
 	fi
 }
 
