@@ -164,6 +164,16 @@ run_rung_c() {
   rm -f "$manifest"
 }
 
+# Restart the Trustee KBS so it re-mounts the (now removed/restored) VCEK secrets, and WAIT for the
+# new pod. Target the deployment BY NAME: the `app=kbs` label is on the POD, not the deployment, so
+# `rollout restart deploy -l app=kbs` matched nothing — a no-op that exits 0, skipping the pod-delete
+# fallback — leaving the deleted VCEK still mounted in the running pod, so the air-gap denial could
+# never actually hold (a false FAIL on a real OfflineStore).
+restart_kbs() {
+  oc -n "$TRUSTEE_NS" rollout restart deployment/trustee-deployment >/dev/null 2>&1 || true
+  oc -n "$TRUSTEE_NS" rollout status deployment/trustee-deployment --timeout=120s >/dev/null 2>&1 || true
+}
+
 run_air_gap() {
   echo "[air-gap] remove VCEK secrets → OfflineStore miss → attestation must fail (not silently hit KDS)"
   local vceks=() bakdir manifest restore_needed=0
@@ -180,7 +190,7 @@ run_air_gap() {
       [[ -e "$backup" ]] || continue
       oc -n "$TRUSTEE_NS" apply -f "$backup" >/dev/null || true
     done
-    oc -n "$TRUSTEE_NS" rollout restart deploy -l app=kbs >/dev/null 2>&1 || true
+    restart_kbs
     restore_needed=0
   }
 
@@ -201,7 +211,7 @@ run_air_gap() {
 
   echo "  (temporarily removing ${#vceks[@]} VCEK secret(s); will restore)"
   oc -n "$TRUSTEE_NS" delete "${vceks[@]}" >/dev/null
-  oc -n "$TRUSTEE_NS" rollout restart deploy -l app=kbs >/dev/null 2>&1 || oc -n "$TRUSTEE_NS" delete pod -l app=kbs >/dev/null 2>&1 || true
+  restart_kbs
   sleep 10
   if render_or_skip "air-gap happy-path rung-a manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
