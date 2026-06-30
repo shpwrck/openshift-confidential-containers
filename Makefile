@@ -60,6 +60,7 @@ RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
 EVIDENCE_DIR ?=
 DIAG_DIR ?=
+REQUIRE_MIRROR_SUMMARY ?= 1
 EVIDENCE_PODS ?= rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap
 RUNG_B_POD ?= rung-b-encrypted
 RUNG_C_POD ?= rung-c-signed
@@ -222,7 +223,7 @@ diagnose-rung-b-direct-pull: ## Phase 6: reproduce/collect the rung-b direct enc
 .PHONY: validate-rung-b-direct-pull
 validate-rung-b-direct-pull: ## Phase 6: validate a rung-b direct-pull diagnostic bundle (set DIAG_DIR)
 	@test -n "$(DIAG_DIR)" || { echo "set DIAG_DIR=<rung-b direct-pull diagnostic dir>"; exit 2; }
-	DIAG_DIR="$(DIAG_DIR)" bash "$(VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT)" "$(DIAG_DIR)"
+	DIAG_DIR="$(DIAG_DIR)" REQUIRE_MIRROR_SUMMARY="$(REQUIRE_MIRROR_SUMMARY)" bash "$(VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT)" "$(DIAG_DIR)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

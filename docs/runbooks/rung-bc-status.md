@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T07:51:29Z
+Last updated: 2026-06-30T08:05:33Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `34ec02b`
+Current head before this update: `1d918af`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -51,7 +51,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   before any Trustee image-key request.
 - `make validate-rung-b-direct-pull DIAG_DIR=<bundle>` now validates those direct-pull diagnostic
   bundles offline, including known-blocker classification, no Trustee image-key request, and the
-  compact mirror-count shape when `mirror/summary.tsv` is present.
+  compact mirror-count shape when `mirror/summary.tsv` is present. The Make target forwards
+  `REQUIRE_MIRROR_SUMMARY=0` explicitly for older bundles collected before mirror summaries
+  existed; current bundles should keep the strict default.
 - `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
   it passes `--ocp-version`, defaults to the pinned `coco-tools` digest used by VCEK collection,
   treats Veritas `-o` as an output directory, supports a cached `oc debug` image, and can stage a
@@ -218,6 +220,11 @@ Live rig check on 2026-06-30:
     still rejects tag-by-digest; and `skopeo copy containers-storage:<carrier-digest>
     containers-storage:<encrypted-digest>` refuses the copy because the carrier manifest digest
     would not match the encrypted destination digest.
+- The packaged direct-pull diagnostic bundle
+  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T074842Z` validates
+  with `make validate-rung-b-direct-pull DIAG_DIR=...` on the bastion. The validation confirms the
+  known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, CRI-O rung-b
+  manifest/blob pulls in the mirror log summary, and zero guest `oci-client` rung-b pulls.
   - The containerd-style annotation key `io.kubernetes.cri.image-name` cannot be added through
     CRI-O runtime `allowed_annotations`; it is not in CRI-O's `AllAllowedAnnotations` table.
     Runtime-level `default_annotations` did accept

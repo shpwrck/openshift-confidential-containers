@@ -1826,6 +1826,7 @@ EOF
 verify_rung_b_direct_pull_diagnostic_validation() {
 	local diag="$tmpdir/valid-direct-pull-diagnostic" out="$tmpdir/validate-direct-pull.out"
 	local make_out="$tmpdir/validate-direct-pull-make.out"
+	local legacy_diag="$tmpdir/legacy-direct-pull-diagnostic" legacy_out="$tmpdir/validate-direct-pull-legacy.out"
 	local broken_guest="$tmpdir/broken-direct-pull-guest" guest_err="$tmpdir/validate-direct-pull-guest.err"
 	local broken_key="$tmpdir/broken-direct-pull-key" key_err="$tmpdir/validate-direct-pull-key.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
@@ -1836,6 +1837,12 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 
 	make -s validate-rung-b-direct-pull DIAG_DIR="$diag" > "$make_out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$make_out" "Makefile direct-pull diagnostic validation"
+
+	cp -R "$diag" "$legacy_diag"
+	rm -rf "$legacy_diag/mirror"
+	make -s validate-rung-b-direct-pull DIAG_DIR="$legacy_diag" REQUIRE_MIRROR_SUMMARY=0 > "$legacy_out"
+	expect_grep "mirror summary not required" "$legacy_out" "Makefile direct-pull legacy diagnostic validation"
+	expect_grep "Rung-b direct-pull diagnostic validation OK." "$legacy_out" "Makefile direct-pull legacy diagnostic result"
 
 	cp -R "$diag" "$broken_guest"
 	sed -i 's/^guest_rung_b_blob	0$/guest_rung_b_blob	1/' "$broken_guest/mirror/summary.tsv"
