@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T07:25:40Z
+Last updated: 2026-06-30T07:35:07Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `ded7e30`
+Current head before this update: `9f1f37e`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -247,6 +247,15 @@ Live rig check on 2026-06-30:
     layer `sha256:346e9fd547e142e6a12881b64a7977640e6f9ca68c20da538f8a523e17de87f7` before any
     Trustee `image-kek` request appeared. The helper removed the diagnostic pod afterward; the
     node remained Ready and no debug pods were left behind.
+  - After the helper gained `mirror/summary.tsv`, it was rerun at
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T073223Z`.
+    It again reproduced `classification=known-host-pull-blocker`: pod phase `Pending`,
+    `host_pull_blocker_seen=1`, and `image_key_request_seen=0`. The new compact mirror summary
+    counted `crio_rung_b_manifest=16`, `crio_rung_b_blob=16`, `guest_rung_b_manifest=0`, and
+    `guest_rung_b_blob=0`, confirming the host CRI-O path repeatedly pulled the rung-b manifest
+    and encrypted blob while the guest `oci-client` never pulled the rung-b image. The helper
+    removed the diagnostic pod afterward; the node remained Ready and no debug pods were left
+    behind.
 - NRI was inspected as a possible late guest-pull-source override:
   - CRI-O 1.33 calls NRI `CreateContainer` after creating the local image result and before saving
     the final OCI spec/runtime create. The NRI runtime-tools generator can adjust annotations, so
