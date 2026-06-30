@@ -90,6 +90,15 @@ kbs_uri_resource_path() {
 	printf '%s\n' "$path"
 }
 
+kbs_uri_default_secret_key() {
+	local uri="$1" path repo secret key extra
+	[[ "$uri" == kbs:///* ]] || return 1
+	path="${uri#kbs:///}"
+	IFS=/ read -r repo secret key extra <<<"$path"
+	[[ "$repo" == "default" && -n "$secret" && -n "$key" && -z "${extra:-}" ]] || return 1
+	printf '%s\t%s\n' "$secret" "$key"
+}
+
 summary_value() {
 	local key="$1" file="${EVIDENCE_DIR}/summary.env"
 	awk -F '=' -v key="$key" '$1 == key { print substr($0, length(key) + 2); found = 1; exit } END { if (!found) exit 1 }' "$file"
@@ -451,7 +460,12 @@ NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-$(summary_value_or_default neg_rung_c_pod "$DE
 check_summary
 check_manifest
 check_proof_summary
-check_secret_fingerprint image-key rung-b "rung-b image key" 32
+rung_b_key_secret="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID" || true)"
+if [[ -n "$rung_b_key_secret" ]]; then
+	check_secret_fingerprint "${rung_b_key_secret%%	*}" "${rung_b_key_secret#*	}" "rung-b image key" 32
+else
+	fail "rung-b key ID is not a kbs:///default/<secret>/<key> URI: $RUNG_B_KEY_ID"
+fi
 check_secret_fingerprint sig-public-key rung-c "rung-c public key"
 check_secret_fingerprint security-policy rung-c "rung-c security policy"
 require_file "${EVIDENCE_DIR}/pods/summary.tsv" "pod summary index"

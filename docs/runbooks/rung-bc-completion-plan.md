@@ -84,7 +84,8 @@ The repo now carries the dry-run friendly tooling:
     refs and artifact paths needed by the apply and negative-test targets; malformed manifests
     or tag-only image refs fail closed instead of producing exports.
 - `scripts/seed-trustee-secrets.sh`
-  - `RUNG_B_KEY_FILE` creates Secret `image-key` with key `rung-b`.
+  - `RUNG_B_KEY_FILE` creates the Secret/key derived from `RUNG_B_KEY_ID`, defaulting to
+    Secret `image-key` with key `rung-b`.
   - `RUNG_C_COSIGN_PUB` creates Secret `sig-public-key` with key `rung-c`.
   - `RUNG_C_POLICY_FILE` creates key `rung-c` on Secret `security-policy`; if omitted and
     `RUNG_C_COSIGN_PUB` is set, the script generates a default signed-image policy.
@@ -139,7 +140,7 @@ Operator-facing artifact knobs:
 | `RUNG_C_APP_LOG_MARKER` | `rung-c: signed image accepted and running` | The rung-c proof workload emits a different success line, but validation should still prove app start. |
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
 | `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
-| `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. |
+| `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. If the keyprovider generated `kbs:///default/image-kek/<uuid>`, pass that value so Trustee seeding and evidence validation use the matching Secret/key. |
 | `RUNG_B_POLICY_URI` | `kbs:///default/security-policy/test` | The rung-b measured initdata should use a different image policy URI. |
 | `RUNG_C_POLICY_URI` | `kbs:///default/security-policy/rung-c` | The rung-c measured initdata should fetch the signed-image policy from a different KBS URI. |
 | `RUNG_B_KEY_FILE` | `$(ARTIFACT_DIR)/rung-b-image.key` | Reusing a pre-generated image key or writing it elsewhere. The builder, Trustee renderer, and Trustee seeder reject anything other than exactly 32 bytes. |
@@ -184,10 +185,12 @@ Sequence:
 
 2. Verify the intended resources exist:
 
-   - `image-key`, key `rung-b`, bytes exactly equal to the 32-byte encryption key.
+   - The Secret/key derived from `RUNG_B_KEY_ID`, bytes exactly equal to the 32-byte
+     encryption key.
    - `sig-public-key`, key `rung-c`, bytes equal to `cosign.pub`.
    - `security-policy`, key `rung-c`, JSON policy for signed image verification.
-   - `KbsConfig.spec.kbsSecretResources` includes `image-key` and `sig-public-key`.
+   - `KbsConfig.spec.kbsSecretResources` includes the rung-b key Secret resource and
+     `sig-public-key`.
 3. Reconcile Trustee and verify KBS logs show no missing resource errors.
 4. From a known-good confidential pod, use CDH to request non-sensitive resources first
    (`attestation-status/status`) to prove attestation still works before trying image pulls.

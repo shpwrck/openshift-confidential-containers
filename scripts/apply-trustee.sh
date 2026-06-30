@@ -8,6 +8,7 @@ VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
 RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
+RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
 RUNG_C_IMAGE="${RUNG_C_IMAGE:-}"
 RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
 RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
@@ -18,6 +19,7 @@ SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 tmpdir=""
 vcek_hwids=()
 extra_secret_resources=()
+RUNG_B_KEY_SECRET=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -43,6 +45,18 @@ require_rung_b_key_size() {
 	local path="$1" size
 	size="$(file_size_bytes "$path")"
 	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $path (${size} bytes)"
+}
+
+kbs_uri_default_secret_key() {
+	local uri="$1" path repo secret key extra
+	[[ "$uri" == kbs:///* ]] || die "KBS URI must start with kbs:///: $uri"
+	path="${uri#kbs:///}"
+	IFS=/ read -r repo secret key extra <<<"$path"
+	[[ "$repo" == "default" ]] || die "only default KBS repository is supported for Secret seeding: $uri"
+	[[ -n "$secret" && -n "$key" && -z "${extra:-}" ]] || die "KBS URI must be kbs:///default/<secret>/<key>: $uri"
+	[[ "$secret" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || die "KBS Secret resource name is not a valid Kubernetes Secret name: $secret"
+	[[ "$key" =~ ^[-._a-zA-Z0-9]+$ ]] || die "KBS Secret key is not a valid Kubernetes Secret key: $key"
+	printf '%s\t%s\n' "$secret" "$key"
 }
 
 cleanup() {
@@ -74,11 +88,14 @@ load_vcek_bundle() {
 }
 
 load_extra_secret_resources() {
+	local parsed
 	extra_secret_resources=()
 	if [[ -n "$RUNG_B_KEY_FILE" ]]; then
 		[[ -s "$RUNG_B_KEY_FILE" ]] || die "missing rung-b key file: $RUNG_B_KEY_FILE"
 		require_rung_b_key_size "$RUNG_B_KEY_FILE"
-		extra_secret_resources+=(image-key)
+		parsed="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID")"
+		RUNG_B_KEY_SECRET="${parsed%%	*}"
+		extra_secret_resources+=("$RUNG_B_KEY_SECRET")
 	fi
 	if [[ -n "$RUNG_C_COSIGN_PUB" ]]; then
 		[[ -s "$RUNG_C_COSIGN_PUB" ]] || die "missing rung-c cosign public key: $RUNG_C_COSIGN_PUB"
@@ -159,6 +176,7 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
 	RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" \
+	RUNG_B_KEY_ID="$RUNG_B_KEY_ID" \
 	RUNG_C_IMAGE="$RUNG_C_IMAGE" \
 	RUNG_C_COSIGN_PUB="$RUNG_C_COSIGN_PUB" \
 	RUNG_C_POLICY_FILE="$RUNG_C_POLICY_FILE" \

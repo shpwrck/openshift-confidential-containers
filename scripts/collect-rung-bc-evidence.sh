@@ -155,11 +155,28 @@ write_secret_fingerprint_row() {
 	fi
 }
 
+kbs_uri_default_secret_key() {
+	local uri="$1" path repo secret key extra
+	[[ "$uri" == kbs:///* ]] || return 1
+	path="${uri#kbs:///}"
+	IFS=/ read -r repo secret key extra <<<"$path"
+	[[ "$repo" == "default" && -n "$secret" && -n "$key" && -z "${extra:-}" ]] || return 1
+	printf '%s\t%s\n' "$secret" "$key"
+}
+
 write_rung_bc_secret_fingerprints() {
-	local out="${EVIDENCE_DIR}/trustee/secrets/rung-bc-fingerprints.tsv"
+	local out="${EVIDENCE_DIR}/trustee/secrets/rung-bc-fingerprints.tsv" parsed rung_b_secret rung_b_key
+	parsed="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID" || true)"
+	if [[ -n "$parsed" ]]; then
+		rung_b_secret="${parsed%%	*}"
+		rung_b_key="${parsed#*	}"
+	else
+		rung_b_secret="image-key"
+		rung_b_key="rung-b"
+	fi
 	{
 		printf 'secret\tkey\tstatus\tdecoded_bytes\tsha256\n'
-		write_secret_fingerprint_row image-key rung-b
+		write_secret_fingerprint_row "$rung_b_secret" "$rung_b_key"
 		write_secret_fingerprint_row sig-public-key rung-c
 		write_secret_fingerprint_row security-policy rung-c
 	} > "$out"
@@ -274,7 +291,7 @@ write_match_row() {
 write_rung_bc_proof_summary() {
 	local manifest="$1" evidence_dir="$2" out="$3"
 	local fingerprints="${evidence_dir}/trustee/secrets/rung-bc-fingerprints.tsv"
-	local rung_b_image rung_c_image rung_c_unsigned_image rung_b_key_sha rung_c_pub_sha
+	local rung_b_image rung_c_image rung_c_unsigned_image rung_b_key_sha rung_c_pub_sha rung_b_key_id parsed rung_b_secret rung_b_key
 	local actual
 
 	printf 'check\texpected\tactual\tstatus\n' > "$out"
@@ -287,11 +304,20 @@ write_rung_bc_proof_summary() {
 	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
 	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
 	rung_b_key_sha="$(jq -r '.rung_b.key_sha256 // ""' "$manifest")"
+	rung_b_key_id="$(jq -r '.rung_b.key_id // ""' "$manifest")"
 	rung_c_pub_sha="$(jq -r '.rung_c.cosign_pub_sha256 // ""' "$manifest")"
+	parsed="$(kbs_uri_default_secret_key "${rung_b_key_id:-$RUNG_B_KEY_ID}" || true)"
+	if [[ -n "$parsed" ]]; then
+		rung_b_secret="${parsed%%	*}"
+		rung_b_key="${parsed#*	}"
+	else
+		rung_b_secret="image-key"
+		rung_b_key="rung-b"
+	fi
 
 	actual=""
 	if [[ -s "$fingerprints" ]]; then
-		actual="$(secret_fingerprint_sha_from_file "$fingerprints" image-key rung-b 2>/dev/null || true)"
+		actual="$(secret_fingerprint_sha_from_file "$fingerprints" "$rung_b_secret" "$rung_b_key" 2>/dev/null || true)"
 	fi
 	write_match_row "rung_b_key_secret_sha256" "$rung_b_key_sha" "$actual" >> "$out"
 
@@ -477,7 +503,7 @@ for configmap in kbs-config resource-policy attestation-policy rvps-reference-va
 	record "trustee/config/${configmap}.yaml" oc -n "$TRUSTEE_NS" get configmap "$configmap" -o yaml
 done
 
-for secret in image-key sig-public-key security-policy registry-configuration credential regcred attestation-status sample; do
+for secret in image-key image-kek sig-public-key security-policy registry-configuration credential regcred attestation-status sample; do
 	write_redacted_secret "$secret"
 done
 write_rung_bc_secret_fingerprints

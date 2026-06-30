@@ -15,6 +15,7 @@ KBS_PUB="${KBS_PUB:-${HOME}/kbs.pub}"
 ATTESTATION_CERT="${ATTESTATION_CERT:-$MIRROR_CA}"
 SAMPLE_SECRET="${SAMPLE_SECRET:-rung-a-demo-value}"
 RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
+RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
 RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
 RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
 RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
@@ -23,6 +24,8 @@ RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-}"
 tmpdir=""
 vcek_hwids=()
 vcek_ders=()
+RUNG_B_KEY_SECRET=""
+RUNG_B_KEY_NAME=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -48,6 +51,18 @@ require_rung_b_key_size() {
 	local path="$1" size
 	size="$(file_size_bytes "$path")"
 	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $path (${size} bytes)"
+}
+
+kbs_uri_default_secret_key() {
+	local uri="$1" path repo secret key extra
+	[[ "$uri" == kbs:///* ]] || die "KBS URI must start with kbs:///: $uri"
+	path="${uri#kbs:///}"
+	IFS=/ read -r repo secret key extra <<<"$path"
+	[[ "$repo" == "default" ]] || die "only default KBS repository is supported for Secret seeding: $uri"
+	[[ -n "$secret" && -n "$key" && -z "${extra:-}" ]] || die "KBS URI must be kbs:///default/<secret>/<key>: $uri"
+	[[ "$secret" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || die "KBS Secret resource name is not a valid Kubernetes Secret name: $secret"
+	[[ "$key" =~ ^[-._a-zA-Z0-9]+$ ]] || die "KBS Secret key is not a valid Kubernetes Secret key: $key"
+	printf '%s\t%s\n' "$secret" "$key"
 }
 
 cleanup() {
@@ -155,6 +170,9 @@ if [[ "${1:-}" == "render-rung-c-policy" ]]; then
 fi
 
 if [[ -n "$RUNG_B_KEY_FILE" ]]; then
+	parsed="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID")"
+	RUNG_B_KEY_SECRET="${parsed%%	*}"
+	RUNG_B_KEY_NAME="${parsed#*	}"
 	require_rung_b_key_size "$RUNG_B_KEY_FILE"
 fi
 
@@ -235,8 +253,8 @@ oc -n "$NS" create secret generic registry-configuration \
 	--from-file=test="$tmpdir/registries.conf" \
 	--dry-run=client -o yaml | apply_secret
 if [[ -s "$tmpdir/rung-b-image.key" ]]; then
-	oc -n "$NS" create secret generic image-key \
-		--from-file=rung-b="$tmpdir/rung-b-image.key" \
+	oc -n "$NS" create secret generic "$RUNG_B_KEY_SECRET" \
+		--from-file="${RUNG_B_KEY_NAME}=$tmpdir/rung-b-image.key" \
 		--dry-run=client -o yaml | apply_secret
 fi
 if [[ -s "$tmpdir/cosign.pub" ]]; then
@@ -259,6 +277,6 @@ done
 
 echo "Trustee secrets seeded in $NS"
 echo "VCEK_COUNT=${#vcek_hwids[@]}"
-[[ -s "$tmpdir/rung-b-image.key" ]] && echo "RUNG_B_KEY_RESOURCE=image-key/rung-b"
+[[ -s "$tmpdir/rung-b-image.key" ]] && echo "RUNG_B_KEY_RESOURCE=${RUNG_B_KEY_SECRET}/${RUNG_B_KEY_NAME}"
 [[ -s "$tmpdir/cosign.pub" ]] && echo "RUNG_C_PUBLIC_KEY_RESOURCE=sig-public-key/rung-c"
 [[ -s "$tmpdir/security-policy-rung-c.json" ]] && echo "RUNG_C_POLICY_RESOURCE=security-policy/rung-c"

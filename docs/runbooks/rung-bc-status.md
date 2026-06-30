@@ -1,10 +1,10 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T01:44:56Z
+Last updated: 2026-06-30T01:58:01Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head: `49f25a4`
-Status: repo scaffolding and local no-hardware validation are green; hardware proof is still pending.
+Current head before this update: `6cc0af8`
+Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed, but hardware proof is blocked by product/runtime behavior rather than missing local automation.
 
 ## What is already in place
 
@@ -14,6 +14,9 @@ Status: repo scaffolding and local no-hardware validation are green; hardware pr
 - Rung-c evidence tracks signed image policy URI, public key resource fetch, mirror pulls, pod state, app-start marker, and fail-closed unsigned-image behavior.
 - Evidence bundles record non-secret provenance in `summary.env`, including repo revision, branch, dirty state, KBS URL, policy URIs, pod role names, and app log markers.
 - Offline validation derives expected KBS resource log entries from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated against the actual run configuration.
+- Trustee seeding now derives the rung-b Secret resource/key from `RUNG_B_KEY_ID`, so a
+  keyprovider-generated URI such as `kbs:///default/image-kek/<uuid>` can be seeded and
+  fingerprinted instead of forcing every proof into `image-key/rung-b`.
 
 ## Local verification completed
 
@@ -28,6 +31,14 @@ make lint
 ```
 
 ## What is left
+
+Live rig check on 2026-06-30:
+
+- Bastion access works at `rocky@69.67.151.187`; `oc`, `skopeo`, `cosign`, and root `podman` are present.
+- The SNO node is Ready and Trustee is running. Current KbsConfig is back at the rung-a baseline and does not include rung-b/c Secret resources until `apply-trustee-rung-bc` is run.
+- The existing `ghcr.io/confidential-containers/coco-keyprovider:latest` image on the bastion is a runtime keyprovider server with `/usr/local/bin/coco_keyprovider`; it does not contain the `/encrypt.sh` helper assumed by `make build-rung-images`.
+- Prior rig artifacts under `/home/rocky/rung-b` show encrypted OCI images with `kbs:///default/image-kek/<uuid>` KIDs and 32-byte KEK files. The expected `mirror.rig.local:8443/coco/rung-b` and `coco/rung-c` repos were not present in the mirror at this check.
+- Local/private rig notes record that encrypted-image mechanics and signed-image policy delivery were tested on 2026-06-29, but rung-b execution hit CRI-O host-side encrypted-layer pre-pull and rung-c cosign verification hung after signature fetch in the air-gapped guest.
 
 1. Build and push the rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 
@@ -56,7 +67,7 @@ make lint
    make validate-rung-bc-evidence EVIDENCE_DIR=<bundle>
    ```
 
-5. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung b/c should not be called complete unless happy pods run and negative pods fail closed with the expected denial signals.
+5. Review `rung-bc-proof-summary.tsv`, pod describe/events, Trustee logs, and mirror logs. Rung b/c should not be called complete unless happy pods run and negative pods fail closed with the expected denial signals. The current rig evidence suggests this will not pass on OSC 1.12 without resolving the encrypted-image host pre-pull and offline signature-verification transport blockers.
 
 6. Replay on a fresh node or freshly recreated disposable rig. Production sign-off requires replay after regenerating hardware-bound values such as VCEKs, RVPS, Trustee URL/TLS, initdata, image keys, and signing trust material.
 
@@ -64,4 +75,4 @@ make lint
 
 ## Current blocker
 
-No local code blocker remains. Completion is blocked on access to the target rig or bastion path that can build/push the image artifacts, seed live Trustee resources, and run the actual SEV-SNP confidential workload proofs.
+Rig access is confirmed. Completion is blocked on product/runtime gaps observed on the rig: CRI-O host-side pre-pull cannot create a guest-pull placeholder for encrypted layers, and the current air-gapped signed-image path has not completed offline verification. The repo can now seed and validate the actual generated rung-b KID resource, but the rungs are not complete until those runtime blockers are resolved or a supported workaround is proven end to end.
