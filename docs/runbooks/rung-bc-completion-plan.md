@@ -136,7 +136,7 @@ Operator-facing artifact knobs:
 | `KBS_URL` | `http://kbs-service.trustee-operator-system.svc:8080` | The measured initdata must point at a different Trustee/KBS endpoint. |
 | `RUNG_B_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-b:encrypted` | The encrypted image should land at a different mirror path/tag. Use the generated digest ref for apply/negative-test. |
 | `RUNG_C_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:signed` | The signed image should land at a different mirror path/tag. Use the generated digest ref for apply. |
-| `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c:unsigned` | You want a differently named unsigned negative-control image. Use the generated digest ref for negative-test. |
+| `RUNG_C_UNSIGNED_IMAGE` | `$(MIRROR_REGISTRY)/coco/rung-c-unsigned:unsigned` | You want a differently named unsigned negative-control image. Keep this in a repository separate from `RUNG_C_IMAGE` so signatures attached to the signed repo do not satisfy the negative control. Use the generated digest ref for negative-test. |
 | `RUNG_B_APP_LOG_MARKER` | `rung-b: encrypted image decrypted and running` | The rung-b proof workload emits a different success line, but validation should still prove app start. |
 | `RUNG_C_APP_LOG_MARKER` | `rung-c: signed image accepted and running` | The rung-c proof workload emits a different success line, but validation should still prove app start. |
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |

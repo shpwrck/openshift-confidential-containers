@@ -130,7 +130,7 @@ run_rung_b() {
 run_rung_c() {
   echo "[rung-c] signed image — use unsigned/tampered image so image_security_policy rejects"
   local unsigned_image manifest
-  unsigned_image="${RUNG_C_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:unsigned}"
+  unsigned_image="${RUNG_C_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c-unsigned:unsigned}"
   manifest="$(mktemp)"
   if ! render_or_skip "rung-c negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
