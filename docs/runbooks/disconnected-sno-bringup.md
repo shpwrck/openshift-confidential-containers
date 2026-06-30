@@ -319,7 +319,7 @@ below.
       - **Happy path:** pod reaches `Running` (image key released after attestation).
       - **Negative test:** wrong measurement → key withheld → **pod won't start**.
       - **Implementation note:** use a digest-pinned encrypted image and KBS resource
-        `image-key/rung-b`; do not count missing-key failure as the primary sign-off proof.
+        `image-key/rung-c`; do not count missing-key failure as the primary sign-off proof.
 - [ ] **Rung c — signed image.**
       - **Happy path:** signed image pulls (mirror pull secret served as `regcred`, per
         `kbsconfig.yaml` `kbsSecretResources`).

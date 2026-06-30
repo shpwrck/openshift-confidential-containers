@@ -809,14 +809,14 @@ won't exist in production.
 
 ## Phase 8 — Capability rungs (a → b → c) + negative tests
 
-Manual equivalent of the rig targets `make run-rung-a-secret`, `make run-rung-b-encrypted`,
-`make run-rung-c-signed`, and `make negative-test WHICH=all`. A rung is **proven only when
+Manual equivalent of the rig targets `make run-rung-a-secret`, `make run-rung-c-encrypted`,
+`make run-rung-b-signed`, and `make negative-test WHICH=all`. A rung is **proven only when
 reproduced from these steps AND its negative test fails-closed** — a negative test that
 *passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
 Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
-§5 for the full matrix. Rungs b/c have implementation scaffolding; rung-c has live rig
-accept/deny evidence, while rung-b still needs a completed direct encrypted-image guest-pull
-proof. The 2026-06-30 rig diagnosed the rung-b KID/KEK mismatch and proved guest decryption
+§5 for the full matrix. Rungs b/c have implementation scaffolding; rung-b has live rig
+accept/deny evidence, while rung-c still needs a completed direct encrypted-image guest-pull
+proof. The 2026-06-30 rig diagnosed the rung-c KID/KEK mismatch and proved guest decryption
 through a local alias diagnostic, but the production digest-pinned pod is still blocked before
 KBS by CRI-O host-side encrypted-layer pre-pull; CRI-O annotation and runtime
 `default_annotations` override attempts still left guest pull on the carrier image, and disabling

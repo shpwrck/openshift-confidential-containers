@@ -16,12 +16,12 @@ NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
-RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
-RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
-RUNG_C_IMAGE="${RUNG_C_IMAGE:-}"
-RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
-RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
-RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-}"
+RUNG_C_KEY_FILE="${RUNG_C_KEY_FILE:-}"
+RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
+RUNG_B_IMAGE="${RUNG_B_IMAGE:-}"
+RUNG_B_COSIGN_PUB="${RUNG_B_COSIGN_PUB:-}"
+RUNG_B_POLICY_FILE="${RUNG_B_POLICY_FILE:-}"
+RUNG_B_POLICY_IMAGE_PREFIX="${RUNG_B_POLICY_IMAGE_PREFIX:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 
@@ -31,7 +31,7 @@ readonly VCEK_OFFLINESTORE_BASE="/opt/confidential-containers/attestation-servic
 tmpdir=""
 vcek_hwids=()
 extra_secret_resources=()
-RUNG_B_KEY_SECRET=""
+RUNG_C_KEY_SECRET=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -58,10 +58,10 @@ file_size_bytes() {
 	fi
 }
 
-require_rung_b_key_size() {
+require_rung_c_key_size() {
 	local path="$1" size
 	size="$(file_size_bytes "$path")"
-	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $path (${size} bytes)"
+	[[ "$size" == "32" ]] || die "rung-c image key must be exactly 32 bytes: $path (${size} bytes)"
 }
 
 # Parse a `kbs:///default/<secret>/<key>` URI into the backing k8s Secret name and
@@ -109,19 +109,19 @@ load_vcek_bundle() {
 load_extra_secret_resources() {
 	local parsed
 	extra_secret_resources=()
-	if [[ -n "$RUNG_B_KEY_FILE" ]]; then
-		[[ -s "$RUNG_B_KEY_FILE" ]] || die "missing rung-b key file: $RUNG_B_KEY_FILE"
-		require_rung_b_key_size "$RUNG_B_KEY_FILE"
-		parsed="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID")"
-		RUNG_B_KEY_SECRET="${parsed%%	*}"
-		extra_secret_resources+=("$RUNG_B_KEY_SECRET")
+	if [[ -n "$RUNG_C_KEY_FILE" ]]; then
+		[[ -s "$RUNG_C_KEY_FILE" ]] || die "missing rung-c key file: $RUNG_C_KEY_FILE"
+		require_rung_c_key_size "$RUNG_C_KEY_FILE"
+		parsed="$(kbs_uri_default_secret_key "$RUNG_C_KEY_ID")"
+		RUNG_C_KEY_SECRET="${parsed%%	*}"
+		extra_secret_resources+=("$RUNG_C_KEY_SECRET")
 	fi
-	if [[ -n "$RUNG_C_COSIGN_PUB" ]]; then
-		[[ -s "$RUNG_C_COSIGN_PUB" ]] || die "missing rung-c cosign public key: $RUNG_C_COSIGN_PUB"
+	if [[ -n "$RUNG_B_COSIGN_PUB" ]]; then
+		[[ -s "$RUNG_B_COSIGN_PUB" ]] || die "missing rung-b cosign public key: $RUNG_B_COSIGN_PUB"
 		extra_secret_resources+=(sig-public-key)
 	fi
-	if [[ -n "$RUNG_C_POLICY_FILE" ]]; then
-		[[ -s "$RUNG_C_POLICY_FILE" ]] || die "missing rung-c policy file: $RUNG_C_POLICY_FILE"
+	if [[ -n "$RUNG_B_POLICY_FILE" ]]; then
+		[[ -s "$RUNG_B_POLICY_FILE" ]] || die "missing rung-b policy file: $RUNG_B_POLICY_FILE"
 	fi
 }
 
@@ -202,12 +202,12 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 log "Seed Trustee secrets (VCEK OfflineStore, credentials, policy)"
 NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
-	RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" \
-	RUNG_B_KEY_ID="$RUNG_B_KEY_ID" \
-	RUNG_C_IMAGE="$RUNG_C_IMAGE" \
-	RUNG_C_COSIGN_PUB="$RUNG_C_COSIGN_PUB" \
-	RUNG_C_POLICY_FILE="$RUNG_C_POLICY_FILE" \
-	RUNG_C_POLICY_IMAGE_PREFIX="$RUNG_C_POLICY_IMAGE_PREFIX" \
+	RUNG_C_KEY_FILE="$RUNG_C_KEY_FILE" \
+	RUNG_C_KEY_ID="$RUNG_C_KEY_ID" \
+	RUNG_B_IMAGE="$RUNG_B_IMAGE" \
+	RUNG_B_COSIGN_PUB="$RUNG_B_COSIGN_PUB" \
+	RUNG_B_POLICY_FILE="$RUNG_B_POLICY_FILE" \
+	RUNG_B_POLICY_IMAGE_PREFIX="$RUNG_B_POLICY_IMAGE_PREFIX" \
 	bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
 
 log "Apply Trustee CRs (issuers, KBS ConfigMaps, KbsConfig)"

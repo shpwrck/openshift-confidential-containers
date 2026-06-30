@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build/push the image artifacts needed for rung-b (encrypted) and rung-c (signed).
+# Build/push the image artifacts needed for rung-c (encrypted) and rung-b (signed).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,12 +14,12 @@ SKOPEO_COPY_ARGS="${SKOPEO_COPY_ARGS:---remove-signatures}"
 # box that lacks the mirror CA: SKOPEO_INSPECT_ARGS="--tls-verify=false".
 SKOPEO_INSPECT_ARGS="${SKOPEO_INSPECT_ARGS:-}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
-RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
-RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
-RUNG_C_UNSIGNED_IMAGE="${RUNG_C_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c-unsigned:unsigned}"
-RUNG_B_KEY_PATH="${RUNG_B_KEY_PATH:-/default/image-key/rung-b}"
-RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs://${RUNG_B_KEY_PATH}}"
-RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-${ARTIFACT_DIR}/rung-b-image.key}"
+RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
+RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
+RUNG_B_UNSIGNED_IMAGE="${RUNG_B_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b-unsigned:unsigned}"
+RUNG_C_KEY_PATH="${RUNG_C_KEY_PATH:-/default/image-key/rung-c}"
+RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs://${RUNG_C_KEY_PATH}}"
+RUNG_C_KEY_FILE="${RUNG_C_KEY_FILE:-${ARTIFACT_DIR}/rung-c-image.key}"
 COCO_KEYPROVIDER_IMAGE="${COCO_KEYPROVIDER_IMAGE:-coco-keyprovider}"
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-}"
 CONTAINER_VOLUME_SUFFIX="${CONTAINER_VOLUME_SUFFIX:-}"
@@ -28,8 +28,8 @@ COSIGN_PUB="${COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
 COSIGN_SIGN_ARGS="${COSIGN_SIGN_ARGS:-}"
 COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:-}"
 VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="${VERIFY_RUNG_ARTIFACTS_AFTER_BUILD:-1}"
-VERIFY_RUNG_B_KEY_WRAP_SCRIPT="${VERIFY_RUNG_B_KEY_WRAP_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-b-key-wrap.sh}"
-VERIFY_RUNG_C_SIGNATURE_SCRIPT="${VERIFY_RUNG_C_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-c-signature.sh}"
+VERIFY_RUNG_C_KEY_WRAP_SCRIPT="${VERIFY_RUNG_C_KEY_WRAP_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-c-key-wrap.sh}"
+VERIFY_RUNG_B_SIGNATURE_SCRIPT="${VERIFY_RUNG_B_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-b-signature.sh}"
 
 die() {
 	echo "ERROR: $*" >&2
@@ -72,10 +72,10 @@ file_sha256() {
 	fi
 }
 
-require_rung_b_key_size() {
+require_rung_c_key_size() {
 	local size
-	size="$(file_size_bytes "$RUNG_B_KEY_FILE")"
-	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $RUNG_B_KEY_FILE (${size} bytes)"
+	size="$(file_size_bytes "$RUNG_C_KEY_FILE")"
+	[[ "$size" == "32" ]] || die "rung-c image key must be exactly 32 bytes: $RUNG_C_KEY_FILE (${size} bytes)"
 }
 
 image_digest_ref() {
@@ -153,12 +153,12 @@ validate_manifest_env_values() {
 	jq -e '
 		def digest_ref: type == "string" and test("@sha256:[0-9a-f]{64}$");
 		def nonempty: type == "string" and length > 0;
-		(.rung_b.digest_ref | digest_ref) and
-		(.rung_b.key_id | nonempty) and
-		(.rung_b.key_file | nonempty) and
 		(.rung_c.digest_ref | digest_ref) and
-		(.rung_c.unsigned_digest_ref | digest_ref) and
-		(.rung_c.cosign_pub | nonempty)
+		(.rung_c.key_id | nonempty) and
+		(.rung_c.key_file | nonempty) and
+		(.rung_b.digest_ref | digest_ref) and
+		(.rung_b.unsigned_digest_ref | digest_ref) and
+		(.rung_b.cosign_pub | nonempty)
 	' "$manifest" >/dev/null || die "manifest missing required rung b/c env fields or digest refs: $manifest"
 }
 
@@ -167,12 +167,12 @@ emit_env_from_manifest() {
 	validate_manifest_env_values "$manifest"
 	jq -r '
 		[
-			"RUNG_B_IMAGE=" + .rung_b.digest_ref,
-			"RUNG_B_KEY_ID=" + .rung_b.key_id,
-			"RUNG_B_KEY_FILE=" + .rung_b.key_file,
 			"RUNG_C_IMAGE=" + .rung_c.digest_ref,
-			"RUNG_C_UNSIGNED_IMAGE=" + .rung_c.unsigned_digest_ref,
-			"RUNG_C_COSIGN_PUB=" + .rung_c.cosign_pub
+			"RUNG_C_KEY_ID=" + .rung_c.key_id,
+			"RUNG_C_KEY_FILE=" + .rung_c.key_file,
+			"RUNG_B_IMAGE=" + .rung_b.digest_ref,
+			"RUNG_B_UNSIGNED_IMAGE=" + .rung_b.unsigned_digest_ref,
+			"RUNG_B_COSIGN_PUB=" + .rung_b.cosign_pub
 		] | .[]
 	' "$manifest" | while IFS= read -r line; do
 		var="${line%%=*}"
@@ -182,20 +182,20 @@ emit_env_from_manifest() {
 	done
 }
 
-generate_rung_b_key() {
-	if [[ -s "$RUNG_B_KEY_FILE" ]]; then
+generate_rung_c_key() {
+	if [[ -s "$RUNG_C_KEY_FILE" ]]; then
 		return
 	fi
-	echo "Generating 32-byte rung-b image key: $RUNG_B_KEY_FILE"
-	openssl rand 32 > "$RUNG_B_KEY_FILE"
-	chmod 0600 "$RUNG_B_KEY_FILE"
+	echo "Generating 32-byte rung-c image key: $RUNG_C_KEY_FILE"
+	openssl rand 32 > "$RUNG_C_KEY_FILE"
+	chmod 0600 "$RUNG_C_KEY_FILE"
 }
 
 ensure_cosign_keys() {
 	if [[ -s "$COSIGN_KEY" && -s "$COSIGN_PUB" ]]; then
 		return
 	fi
-	[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD to generate/sign the rung-c key pair"
+	[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD to generate/sign the rung-b key pair"
 	echo "Generating cosign key pair under $ARTIFACT_DIR"
 	(
 		cd "$ARTIFACT_DIR"
@@ -205,9 +205,9 @@ ensure_cosign_keys() {
 	chmod 0600 "$COSIGN_KEY"
 }
 
-encrypt_rung_b() {
+encrypt_rung_c() {
 	local key_b64 oci_dir
-	key_b64="$(base64 < "$RUNG_B_KEY_FILE" | tr -d '\n')"
+	key_b64="$(base64 < "$RUNG_C_KEY_FILE" | tr -d '\n')"
 	oci_dir="$ARTIFACT_DIR/oci"
 	rm -rf "$oci_dir"
 	mkdir -p "$oci_dir/input" "$oci_dir/output"
@@ -216,13 +216,13 @@ encrypt_rung_b() {
 	# shellcheck disable=SC2086
 	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "dir:${oci_dir}/input"
 
-	echo "Encrypting rung-b image with KID $RUNG_B_KEY_ID"
+	echo "Encrypting rung-c image with KID $RUNG_C_KEY_ID"
 	"$CONTAINER_RUNTIME" run --rm \
 		-v "${oci_dir}:/oci${CONTAINER_VOLUME_SUFFIX}" \
 		"$COCO_KEYPROVIDER_IMAGE" \
-		/encrypt.sh -k "$key_b64" -i "$RUNG_B_KEY_ID" -s dir:/oci/input -d dir:/oci/output
+		/encrypt.sh -k "$key_b64" -i "$RUNG_C_KEY_ID" -s dir:/oci/input -d dir:/oci/output
 
-	skopeo inspect "dir:${oci_dir}/output" | jq -e --arg kid "$RUNG_B_KEY_ID" '
+	skopeo inspect "dir:${oci_dir}/output" | jq -e --arg kid "$RUNG_C_KEY_ID" '
 		[
 			.LayersData[]?.Annotations["org.opencontainers.image.enc.keys.provider.attestation-agent"]?
 			| select(. != null)
@@ -232,23 +232,23 @@ encrypt_rung_b() {
 		] | length > 0
 	' >/dev/null
 
-	echo "Pushing encrypted rung-b image: $RUNG_B_IMAGE"
+	echo "Pushing encrypted rung-c image: $RUNG_C_IMAGE"
 	# shellcheck disable=SC2086
-	skopeo copy $SKOPEO_COPY_ARGS "dir:${oci_dir}/output" "docker://${RUNG_B_IMAGE}"
+	skopeo copy $SKOPEO_COPY_ARGS "dir:${oci_dir}/output" "docker://${RUNG_C_IMAGE}"
 }
 
-sign_rung_c() {
+sign_rung_b() {
 	local c_digest c_digest_ref
-	[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD to sign the rung-c image"
-	echo "Pushing unsigned rung-c negative-control image: $RUNG_C_UNSIGNED_IMAGE"
+	[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD to sign the rung-b image"
+	echo "Pushing unsigned rung-b negative-control image: $RUNG_B_UNSIGNED_IMAGE"
 	# shellcheck disable=SC2086
-	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "docker://${RUNG_C_UNSIGNED_IMAGE}"
-	echo "Pushing rung-c image to sign: $RUNG_C_IMAGE"
+	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "docker://${RUNG_B_UNSIGNED_IMAGE}"
+	echo "Pushing rung-b image to sign: $RUNG_B_IMAGE"
 	# shellcheck disable=SC2086
-	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "docker://${RUNG_C_IMAGE}"
-	c_digest="$(skopeo_inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
-	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
-	echo "Signing rung-c image digest with $COSIGN_KEY: $c_digest_ref"
+	skopeo copy $SKOPEO_COPY_ARGS "$SOURCE_IMAGE_REF" "docker://${RUNG_B_IMAGE}"
+	c_digest="$(skopeo_inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
+	c_digest_ref="$(image_digest_ref "$RUNG_B_IMAGE" "$c_digest")"
+	echo "Signing rung-b image digest with $COSIGN_KEY: $c_digest_ref"
 	# shellcheck disable=SC2086
 	COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign sign $COSIGN_SIGN_ARGS --key "$COSIGN_KEY" "$c_digest_ref"
 	# shellcheck disable=SC2086
@@ -257,48 +257,48 @@ sign_rung_c() {
 
 write_manifest() {
 	local b_digest c_digest c_unsigned_digest b_digest_ref c_digest_ref c_unsigned_digest_ref b_key_sha c_pub_sha manifest env_file
-	b_digest="$(skopeo_inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
-	c_digest="$(skopeo_inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
-	c_unsigned_digest="$(skopeo_inspect "docker://${RUNG_C_UNSIGNED_IMAGE}" | jq -r '.Digest')"
-	b_digest_ref="$(image_digest_ref "$RUNG_B_IMAGE" "$b_digest")"
-	c_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$c_digest")"
-	c_unsigned_digest_ref="$(image_digest_ref "$RUNG_C_UNSIGNED_IMAGE" "$c_unsigned_digest")"
-	b_key_sha="$(file_sha256 "$RUNG_B_KEY_FILE")"
+	b_digest="$(skopeo_inspect "docker://${RUNG_C_IMAGE}" | jq -r '.Digest')"
+	c_digest="$(skopeo_inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
+	c_unsigned_digest="$(skopeo_inspect "docker://${RUNG_B_UNSIGNED_IMAGE}" | jq -r '.Digest')"
+	b_digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$b_digest")"
+	c_digest_ref="$(image_digest_ref "$RUNG_B_IMAGE" "$c_digest")"
+	c_unsigned_digest_ref="$(image_digest_ref "$RUNG_B_UNSIGNED_IMAGE" "$c_unsigned_digest")"
+	b_key_sha="$(file_sha256 "$RUNG_C_KEY_FILE")"
 	c_pub_sha="$(file_sha256 "$COSIGN_PUB")"
 	manifest="$ARTIFACT_DIR/rung-bc-images.json"
 	jq -n \
 		--arg source "$SOURCE_IMAGE_REF" \
-		--arg rung_b_image "$RUNG_B_IMAGE" \
-		--arg rung_b_digest "$b_digest" \
-		--arg rung_b_digest_ref "$b_digest_ref" \
-		--arg rung_b_key_id "$RUNG_B_KEY_ID" \
-		--arg rung_b_key_file "$RUNG_B_KEY_FILE" \
-		--arg rung_b_key_sha256 "$b_key_sha" \
 		--arg rung_c_image "$RUNG_C_IMAGE" \
-		--arg rung_c_digest "$c_digest" \
-		--arg rung_c_digest_ref "$c_digest_ref" \
-		--arg rung_c_unsigned_image "$RUNG_C_UNSIGNED_IMAGE" \
-		--arg rung_c_unsigned_digest "$c_unsigned_digest" \
-		--arg rung_c_unsigned_digest_ref "$c_unsigned_digest_ref" \
+		--arg rung_c_digest "$b_digest" \
+		--arg rung_c_digest_ref "$b_digest_ref" \
+		--arg rung_c_key_id "$RUNG_C_KEY_ID" \
+		--arg rung_c_key_file "$RUNG_C_KEY_FILE" \
+		--arg rung_c_key_sha256 "$b_key_sha" \
+		--arg rung_b_image "$RUNG_B_IMAGE" \
+		--arg rung_b_digest "$c_digest" \
+		--arg rung_b_digest_ref "$c_digest_ref" \
+		--arg rung_b_unsigned_image "$RUNG_B_UNSIGNED_IMAGE" \
+		--arg rung_b_unsigned_digest "$c_unsigned_digest" \
+		--arg rung_b_unsigned_digest_ref "$c_unsigned_digest_ref" \
 		--arg cosign_pub "$COSIGN_PUB" \
 		--arg cosign_pub_sha256 "$c_pub_sha" \
 		'{
 			source_image: $source,
-			rung_b: {
-				image: $rung_b_image,
-				digest: $rung_b_digest,
-				digest_ref: $rung_b_digest_ref,
-				key_id: $rung_b_key_id,
-				key_file: $rung_b_key_file,
-				key_sha256: $rung_b_key_sha256
-			},
 			rung_c: {
 				image: $rung_c_image,
 				digest: $rung_c_digest,
 				digest_ref: $rung_c_digest_ref,
-				unsigned_image: $rung_c_unsigned_image,
-				unsigned_digest: $rung_c_unsigned_digest,
-				unsigned_digest_ref: $rung_c_unsigned_digest_ref,
+				key_id: $rung_c_key_id,
+				key_file: $rung_c_key_file,
+				key_sha256: $rung_c_key_sha256
+			},
+			rung_b: {
+				image: $rung_b_image,
+				digest: $rung_b_digest,
+				digest_ref: $rung_b_digest_ref,
+				unsigned_image: $rung_b_unsigned_image,
+				unsigned_digest: $rung_b_unsigned_digest,
+				unsigned_digest_ref: $rung_b_unsigned_digest_ref,
 				cosign_pub: $cosign_pub,
 				cosign_pub_sha256: $cosign_pub_sha256
 			}
@@ -308,12 +308,12 @@ write_manifest() {
 	emit_env_from_manifest "$manifest" > "$env_file"
 	echo "Wrote $env_file"
 	jq -r '
-		"RUNG_B_IMAGE=" + .rung_b.digest_ref,
-		"RUNG_B_KEY_ID=" + .rung_b.key_id,
-		"RUNG_B_KEY_FILE=" + .rung_b.key_file,
 		"RUNG_C_IMAGE=" + .rung_c.digest_ref,
-		"RUNG_C_UNSIGNED_IMAGE=" + .rung_c.unsigned_digest_ref,
-		"RUNG_C_COSIGN_PUB=" + .rung_c.cosign_pub
+		"RUNG_C_KEY_ID=" + .rung_c.key_id,
+		"RUNG_C_KEY_FILE=" + .rung_c.key_file,
+		"RUNG_B_IMAGE=" + .rung_b.digest_ref,
+		"RUNG_B_UNSIGNED_IMAGE=" + .rung_b.unsigned_digest_ref,
+		"RUNG_B_COSIGN_PUB=" + .rung_b.cosign_pub
 	' "$manifest"
 }
 
@@ -323,16 +323,16 @@ verify_built_artifacts() {
 		echo "Skipping post-build rung-b/c artifact verification."
 		return
 	fi
-	require_script "$VERIFY_RUNG_B_KEY_WRAP_SCRIPT"
-	require_script "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
-	echo "Verifying built rung-b encrypted image metadata and key wrap"
-	ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_B_IMAGE="$RUNG_B_IMAGE" RUNG_B_KEY_ID="$RUNG_B_KEY_ID" \
-		RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" RUNG_BC_IMAGES_MANIFEST="$manifest" \
-		REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_B_KEY_WRAP_SCRIPT"
-	echo "Verifying built rung-c signed image and unsigned negative control"
-	ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_C_IMAGE="$RUNG_C_IMAGE" RUNG_C_UNSIGNED_IMAGE="$RUNG_C_UNSIGNED_IMAGE" \
-		RUNG_C_COSIGN_PUB="$COSIGN_PUB" RUNG_BC_IMAGES_MANIFEST="$manifest" COSIGN_VERIFY_ARGS="$COSIGN_VERIFY_ARGS" \
-		REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
+	require_script "$VERIFY_RUNG_C_KEY_WRAP_SCRIPT"
+	require_script "$VERIFY_RUNG_B_SIGNATURE_SCRIPT"
+	echo "Verifying built rung-c encrypted image metadata and key wrap"
+	ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_C_IMAGE="$RUNG_C_IMAGE" RUNG_C_KEY_ID="$RUNG_C_KEY_ID" \
+		RUNG_C_KEY_FILE="$RUNG_C_KEY_FILE" RUNG_BC_IMAGES_MANIFEST="$manifest" \
+		REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_C_KEY_WRAP_SCRIPT"
+	echo "Verifying built rung-b signed image and unsigned negative control"
+	ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_B_IMAGE="$RUNG_B_IMAGE" RUNG_B_UNSIGNED_IMAGE="$RUNG_B_UNSIGNED_IMAGE" \
+		RUNG_B_COSIGN_PUB="$COSIGN_PUB" RUNG_BC_IMAGES_MANIFEST="$manifest" COSIGN_VERIFY_ARGS="$COSIGN_VERIFY_ARGS" \
+		REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_B_SIGNATURE_SCRIPT"
 }
 
 if [[ "${1:-}" == "digest-ref" ]]; then
@@ -361,13 +361,13 @@ if [[ "${1:-}" == "default-cosign-sign-args" ]]; then
 	exit 0
 fi
 
-if [[ "${1:-}" == "sign-rung-c-only" ]]; then
-	[[ "$#" -eq 1 ]] || die "usage: $0 sign-rung-c-only"
+if [[ "${1:-}" == "sign-rung-b-only" ]]; then
+	[[ "$#" -eq 1 ]] || die "usage: $0 sign-rung-b-only"
 	need skopeo
 	need jq
 	need cosign
 	configure_cosign_args
-	sign_rung_c
+	sign_rung_b
 	exit 0
 fi
 
@@ -381,16 +381,16 @@ configure_cosign_args
 detect_runtime
 require_keyprovider_image
 
-# Fail fast: rung-c signing always needs COSIGN_PASSWORD. Check it up front so we don't encrypt and
-# push the rung-b image first and only then abort at the signing step (ensure_cosign_keys skips its
+# Fail fast: rung-b signing always needs COSIGN_PASSWORD. Check it up front so we don't encrypt and
+# push the rung-c image first and only then abort at the signing step (ensure_cosign_keys skips its
 # own check when the key pair already exists).
-[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD (used to generate and sign the rung-c cosign key pair)"
+[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD (used to generate and sign the rung-b cosign key pair)"
 
 mkdir -p "$ARTIFACT_DIR"
-generate_rung_b_key
-require_rung_b_key_size
+generate_rung_c_key
+require_rung_c_key_size
 ensure_cosign_keys
-encrypt_rung_b
-sign_rung_c
+encrypt_rung_c
+sign_rung_b
 write_manifest
 verify_built_artifacts

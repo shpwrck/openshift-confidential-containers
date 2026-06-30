@@ -7,10 +7,10 @@
 #
 # Hardware-bound: needs `oc` logged into a running CoCo cluster (kata-cc runtimeclass present).
 #
-# Usage: ./scripts/negative-test.sh [all|rung-a|rung-b|rung-c|air-gap]
+# Usage: ./scripts/negative-test.sh [all|rung-a|rung-c|rung-b|air-gap]
 # Env: NS=default  TRUSTEE_NS=trustee-operator-system  TIMEOUT=120  KEEP_DENIED_PODS=0
-#      MIRROR_REGISTRY=mirror.rig.local:8443  RUNG_B_IMAGE=...  RUNG_C_UNSIGNED_IMAGE=...
-#      RUNG_B_POLICY_URI=...  RUNG_C_POLICY_URI=...
+#      MIRROR_REGISTRY=mirror.rig.local:8443  RUNG_C_IMAGE=...  RUNG_B_UNSIGNED_IMAGE=...
+#      RUNG_C_POLICY_URI=...  RUNG_B_POLICY_URI=...
 #      Source rung-bc-artifacts/rung-bc.env after make build-rung-images for digest refs.
 set -euo pipefail
 
@@ -22,9 +22,9 @@ KEEP_DENIED_PODS="${KEEP_DENIED_PODS:-0}"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
 MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"
 KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
-RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
-RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
-RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
+RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/test}"
+RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/rung-b}"
+RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pass=0 fail=0 skip=0
 # Denial-RESPONSE patterns ONLY. These are the load-bearing oracle: a match = "denied as
@@ -35,8 +35,8 @@ pass=0 fail=0 skip=0
 # scheduler's "Successfully a-ssign-ed" event, and `policy`/`secret` match routine KBS log
 # lines; any of those would score a false PASS on a fail-closed proof.
 RUNG_A_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|measurement|HTTP/[0-9.]+" (401|403)|failed to get resource|report data|attestation (failed|error|denied)|Verifier.*(fail|reject)'
-RUNG_B_DENIAL_RE='attestation.*(denied|failed|error)|failed.*attest|denied|forbidden|measurement|unauthorized|not authorized|HTTP/[0-9.]+" (401|403)|resource/default/image-(kek|key).*(401|403)'
-RUNG_C_DENIAL_RE='signature|sigstore|image security policy|SignatureValidation|signature.*(reject|invalid|missing|verif)|policy.*(reject|deny)|rejected|InvalidImageName'
+RUNG_C_DENIAL_RE='attestation.*(denied|failed|error)|failed.*attest|denied|forbidden|measurement|unauthorized|not authorized|HTTP/[0-9.]+" (401|403)|resource/default/image-(kek|key).*(401|403)'
+RUNG_B_DENIAL_RE='signature|sigstore|image security policy|SignatureValidation|signature.*(reject|invalid|missing|verif)|policy.*(reject|deny)|rejected|InvalidImageName'
 AIR_GAP_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|HTTP/[0-9.]+" (401|403)|RcarAttestFailed|verify TEE evidence failed|[Cc]ertificate chain.*(fail|verif)|does not sign|failed to get resource|vcek|offline|Verifier.*(fail|reject)|attestation (failed|error|denied)'
 
 die()  { echo "ERROR: $*" >&2; exit 2; }
@@ -124,7 +124,7 @@ run_rung_a() {
   # tamper changes HOST_DATA but nothing gates on it → attestation still affirms → the pod RUNS.
   # Skip honestly (not a false sign-off FAIL) until the restrictive Step-5/6 policy is applied.
   if ! oc -n "$TRUSTEE_NS" get configmap attestation-policy -o jsonpath='{.data.default_cpu\.rego}' 2>/dev/null | grep -q 'init_data'; then
-    skipt "rung-a: attestation-policy does not gate on init_data (permissive base) — apply the restrictive measured-initdata policy (make render-rung-b-measurement-policy / Step 5-6) before this negative, or use WHICH=air-gap which denies via a wrong VCEK against the base policy"
+    skipt "rung-a: attestation-policy does not gate on init_data (permissive base) — apply the restrictive measured-initdata policy (make render-rung-c-measurement-policy / Step 5-6) before this negative, or use WHICH=air-gap which denies via a wrong VCEK against the base policy"
     return
   fi
   manifest="$(mktemp)"
@@ -140,36 +140,36 @@ run_rung_a() {
   rm -f "$manifest"
 }
 
-run_rung_b() {
-  echo "[rung-b] encrypted image — tamper measured initdata so image key is withheld"
-  local manifest
-  manifest="$(mktemp)"
-  if ! render_or_skip "rung-b negative manifest" "$manifest" \
-      env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
-        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" RUNG_B_IMAGE="$RUNG_B_IMAGE" \
-        IMAGE_SECURITY_POLICY_URI="$RUNG_B_POLICY_URI" POD_NAME=negtest-rung-b TAMPER_INITDATA=1 RENDER_ONLY=1 \
-        bash "$REPO_ROOT/scripts/apply-rung-b.sh"; then
-    rm -f "$manifest"
-    return
-  fi
-  expect_fail_closed "negtest-rung-b" "$manifest" "rung-b measured-initdata mismatch withheld image key" "$RUNG_B_DENIAL_RE" "rung-b attestation/image-key denial"
-  rm -f "$manifest"
-}
-
 run_rung_c() {
-  echo "[rung-c] signed image — use unsigned/tampered image so image_security_policy rejects"
-  local unsigned_image manifest
-  unsigned_image="${RUNG_C_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c-unsigned:unsigned}"
+  echo "[rung-c] encrypted image — tamper measured initdata so image key is withheld"
+  local manifest
   manifest="$(mktemp)"
   if ! render_or_skip "rung-c negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
-        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
-        IMAGE_SECURITY_POLICY_URI="$RUNG_C_POLICY_URI" POD_NAME=negtest-rung-c RUNG_C_IMAGE="$unsigned_image" RENDER_ONLY=1 \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" RUNG_C_IMAGE="$RUNG_C_IMAGE" \
+        IMAGE_SECURITY_POLICY_URI="$RUNG_C_POLICY_URI" POD_NAME=negtest-rung-c TAMPER_INITDATA=1 RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-c.sh"; then
     rm -f "$manifest"
     return
   fi
-  expect_fail_closed "negtest-rung-c" "$manifest" "rung-c unsigned image rejected by image_security_policy" "$RUNG_C_DENIAL_RE" "rung-c signature/policy denial"
+  expect_fail_closed "negtest-rung-c" "$manifest" "rung-c measured-initdata mismatch withheld image key" "$RUNG_C_DENIAL_RE" "rung-c attestation/image-key denial"
+  rm -f "$manifest"
+}
+
+run_rung_b() {
+  echo "[rung-b] signed image — use unsigned/tampered image so image_security_policy rejects"
+  local unsigned_image manifest
+  unsigned_image="${RUNG_B_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b-unsigned:unsigned}"
+  manifest="$(mktemp)"
+  if ! render_or_skip "rung-b negative manifest" "$manifest" \
+      env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
+        IMAGE_SECURITY_POLICY_URI="$RUNG_B_POLICY_URI" POD_NAME=negtest-rung-b RUNG_B_IMAGE="$unsigned_image" RENDER_ONLY=1 \
+        bash "$REPO_ROOT/scripts/apply-rung-b.sh"; then
+    rm -f "$manifest"
+    return
+  fi
+  expect_fail_closed "negtest-rung-b" "$manifest" "rung-b unsigned image rejected by image_security_policy" "$RUNG_B_DENIAL_RE" "rung-b signature/policy denial"
   rm -f "$manifest"
 }
 
@@ -254,14 +254,14 @@ run_air_gap() {
 case "$WHICH" in
   rung-a)  run_rung_a ;;
   air-gap) run_air_gap ;;
-  rung-b)  run_rung_b ;;
   rung-c)  run_rung_c ;;
+  rung-b)  run_rung_b ;;
   all)
     run_rung_a
-    run_rung_b
     run_rung_c
+    run_rung_b
     run_air_gap ;;
-  *) die "unknown target '$WHICH' (use: all|rung-a|rung-b|rung-c|air-gap)" ;;
+  *) die "unknown target '$WHICH' (use: all|rung-a|rung-c|rung-b|air-gap)" ;;
 esac
 
 echo
