@@ -1,13 +1,12 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T13:01:24Z
+Last updated: 2026-06-30T13:11:02Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest proof-tooling checkpoint verified on the rig: `dfae546` (`make diagnose-rung-b-direct-pull`
-reproduced the known host-pull blocker and `make validate-rung-b-direct-pull` passed for the
-manifest-aware bundle at
-`/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T125624Z`; latest
-scoped rung-c proof remains
+Latest proof-tooling checkpoint verified on the rig: `433651a` (`make validate-rung-b-direct-pull`
+from this head passed for the manifest/env-aware direct-pull bundle at
+`/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T125624Z`, which was
+collected from clean head `dfae546`; latest scoped rung-c proof remains
 `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T124321Z`)
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
@@ -316,14 +315,15 @@ Live rig check on 2026-06-30:
     would not match the encrypted destination digest.
 - The current packaged direct-pull diagnostic bundle
   `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T125624Z` validates
-  with `make validate-rung-b-direct-pull DIAG_DIR=...` on the bastion. The validation confirms the
+  with `make validate-rung-b-direct-pull DIAG_DIR=...` on the bastion, most recently from
+  validator head `433651a`. The validation confirms the
   known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, clean repo
   provenance from head `dfae546` with `repo_git_dirty=false`, bounded CRI-O and mirror-log
   collection from `2026-06-30T12:56:24Z`, copied `rung-bc-images.json` and `rung-bc.env`
-  handoff artifacts, manifest consistency for the tested rung-b digest, KBS key ID, and non-secret
-  key fingerprint, CRI-O node-log host pull for the exact rung-b digest, no Kata `image_guest_pull`
-  source for that same digest, CRI-O rung-b manifest/blob pulls in the mirror log summary, and zero
-  guest `oci-client` rung-b pulls.
+  handoff artifacts, manifest/env consistency for the tested rung-b digest and KBS key ID,
+  non-secret key fingerprint recording, CRI-O node-log host pull for the exact rung-b digest, no
+  Kata `image_guest_pull` source for that same digest, CRI-O rung-b manifest/blob pulls in the
+  mirror log summary, and zero guest `oci-client` rung-b pulls.
   - The containerd-style annotation key `io.kubernetes.cri.image-name` cannot be added through
     CRI-O runtime `allowed_annotations`; it is not in CRI-O's `AllAllowedAnnotations` table.
     Runtime-level `default_annotations` did accept

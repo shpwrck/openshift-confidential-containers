@@ -89,6 +89,7 @@ Latest validated bounded diagnostic bundle:
 - Key values:
   - `classification=known-host-pull-blocker`
   - `image_key_request_seen=0`
+  - validator checkout head `433651a`
   - `repo_git_head=dfae54615e8eee3e22b7209da1c8b3714dceda63`
   - `repo_git_dirty=false`
   - `crio_log_since_time=2026-06-30T12:56:24Z`
