@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T11:54:23Z
+Last updated: 2026-06-30T11:41:01Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest proof-tooling checkpoint verified on the rig: `89c7502` (strict artifact verification
+Latest proof-tooling checkpoint verified on the rig: `d75b4bb` (`make verify-rung-bc-artifacts`
 with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1` against the current `rung-bc-images.json`)
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
