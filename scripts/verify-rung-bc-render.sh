@@ -1209,6 +1209,84 @@ EOF
 	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$out" "Makefile validate negative rung-c pod override"
 }
 
+create_prove_stub() {
+	local path="$1" name="$2"
+	{
+		printf '#!/usr/bin/env bash\n'
+		printf 'set -euo pipefail\n'
+		printf 'PROOF_STUB_NAME=%q\n' "$name"
+		cat <<'EOF'
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\n' \
+	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
+	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
+	"${NS:-}" "${TRUSTEE_NS:-}" "${PODS:-}" "${RUNG_B_POD:-}" "${RUNG_C_POD:-}" \
+	"${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" >> "$CALL_LOG"
+EOF
+	} > "$path"
+	chmod +x "$path"
+}
+
+verify_prove_rung_bc_workflow() {
+	local dir="$tmpdir/prove-rung-bc" log="$tmpdir/prove-rung-bc-calls.tsv" err="$tmpdir/prove-rung-bc.err" bad_log="$tmpdir/prove-rung-bc-bad-calls.tsv"
+	local apply_b apply_c negative collect validate
+	mkdir -p "$dir"
+	apply_b="$dir/apply-b.sh"
+	apply_c="$dir/apply-c.sh"
+	negative="$dir/negative-test.sh"
+	collect="$dir/collect-evidence.sh"
+	validate="$dir/validate-evidence.sh"
+	create_prove_stub "$apply_b" apply-b
+	create_prove_stub "$apply_c" apply-c
+	create_prove_stub "$negative" negative-test
+	create_prove_stub "$collect" collect-evidence
+	create_prove_stub "$validate" validate-evidence
+
+	CALL_LOG="$log" make -s prove-rung-bc \
+		APPLY_RUNG_B_SCRIPT="$apply_b" \
+		APPLY_RUNG_C_SCRIPT="$apply_c" \
+		NEGATIVE_TEST_SCRIPT="$negative" \
+		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
+		ARTIFACT_DIR="$tmpdir/artifacts" \
+		EVIDENCE_DIR="$tmpdir/proof-evidence" \
+		EVIDENCE_PODS="rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" \
+		RUNG_B_POD="rung-b-encrypted" \
+		RUNG_C_POD="rung-c-signed" \
+		NEG_RUNG_B_POD="negtest-rung-b" \
+		NEG_RUNG_C_POD="negtest-rung-c" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		> /dev/null
+
+	expect_grep "apply-b	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc apply-b step"
+	expect_grep "apply-c	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc apply-c step"
+	expect_grep $'negative-test\targ=rung-b\tKEEP_DENIED_PODS=1' "$log" "prove-rung-bc rung-b negative step"
+	expect_grep $'negative-test\targ=rung-c\tKEEP_DENIED_PODS=1' "$log" "prove-rung-bc rung-c negative step"
+	expect_grep "collect-evidence	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc collect evidence dir"
+	expect_grep "validate-evidence	arg=$tmpdir/proof-evidence	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc validate evidence dir"
+	expect_grep "NS=workload-test" "$log" "prove-rung-bc workload namespace"
+	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-bc Trustee namespace"
+	expect_grep "PODS=rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" "$log" "prove-rung-bc evidence pod list"
+
+	if CALL_LOG="$bad_log" make -s prove-rung-bc \
+		APPLY_RUNG_B_SCRIPT="$apply_b" \
+		APPLY_RUNG_C_SCRIPT="$apply_c" \
+		NEGATIVE_TEST_SCRIPT="$negative" \
+		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		> /dev/null 2> "$err"; then
+		die "prove-rung-bc accepted a tagged rung-b image"
+	fi
+	expect_grep "RUNG_B_IMAGE must be a sha256 digest ref" "$err" "prove-rung-bc digest-ref guard"
+	[[ ! -s "$bad_log" ]] || die "prove-rung-bc called child scripts after digest-ref guard failed"
+}
+
 need make
 need oc
 need jq
@@ -1250,6 +1328,7 @@ verify_evidence_pod_summary
 verify_evidence_rung_bc_proof_summary
 verify_evidence_validation_gate
 verify_evidence_validation_make_env
+verify_prove_rung_bc_workflow
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1

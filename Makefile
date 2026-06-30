@@ -38,6 +38,7 @@ APPLY_RUNG_B_SCRIPT ?= ./scripts/apply-rung-b.sh
 APPLY_RUNG_C_SCRIPT ?= ./scripts/apply-rung-c.sh
 COLLECT_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/collect-rung-bc-evidence.sh
 VALIDATE_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/validate-rung-bc-evidence.sh
+PROVE_RUNG_BC_SCRIPT ?= ./scripts/prove-rung-bc.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
@@ -190,6 +191,10 @@ collect-rung-bc-evidence: ## Phase 6: collect non-secret rung-b/c proof evidence
 validate-rung-bc-evidence: ## Phase 6: validate a collected rung-b/c evidence bundle (set EVIDENCE_DIR)
 	@test -n "$(EVIDENCE_DIR)" || { echo "set EVIDENCE_DIR=<rung-bc evidence dir>"; exit 2; }
 	EVIDENCE_DIR="$(EVIDENCE_DIR)" RUNG_B_POD="$(RUNG_B_POD)" RUNG_C_POD="$(RUNG_C_POD)" NEG_RUNG_B_POD="$(NEG_RUNG_B_POD)" NEG_RUNG_C_POD="$(NEG_RUNG_C_POD)" bash "$(VALIDATE_RUNG_BC_EVIDENCE_SCRIPT)" "$(EVIDENCE_DIR)"
+
+.PHONY: prove-rung-bc
+prove-rung-bc: ## Phase 6: run rung-b/c happy paths, denial proofs, evidence collection, and validation
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" ARTIFACT_DIR="$(ARTIFACT_DIR)" EVIDENCE_DIR="$(EVIDENCE_DIR)" PODS="$(EVIDENCE_PODS)" RUNG_B_POD="$(RUNG_B_POD)" RUNG_C_POD="$(RUNG_C_POD)" NEG_RUNG_B_POD="$(NEG_RUNG_B_POD)" NEG_RUNG_C_POD="$(NEG_RUNG_C_POD)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" APPLY_RUNG_B_SCRIPT="$(APPLY_RUNG_B_SCRIPT)" APPLY_RUNG_C_SCRIPT="$(APPLY_RUNG_C_SCRIPT)" NEGATIVE_TEST_SCRIPT="$(NEGATIVE_TEST_SCRIPT)" COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$(COLLECT_RUNG_BC_EVIDENCE_SCRIPT)" VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$(VALIDATE_RUNG_BC_EVIDENCE_SCRIPT)" bash "$(PROVE_RUNG_BC_SCRIPT)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)

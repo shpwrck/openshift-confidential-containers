@@ -96,6 +96,7 @@ The repo now carries the dry-run friendly tooling:
   - `make apply-rung-c`
   - `make collect-rung-bc-evidence`
   - `make validate-rung-bc-evidence`
+  - `make prove-rung-bc`
 
 Makefile namespace convention: `NS` is the Trustee namespace, defaulting to
 `trustee-operator-system`; `WORKLOAD_NS` is the namespace for rung pods and negative-test pods,
@@ -368,6 +369,14 @@ logs still exist:
 ```bash
 make collect-rung-bc-evidence
 make validate-rung-bc-evidence EVIDENCE_DIR=<bundle path printed above>
+```
+
+Once `rung-bc.env` has been sourced and Trustee has the rung-b/c resources, the one-shot proof
+runner executes the b/c happy paths, keeps the b/c denied pods for collection, collects a
+timestamped evidence bundle, and validates it:
+
+```bash
+make prove-rung-bc
 ```
 
 By default this writes under `rung-bc-artifacts/evidence-<utc-timestamp>/`, which is ignored by
