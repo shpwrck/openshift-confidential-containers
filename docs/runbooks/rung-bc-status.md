@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T07:12:45Z
+Last updated: 2026-06-30T07:25:40Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `818dc4d`
+Current head before this update: `ded7e30`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -47,8 +47,8 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   `no rung-b attestation/image-key denial signal`, as intended.
 - `make diagnose-rung-b-direct-pull` now renders the direct digest-pinned rung-b pod, waits for
   the known host-side encrypted-layer blocker, and writes an issue-ready evidence directory with
-  pod, event, Trustee, and CRI-O context. It exits zero only when the blocker appears before any
-  Trustee image-key request.
+  pod, event, Trustee, CRI-O, and mirror context. It exits zero only when the blocker appears
+  before any Trustee image-key request.
 - `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
   it passes `--ocp-version`, defaults to the pinned `coco-tools` digest used by VCEK collection,
   treats Veritas `-o` as an output directory, supports a cached `oc debug` image, and can stage a
@@ -237,6 +237,16 @@ Live rig check on 2026-06-30:
     `rung-b-direct-pull-diag`: pod phase `Pending`, `host_pull_blocker_seen=1`, and
     `image_key_request_seen=0`. The helper removed the diagnostic pod afterward; the node
     remained Ready and no debug pods were left behind.
+  - After the helper gained mirror-log capture, it was rerun on the rig at
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T072254Z`.
+    It again reproduced `classification=known-host-pull-blocker`: pod phase `Pending`,
+    `host_pull_blocker_seen=1`, and `image_key_request_seen=0`. The new mirror context includes
+    `quay-app.log`, nginx access logs, and registry-side proof that `cri-o/1.33.10` pulled
+    `coco/rung-b` manifest
+    `sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c` plus encrypted
+    layer `sha256:346e9fd547e142e6a12881b64a7977640e6f9ca68c20da538f8a523e17de87f7` before any
+    Trustee `image-kek` request appeared. The helper removed the diagnostic pod afterward; the
+    node remained Ready and no debug pods were left behind.
 - NRI was inspected as a possible late guest-pull-source override:
   - CRI-O 1.33 calls NRI `CreateContainer` after creating the local image result and before saving
     the final OCI spec/runtime create. The NRI runtime-tools generator can adjust annotations, so
