@@ -1,6 +1,6 @@
 # Rung b upstream escalation packet
 
-Last updated: 2026-06-30T13:22:03Z
+Last updated: 2026-06-30T13:32:27Z
 
 This packet is the upstream summary for the remaining rung-b blocker. It is meant for a CRI-O,
 OpenShift sandboxed containers, Kata, or Confidential Containers maintainer without requiring them
@@ -98,7 +98,7 @@ Latest validated bounded diagnostic bundle:
 - Key values:
   - `classification=known-host-pull-blocker`
   - `image_key_request_seen=0`
-  - validator checkout head `2b9437b`
+  - validator checkout head `9c94f67`
   - `repo_git_head=dfae54615e8eee3e22b7209da1c8b3714dceda63`
   - `repo_git_dirty=false`
   - `crio_log_since_time=2026-06-30T12:56:24Z`
