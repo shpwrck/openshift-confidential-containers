@@ -164,6 +164,120 @@ EOF
 	' "$manifest" >/dev/null || die "rung-bc manifest did not include expected fingerprints and digest refs"
 }
 
+verify_rung_b_key_wrap_verifier() {
+	local bin="$tmpdir/key-wrap-bin" artifacts="$tmpdir/key-wrap-artifacts"
+	local key="$artifacts/rung-b-image.key" manifest="$artifacts/rung-bc-images.json"
+	local out="$tmpdir/key-wrap.out" err="$tmpdir/key-wrap.err"
+	local wrong_key="$artifacts/wrong-rung-b-image.key" bad_manifest="$artifacts/bad-rung-bc-images.json"
+	local annotation_b64 key_sha
+	mkdir -p "$bin" "$artifacts"
+	printf '01234567890123456789012345678901' > "$key"
+	printf '01234567890123456789012345678902' > "$wrong_key"
+	key_sha="$(sha256sum "$key" | awk '{print $1}')"
+	annotation_b64='eyJraWQiOiJrYnM6Ly8vZGVmYXVsdC9pbWFnZS1rZXkvcnVuZy1iIiwid3JhcHBlZF9kYXRhIjoiVU50VkV0RW1DV3FLZHRXUEc0WnIrQkJiZnVLWEljSVIxQ2tOMUlmdkJJQXluSGRBNm90VGlpcz0iLCJpdiI6IllXSmpaR1ZtWjJocGFtdHMiLCJ3cmFwX3R5cGUiOiJBMjU2R0NNIn0='
+
+	cat > "$bin/skopeo" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == "inspect" ]]; then
+	cat <<'JSON'
+{
+  "Digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "LayersData": [
+    {
+      "Annotations": {
+        "org.opencontainers.image.enc.keys.provider.attestation-agent": "$annotation_b64"
+      }
+    }
+  ]
+}
+JSON
+	exit 0
+fi
+exit 1
+EOF
+	chmod +x "$bin/skopeo"
+
+	jq -n \
+		--arg key_sha "$key_sha" \
+		'{
+			rung_b: {
+				digest_ref: "mirror.test.local:5000/coco/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				key_id: "kbs:///default/image-key/rung-b",
+				key_sha256: $key_sha
+			}
+		}' > "$manifest"
+
+	PATH="$bin:$PATH" \
+		ARTIFACT_DIR="$artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
+		RUNG_B_KEY_ID="kbs:///default/image-key/rung-b" \
+		RUNG_B_KEY_FILE="$key" \
+		RUNG_BC_IMAGES_MANIFEST="$manifest" \
+		bash "$REPO_ROOT/scripts/verify-rung-b-key-wrap.sh" > "$out"
+	expect_grep "Rung-b key wrap verification OK." "$out" "rung-b key wrap verifier success"
+	expect_grep "configured rung-b key unwraps 1 encrypted layer key annotation" "$out" "rung-b key unwrap proof"
+
+	if PATH="$bin:$PATH" \
+		ARTIFACT_DIR="$artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
+		RUNG_B_KEY_ID="kbs:///default/image-key/rung-b" \
+		RUNG_B_KEY_FILE="$wrong_key" \
+		RUNG_BC_IMAGES_MANIFEST=/dev/null \
+		bash "$REPO_ROOT/scripts/verify-rung-b-key-wrap.sh" > /dev/null 2> "$err"; then
+		die "rung-b key wrap verifier accepted a wrong KEK"
+	fi
+	expect_grep "configured key did not authenticate/decrypt wrapped_data" "$err" "rung-b key wrap wrong-key failure"
+
+	jq '.rung_b.key_id = "kbs:///default/image-key/other"' "$manifest" > "$bad_manifest"
+	if PATH="$bin:$PATH" \
+		ARTIFACT_DIR="$artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/coco/rung-b:encrypted" \
+		RUNG_B_KEY_ID="kbs:///default/image-key/rung-b" \
+		RUNG_B_KEY_FILE="$key" \
+		RUNG_BC_IMAGES_MANIFEST="$bad_manifest" \
+		bash "$REPO_ROOT/scripts/verify-rung-b-key-wrap.sh" > /dev/null 2> "$err"; then
+		die "rung-b key wrap verifier accepted a mismatched manifest"
+	fi
+	expect_grep "manifest does not match image digest, key ID, or key fingerprint" "$err" "rung-b key wrap manifest mismatch failure"
+}
+
+verify_rung_b_key_wrap_make_env() {
+	local stub="$tmpdir/key-wrap-stub.sh" out="$tmpdir/key-wrap-make-env"
+	cat > "$stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+vars=(
+	MIRROR_REGISTRY
+	ARTIFACT_DIR
+	RUNG_B_IMAGE
+	RUNG_B_KEY_ID
+	RUNG_B_KEY_FILE
+	RUNG_BC_IMAGES_MANIFEST
+)
+for var in "${vars[@]}"; do
+	printf '%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$stub"
+
+	make -s verify-rung-b-key-wrap \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$stub" \
+		MIRROR_REGISTRY="mirror.test.local:5000" \
+		ARTIFACT_DIR="$tmpdir/custom-artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		RUNG_B_KEY_ID="kbs:///default/custom-image-kek/custom-rung-b" \
+		RUNG_B_KEY_FILE="$tmpdir/custom-rung-b.key" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
+		> "$out"
+	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile key-wrap mirror override"
+	expect_grep "ARTIFACT_DIR=$tmpdir/custom-artifacts" "$out" "Makefile key-wrap artifact dir override"
+	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$out" "Makefile key-wrap image override"
+	expect_grep "RUNG_B_KEY_ID=kbs:///default/custom-image-kek/custom-rung-b" "$out" "Makefile key-wrap key ID override"
+	expect_grep "RUNG_B_KEY_FILE=$tmpdir/custom-rung-b.key" "$out" "Makefile key-wrap key file override"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile key-wrap manifest override"
+}
+
 verify_apply_requires_digest_refs() {
 	local err="$tmpdir/tagged-image.err"
 
@@ -2303,6 +2417,7 @@ expect_digest_ref "mirror.rig.local:8443/coco/rung-b" "$digest" "mirror.rig.loca
 verify_artifact_file_sha256
 verify_deterministic_initdata_encoding
 verify_build_manifest_fingerprints
+verify_rung_b_key_wrap_verifier
 verify_apply_requires_digest_refs
 verify_apply_uses_private_baseline_log
 verify_rung_b_key_size_guard
@@ -2313,6 +2428,7 @@ verify_cosign_default_sign_args
 verify_rung_c_digest_signing
 verify_rung_c_policy_render
 verify_build_make_env
+verify_rung_b_key_wrap_make_env
 verify_trustee_make_env
 verify_negative_test_make_env
 verify_negative_test_scoped_denial_signals

@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T10:23:33Z
+Last updated: 2026-06-30T10:39:23Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest pushed proof-tooling checkpoint verified on the rig: `6c5536d`
@@ -51,6 +51,10 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
 - Trustee seeding now derives the rung-b Secret resource/key from `RUNG_B_KEY_ID`, so a
   keyprovider-generated URI such as `kbs:///default/image-kek/<uuid>` can be seeded and
   fingerprinted instead of forcing every proof into `image-key/rung-b`.
+- `make verify-rung-b-key-wrap` now performs the pre-seed rung-b key sanity check that caught the
+  earlier KEK mismatch: it verifies the encrypted layer annotation KID, checks
+  `rung-bc-images.json` image/key consistency, and proves the configured 32-byte KEK decrypts the
+  A256GCM-wrapped layer key without printing key material.
 - Initdata encoding now uses deterministic gzip output, and evidence validation compares decoded
   initdata content for happy/negative relationships so gzip metadata cannot create false
   differences.
@@ -163,6 +167,11 @@ Live rig check on 2026-06-30:
     (`sha256:f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c`) successfully
     unwrapped the layer key. The trailing 32 bytes of `/home/rocky/rung-b/kek_capture` match this
     same key.
+  - `make verify-rung-b-key-wrap` now reproduces that check in repo tooling. On the rig it passed
+    for `RUNG_B_KEY_FILE=/home/rocky/rung-b/kek.bin` against the digest
+    `sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c`, and it failed
+    with `configured key did not authenticate/decrypt wrapped_data` for the older
+    `/home/rocky/rung-b/image-kek.bin`.
 - Trustee was reseeded at the existing KID with `/home/rocky/rung-b/kek.bin`; the Secret now has
   length 32 and SHA-256 `f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c`.
   The bastion's generated `rung-bc.env` and `rung-bc-images.json` were updated to record that key
@@ -382,9 +391,13 @@ Live rig check on 2026-06-30:
 
 3. If the rung-b image is rebuilt, rerun the offline unwrap check before seeding Trustee:
 
-   - Decode the encrypted layer annotation for the new digest.
-   - Confirm it references the intended KID.
-   - Confirm the Trustee Secret data is byte-for-byte the KEK that unwraps the layer key.
+   ```bash
+   . rung-bc-artifacts/rung-bc.env
+   make verify-rung-b-key-wrap
+   ```
+
+   This confirms the new digest's encrypted layer annotation references the intended KID, the
+   artifact manifest matches the selected image/key, and the configured KEK unwraps the layer key.
 
 4. Build and push any rebuilt rung-b encrypted image and rung-c signed plus unsigned-control images on the bastion or connected host:
 

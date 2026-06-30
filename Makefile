@@ -55,11 +55,13 @@ VALIDATE_RUNG_BC_EVIDENCE_SCRIPT ?= ./scripts/validate-rung-bc-evidence.sh
 PROVE_RUNG_BC_SCRIPT ?= ./scripts/prove-rung-bc.sh
 DIAGNOSE_RUNG_B_DIRECT_PULL_SCRIPT ?= ./scripts/diagnose-rung-b-direct-pull.sh
 VALIDATE_RUNG_B_DIRECT_PULL_DIAG_SCRIPT ?= ./scripts/validate-rung-b-direct-pull-diagnostic.sh
+VERIFY_RUNG_B_KEY_WRAP_SCRIPT ?= ./scripts/verify-rung-b-key-wrap.sh
 RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
 RUNG_C_POLICY_FILE ?=
 RUNG_C_POLICY_IMAGE_PREFIX ?=
 EVIDENCE_DIR ?=
 DIAG_DIR ?=
+RUNG_BC_IMAGES_MANIFEST ?= $(ARTIFACT_DIR)/rung-bc-images.json
 REQUIRE_MIRROR_SUMMARY ?= 1
 EVIDENCE_PODS ?= rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap
 RUNG_B_POD ?= rung-b-encrypted
@@ -186,6 +188,10 @@ seed-trustee-secrets: ## Phase 5: create/update rig Trustee secrets from bastion
 .PHONY: build-rung-images
 build-rung-images: ## Phase 6: build/push rung-b encrypted and rung-c signed images
 	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" SOURCE_IMAGE_REF="$(SOURCE_IMAGE_REF)" SKOPEO_COPY_ARGS="$(SKOPEO_COPY_ARGS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" RUNG_B_KEY_PATH="$(RUNG_B_KEY_PATH)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" COCO_KEYPROVIDER_IMAGE="$(COCO_KEYPROVIDER_IMAGE)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" CONTAINER_VOLUME_SUFFIX="$(CONTAINER_VOLUME_SUFFIX)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)"
+
+.PHONY: verify-rung-b-key-wrap
+verify-rung-b-key-wrap: ## Phase 6: verify rung-b encrypted layer KID and KEK unwrap before seeding Trustee
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_BC_IMAGES_MANIFEST="$(RUNG_BC_IMAGES_MANIFEST)" bash "$(VERIFY_RUNG_B_KEY_WRAP_SCRIPT)"
 
 .PHONY: seed-rung-bc-secrets
 seed-rung-bc-secrets: ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources

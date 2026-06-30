@@ -184,6 +184,10 @@ Dry-run acceptance:
   `kbs:///default/image-key/rung-b`.
 - `wc -c "$RUNG_B_KEY_FILE"` reports `32`; the scripts reject any other key length before
   encryption or Trustee seeding.
+- `make verify-rung-b-key-wrap` passes before Trustee seeding. It inspects the encrypted layer
+  annotation, checks `rung-bc-images.json` against the selected image/key, and proves the
+  configured 32-byte KEK authenticates/decrypts the A256GCM-wrapped layer key without printing key
+  material.
 - `cosign verify --key <cosign.pub> <rung-c-image>@<digest>` succeeds on the connected/bastion
   side.
 - No private key, image key, registry credential, or generated initdata lands in git.
@@ -195,7 +199,14 @@ Secrets exist. Otherwise Trustee may fail in a way that looks like an attestatio
 
 Sequence:
 
-1. Create or update Secrets and render Trustee with the extra KBS resource names:
+1. Verify the rung-b image metadata and local KEK before putting the key into Trustee:
+
+   ```bash
+   . rung-bc-artifacts/rung-bc.env
+   make verify-rung-b-key-wrap
+   ```
+
+2. Create or update Secrets and render Trustee with the extra KBS resource names:
 
    ```bash
    make apply-trustee-rung-bc \
@@ -203,7 +214,7 @@ Sequence:
      RUNG_C_COSIGN_PUB=rung-bc-artifacts/cosign.pub
    ```
 
-2. Verify the intended resources exist:
+3. Verify the intended resources exist:
 
    - The Secret/key derived from `RUNG_B_KEY_ID`, bytes exactly equal to the 32-byte
      encryption key.
@@ -272,7 +283,8 @@ Happy path:
 1. Confirm rung-a still runs.
 2. Confirm the KBS resource derived from `RUNG_B_KEY_ID` is served by Trustee. Do not trust
    the KID string alone; if reusing or importing an image, decode the encrypted layer
-   annotation and confirm the Trustee Secret bytes unwrap that layer key.
+   annotation and confirm the Trustee Secret bytes unwrap that layer key with
+   `make verify-rung-b-key-wrap`.
 3. Apply rung-b pod:
 
    ```bash
@@ -630,7 +642,7 @@ make negative-test WHICH=all
 | Symptom | Most likely cause | First checks |
 |---|---|---|
 | Rung b pod hangs before image-key request | Guest cannot reach KBS or initdata was not delivered | Decode pod annotation; KBS logs; `aa.toml`/`cdh.toml` URL |
-| KBS serves image key but decrypt still fails | Wrong key bytes, wrong KID, guest/keyprovider format mismatch, stale snapshotter cache | Decode encrypted layer annotation and run an offline unwrap check without printing key material. On 2026-06-30 the KID was correct, but Trustee served the wrong 32-byte key: `/home/rocky/rung-b/image-kek.bin` failed, while `/home/rocky/rung-b/kek.bin` (`sha256:f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c`) unwrapped the layer. Update Trustee and `rung-bc.env`/`rung-bc-images.json` to the key that actually unwraps the image. |
+| KBS serves image key but decrypt still fails | Wrong key bytes, wrong KID, guest/keyprovider format mismatch, stale snapshotter cache | Run `make verify-rung-b-key-wrap` before seeding Trustee or replaying the pod. It decodes the encrypted layer annotation and verifies the configured KEK unwraps the layer key without printing key material. On 2026-06-30 the KID was correct, but Trustee served the wrong 32-byte key: `/home/rocky/rung-b/image-kek.bin` failed, while `/home/rocky/rung-b/kek.bin` (`sha256:f85822d4f55b41ed4f915a541a68aa41dece5944db73c269aff292a78fe6684c`) unwrapped the layer. Update Trustee and `rung-bc.env`/`rung-bc-images.json` to the key that actually unwraps the image. |
 | Direct encrypted image never reaches KBS; digest ref says the layer cannot be decrypted because the destination specifies a digest, while tag ref says a private key is missing | CRI-O/containers-image is still performing host-side encrypted-layer handling before Kata/CDH can pull in guest | Do not repeat pod-only `experimental_force_guest_pull` probes; on the 2026-06-30 rig, pod annotation and temporary node-level `experimental_force_guest_pull = true` both still failed before any `image-kek` KBS fetch. `imagePullPolicy: Never` only changed the failure to `ErrImageNeverPull`. Escalate to a supported OSC/CRI-O guest-pull path or a different encrypted-image delivery path. |
 | Setting CRI-O `[crio.runtime] decryption_keys_path = ""` does not change the direct digest failure | The host pull path still attempts encrypted-layer handling before the Kata guest-pull handoff, independent of this config-only toggle | Do not treat the decryption key path as the remaining knob. Confirm the drop-in is removed, CRI-O restarted, and the node Ready after any probe. |
 | Pod annotation `io.kubernetes.cri-o.ImageName` is allowed and set to the encrypted image, but guest pull still uses the carrier image | CRI-O writes its internal `ImageName` after sandbox annotations, so the pod annotation does not override the create-time guest-pull source | Do not use this as a workaround. Confirm with CRI-O journal `Adding mount info to pull image ...`; remove the temporary allowed annotation and restore `50-kata-snp`. |
