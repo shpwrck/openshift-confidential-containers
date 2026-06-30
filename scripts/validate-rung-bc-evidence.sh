@@ -8,6 +8,8 @@ DEFAULT_RUNG_C_POD="rung-c-signed"
 DEFAULT_NEG_RUNG_B_POD="negtest-rung-b"
 DEFAULT_NEG_RUNG_C_POD="negtest-rung-c"
 DEFAULT_RUNG_B_KEY_ID="kbs:///default/image-key/rung-b"
+DEFAULT_RUNG_B_POLICY_URI="kbs:///default/security-policy/test"
+DEFAULT_RUNG_C_POLICY_URI="kbs:///default/security-policy/rung-c"
 RUNG_B_POD="${RUNG_B_POD:-}"
 RUNG_C_POD="${RUNG_C_POD:-}"
 NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-}"
@@ -15,8 +17,8 @@ NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-}"
 RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-}"
 DEFAULT_RUNG_B_APP_LOG_MARKER="rung-b: encrypted image decrypted and running"
 DEFAULT_RUNG_C_APP_LOG_MARKER="rung-c: signed image accepted and running"
-RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
-RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
+RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-}"
+RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-}"
 RUNG_B_TAMPER_MARKER="${RUNG_B_TAMPER_MARKER:-# negative-test tamper: changes SNP HOST_DATA; do not regenerate RVPS}"
 KBS_URL="${KBS_URL:-}"
 RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-}"
@@ -341,7 +343,7 @@ check_denial_signal() {
 }
 
 check_kbs_logs() {
-	local logs="${EVIDENCE_DIR}/trustee/logs.txt" resource rung_b_resource
+	local logs="${EVIDENCE_DIR}/trustee/logs.txt" resource rung_b_resource rung_c_policy_resource
 	require_file "$logs" "Trustee logs"
 	if [[ ! -s "$logs" ]]; then
 		return
@@ -351,7 +353,12 @@ check_kbs_logs() {
 		fail "rung-b key ID is not a kbs:/// resource URI: $RUNG_B_KEY_ID"
 		return
 	fi
-	for resource in "$rung_b_resource" default/security-policy/rung-c default/sig-public-key/rung-c; do
+	rung_c_policy_resource="$(kbs_uri_resource_path "$RUNG_C_POLICY_URI" || true)"
+	if [[ -z "$rung_c_policy_resource" ]]; then
+		fail "rung-c policy URI is not a kbs:/// resource URI: $RUNG_C_POLICY_URI"
+		return
+	fi
+	for resource in "$rung_b_resource" "$rung_c_policy_resource" default/sig-public-key/rung-c; do
 		if grep -Fq "resource/${resource}" "$logs"; then
 			pass "Trustee logs include resource/${resource}"
 		else
@@ -434,6 +441,8 @@ RUNG_B_APP_LOG_MARKER="${RUNG_B_APP_LOG_MARKER:-$(summary_value_or_default rung_
 RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-$(summary_value_or_default rung_c_app_log_marker "$DEFAULT_RUNG_C_APP_LOG_MARKER")}"
 KBS_URL="${KBS_URL:-$(summary_value_or_default kbs_url "")}"
 RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-$(summary_value_or_default rung_b_key_id "$DEFAULT_RUNG_B_KEY_ID")}"
+RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-$(summary_value_or_default rung_b_policy_uri "$DEFAULT_RUNG_B_POLICY_URI")}"
+RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-$(summary_value_or_default rung_c_policy_uri "$DEFAULT_RUNG_C_POLICY_URI")}"
 RUNG_B_POD="${RUNG_B_POD:-$(summary_value_or_default rung_b_pod "$DEFAULT_RUNG_B_POD")}"
 RUNG_C_POD="${RUNG_C_POD:-$(summary_value_or_default rung_c_pod "$DEFAULT_RUNG_C_POD")}"
 NEG_RUNG_B_POD="${NEG_RUNG_B_POD:-$(summary_value_or_default neg_rung_b_pod "$DEFAULT_NEG_RUNG_B_POD")}"

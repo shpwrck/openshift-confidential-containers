@@ -10,6 +10,7 @@
 # Usage: ./scripts/negative-test.sh [all|rung-a|rung-b|rung-c|air-gap]
 # Env: NS=default  TRUSTEE_NS=trustee-operator-system  TIMEOUT=120  KEEP_DENIED_PODS=0
 #      MIRROR_REGISTRY=mirror.rig.local:8443  RUNG_B_IMAGE=...  RUNG_C_UNSIGNED_IMAGE=...
+#      RUNG_B_POLICY_URI=...  RUNG_C_POLICY_URI=...
 #      Source rung-bc-artifacts/rung-bc.env after make build-rung-images for digest refs.
 set -euo pipefail
 
@@ -21,6 +22,8 @@ KEEP_DENIED_PODS="${KEEP_DENIED_PODS:-0}"
 MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
 MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"
 KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
+RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
+RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pass=0 fail=0 skip=0
@@ -115,7 +118,7 @@ run_rung_b() {
   if ! render_or_skip "rung-b negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" RUNG_B_IMAGE="$RUNG_B_IMAGE" \
-        POD_NAME=negtest-rung-b TAMPER_INITDATA=1 RENDER_ONLY=1 \
+        IMAGE_SECURITY_POLICY_URI="$RUNG_B_POLICY_URI" POD_NAME=negtest-rung-b TAMPER_INITDATA=1 RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-b.sh"; then
     rm -f "$manifest"
     return
@@ -132,7 +135,7 @@ run_rung_c() {
   if ! render_or_skip "rung-c negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
-        POD_NAME=negtest-rung-c RUNG_C_IMAGE="$unsigned_image" RENDER_ONLY=1 \
+        IMAGE_SECURITY_POLICY_URI="$RUNG_C_POLICY_URI" POD_NAME=negtest-rung-c RUNG_C_IMAGE="$unsigned_image" RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-c.sh"; then
     rm -f "$manifest"
     return

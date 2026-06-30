@@ -33,6 +33,16 @@ require_digest_ref() {
 	die "${var_name} must be a sha256 digest ref for proof runs: ${image}. Source rung-bc-artifacts/rung-bc.env from make build-rung-images, or read the digest refs from rung-bc-artifacts/rung-bc-images.json."
 }
 
+kbs_uri_resource_path() {
+	local uri="$1" path
+	if [[ "$uri" != kbs:///* ]]; then
+		die "KBS URI must start with kbs:///: $uri"
+	fi
+	path="${uri#kbs:///}"
+	[[ -n "$path" && "$path" != /* ]] || die "KBS URI has no resource path: $uri"
+	printf '%s\n' "$path"
+}
+
 need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
 }
@@ -167,8 +177,8 @@ verify_kbs_resource_logs() {
 	local logs resource missing=0
 	logs="$(oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --tail=500 2>/dev/null || true)"
 	for resource in "${EXPECTED_KBS_RESOURCES[@]}"; do
-		if ! grep -Fq "resource/default/${resource}" <<<"$logs"; then
-			echo "WARN: did not see KBS resource/default/${resource} in recent Trustee logs"
+		if ! grep -Fq "resource/${resource}" <<<"$logs"; then
+			echo "WARN: did not see KBS resource/${resource} in recent Trustee logs"
 			missing=1
 		fi
 	done
@@ -185,8 +195,9 @@ case "$RUNG" in
 		POD_NAME="${POD_NAME:-rung-b-encrypted}"
 		RUNG_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:encrypted}"
 		RUNG_IMAGE_VAR=RUNG_B_IMAGE
+		RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
 		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/test}"
-		EXPECTED_KBS_RESOURCES=(image-key/rung-b)
+		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$RUNG_B_KEY_ID")")
 		;;
 	c)
 		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-c-signed-pod.yaml}"
@@ -194,7 +205,7 @@ case "$RUNG" in
 		RUNG_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:signed}"
 		RUNG_IMAGE_VAR=RUNG_C_IMAGE
 		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/rung-c}"
-		EXPECTED_KBS_RESOURCES=(security-policy/rung-c sig-public-key/rung-c)
+		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$IMAGE_SECURITY_POLICY_URI")" default/sig-public-key/rung-c)
 		;;
 	*) die "set RUNG=b or RUNG=c" ;;
 esac

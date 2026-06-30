@@ -581,6 +581,8 @@ vars=(
 	MIRROR_REGISTRY
 	MIRROR_DNS_UPSTREAM
 	KBS_URL
+	RUNG_B_POLICY_URI
+	RUNG_C_POLICY_URI
 	RUNG_B_IMAGE
 	RUNG_C_UNSIGNED_IMAGE
 	TIMEOUT
@@ -601,6 +603,8 @@ EOF
 		MIRROR_REGISTRY="mirror.test.local:5000" \
 		MIRROR_DNS_UPSTREAM="192.0.2.10" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/custom/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
 		TIMEOUT="7" \
@@ -613,6 +617,8 @@ EOF
 	expect_grep "MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile negative-test mirror override"
 	expect_grep "MIRROR_DNS_UPSTREAM=192.0.2.10" "$out" "Makefile negative-test DNS override"
 	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$out" "Makefile negative-test KBS URL override"
+	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$out" "Makefile negative-test rung-b policy URI override"
+	expect_grep "RUNG_C_POLICY_URI=kbs:///custom/security-policy/rung-c" "$out" "Makefile negative-test rung-c policy URI override"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$out" "Makefile negative-test rung-b image override"
 	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/custom/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$out" "Makefile negative-test rung-c unsigned override"
 	expect_grep "TIMEOUT=7" "$out" "Makefile negative-test timeout override"
@@ -712,6 +718,9 @@ vars=(
 	MIRROR_DNS_UPSTREAM
 	KBS_URL
 	RUNG_B_KEY_ID
+	IMAGE_SECURITY_POLICY_URI
+	RUNG_B_POLICY_URI
+	RUNG_C_POLICY_URI
 	RUNG_A_IMAGE
 	RUNG_B_IMAGE
 	RUNG_C_IMAGE
@@ -754,6 +763,8 @@ EOF
 		MIRROR_REGISTRY="mirror.test.local:5000" \
 		MIRROR_DNS_UPSTREAM="192.0.2.10" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_B_KEY_ID="kbs:///custom/image-key/rung-b" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
 		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		> "$rung_b_out"
 
@@ -764,6 +775,7 @@ EOF
 		MIRROR_REGISTRY="mirror.test.local:5000" \
 		MIRROR_DNS_UPSTREAM="192.0.2.10" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
 		> "$rung_c_out"
 
@@ -773,6 +785,8 @@ EOF
 		WORKLOAD_NS="workload-test" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		RUNG_B_KEY_ID="kbs:///custom/image-key/rung-b" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		EVIDENCE_PODS="rung-a-secret negtest-air-gap custom-proof-pod" \
@@ -796,10 +810,14 @@ EOF
 	expect_grep "RUNG_A_IMAGE=mirror.test.local:5000/custom/rung-a@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$tmpdir/apply-rung-a-env" "Makefile apply-rung-a image override"
 	expect_grep "RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$rung_b_out" "Makefile apply-rung-b image override"
 	expect_grep "RUNG_C_IMAGE=mirror.test.local:5000/custom/rung-c@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$rung_c_out" "Makefile apply-rung-c image override"
+	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-b" "$rung_b_out" "Makefile apply-rung-b policy URI override"
+	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-c" "$rung_c_out" "Makefile apply-rung-c policy URI override"
 	expect_grep "ARTIFACT_DIR=$tmpdir/artifacts" "$evidence_out" "Makefile evidence artifact dir override"
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence" "$evidence_out" "Makefile evidence dir override"
 	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$evidence_out" "Makefile evidence KBS URL override"
 	expect_grep "RUNG_B_KEY_ID=kbs:///custom/image-key/rung-b" "$evidence_out" "Makefile evidence rung-b key ID override"
+	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$evidence_out" "Makefile evidence rung-b policy URI override"
+	expect_grep "RUNG_C_POLICY_URI=kbs:///custom/security-policy/rung-c" "$evidence_out" "Makefile evidence rung-c policy URI override"
 	expect_grep "PODS=rung-a-secret negtest-air-gap custom-proof-pod" "$evidence_out" "Makefile evidence pod override"
 	expect_grep "RUNG_B_POD=custom-rung-b" "$evidence_out" "Makefile evidence rung-b pod override"
 	expect_grep "RUNG_C_POD=custom-rung-c" "$evidence_out" "Makefile evidence rung-c pod override"
@@ -986,6 +1004,8 @@ verify_evidence_summary_provenance() {
 		TRUSTEE_NS="trustee-test" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		RUNG_B_KEY_ID="kbs:///custom/image-key/rung-b" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/evidence" \
 		PODS="rung-a rung-b" \
@@ -1003,6 +1023,8 @@ verify_evidence_summary_provenance() {
 	expect_grep "trustee_namespace=trustee-test" "$summary" "evidence summary Trustee namespace"
 	expect_grep "kbs_url=http://kbs.trustee-test.svc:8080" "$summary" "evidence summary KBS URL"
 	expect_grep "rung_b_key_id=kbs:///custom/image-key/rung-b" "$summary" "evidence summary rung-b key ID"
+	expect_grep "rung_b_policy_uri=kbs:///custom/security-policy/rung-b" "$summary" "evidence summary rung-b policy URI"
+	expect_grep "rung_c_policy_uri=kbs:///custom/security-policy/rung-c" "$summary" "evidence summary rung-c policy URI"
 	expect_grep "repo_root=$REPO_ROOT" "$summary" "evidence summary repo root"
 	expect_grep "repo_git_head=" "$summary" "evidence summary git head"
 	expect_grep "repo_git_branch=" "$summary" "evidence summary git branch"
@@ -1127,6 +1149,8 @@ namespace=workload-test
 trustee_namespace=trustee-test
 kbs_url=http://kbs.trustee-test.svc:8080
 rung_b_key_id=kbs:///default/image-key/rung-b
+rung_b_policy_uri=kbs:///default/security-policy/test
+rung_c_policy_uri=kbs:///default/security-policy/rung-c
 repo_git_dirty=false
 rung_b_pod=rung-b-encrypted
 rung_c_pod=rung-c-signed
@@ -1252,6 +1276,7 @@ verify_evidence_validation_gate() {
 	local custom_app_log="$tmpdir/custom-app-log-evidence" custom_app_log_out="$tmpdir/validate-custom-app-log-evidence.out"
 	local custom_pods="$tmpdir/custom-pods-evidence" custom_pods_out="$tmpdir/validate-custom-pods-evidence.out"
 	local custom_key_id="$tmpdir/custom-key-id-evidence" custom_key_id_out="$tmpdir/validate-custom-key-id-evidence.out"
+	local custom_policy_uri="$tmpdir/custom-policy-uri-evidence" custom_policy_uri_out="$tmpdir/validate-custom-policy-uri-evidence.out"
 	write_valid_rung_bc_evidence_bundle "$evidence"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$evidence" > "$out"
 	expect_grep "Rung b/c evidence validation OK." "$out" "valid evidence validation summary"
@@ -1305,6 +1330,17 @@ verify_evidence_validation_gate() {
 	mv "$custom_key_id/rung-bc-images.json.tmp" "$custom_key_id/rung-bc-images.json"
 	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$custom_key_id" > "$custom_key_id_out"
 	expect_grep "Trustee logs include resource/custom/image-key/rung-b" "$custom_key_id_out" "summary rung-b custom key ID validation"
+
+	cp -R "$evidence" "$custom_policy_uri"
+	sed -i 's#^rung_c_policy_uri=.*#rung_c_policy_uri=kbs:///custom/security-policy/rung-c#' \
+		"$custom_policy_uri/summary.env"
+	sed -i 's#kbs:///default/security-policy/rung-c#kbs:///custom/security-policy/rung-c#g' \
+		"$custom_policy_uri/pods/rung-c-signed.initdata.toml" \
+		"$custom_policy_uri/pods/negtest-rung-c.initdata.toml"
+	sed -i 's#resource/default/security-policy/rung-c#resource/custom/security-policy/rung-c#' \
+		"$custom_policy_uri/trustee/logs.txt"
+	bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$custom_policy_uri" > "$custom_policy_uri_out"
+	expect_grep "Trustee logs include resource/custom/security-policy/rung-c" "$custom_policy_uri_out" "summary rung-c custom policy URI validation"
 
 	cp -R "$evidence" "$broken"
 	awk -F '\t' 'BEGIN { OFS = FS } $1 == "rung_c_happy_image" { $4 = "mismatch" } { print }' \
@@ -1399,6 +1435,8 @@ vars=(
 	EVIDENCE_DIR
 	KBS_URL
 	RUNG_B_KEY_ID
+	RUNG_B_POLICY_URI
+	RUNG_C_POLICY_URI
 	RUNG_B_POD
 	RUNG_C_POD
 	NEG_RUNG_B_POD
@@ -1416,6 +1454,8 @@ EOF
 		EVIDENCE_DIR="$tmpdir/evidence-for-validation" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		RUNG_B_KEY_ID="kbs:///custom/image-key/rung-b" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		RUNG_B_POD="custom-rung-b" \
 		RUNG_C_POD="custom-rung-c" \
 		NEG_RUNG_B_POD="custom-neg-rung-b" \
@@ -1427,6 +1467,8 @@ EOF
 	expect_grep "EVIDENCE_DIR=$tmpdir/evidence-for-validation" "$out" "Makefile validate evidence dir env"
 	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$out" "Makefile validate KBS URL env"
 	expect_grep "RUNG_B_KEY_ID=kbs:///custom/image-key/rung-b" "$out" "Makefile validate rung-b key ID env"
+	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$out" "Makefile validate rung-b policy URI env"
+	expect_grep "RUNG_C_POLICY_URI=kbs:///custom/security-policy/rung-c" "$out" "Makefile validate rung-c policy URI env"
 	expect_grep "RUNG_B_POD=custom-rung-b" "$out" "Makefile validate rung-b pod override"
 	expect_grep "RUNG_C_POD=custom-rung-c" "$out" "Makefile validate rung-c pod override"
 	expect_grep "NEG_RUNG_B_POD=custom-neg-rung-b" "$out" "Makefile validate negative rung-b pod override"
@@ -1442,10 +1484,11 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
-	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
+	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
+	"${RUNG_B_POLICY_URI:-}" "${RUNG_C_POLICY_URI:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
 	"${RUNG_C_POD:-}" "${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
 	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${POD_LOG_TAIL:-}" \
 	"${MIRROR_LOG_TAIL:-}" "${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" >> "$CALL_LOG"
@@ -1479,6 +1522,8 @@ verify_prove_rung_bc_workflow() {
 		WORKLOAD_NS="workload-test" \
 		KBS_URL="http://kbs.trustee-test.svc:8080" \
 		RUNG_B_KEY_ID="kbs:///custom/image-key/rung-b" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
 		ARTIFACT_DIR="$tmpdir/artifacts" \
 		EVIDENCE_DIR="$tmpdir/proof-evidence" \
 		EVIDENCE_PODS="rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" \
@@ -1508,6 +1553,10 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-bc Trustee namespace"
 	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$log" "prove-rung-bc KBS URL"
 	expect_grep "RUNG_B_KEY_ID=kbs:///custom/image-key/rung-b" "$log" "prove-rung-bc rung-b key ID"
+	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-b" "$log" "prove-rung-bc apply rung-b policy URI"
+	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-c" "$log" "prove-rung-bc apply rung-c policy URI"
+	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$log" "prove-rung-bc rung-b policy URI"
+	expect_grep "RUNG_C_POLICY_URI=kbs:///custom/security-policy/rung-c" "$log" "prove-rung-bc rung-c policy URI"
 	expect_grep "PODS=rung-b-encrypted rung-c-signed negtest-rung-b negtest-rung-c" "$log" "prove-rung-bc evidence pod list"
 	expect_grep "collect-evidence	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/proof-evidence" "$log" "prove-rung-bc collect evidence step"
 	expect_grep "TRUSTEE_LOG_TAIL=111" "$log" "prove-rung-bc collect Trustee log tail"

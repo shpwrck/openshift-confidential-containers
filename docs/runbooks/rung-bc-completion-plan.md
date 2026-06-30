@@ -137,6 +137,8 @@ Operator-facing artifact knobs:
 | `RUNG_C_POLICY_IMAGE_PREFIX` | repository derived from `RUNG_C_IMAGE` | The runtime reports a different `transports.docker` key than the generated prefix. |
 | `RUNG_B_KEY_PATH` | `/default/image-key/rung-b` | The KBS resource path must change for the target cluster. |
 | `RUNG_B_KEY_ID` | `kbs://$(RUNG_B_KEY_PATH)` | The encrypted layer KID must be set explicitly. |
+| `RUNG_B_POLICY_URI` | `kbs:///default/security-policy/test` | The rung-b measured initdata should use a different image policy URI. |
+| `RUNG_C_POLICY_URI` | `kbs:///default/security-policy/rung-c` | The rung-c measured initdata should fetch the signed-image policy from a different KBS URI. |
 | `RUNG_B_KEY_FILE` | `$(ARTIFACT_DIR)/rung-b-image.key` | Reusing a pre-generated image key or writing it elsewhere. The builder, Trustee renderer, and Trustee seeder reject anything other than exactly 32 bytes. |
 | `COCO_KEYPROVIDER_IMAGE` | `coco-keyprovider` | The local keyprovider image has a custom name. |
 | `CONTAINER_RUNTIME` | auto-detect `podman`, then `docker` | Both runtimes are installed or the keyprovider runs under a wrapper. |
@@ -411,8 +413,10 @@ mirror logs lack rung-b/rung-c repository pulls for the expected image digests, 
 negative initdata does not differ from the happy pod, rung-c negative initdata does not match
 the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung policy URI, or
 tamper marker, happy pod logs lack the expected app-start markers, negative pods lack denial
-signals, or the bundle was collected from a dirty checkout. `summary.env` records the repo
-revision, branch, dirty state, expected KBS URL, rung-b key ID, expected app-log markers, and
+signals, or the bundle was collected from a dirty checkout. Expected KBS resource fetches are
+derived from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated
+against their actual Trustee log entries. `summary.env` records the repo revision, branch,
+dirty state, expected KBS URL, rung-b key ID, rung policy URIs, expected app-log markers, and
 local tool paths used to collect the bundle. It does not dump Secret data, but still review the
 bundle before sharing it outside the engagement.
 
