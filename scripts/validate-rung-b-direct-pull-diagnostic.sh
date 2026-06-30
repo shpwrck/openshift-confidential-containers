@@ -193,6 +193,33 @@ check_context() {
 	fi
 }
 
+check_crio_log() {
+	local crio_log="${DIAG_DIR}/crio-node.log" image
+	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
+		pass "CRI-O node log not required for legacy diagnostic validation"
+		return
+	fi
+
+	require_file "$crio_log" "CRI-O node log"
+	[[ -s "$crio_log" ]] || return
+
+	image="$(summary_value_or_default rung_b_image "")"
+	if [[ -z "$image" ]]; then
+		fail "cannot validate CRI-O host pull without rung_b_image in summary.env"
+	elif grep -Fq "Pulling image: $image" "$crio_log" ||
+		grep -Fq "Trying to access \"$image\"" "$crio_log"; then
+		pass "CRI-O node log includes host pull for rung-b digest"
+	else
+		fail "CRI-O node log missing host pull for rung-b digest: $image"
+	fi
+
+	if [[ -n "$image" ]] && grep -F "image_guest_pull" "$crio_log" | grep -Fq "$image"; then
+		fail "CRI-O node log includes unexpected guest-pull source for rung-b digest: $image"
+	else
+		pass "CRI-O node log does not include rung-b digest as guest-pull source"
+	fi
+}
+
 check_mirror_summary() {
 	local summary="${DIAG_DIR}/mirror/summary.tsv"
 	local context_available crio_manifest crio_blob guest_manifest guest_blob
@@ -255,6 +282,7 @@ fi
 
 check_summary
 check_context
+check_crio_log
 check_mirror_summary
 
 if (( failures > 0 )); then

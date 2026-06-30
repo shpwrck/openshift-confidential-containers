@@ -1,6 +1,6 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T12:22:11Z
+Last updated: 2026-06-30T12:27:39Z
 
 Current PR: #8, `codex/rung-bc-support`
 Latest proof-tooling checkpoint verified on the rig: `1189cb3` (`make prove-rung-c` passed and
@@ -100,12 +100,14 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   before any Trustee image-key request.
 - `make validate-rung-b-direct-pull DIAG_DIR=<bundle>` now validates those direct-pull diagnostic
   bundles offline, including known-blocker classification, no Trustee image-key request, and the
-  compact mirror-count shape when `mirror/summary.tsv` is present. It also cross-checks the
-  mirror-count fields in `summary.env` against `mirror/summary.tsv`, so contradictory compact
-  evidence fails validation before the bundle is attached upstream. Current diagnostic bundles
-  also record bounded CRI-O and mirror-log collection in `summary.env`; the Make target forwards
-  `REQUIRE_MIRROR_SUMMARY=0` explicitly for older bundles collected before mirror summaries and
-  current log-window metadata existed, and current bundles should keep the strict default.
+  compact mirror-count shape when `mirror/summary.tsv` is present. For current bundles it also
+  requires `crio-node.log` to show a host-side pull attempt for the exact rung-b digest and no
+  Kata `image_guest_pull` source for that same digest. It cross-checks the mirror-count fields in
+  `summary.env` against `mirror/summary.tsv`, so contradictory compact evidence fails validation
+  before the bundle is attached upstream. Current diagnostic bundles also record bounded CRI-O and
+  mirror-log collection in `summary.env`; the Make target forwards `REQUIRE_MIRROR_SUMMARY=0`
+  explicitly for older bundles collected before mirror summaries and current log-window metadata
+  existed, and current bundles should keep the strict default.
 - `scripts/gen-rvps-veritas.sh` now matches the live Veritas behavior seen on the rig:
   it passes `--ocp-version`, defaults to the pinned `coco-tools` digest used by VCEK collection,
   treats Veritas `-o` as an output directory, supports a cached `oc debug` image, and can stage a

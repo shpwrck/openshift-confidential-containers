@@ -2431,6 +2431,11 @@ EOF
 	cat > "$diag/trustee.log" <<'EOF'
 GET /kbs/v0/resource/default/security-policy/test 200
 EOF
+	cat > "$diag/crio-node.log" <<'EOF'
+$ oc adm node-logs sno-coco-node -u crio --tail=600 --since=2026-06-30\ 07:32:23
+Jun 30 07:32:24 sno-coco-node crio[1234]: time="2026-06-30T07:32:24Z" level=info msg="Pulling image: mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c" id=abc name=/runtime.v1.ImageService/PullImage
+Jun 30 07:32:24 sno-coco-node crio[1234]: time="2026-06-30T07:32:24Z" level=info msg="Trying to access \"mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c\""
+EOF
 	cat > "$diag/mirror/summary.tsv" <<'EOF'
 signal	count
 mirror_context_available	1
@@ -2450,10 +2455,14 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local broken_mirror_window="$tmpdir/broken-direct-pull-mirror-window" mirror_window_err="$tmpdir/validate-direct-pull-mirror-window.err"
 	local broken_crio_window="$tmpdir/broken-direct-pull-crio-window" crio_window_err="$tmpdir/validate-direct-pull-crio-window.err"
 	local broken_count="$tmpdir/broken-direct-pull-count" count_err="$tmpdir/validate-direct-pull-count.err"
+	local broken_crio_log="$tmpdir/broken-direct-pull-crio-log" crio_log_err="$tmpdir/validate-direct-pull-crio-log.err"
+	local broken_guest_source="$tmpdir/broken-direct-pull-guest-source" guest_source_err="$tmpdir/validate-direct-pull-guest-source.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
 	expect_grep "CRI-O logs are bounded by since-time=2026-06-30T07:32:23Z" "$out" "direct-pull diagnostic CRI-O log window"
+	expect_grep "CRI-O node log includes host pull for rung-b digest" "$out" "direct-pull diagnostic CRI-O host pull"
+	expect_grep "CRI-O node log does not include rung-b digest as guest-pull source" "$out" "direct-pull diagnostic no guest-pull source"
 	expect_grep "mirror summary shows CRI-O rung-b blob pulls" "$out" "direct-pull diagnostic CRI-O blob count"
 	expect_grep "mirror summary shows no guest rung-b blob pulls" "$out" "direct-pull diagnostic guest blob count"
 
@@ -2462,12 +2471,14 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 
 	cp -R "$diag" "$legacy_diag"
 	rm -rf "$legacy_diag/mirror"
+	rm -f "$legacy_diag/crio-node.log"
 	sed -i '/^mirror_log_since_time=/d' "$legacy_diag/summary.env"
 	sed -i '/^crio_log_since_time=/d' "$legacy_diag/summary.env"
 	make -s validate-rung-b-direct-pull DIAG_DIR="$legacy_diag" REQUIRE_MIRROR_SUMMARY=0 > "$legacy_out"
 	expect_grep "mirror summary not required" "$legacy_out" "Makefile direct-pull legacy diagnostic validation"
 	expect_grep "mirror log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic mirror window"
 	expect_grep "CRI-O log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic CRI-O window"
+	expect_grep "CRI-O node log not required" "$legacy_out" "Makefile direct-pull legacy diagnostic CRI-O log"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$legacy_out" "Makefile direct-pull legacy diagnostic result"
 
 	cp -R "$diag" "$broken_mirror_window"
@@ -2504,6 +2515,22 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 		die "direct-pull diagnostic validator accepted mismatched mirror counts"
 	fi
 	expect_grep "summary.env mirror_crio_rung_b_manifest_count is 15, expected 16 from mirror summary" "$count_err" "direct-pull diagnostic mirror count mismatch"
+
+	cp -R "$diag" "$broken_crio_log"
+	printf '$ oc adm node-logs sno-coco-node -u crio\n' > "$broken_crio_log/crio-node.log"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_crio_log" > /dev/null 2> "$crio_log_err"; then
+		die "direct-pull diagnostic validator accepted a CRI-O log without rung-b host pull"
+	fi
+	expect_grep "CRI-O node log missing host pull for rung-b digest" "$crio_log_err" "direct-pull diagnostic CRI-O host-pull failure"
+
+	cp -R "$diag" "$broken_guest_source"
+	cat >> "$broken_guest_source/crio-node.log" <<'EOF'
+Jun 30 07:32:25 sno-coco-node crio[1234]: CoCo : Mount volume information: &{image_guest_pull mirror.rig.local:8443/coco/rung-b@sha256:69b8fa1c66919ff9d4412fc6ecd0139aa78883c93fdfc78db0aecd526de0890c overlay_fs}
+EOF
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_guest_source" > /dev/null 2> "$guest_source_err"; then
+		die "direct-pull diagnostic validator accepted a rung-b guest-pull CRI-O source"
+	fi
+	expect_grep "CRI-O node log includes unexpected guest-pull source for rung-b digest" "$guest_source_err" "direct-pull diagnostic CRI-O guest-pull source failure"
 }
 
 verify_evidence_validation_make_env() {
