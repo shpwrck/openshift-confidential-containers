@@ -1280,6 +1280,20 @@ EOF
 	fi
 }
 
+verify_crio_node_log_since_conversion() {
+	local converted duration err="$tmpdir/unknown-collect-command.err"
+	converted="$(bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" crio-node-log-since "2026-06-30T02:24:00Z")"
+	[[ "$converted" == "2026-06-30 02:24:00" ]] || \
+		die "CRI-O node-log since conversion mismatch: got $converted"
+	duration="$(bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" crio-node-log-since "1h")"
+	[[ "$duration" == "1h" ]] || \
+		die "CRI-O node-log duration since conversion mismatch: got $duration"
+	if bash "$REPO_ROOT/scripts/collect-rung-bc-evidence.sh" unknown-helper > /dev/null 2> "$err"; then
+		die "collect-rung-bc-evidence accepted an unknown helper command"
+	fi
+	expect_grep "unknown command: unknown-helper" "$err" "collect-rung-bc-evidence unknown helper guard"
+}
+
 verify_evidence_pod_summary() {
 	local pod_json="$tmpdir/pod-summary.json" summary="$tmpdir/pod-summary.tsv" index_row="$tmpdir/pod-index-row.tsv" missing_row="$tmpdir/pod-index-missing-row.tsv" expected_initdata_sha
 	cat > "$pod_json" <<'EOF'
@@ -2239,6 +2253,7 @@ verify_evidence_secret_redaction
 verify_evidence_artifact_handoff
 verify_evidence_summary_provenance
 verify_mirror_log_since_filter
+verify_crio_node_log_since_conversion
 verify_evidence_pod_summary
 verify_evidence_rung_bc_proof_summary
 verify_evidence_validation_gate

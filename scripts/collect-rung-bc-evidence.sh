@@ -141,8 +141,17 @@ safe_log_name() {
 	printf '%s' "$1" | sed 's#^/##; s#[^A-Za-z0-9_.-]#_#g'
 }
 
+crio_node_log_since() {
+	local since_time="$1"
+	if [[ "$since_time" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2})Z$ ]]; then
+		printf '%s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+	else
+		printf '%s\n' "$since_time"
+	fi
+}
+
 record_crio_logs() {
-	local node safe_name
+	local node safe_name since_arg
 	if [[ ! -s "${EVIDENCE_DIR}/pods/summary.tsv" ]]; then
 		return
 	fi
@@ -150,7 +159,8 @@ record_crio_logs() {
 		[[ -n "$node" ]] || continue
 		safe_name="$(safe_log_name "$node")"
 		if [[ -n "$CRIO_LOG_SINCE_TIME" ]]; then
-			record "crio/${safe_name}.log" oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL" --since="$CRIO_LOG_SINCE_TIME"
+			since_arg="$(crio_node_log_since "$CRIO_LOG_SINCE_TIME")"
+			record "crio/${safe_name}.log" oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL" --since="$since_arg"
 		else
 			record "crio/${safe_name}.log" oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL"
 		fi
@@ -501,6 +511,12 @@ if [[ "${1:-}" == "filter-log-since-time" ]]; then
 	exit 0
 fi
 
+if [[ "${1:-}" == "crio-node-log-since" ]]; then
+	[[ "$#" -eq 2 ]] || die "usage: $0 crio-node-log-since <since-time>"
+	crio_node_log_since "$2"
+	exit 0
+fi
+
 if [[ "${1:-}" == "pod-summary" ]]; then
 	[[ "$#" -eq 2 ]] || die "usage: $0 pod-summary <pod.json>"
 	need jq
@@ -526,6 +542,10 @@ if [[ "${1:-}" == "write-rung-bc-proof-summary" ]]; then
 	need jq
 	write_rung_bc_proof_summary "$2" "$3" "$4"
 	exit 0
+fi
+
+if [[ "$#" -gt 0 ]]; then
+	die "unknown command: $1"
 fi
 
 need oc

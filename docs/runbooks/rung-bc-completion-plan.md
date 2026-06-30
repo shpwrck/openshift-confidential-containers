@@ -545,6 +545,8 @@ are bounded to the proof window. If evidence is collected manually after separat
 apply/negative-test commands, set
 `TRUSTEE_LOG_SINCE_TIME=<UTC RFC3339 time before the first proof pod>` and
 `CRIO_LOG_SINCE_TIME=<same timestamp>` and `MIRROR_LOG_SINCE_TIME=<same timestamp>` yourself.
+The CRI-O collector still records that RFC3339 value in `summary.env`, but converts it to the
+space-separated timestamp form required by `oc adm node-logs --since` when reading node logs.
 The bundle includes pod YAML/describe/logs, per-pod summary TSVs, decoded initdata, bounded
 Trustee logs, bounded CRI-O node logs, events, KbsConfig/configmaps, mirror log snippets when
 the collector can read them, redacted Trustee
