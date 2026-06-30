@@ -105,8 +105,8 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
 - `make validate-rung-b-direct-pull DIAG_DIR=<bundle>` now validates those direct-pull diagnostic
   bundles offline, including known-blocker classification, no Trustee image-key request, and the
   compact mirror-count shape when `mirror/summary.tsv` is present. For current bundles it also
-  requires `rung-bc-images.json` to match the tested rung-b digest ref and KBS key ID,
-  `crio-node.log` to show a host-side pull attempt for that exact digest, and no Kata
+  requires `rung-bc-images.json` and `rung-bc.env` to match the tested rung-b digest ref and KBS
+  key ID, `crio-node.log` to show a host-side pull attempt for that exact digest, and no Kata
   `image_guest_pull` source for that same digest. It cross-checks the mirror-count fields in
   `summary.env` against `mirror/summary.tsv`, so contradictory compact evidence fails validation
   before the bundle is attached upstream. Current diagnostic bundles also record repo revision,

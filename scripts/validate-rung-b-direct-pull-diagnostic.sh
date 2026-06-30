@@ -73,6 +73,25 @@ summary_value_or_default() {
 	fi
 }
 
+env_export_value() {
+	local key="$1" file="${DIAG_DIR}/rung-bc.env"
+	awk -v key="$key" '
+		$0 ~ "^[[:space:]]*(export[[:space:]]+)?" key "=" {
+			line = $0
+			sub("^[[:space:]]*(export[[:space:]]+)?" key "=", "", line)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+			if ((substr(line, 1, 1) == "\"" && substr(line, length(line), 1) == "\"") ||
+				(substr(line, 1, 1) == "'"'"'" && substr(line, length(line), 1) == "'"'"'")) {
+				line = substr(line, 2, length(line) - 2)
+			}
+			print line
+			found = 1
+			exit
+		}
+		END { if (!found) exit 1 }
+	' "$file"
+}
+
 tsv_value() {
 	local file="$1" key="$2"
 	awk -F '\t' -v key="$key" 'NR > 1 && $1 == key { print $2; found = 1; exit } END { if (!found) exit 1 }' "$file"
@@ -254,6 +273,34 @@ check_artifact_manifest() {
 	fi
 }
 
+check_env_handoff() {
+	local env_file="${DIAG_DIR}/rung-bc.env"
+	local image key_id env_image env_key_id
+	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
+		pass "rung-bc env handoff not required for legacy diagnostic validation"
+		return
+	fi
+
+	require_file "$env_file" "rung-bc env handoff"
+	[[ -s "$env_file" ]] || return
+
+	image="$(summary_value_or_default rung_b_image "")"
+	key_id="$(summary_value_or_default rung_b_key_id "")"
+	env_image="$(env_export_value RUNG_B_IMAGE 2>/dev/null || true)"
+	env_key_id="$(env_export_value RUNG_B_KEY_ID 2>/dev/null || true)"
+
+	if [[ "$env_image" == "$image" && "$env_image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+		pass "rung-bc env handoff matches diagnostic rung-b digest ref"
+	else
+		fail "rung-bc env RUNG_B_IMAGE is ${env_image:-missing}, expected $image"
+	fi
+	if [[ "$env_key_id" == "$key_id" && "$env_key_id" == kbs:///* ]]; then
+		pass "rung-bc env handoff matches diagnostic rung-b key ID"
+	else
+		fail "rung-bc env RUNG_B_KEY_ID is ${env_key_id:-missing}, expected $key_id"
+	fi
+}
+
 check_crio_log() {
 	local crio_log="${DIAG_DIR}/crio-node.log" image
 	if [[ "$REQUIRE_MIRROR_SUMMARY" != "1" ]]; then
@@ -343,6 +390,7 @@ fi
 
 check_summary
 check_artifact_manifest
+check_env_handoff
 check_context
 check_crio_log
 check_mirror_summary

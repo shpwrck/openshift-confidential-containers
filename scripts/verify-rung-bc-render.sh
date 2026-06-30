@@ -2486,6 +2486,8 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	local broken_repo_head="$tmpdir/broken-direct-pull-repo-head" repo_head_err="$tmpdir/validate-direct-pull-repo-head.err"
 	local broken_manifest_digest="$tmpdir/broken-direct-pull-manifest-digest" manifest_digest_err="$tmpdir/validate-direct-pull-manifest-digest.err"
 	local broken_manifest_key="$tmpdir/broken-direct-pull-manifest-key" manifest_key_err="$tmpdir/validate-direct-pull-manifest-key.err"
+	local broken_env_image="$tmpdir/broken-direct-pull-env-image" env_image_err="$tmpdir/validate-direct-pull-env-image.err"
+	local broken_env_key="$tmpdir/broken-direct-pull-env-key" env_key_err="$tmpdir/validate-direct-pull-env-key.err"
 	write_valid_rung_b_direct_pull_diagnostic "$diag"
 	bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$diag" > "$out"
 	expect_grep "Rung-b direct-pull diagnostic validation OK." "$out" "valid direct-pull diagnostic validation"
@@ -2493,6 +2495,8 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	expect_grep "diagnostic was collected from a clean git worktree" "$out" "direct-pull diagnostic clean repo"
 	expect_grep "rung-bc manifest matches diagnostic rung-b digest ref" "$out" "direct-pull diagnostic manifest image"
 	expect_grep "rung-bc manifest matches diagnostic rung-b key ID" "$out" "direct-pull diagnostic manifest key"
+	expect_grep "rung-bc env handoff matches diagnostic rung-b digest ref" "$out" "direct-pull diagnostic env image"
+	expect_grep "rung-bc env handoff matches diagnostic rung-b key ID" "$out" "direct-pull diagnostic env key"
 	expect_grep "CRI-O logs are bounded by since-time=2026-06-30T07:32:23Z" "$out" "direct-pull diagnostic CRI-O log window"
 	expect_grep "CRI-O node log includes host pull for rung-b digest" "$out" "direct-pull diagnostic CRI-O host pull"
 	expect_grep "CRI-O node log does not include rung-b digest as guest-pull source" "$out" "direct-pull diagnostic no guest-pull source"
@@ -2506,11 +2510,13 @@ verify_rung_b_direct_pull_diagnostic_validation() {
 	rm -rf "$legacy_diag/mirror"
 	rm -f "$legacy_diag/crio-node.log"
 	rm -f "$legacy_diag/rung-bc-images.json"
+	rm -f "$legacy_diag/rung-bc.env"
 	sed -i '/^mirror_log_since_time=/d' "$legacy_diag/summary.env"
 	sed -i '/^crio_log_since_time=/d' "$legacy_diag/summary.env"
 	make -s validate-rung-b-direct-pull DIAG_DIR="$legacy_diag" REQUIRE_MIRROR_SUMMARY=0 > "$legacy_out"
 	expect_grep "mirror summary not required" "$legacy_out" "Makefile direct-pull legacy diagnostic validation"
 	expect_grep "rung-bc image manifest not required" "$legacy_out" "Makefile direct-pull legacy diagnostic manifest"
+	expect_grep "rung-bc env handoff not required" "$legacy_out" "Makefile direct-pull legacy diagnostic env handoff"
 	expect_grep "mirror log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic mirror window"
 	expect_grep "CRI-O log since-time not required" "$legacy_out" "Makefile direct-pull legacy diagnostic CRI-O window"
 	expect_grep "CRI-O node log not required" "$legacy_out" "Makefile direct-pull legacy diagnostic CRI-O log"
@@ -2598,6 +2604,20 @@ EOF
 		die "direct-pull diagnostic validator accepted mismatched manifest key ID"
 	fi
 	expect_grep "rung-bc manifest rung_b.key_id is kbs:///default/image-kek/wrong" "$manifest_key_err" "direct-pull diagnostic manifest key failure"
+
+	cp -R "$diag" "$broken_env_image"
+	sed -i 's#^export RUNG_B_IMAGE=.*#export RUNG_B_IMAGE=mirror.rig.local:8443/coco/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#' "$broken_env_image/rung-bc.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_env_image" > /dev/null 2> "$env_image_err"; then
+		die "direct-pull diagnostic validator accepted mismatched env rung-b image"
+	fi
+	expect_grep "rung-bc env RUNG_B_IMAGE is mirror.rig.local:8443/coco/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$env_image_err" "direct-pull diagnostic env image failure"
+
+	cp -R "$diag" "$broken_env_key"
+	sed -i 's#^export RUNG_B_KEY_ID=.*#export RUNG_B_KEY_ID=kbs:///default/image-kek/wrong#' "$broken_env_key/rung-bc.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-b-direct-pull-diagnostic.sh" "$broken_env_key" > /dev/null 2> "$env_key_err"; then
+		die "direct-pull diagnostic validator accepted mismatched env rung-b key ID"
+	fi
+	expect_grep "rung-bc env RUNG_B_KEY_ID is kbs:///default/image-kek/wrong" "$env_key_err" "direct-pull diagnostic env key failure"
 }
 
 verify_evidence_validation_make_env() {

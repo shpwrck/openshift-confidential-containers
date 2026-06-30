@@ -1,6 +1,6 @@
 # Rung b upstream escalation packet
 
-Last updated: 2026-06-30T10:23:33Z
+Last updated: 2026-06-30T13:07:31Z
 
 This packet is the upstream summary for the remaining rung-b blocker. It is meant for a CRI-O,
 OpenShift sandboxed containers, Kata, or Confidential Containers maintainer without requiring them
@@ -67,27 +67,34 @@ Trustee image-key request. It writes pod, event, Trustee, CRI-O, and mirror-log 
 bounded to the diagnostic start time and recorded as `crio_log_since_time` and
 `mirror_log_since_time` in `summary.env`. The generated `mirror/summary.tsv` and `summary.env`
 count rung-b manifest/blob pulls by `cri-o` and by the guest `oci-client`, which is the quickest
-way to see whether the host pulled encrypted content before the guest path started.
+way to see whether the host pulled encrypted content before the guest path started. Current
+bundles also copy `rung-bc-images.json` and `rung-bc.env` so the offline validator can prove the
+tested digest and KBS key ID match the generated artifact handoff.
 Validate a collected bundle before sharing it:
 
 ```bash
 make validate-rung-b-direct-pull DIAG_DIR=rung-bc-artifacts/rung-b-direct-pull-<timestamp>
 ```
 
-For older diagnostic bundles collected before `mirror/summary.tsv` and current log-window metadata
-existed, set `REQUIRE_MIRROR_SUMMARY=0` while validating; current bundles should keep the default
-strict summary and log-window requirements.
+For older diagnostic bundles collected before artifact/env handoff, `mirror/summary.tsv`, and
+current log-window metadata existed, set `REQUIRE_MIRROR_SUMMARY=0` while validating; current
+bundles should keep the default strict artifact, summary, and log-window requirements.
 
 Latest validated bounded diagnostic bundle:
 
-- Path: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z`
-- Validator: `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z`
-- Result: passed with the strict default log-window and mirror-summary requirements.
+- Path: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T125624Z`
+- Validator: `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T125624Z`
+- Result: passed with the strict default artifact-manifest, env-handoff, repo-provenance,
+  CRI-O host-pull, log-window, and mirror-summary requirements.
 - Key values:
   - `classification=known-host-pull-blocker`
   - `image_key_request_seen=0`
-  - `crio_log_since_time=2026-06-30T10:08:54Z`
-  - `mirror_log_since_time=2026-06-30T10:08:54Z`
+  - `repo_git_head=dfae54615e8eee3e22b7209da1c8b3714dceda63`
+  - `repo_git_dirty=false`
+  - `crio_log_since_time=2026-06-30T12:56:24Z`
+  - `mirror_log_since_time=2026-06-30T12:56:24Z`
+  - `rung-bc-images.json` matches the diagnostic rung-b digest ref and KBS key ID
+  - `rung-bc.env` matches the diagnostic rung-b digest ref and KBS key ID
   - `crio_rung_b_manifest=16`
   - `crio_rung_b_blob=16`
   - `guest_rung_b_manifest=0`

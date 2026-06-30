@@ -441,13 +441,14 @@ upstream, run
 `make validate-rung-b-direct-pull DIAG_DIR=<rung-b-direct-pull-dir>` to verify the known blocker,
 absence of Trustee image-key requests, bounded CRI-O and mirror-log capture, and mirror-count
 shape. For current bundles the validator requires `rung-bc-images.json` to match the tested
-rung-b digest ref and KBS key ID, `crio-node.log` to show the host-side pull attempt for that
-exact digest, and no Kata `image_guest_pull` source for that same digest. It also requires the
-mirror-count fields in `summary.env` to match `mirror/summary.tsv`, so the compact diagnostic
-evidence stays internally consistent. Current diagnostics also record repo revision, branch, and
-dirty state in `summary.env`; strict validation requires `repo_git_dirty=false`. Use
-`REQUIRE_MIRROR_SUMMARY=0` only for older diagnostic bundles collected before manifest handoff,
-mirror summaries, and current log-window/provenance metadata existed.
+rung-b digest ref and KBS key ID, `rung-bc.env` to match those same tested inputs,
+`crio-node.log` to show the host-side pull attempt for that exact digest, and no Kata
+`image_guest_pull` source for that same digest. It also requires the mirror-count fields in
+`summary.env` to match `mirror/summary.tsv`, so the compact diagnostic evidence stays internally
+consistent. Current diagnostics also record repo revision, branch, and dirty state in
+`summary.env`; strict validation requires `repo_git_dirty=false`. Use `REQUIRE_MIRROR_SUMMARY=0`
+only for older diagnostic bundles collected before manifest/env handoff, mirror summaries, and
+current log-window/provenance metadata existed.
 
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.
