@@ -22,6 +22,24 @@ fail() {
 	failures=$((failures + 1))
 }
 
+usage() {
+	cat <<EOF
+Usage: validate-rung-b-direct-pull-diagnostic.sh <diagnostic-dir>
+
+Validates a rung-b direct encrypted-image pull diagnostic bundle without contacting
+the cluster. The bundle is expected to come from diagnose-rung-b-direct-pull.sh.
+
+Key env:
+  DIAG_DIR                 diagnostic directory when not passed as an argument
+  REQUIRE_MIRROR_SUMMARY   set 0 to accept older bundles without mirror/summary.tsv
+
+Exit codes:
+  0  diagnostic bundle proves the known host-side blocker shape
+  1  diagnostic bundle is present but does not validate
+  2  local setup/usage error
+EOF
+}
+
 require_file() {
 	local path="$1" label="$2"
 	if [[ -s "$path" ]]; then
@@ -204,6 +222,11 @@ check_mirror_summary() {
 		fi
 	done
 }
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+	usage
+	exit 0
+fi
 
 [[ -n "$DIAG_DIR" ]] || die "usage: $0 <rung-b-direct-pull-diagnostic-dir> (or set DIAG_DIR)"
 [[ -d "$DIAG_DIR" ]] || die "diagnostic directory does not exist: $DIAG_DIR"

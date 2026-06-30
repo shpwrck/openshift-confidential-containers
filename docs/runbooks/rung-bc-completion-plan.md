@@ -405,7 +405,8 @@ view of CRI-O's pre-guest pull attempt when those logs are available on the bast
 `mirror/summary.tsv` for compact CRI-O-versus-guest rung-b manifest/blob pull counts. Before
 attaching a diagnostic bundle upstream, run
 `make validate-rung-b-direct-pull DIAG_DIR=<rung-b-direct-pull-dir>` to verify the known blocker,
-absence of Trustee image-key requests, and mirror-count shape.
+absence of Trustee image-key requests, and mirror-count shape. Use `REQUIRE_MIRROR_SUMMARY=0`
+only for older diagnostic bundles collected before mirror summaries existed.
 
 Rung b is done only when happy path and measurement-mismatch negative both reproduce from
 written commands.

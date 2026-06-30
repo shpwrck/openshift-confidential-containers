@@ -72,6 +72,10 @@ Validate a collected bundle before sharing it:
 make validate-rung-b-direct-pull DIAG_DIR=rung-bc-artifacts/rung-b-direct-pull-<timestamp>
 ```
 
+For older diagnostic bundles collected before `mirror/summary.tsv` existed, set
+`REQUIRE_MIRROR_SUMMARY=0` while validating; current bundles should keep the default strict mirror
+summary requirement.
+
 Expected behavior:
 
 - CRI-O/Kata should create the VM-backed container.
