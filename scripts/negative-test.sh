@@ -37,7 +37,7 @@ pass=0 fail=0 skip=0
 RUNG_A_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|measurement|HTTP/[0-9.]+" (401|403)|failed to get resource|report data|attestation (failed|error|denied)|Verifier.*(fail|reject)'
 RUNG_B_DENIAL_RE='attestation.*(denied|failed|error)|failed.*attest|denied|forbidden|measurement|unauthorized|not authorized|HTTP/[0-9.]+" (401|403)|resource/default/image-(kek|key).*(401|403)'
 RUNG_C_DENIAL_RE='signature|sigstore|image security policy|SignatureValidation|signature.*(reject|invalid|missing|verif)|policy.*(reject|deny)|rejected|InvalidImageName'
-AIR_GAP_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|HTTP/[0-9.]+" (401|403)|failed to get resource|vcek|offline|certificate.*(missing|not found)|attestation (failed|error|denied)|Verifier.*(fail|reject)'
+AIR_GAP_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|HTTP/[0-9.]+" (401|403)|RcarAttestFailed|verify TEE evidence failed|[Cc]ertificate chain.*(fail|verif)|does not sign|failed to get resource|vcek|offline|Verifier.*(fail|reject)|attestation (failed|error|denied)'
 
 die()  { echo "ERROR: $*" >&2; exit 2; }
 ok()   { echo "  ✅ PASS (denied as expected): $*"; pass=$((pass+1)); }
@@ -175,10 +175,11 @@ restart_kbs() {
 }
 
 run_air_gap() {
-  echo "[air-gap] remove VCEK secrets → OfflineStore miss → attestation must fail (not silently hit KDS)"
-  local vceks=() bakdir manifest restore_needed=0
+  echo "[air-gap] swap VCEK for a WRONG cert → OfflineStore present-but-wrong → attestation must fail (not silently hit KDS)"
+  local vceks=() bakdir manifest restore_needed=0 vcek bogus
   mapfile -t vceks < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
   if [[ "${#vceks[@]}" -eq 0 ]]; then skipt "no vcek-* secret in $TRUSTEE_NS — run make collect-vcek first"; return; fi
+  command -v openssl >/dev/null || { skipt "openssl required to mint the wrong VCEK for the air-gap test"; return; }
   bakdir="$(mktemp -d)"
   manifest="$(mktemp)"
 
@@ -202,23 +203,33 @@ run_air_gap() {
     exit "$rc"
   }
 
-  local vcek
   for vcek in "${vceks[@]}"; do
     oc -n "$TRUSTEE_NS" get "$vcek" -o yaml > "$bakdir/${vcek#secret/}.yaml"
   done
   restore_needed=1
   trap air_gap_exit_cleanup EXIT
 
-  echo "  (temporarily removing ${#vceks[@]} VCEK secret(s); will restore)"
-  oc -n "$TRUSTEE_NS" delete "${vceks[@]}" >/dev/null
+  # Mint a valid-but-WRONG cert (parseable DER, so KBS still starts) and put it in the OfflineStore.
+  # Do NOT delete the secret: the kbsLocalCertCacheSpec volume is REQUIRED, so a missing secret leaves
+  # KBS unable to start — and KBS-down is NOT the same as attestation-denied. A present-but-wrong cert
+  # keeps KBS up and makes the SNP verifier reject the report's cert chain → a clean, real OfflineStore
+  # denial (verified on the rig: `POST /kbs/v0/attest 401`, "Certificate chain from KDS failed verification").
+  bogus="$bakdir/wrong-vcek.der"
+  openssl req -x509 -newkey rsa:2048 -keyout /dev/null -out "$bakdir/wrong-vcek.pem" -days 1 -nodes -subj /CN=wrong-vcek >/dev/null 2>&1
+  openssl x509 -in "$bakdir/wrong-vcek.pem" -outform der -out "$bogus" >/dev/null 2>&1
+  echo "  (replacing ${#vceks[@]} VCEK secret(s) with a wrong cert; will restore)"
+  for vcek in "${vceks[@]}"; do
+    oc -n "$TRUSTEE_NS" create secret generic "${vcek#secret/}" --from-file=vcek.der="$bogus" --dry-run=client -o yaml \
+      | oc -n "$TRUSTEE_NS" apply -f - >/dev/null
+  done
   restart_kbs
-  sleep 10
+  sleep 5
   if render_or_skip "air-gap happy-path rung-a manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
         POD_NAME=negtest-air-gap RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then
-    expect_fail_closed "negtest-air-gap" "$manifest" "air-gap VCEK cache miss denied otherwise happy rung-a" "$AIR_GAP_DENIAL_RE" "air-gap VCEK/OfflineStore denial"
+    expect_fail_closed "negtest-air-gap" "$manifest" "air-gap wrong-VCEK denied otherwise happy rung-a" "$AIR_GAP_DENIAL_RE" "air-gap VCEK/OfflineStore denial"
   fi
   air_gap_restore
   rm -rf "$bakdir"
