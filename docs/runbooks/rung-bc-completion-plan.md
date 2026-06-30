@@ -20,7 +20,8 @@ the live SNP HOST_DATA claim exposed as SHA-256 `input.init_data`, not the SHA-3
 is still diagnostic until it is replayed with a direct digest-pinned encrypted-image path.
 
 For the latest branch/PR status and remaining proof checklist, see
-`docs/runbooks/rung-bc-status.md`.
+`docs/runbooks/rung-bc-status.md`. For the issue-ready upstream summary of the remaining direct
+encrypted-image blocker, see `docs/runbooks/rung-b-upstream-escalation.md`.
 
 Upstream mechanics to keep close while implementing:
 

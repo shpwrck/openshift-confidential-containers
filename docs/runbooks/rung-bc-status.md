@@ -244,7 +244,8 @@ Live rig check on 2026-06-30:
    host-side encrypted-layer pre-pull. The diagnostic local alias, CRI-O annotation probes, and
    host-decryption-key-path probe are useful for root-cause work, but they are not production proof
    paths. A custom NRI probe is now source-plausible only as a carrier-path diagnostic; it cannot
-   close rung b unless it becomes a supported path that preserves digest-pinned proof inputs.
+   close rung b unless it becomes a supported path that preserves digest-pinned proof inputs. The
+   issue-ready escalation packet is in `docs/runbooks/rung-b-upstream-escalation.md`.
 
 2. Replay the restrictive measured-initdata policy with the next viable direct encrypted-image
    path before counting rung-b negatives. RVPS generation now works for the current rung-b initdata,
