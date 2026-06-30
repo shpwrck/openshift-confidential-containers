@@ -248,17 +248,16 @@ Reference: [`install/README.md`](../../install/README.md),
       ```bash
       oc get mcp -w
       ```
-      `# VERIFY` the CoCo feature gate against the OSC 1.12 CRD and operator behavior:
-      `oc explain kataconfig.spec` has no `enableConfidentialCompute` field; CoCo is enabled
-      by the `osc-feature-gates` ConfigMap.
+      `# VERIFY` the CoCo feature-gate field name against the OSC 1.12 CRD
+      (`oc explain kataconfig.spec` — in 1.12 it is `enableConfidentialCompute`).
 - [ ] **Verify the RuntimeClasses** (the Phase-4 proof):
       ```bash
       oc get runtimeclass
-      # expect: kata-cc (plain kata may also appear); kata-cc handler resolves to kata-snp on SEV-SNP
+      # expect:  kata   AND   kata-cc   (kata-cc handler resolves to kata-snp on SEV-SNP)
       ```
 
-> STOP-gate: four CSVs `Succeeded`, node back `Ready` after the MCP reboot, and `kata-cc`
-> present with handler `kata-snp`.
+> STOP-gate: four CSVs `Succeeded`, node back `Ready` after the MCP reboot, and `kata` +
+> `kata-cc` (handler `kata-snp`) RuntimeClasses present.
 
 ---
 
@@ -279,7 +278,11 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
       unreachable) KDS instead of the cache → attestation fails. Re-runnable for TCB refresh.
 - [ ] **Generate RVPS reference values with Veritas** (hardware-bound):
       `make gen-rvps` → [`scripts/gen-rvps-veritas.sh`](../../scripts/gen-rvps-veritas.sh)
-      (`coco-tools:1.12 veritas --tee snp`, one run per distinct socket/hardware config).
+      (`coco-tools` pinned by digest, `veritas --tee snp --ocp-version <OCP_VERSION>`, one run
+      per distinct socket/hardware config). On disconnected rigs, set `DEBUG_IMAGE` to a cached
+      image for `oc debug node`; if Veritas's internal `oc adm release info` still reaches public
+      `quay.io`, pass a temporary `VERITAS_OC_WRAPPER` that rewrites the release and
+      `rhel-coreos-extensions` refs to the mirror.
 - [ ] **Wire both into Trustee:** mount the VCEK secrets via
       `KbsConfig.spec.kbsLocalCertCacheSpec` (path
       `…/kds-store/vcek/<hwid>/vcek.der`) and merge the RVPS output into the
@@ -296,6 +299,10 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
 
 A rung is **proven only when reproduced from these steps AND its negative test passes** (design
 §5). Do them **in order** — do not skip ahead.
+Rungs b/c are scaffolded in the repo but still need hardware proof. Follow Phase 6 of
+[`install-execution-plan.md`](install-execution-plan.md) to build the image artifacts,
+enable the KBS resources, and run the b/c happy + negative paths before checking the boxes
+below.
 
 - [ ] **Rung a — secret release.** Deploy the CoCo workload
       ([`gitops/base/workloads/rung-a-secret-pod.yaml`](../../gitops/base/workloads/rung-a-secret-pod.yaml),
@@ -310,17 +317,23 @@ A rung is **proven only when reproduced from these steps AND its negative test p
 - [ ] **Rung b — encrypted image.**
       - **Happy path:** pod reaches `Running` (image key released after attestation).
       - **Negative test:** wrong measurement → key withheld → **pod won't start**.
+      - **Implementation note:** use a digest-pinned encrypted image and KBS resource
+        `image-key/rung-b`; do not count missing-key failure as the primary sign-off proof.
 - [ ] **Rung c — signed image.**
       - **Happy path:** signed image pulls (mirror pull secret served as `regcred`, per
         `kbsconfig.yaml` `kbsSecretResources`).
       - **Negative test:** unsigned/tampered image → `image_security_policy` **rejects** the pull.
-- [ ] **Air-gap negative test (proves the cache is load-bearing):** remove one VCEK secret /
-      use a **wrong-case HWID** → **attestation fails**. This proves the OfflineStore — not a
-      silently reachable KDS — is doing the work.
+      - **Implementation note:** the signed policy must account for the app image and every
+        infrastructure image pulled inside the CVM, including release/pause images.
+- [ ] **Air-gap negative test (proves the cache is load-bearing):** temporarily remove the
+      Trustee `vcek-*` Secrets, then rerun an otherwise happy rung-a request →
+      **attestation fails** and the Secrets are restored. This proves the OfflineStore — not
+      a silently reachable KDS — is doing the work.
 
-> A scaffold for these denial proofs exists at `make negative-test`
-> ([target is currently a TODO stub](../../Makefile) — see design §5 for the rung a/b/c +
-> air-gap matrix it must implement).
+> Denial-proof automation now exists at `make negative-test WHICH=all`
+> ([Makefile](../../Makefile)); it renders the rung a/b/c negative manifests from the same
+> apply scripts used by the happy paths. Treat it as a rig-side proof helper, not as proof
+> by itself: it must run against the hardware cluster and fail closed for every rung.
 
 > STOP-gate: every rung's happy path **and** negative test pass. Only then is a rung "proven".
 

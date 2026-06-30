@@ -7,11 +7,19 @@ NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
+RUNG_B_KEY_FILE="${RUNG_B_KEY_FILE:-}"
+RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
+RUNG_C_IMAGE="${RUNG_C_IMAGE:-}"
+RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-}"
+RUNG_C_POLICY_FILE="${RUNG_C_POLICY_FILE:-}"
+RUNG_C_POLICY_IMAGE_PREFIX="${RUNG_C_POLICY_IMAGE_PREFIX:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 
 tmpdir=""
 vcek_hwids=()
+extra_secret_resources=()
+RUNG_B_KEY_SECRET=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -20,6 +28,35 @@ die() {
 
 need() {
 	command -v "$1" >/dev/null || die "$1 is not on PATH"
+}
+
+file_size_bytes() {
+	local path="$1"
+	if [[ -r "$path" ]]; then
+		wc -c < "$path" | tr -d '[:space:]'
+	elif command -v sudo >/dev/null && sudo -n test -r "$path" 2>/dev/null; then
+		sudo -n wc -c "$path" | awk '{print $1}'
+	else
+		die "cannot read $path"
+	fi
+}
+
+require_rung_b_key_size() {
+	local path="$1" size
+	size="$(file_size_bytes "$path")"
+	[[ "$size" == "32" ]] || die "rung-b image key must be exactly 32 bytes: $path (${size} bytes)"
+}
+
+kbs_uri_default_secret_key() {
+	local uri="$1" path repo secret key extra
+	[[ "$uri" == kbs:///* ]] || die "KBS URI must start with kbs:///: $uri"
+	path="${uri#kbs:///}"
+	IFS=/ read -r repo secret key extra <<<"$path"
+	[[ "$repo" == "default" ]] || die "only default KBS repository is supported for Secret seeding: $uri"
+	[[ -n "$secret" && -n "$key" && -z "${extra:-}" ]] || die "KBS URI must be kbs:///default/<secret>/<key>: $uri"
+	[[ "$secret" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || die "KBS Secret resource name is not a valid Kubernetes Secret name: $secret"
+	[[ "$key" =~ ^[-._a-zA-Z0-9]+$ ]] || die "KBS Secret key is not a valid Kubernetes Secret key: $key"
+	printf '%s\t%s\n' "$secret" "$key"
 }
 
 cleanup() {
@@ -50,14 +87,36 @@ load_vcek_bundle() {
 	echo "Using ${#vcek_hwids[@]} VCEK bundle entr$( [[ ${#vcek_hwids[@]} -eq 1 ]] && echo y || echo ies )" >&2
 }
 
+load_extra_secret_resources() {
+	local parsed
+	extra_secret_resources=()
+	if [[ -n "$RUNG_B_KEY_FILE" ]]; then
+		[[ -s "$RUNG_B_KEY_FILE" ]] || die "missing rung-b key file: $RUNG_B_KEY_FILE"
+		require_rung_b_key_size "$RUNG_B_KEY_FILE"
+		parsed="$(kbs_uri_default_secret_key "$RUNG_B_KEY_ID")"
+		RUNG_B_KEY_SECRET="${parsed%%	*}"
+		extra_secret_resources+=("$RUNG_B_KEY_SECRET")
+	fi
+	if [[ -n "$RUNG_C_COSIGN_PUB" ]]; then
+		[[ -s "$RUNG_C_COSIGN_PUB" ]] || die "missing rung-c cosign public key: $RUNG_C_COSIGN_PUB"
+		extra_secret_resources+=(sig-public-key)
+	fi
+	if [[ -n "$RUNG_C_POLICY_FILE" ]]; then
+		[[ -s "$RUNG_C_POLICY_FILE" ]] || die "missing rung-c policy file: $RUNG_C_POLICY_FILE"
+	fi
+}
+
 render_kbsconfig() {
-	local out="$1" block="" i hwid
+	local out="$1" block="" extra_block="" i hwid resource
 	for i in "${!vcek_hwids[@]}"; do
 		hwid="${vcek_hwids[$i]}"
 		block+="      - secretName: vcek-snp-${i}"$'\n'
 		block+="        mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/${hwid}"$'\n'
 	done
-	awk -v block="$block" '
+	for resource in "${extra_secret_resources[@]}"; do
+		extra_block+="    - ${resource}"$'\n'
+	done
+	awk -v block="$block" -v extra_block="$extra_block" '
 		/^[[:space:]]+- secretName: vcek-snp-0[[:space:]]*($|#)/ {
 			printf "%s", block
 			skip = 1
@@ -68,7 +127,12 @@ render_kbsconfig() {
 			next
 		}
 		skip { next }
-		{ print }
+		{
+			print
+			if ($0 ~ /^[[:space:]]+- registry-configuration[[:space:]]*($|#)/ && extra_block != "") {
+				printf "%s", extra_block
+			}
+		}
 	' "$REPO_ROOT/gitops/base/trustee/kbsconfig.yaml" > "$out"
 }
 
@@ -98,6 +162,7 @@ trustee_rollout_available() {
 
 cd "$REPO_ROOT"
 load_vcek_bundle
+load_extra_secret_resources
 tmpdir="$(mktemp -d)"
 render_kbsconfig "$tmpdir/kbsconfig.yaml"
 
@@ -109,7 +174,14 @@ fi
 need oc
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
-NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
+NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
+	RUNG_B_KEY_FILE="$RUNG_B_KEY_FILE" \
+	RUNG_B_KEY_ID="$RUNG_B_KEY_ID" \
+	RUNG_C_IMAGE="$RUNG_C_IMAGE" \
+	RUNG_C_COSIGN_PUB="$RUNG_C_COSIGN_PUB" \
+	RUNG_C_POLICY_FILE="$RUNG_C_POLICY_FILE" \
+	RUNG_C_POLICY_IMAGE_PREFIX="$RUNG_C_POLICY_IMAGE_PREFIX" \
+	bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
 
 oc apply -f gitops/base/trustee/issuers.yaml
 oc apply -f gitops/base/trustee/kbs-configmaps.yaml

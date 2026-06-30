@@ -2,7 +2,7 @@
 
 **Target:** OCP **4.20.18** · OSC **1.12** · Trustee **1.1** · TEE = **AMD SEV-SNP (Genoa)** · Single-Node OpenShift on disposable Latitude bare metal, behind a persistent mirror bastion.
 
-This is the disposable verification rig that proves each CoCo capability (secret release → encrypted image → signed image) under a *real* air gap before any of it touches a production cluster. **Current state: nothing is applied.** PR #4 (Rocky-10 bastion automation + VLAN L3) is merged to `main`, but no Terraform has been run, no node exists, no mirror is up. Rung-0 SNP-host was proven *once* on Ubuntu 26.04 — it is **unproven on the Rocky 10 image we now standardize on**, and re-proving it is a hard gate.
+This is the disposable verification rig that proves each CoCo capability (secret release → encrypted image → signed image) under a *real* air gap before any of it touches a production cluster. For a fresh rig, start at Phase 0 and treat every stop-gate below as live. Current state: the SNO/Trustee rig is up, rung-c has scoped happy/unsigned-denial evidence, and rung-b remains blocked on the direct CRI-O/Kata encrypted-image pull path tracked upstream ([cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084)).
 
 **Estimated total wall time:** ~5–7 h, of which **~1–2 h is the unattended mirror** (paid once; the bastion persists across node churn). **Billing note:** two hourly-billed bare-metal hosts (persistent bastion + disposable node) — every `terraform apply` starts hourly billing; destroy when done. **Hands-on note:** the BIOS recipe, the ISO boot, and the IPMI console are browser/console actions that require physical/console access — they cannot be automated from the CLI.
 
@@ -28,7 +28,7 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 ---
 
 ## Phase 0 — Prereqs / tooling + pre-spend file fixes
-**Goal:** tooling on `PATH`, pull secret staged, tfvars fail-closed traps fixed, stub scripts implemented — all **before any spend**. **~30–45 min hands-on.**
+**Goal:** tooling on `PATH`, pull secret staged, tfvars fail-closed traps fixed, local scaffold checks green — all **before any spend**. **~30–45 min hands-on.**
 
 | Step | What happens / command |
 |---|---|
@@ -37,10 +37,10 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 | Ensure internal git reachable | Host this repo's `gitops/` tree on internal git reachable from the bastion VLAN. |
 | **Fix bastion tfvars OS drift** | `terraform.tfvars.example` line 7 ships `operating_system = "ubuntu_26_04_x64_lts"` — a verbatim copy boots the **wrong OS** and the Rocky-specific NM/dnf cloud-init silently fails → VLAN never comes up. Edit the active `terraform.tfvars` so OS starts with `rocky`. |
 | **Pre-fill bastion SKU** | `lsh plans list` → pick the cheapest metal with ≥200 GB disk. Write `plan = "<sku>"` (no longer `""`). |
-| **Implement the 3 stub scripts** | `scripts/collect-vcek.sh`, `scripts/gen-rvps-veritas.sh`, and `make negative-test` all `echo TODO; exit 1` today. Implement them now (no hardware needed for scaffolding) against design §5. **Acceptance = exits 0 and produces the artifact**, not "prints the recipe." Lowercase-HWID logic baked into collect-vcek. |
+| **Verify local scaffold scripts** | `scripts/collect-vcek.sh`, `scripts/gen-rvps-veritas.sh`, and `make negative-test` are implemented, but their real evidence is hardware-bound. Before spend, run `make lint` to cover shell syntax, overlay builds, and the hardware-free rung b/c render verifier. Then, on the rig, rerun the specific hardware targets in Phase 6. |
 | **Pin floating image tags** | `install/imageset-config.yaml` carries `ubi-minimal:latest` and `coco-tools:1.12` (a floating train tag). Pin both to digests before mirroring or rung-b/c image tests aren't reproducible. |
 | Fix cosmetic script header | `scripts/host-snp-check.sh` header still says "Ubuntu node" — update so the executor doesn't think it's the wrong script. |
-| **🛑 STOP-gate** | Confirm: `./bin/oc version`, `./bin/openshift-install version`, `./bin/oc-mirror --help` all resolve; pull secret present; active bastion tfvars has `rocky` OS + non-empty `plan`; the 3 scripts exit 0. **Hard gate before any spend.** |
+| **🛑 STOP-gate** | Confirm: `./bin/oc version`, `./bin/openshift-install version`, `./bin/oc-mirror --help` all resolve; pull secret present; active bastion tfvars has `rocky` OS + non-empty `plan`; `make lint` is green. **Hard gate before any spend.** |
 
 ---
 
@@ -99,17 +99,17 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 
 ---
 
-## Phase 4 — Operators (NFD -> cert-manager -> OSC -> Trustee) + KataConfig (node reboot)
-**Goal:** four CSVs Succeeded, node back Ready after a self-reboot, `kata-cc` RuntimeClass present with handler `kata-snp`. **~30-45 min mixed.**
+## Phase 4 — Operators (NFD → cert-manager → OSC → Trustee) + KataConfig (node reboot)
+**Goal:** four CSVs Succeeded, node back Ready after a self-reboot, `kata` + `kata-cc` RuntimeClasses present. **~30–45 min mixed.**
 
 | Step | What happens / command |
 |---|---|
 | **RHCOS SNP host gate** | `make verify-snp-host NODE=<node-name>` — checks PSP SEV-SNP API, RMP table, no Error 0x3, `kvm_amd sev_snp=Y`, `/dev/sev`. **🛑 HARD STOP — do not apply any GitOps until green.** Rung-0 only proved the raw Rocky kernel; this proves the *RHCOS* kernel. |
-| **Reconcile CRD field-name guesses (BLOCKING)** | The moment OSC/Trustee CSVs install: `oc explain kataconfig.spec` (OSC 1.12 uses the `osc-feature-gates` ConfigMap for CoCo; there is no `enableConfidentialCompute` field), `oc explain kbsconfig.spec` (incl. `kbsLocalCertCacheSpec` @ trustee v1.1). Correct manifests **before** trusting overlays. |
+| **Reconcile CRD field-name guesses (BLOCKING)** | `gitops/base/**` was authored from docs, **not live CRDs** — the most likely first bite. The moment OSC/Trustee CSVs install: `oc explain kataconfig.spec` (CoCo gate is `enableConfidentialCompute` in OSC 1.12), `oc explain kbsconfig.spec` (incl. `kbsLocalCertCacheSpec` @ trustee v1.1). Correct manifests **before** trusting overlays. |
 | Apply the workers overlay | `make apply-sno` (`oc apply -k gitops/overlays/sno-workers`). Wait: `oc get csv -A | grep -Ei 'nfd|cert-manager|sandboxed|trustee'` until all **Succeeded**. Order NFD→cert-manager→OSC→Trustee is load-bearing (enforced by `subscriptions.yaml`). **VERIFY** mirrored CatalogSource name/channels. **NFD must label the node `SEV_SNP`** or KataConfig binds the wrong handler — **do NOT hand-label** (masks the fault). |
 | KataConfig reboots the single node | Applying `kataconfig.yaml` triggers an MCP rollout that **self-reboots** the SNO (no spare node — wait it out): `oc get mcp -w`. |
-| Verify RuntimeClass (the proof) | `oc get runtimeclass` -> expect `kata-cc` (plain `kata` is optional by OSC release/environment); `oc get runtimeclass kata-cc -o jsonpath='{.handler}'` must be **`kata-snp`**. |
-| **STOP-gate** | Four CSVs Succeeded, node Ready post-reboot, `kata-cc` present with handler `kata-snp`. *If handler != `kata-snp`, KataConfig ran before NFD labeled -- re-apply KataConfig after the label exists.* |
+| Verify RuntimeClasses (the proof) | `oc get runtimeclass` → expect `kata` AND `kata-cc`; `oc get runtimeclass kata-cc -o jsonpath='{.handler}'` must be **`kata-snp`**. |
+| **🛑 STOP-gate** | Four CSVs Succeeded, node Ready post-reboot, `kata` + `kata-cc` (handler `kata-snp`) present. *If handler ≠ `kata-snp`, KataConfig ran before NFD labeled — re-apply KataConfig after the label exists.* |
 
 ---
 
@@ -121,7 +121,7 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 | **Create the 5 out-of-band Trustee secrets FIRST** | KBS crash-loops (looks like an attestation bug) if these are missing — create them **before** `apply-trustee`. Per `gitops/base/trustee/secret-stubs.example.yaml`: `kbs-auth-public-key` (supply/guard the ed25519 admin keypair, then `oc create secret`), `attestation-cert`, `regcred` (**name must NOT contain dots**), `sample`. |
 | Stand up the rig Trustee | `make apply-trustee` (`oc apply -k gitops/overlays/sno-trustee`). |
 | **Collect VCEK certs (lowercase HWID)** | `make collect-vcek NODE=<node-name>`. One secret **per socket**, keyed by **LOWERCASE** HWID (`tr A-Z a-z`). The `.der` is fetched via `snphost show vcek-url` → downloaded **on the connected host** → carried in. Generation-agnostic (dodges Trustee #591 Milan hardcode). **Landmine: an UPPER-case HWID silently misses the cache and falls through to the (unreachable) KDS → attestation fails for the wrong reason.** |
-| Generate RVPS with Veritas | `make gen-rvps` (`coco-tools:1.12 veritas --tee snp`, one run per distinct socket/hardware config). Re-run if initdata changes or KBS reports measurement mismatch. |
+| Generate RVPS with Veritas | `make gen-rvps` (`coco-tools` pinned by digest, `veritas --tee snp --ocp-version <OCP_VERSION>`, one run per distinct socket/hardware config). Re-run if initdata changes or KBS reports measurement mismatch. In disconnected rigs, set `DEBUG_IMAGE` to a cached node-debug image and use `VERITAS_OC_WRAPPER` only when the bundled Veritas/`oc adm release info` path still hard-codes public release refs. |
 | Wire both into Trustee | VCEK secrets mounted at `…/kds-store/vcek/<hwid>/vcek.der` via `KbsConfig.spec.kbsLocalCertCacheSpec`; RVPS merged into the `rvps-reference-values` ConfigMap (per `kbsconfig.yaml`). **Ensure `vcek_sources` omits `{type=KDS}`** — leaving KDS in lets it "work" by reaching an internet that won't exist in production. (Field names already reconciled in Phase 4.) |
 | **🛑 STOP-gate** | `oc logs -n trustee-operator-system -l app=kbs --tail=100 | grep -Ei 'warn|error|deny|reject|measurement'` → no missing-cert / empty-RVPS errors; KBS restarts cleanly. |
 
@@ -130,13 +130,20 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 ## Phase 6 — Rungs a → b → c (each proven only when reproduced AND its negative test passes)
 **Goal:** every rung's happy path **and** negative test pass, plus the air-gap VCEK-pull negative test. **~1–2 h hands-on, strictly in order.**
 
+Rung-a and the air-gapped guest-pull path have a proven recipe. Rung-c now has live hardware
+accept/deny evidence. Rung-b has repo scaffolding and tag-shaped diagnostics for guest decryption
+and measured-initdata key gating, but the direct digest-pinned encrypted-image pod is still blocked
+by CRI-O host-side encrypted-layer pre-pull before Kata guest pull begins; the upstream
+blocker is tracked at [cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084). See
+the Phase 6 table below for the exact build/apply/negative sequence.
+
 | Step | What happens / command |
 |---|---|
 | **Rung a — secret release** | Deploy `gitops/base/workloads/rung-a-secret-pod.yaml` (`runtimeClassName: kata-cc`). **Happy:** init `curl …/cdh/resource/default/attestation-status/status` → success → workload runs. **Negative (the proof):** restrictive resource policy + wrong/empty RVPS (or tamper initdata) → attestation errors, **secret withheld**, pod does not start. **Landmine:** keep `limits.memory ≥ default_memory + 256–512 MiB` or the host **OOM-kills the CVM** (DeadlineExceeded, QEMU dies in seconds). Primary signal: `oc describe pod` + `oc get events`, **not** logs. |
-| **Rung b — encrypted image** | **Happy:** pod Running (image key released after attestation). **Negative:** wrong measurement → key withheld → pod won't start. *(after rung a)* |
-| **Rung c — signed image** | **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull. `regcred` name **without dots**; registry CA in initdata as **separate array elements**. *(after rung b)* |
-| **Air-gap negative test** | `make negative-test` (implemented in Phase 0). Remove one VCEK secret / use a **wrong-case HWID** → attestation **must FAIL**. This proves the OfflineStore cache — not a leaky KDS — is load-bearing. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
-| **🛑 STOP-gate** | All rung a/b/c happy+negative results green **and** the air-gap VCEK-pull negative test fails-closed as expected. |
+| **Rung b — encrypted image** | `make build-rung-images` then `make apply-trustee-rung-bc` and `make apply-rung-b RUNG_B_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-b`). **Negative:** `make negative-test WHICH=rung-b RUNG_B_IMAGE=<digest-ref>` must fail closed from a measured-initdata mismatch, not from a missing key. *(after rung a)* |
+| **Rung c — signed image** | Use the same artifacts, then `make apply-rung-c RUNG_C_IMAGE=<digest-ref>`. **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** `make negative-test WHICH=rung-c RUNG_C_UNSIGNED_IMAGE=<unsigned-digest-ref>` must fail closed through `image_security_policy` rejection. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. *(after rung b)* |
+| **Air-gap negative test** | `make negative-test WHICH=air-gap`. The harness temporarily removes the Trustee `vcek-*` Secrets, then reruns an otherwise happy rung-a request; attestation **must FAIL** and the Secrets must be restored. This proves the OfflineStore cache — not a leaky KDS — is load-bearing. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
+| **🛑 STOP-gate** | All rung a/b/c happy+negative results green **and** the air-gap VCEK-pull negative test fails-closed as expected. Confirm each rung's happy + negative result on the node before sign-off. |
 
 ---
 
