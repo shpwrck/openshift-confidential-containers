@@ -3,6 +3,12 @@ kind: Kustomization
 # OPT-IN egress lockdown — deliberately NOT referenced by the sno-workers / customer-workers
 # overlays (applying it during/just-after install can wedge the cluster). Apply it on its own,
 # AFTER the cluster is healthy:  oc apply -k gitops/base/airgap-egress
+#   SNO (rig): role=master is correct (control+worker collapsed) — apply as-is.
+#   Multi-node customer: FIRST flip role: master->worker in machineconfig-airgap-egress.yaml
+#   (line ~20), or it locks the control plane instead of the SNP worker pool.
+# Then VERIFY public egress is dead: `oc debug node/<node> -q -- chroot /host curl -m5 -sI
+# https://quay.io` must FAIL, while `oc get co && oc get nodes` stay healthy. Required before the
+# air-gap negative test (Phase 6) — with egress open that test falsely passes by reaching the KDS.
 # airgap-egress.nft is the human-readable source embedded (base64) in the MachineConfig — it is
 # NOT a kustomize resource, so it is not listed here.
 resources:
