@@ -1,10 +1,13 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T12:33:27Z
+Last updated: 2026-06-30T12:39:29Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest proof-tooling checkpoint verified on the rig: `1189cb3` (`make prove-rung-c` passed and
-validated proof-scope-aware rung-c evidence at
+Latest proof-tooling checkpoint verified on the rig: `46b77cd` (`make diagnose-rung-b-direct-pull`
+reproduced the known blocker and `make validate-rung-b-direct-pull` passed for the
+provenance-aware bundle at
+`/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T123552Z`; the latest
+scoped rung-c proof remains
 `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-rung-c-proof-20260630T121314Z`)
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
@@ -309,12 +312,14 @@ Live rig check on 2026-06-30:
     still rejects tag-by-digest; and `skopeo copy containers-storage:<carrier-digest>
     containers-storage:<encrypted-digest>` refuses the copy because the carrier manifest digest
     would not match the encrypted destination digest.
-- The packaged direct-pull diagnostic bundle
-  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T100854Z` validates
+- The current packaged direct-pull diagnostic bundle
+  `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T123552Z` validates
   with `make validate-rung-b-direct-pull DIAG_DIR=...` on the bastion. The validation confirms the
-  known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, bounded
-  CRI-O and mirror-log collection from `2026-06-30T10:08:54Z`, CRI-O rung-b manifest/blob pulls
-  in the mirror log summary, and zero guest `oci-client` rung-b pulls.
+  known host-pull blocker, digest-pinned rung-b image, no Trustee image-key request, clean repo
+  provenance from head `46b77cd` with `repo_git_dirty=false`, bounded CRI-O and mirror-log
+  collection from `2026-06-30T12:35:52Z`, CRI-O node-log host pull for the exact rung-b digest,
+  no Kata `image_guest_pull` source for that same digest, CRI-O rung-b manifest/blob pulls in the
+  mirror log summary, and zero guest `oci-client` rung-b pulls.
   - The containerd-style annotation key `io.kubernetes.cri.image-name` cannot be added through
     CRI-O runtime `allowed_annotations`; it is not in CRI-O's `AllAllowedAnnotations` table.
     Runtime-level `default_annotations` did accept
@@ -393,6 +398,20 @@ Live rig check on 2026-06-30:
     `085844Z` bounded-mirror bundle now fails strict validation, as intended, because it predates
     `crio_log_since_time`. The helper removed the diagnostic pod afterward; the node remained
     Ready and no debug pods were left behind.
+  - After adding direct-pull diagnostic repo provenance and strict clean-checkout validation, it
+    was rerun at
+    `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T123552Z`.
+    The diagnostic again reproduced `classification=known-host-pull-blocker`: pod phase
+    `Pending`, `host_pull_blocker_seen=1`, `image_key_request_seen=0`,
+    `repo_git_head=46b77cd5d80a7d546a8dfeb92c43a84143b37120`,
+    `repo_git_dirty=false`, `crio_log_since_time=2026-06-30T12:35:52Z`,
+    `mirror_log_since_time=2026-06-30T12:35:52Z`, `crio_rung_b_manifest=16`,
+    `crio_rung_b_blob=16`, `guest_rung_b_manifest=0`, and `guest_rung_b_blob=0`.
+    Running
+    `make validate-rung-b-direct-pull DIAG_DIR=/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/rung-b-direct-pull-20260630T123552Z`
+    passed with the strict default repo-provenance, CRI-O host-pull, log-window, and
+    mirror-summary requirements. The helper removed the diagnostic pod afterward; the node
+    remained Ready and no debug pods were left behind.
 - NRI was inspected as a possible late guest-pull-source override:
   - CRI-O 1.33 calls NRI `CreateContainer` after creating the local image result and before saving
     the final OCI spec/runtime create. The NRI runtime-tools generator can adjust annotations, so
