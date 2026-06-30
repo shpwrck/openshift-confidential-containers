@@ -248,8 +248,9 @@ Reference: [`install/README.md`](../../install/README.md),
       ```bash
       oc get mcp -w
       ```
-      `# VERIFY` the CoCo feature-gate field name against the OSC 1.12 CRD
-      (`oc explain kataconfig.spec` — in 1.12 it is `enableConfidentialCompute`).
+      `# VERIFY` the CoCo enablement mechanism against OSC 1.12: CoCo is enabled by the
+      `osc-feature-gates` ConfigMap (`confidential: "true"`), NOT a KataConfig field —
+      `oc explain kataconfig.spec` has no `enableConfidentialCompute` in 1.12.
 - [ ] **Verify the RuntimeClasses** (the Phase-4 proof):
       ```bash
       oc get runtimeclass
