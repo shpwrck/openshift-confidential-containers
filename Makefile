@@ -4,14 +4,82 @@
 OVERLAY ?= sno-workers
 NODE    ?=
 NS      ?= trustee-operator-system
+WORKLOAD_NS ?= default
 CATALOGSOURCE ?= cs-redhat-operator-index-v4-20
 VCEK_BUNDLE ?= ./vcek-bundle
+TEE ?= snp
+OCP_VERSION ?= 4.20.18
+PULL_SECRET ?= ./pull-secret.json
+INITDATA ?= ./initdata-flavour-b.toml
+RVPS_OUT ?= ./rvps-$(TEE).yaml
+DEBUG_IMAGE ?=
+REGISTRIES_CONF ?=
+REGISTRY_CERTS_DIR ?=
+VERITAS_OC_WRAPPER ?=
+VERITAS_EXTRA_ARGS ?=
 HWID ?=
 HWIDS ?=
 MIRROR_REGISTRY ?= mirror.rig.local:8443
 MIRROR_DNS_UPSTREAM ?= 192.168.66.10
 KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
 RUNG_A_IMAGE ?= registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
+ARTIFACT_DIR ?= ./rung-bc-artifacts
+SOURCE_IMAGE ?= $(RUNG_A_IMAGE)
+SOURCE_IMAGE_REF ?= docker://$(SOURCE_IMAGE)
+SKOPEO_COPY_ARGS ?= --remove-signatures
+RUNG_B_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-b:encrypted
+RUNG_C_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c:signed
+RUNG_C_UNSIGNED_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c-unsigned:unsigned
+RUNG_B_KEY_PATH ?= /default/image-key/rung-b
+RUNG_B_KEY_ID ?= kbs://$(RUNG_B_KEY_PATH)
+RUNG_B_POLICY_URI ?= kbs:///default/security-policy/test
+RUNG_C_POLICY_URI ?= kbs:///default/security-policy/rung-c
+RUNG_B_KEY_FILE ?= $(ARTIFACT_DIR)/rung-b-image.key
+COCO_KEYPROVIDER_IMAGE ?= coco-keyprovider
+CONTAINER_RUNTIME ?=
+CONTAINER_VOLUME_SUFFIX ?=
+COSIGN_KEY ?= $(ARTIFACT_DIR)/cosign.key
+COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
+COSIGN_SIGN_ARGS ?=
+COSIGN_VERIFY_ARGS ?=
+BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
+SEED_TRUSTEE_SECRETS_SCRIPT ?= ./scripts/seed-trustee-secrets.sh
+APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
+NEGATIVE_TEST_SCRIPT ?= ./scripts/negative-test.sh
+APPLY_RUNG_A_SCRIPT ?= ./scripts/apply-rung-a.sh
+APPLY_RUNG_B_SCRIPT ?= ./scripts/apply-rung-b.sh
+APPLY_RUNG_C_SCRIPT ?= ./scripts/apply-rung-c.sh
+RENDER_RUNG_B_MEASUREMENT_POLICY_SCRIPT ?= ./scripts/render-rung-b-measurement-policy.sh
+VERIFY_RUNG_B_KEY_WRAP_SCRIPT ?= ./scripts/verify-rung-b-key-wrap.sh
+VERIFY_RUNG_C_SIGNATURE_SCRIPT ?= ./scripts/verify-rung-c-signature.sh
+VERIFY_RUNG_ARTIFACTS_AFTER_BUILD ?= 1
+REQUIRE_RUNG_BC_IMAGES_MANIFEST ?= 1
+RUNG_C_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
+RUNG_C_POLICY_FILE ?=
+RUNG_C_POLICY_IMAGE_PREFIX ?=
+EVIDENCE_DIR ?=
+DIAG_DIR ?=
+RUNG_BC_IMAGES_MANIFEST ?= $(ARTIFACT_DIR)/rung-bc-images.json
+REQUIRE_MIRROR_SUMMARY ?= 1
+PROOF_SCOPE ?= all
+EVIDENCE_PODS ?= rung-a-secret rung-b-encrypted rung-c-signed negtest-rung-a negtest-rung-b negtest-rung-c negtest-air-gap
+RUNG_B_POD ?= rung-b-encrypted
+RUNG_C_POD ?= rung-c-signed
+NEG_RUNG_B_POD ?= negtest-rung-b
+NEG_RUNG_C_POD ?= negtest-rung-c
+RUNG_C_EVIDENCE_PODS ?= $(RUNG_C_POD) $(NEG_RUNG_C_POD)
+RUNG_B_APP_LOG_MARKER ?= rung-b: encrypted image decrypted and running
+RUNG_C_APP_LOG_MARKER ?= rung-c: signed image accepted and running
+KEEP_DENIED_PODS ?= 0
+TRUSTEE_LOG_TAIL ?= 1000
+TRUSTEE_LOG_SINCE_TIME ?=
+POD_LOG_TAIL ?= 200
+CRIO_LOG_TAIL ?= 1000
+CRIO_LOG_SINCE_TIME ?=
+MIRROR_LOG_TAIL ?= 1000
+MIRROR_LOG_SINCE_TIME ?=
+MIRROR_LOG_FILES ?=
+MIRROR_CONTAINER_NAMES ?=
 
 # Assets dir the Agent-based installer consumes (install-config + agent-config land here).
 # FILL: matches the dir used in install/README.md ("cluster-assets").
@@ -117,9 +185,40 @@ apply-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RV
 seed-trustee-secrets: ## Phase 5: create/update rig Trustee secrets from bastion-local files
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/seed-trustee-secrets.sh
 
+.PHONY: build-rung-images
+build-rung-images: ## Phase 6: build/push rung-b encrypted and rung-c signed images
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" SOURCE_IMAGE_REF="$(SOURCE_IMAGE_REF)" SKOPEO_COPY_ARGS="$(SKOPEO_COPY_ARGS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" RUNG_B_KEY_PATH="$(RUNG_B_KEY_PATH)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" COCO_KEYPROVIDER_IMAGE="$(COCO_KEYPROVIDER_IMAGE)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" CONTAINER_VOLUME_SUFFIX="$(CONTAINER_VOLUME_SUFFIX)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="$(VERIFY_RUNG_ARTIFACTS_AFTER_BUILD)" VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$(VERIFY_RUNG_B_KEY_WRAP_SCRIPT)" VERIFY_RUNG_C_SIGNATURE_SCRIPT="$(VERIFY_RUNG_C_SIGNATURE_SCRIPT)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)"
+
+.PHONY: verify-rung-b-key-wrap
+verify-rung-b-key-wrap: ## Phase 6: verify rung-b encrypted layer KID and KEK unwrap before seeding Trustee
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_BC_IMAGES_MANIFEST="$(RUNG_BC_IMAGES_MANIFEST)" REQUIRE_RUNG_BC_IMAGES_MANIFEST="$(REQUIRE_RUNG_BC_IMAGES_MANIFEST)" bash "$(VERIFY_RUNG_B_KEY_WRAP_SCRIPT)"
+
+.PHONY: verify-rung-c-signature
+verify-rung-c-signature: ## Phase 6: verify rung-c signed image and unsigned negative-control signature state
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_BC_IMAGES_MANIFEST="$(RUNG_BC_IMAGES_MANIFEST)" REQUIRE_RUNG_BC_IMAGES_MANIFEST="$(REQUIRE_RUNG_BC_IMAGES_MANIFEST)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(VERIFY_RUNG_C_SIGNATURE_SCRIPT)"
+
+.PHONY: verify-rung-bc-artifacts
+verify-rung-bc-artifacts: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: verify rung-b/c image artifact manifest, key unwrap, and signature state
+
+.PHONY: seed-rung-bc-secrets
+seed-rung-bc-secrets: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
+
+.PHONY: apply-trustee-rung-bc
+apply-trustee-rung-bc: verify-rung-b-key-wrap verify-rung-c-signature ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
+
 .PHONY: apply-rung-a
 apply-rung-a: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
-	NS=default TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash ./scripts/apply-rung-a.sh
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash "$(APPLY_RUNG_A_SCRIPT)"
+
+.PHONY: apply-rung-b
+apply-rung-b: ## Phase 6: render initdata, launch rung-b, and wait for the encrypted-image pod
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" IMAGE_SECURITY_POLICY_URI="$(RUNG_B_POLICY_URI)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" bash "$(APPLY_RUNG_B_SCRIPT)"
+
+.PHONY: apply-rung-c
+apply-rung-c: ## Phase 6: render initdata, launch rung-c, and wait for the signed-image pod
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" IMAGE_SECURITY_POLICY_URI="$(RUNG_C_POLICY_URI)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" bash "$(APPLY_RUNG_C_SCRIPT)"
 
 .PHONY: uninstall-coco
 uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)
@@ -155,9 +254,13 @@ collect-vcek: ## Collect per-socket VCEK certs into the OfflineStore secret (aut
 
 .PHONY: gen-rvps
 gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware)
-	./scripts/gen-rvps-veritas.sh
+	TEE="$(TEE)" OCP_VERSION="$(OCP_VERSION)" PULL_SECRET="$(PULL_SECRET)" INITDATA="$(INITDATA)" OUT="$(RVPS_OUT)" NODE="$(NODE)" DEBUG_IMAGE="$(DEBUG_IMAGE)" REGISTRIES_CONF="$(REGISTRIES_CONF)" REGISTRY_CERTS_DIR="$(REGISTRY_CERTS_DIR)" VERITAS_OC_WRAPPER="$(VERITAS_OC_WRAPPER)" VERITAS_EXTRA_ARGS="$(VERITAS_EXTRA_ARGS)" ./scripts/gen-rvps-veritas.sh
+
+.PHONY: render-rung-b-measurement-policy
+render-rung-b-measurement-policy: ## Render restrictive rung-b HOST_DATA and image-key policies (set INITDATA)
+	NS="$(NS)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" bash "$(RENDER_RUNG_B_MEASUREMENT_POLICY_SCRIPT)" "$(INITDATA)"
 
 ## --- Validation (negative tests) -----------------------------------------
 .PHONY: negative-test
 negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-a|rung-b|rung-c|air-gap)
-	./scripts/negative-test.sh $(WHICH)
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_B_POLICY_URI="$(RUNG_B_POLICY_URI)" RUNG_C_POLICY_URI="$(RUNG_C_POLICY_URI)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_C_UNSIGNED_IMAGE="$(RUNG_C_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)

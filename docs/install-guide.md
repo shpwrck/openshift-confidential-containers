@@ -726,13 +726,13 @@ Applying `KataConfig` drives a MachineConfigPool rollout that **reboots the sing
 spare — wait it out): `oc get mcp -w`.
 
 ```bash
-oc get runtimeclass         # expect: kata-cc; plain kata may also appear on some OSC releases
+oc get runtimeclass         # expect: kata  AND  kata-cc
 oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-qemu-snp (a.k.a. kata-snp) on SEV-SNP
 ```
 
-> **STOP-gate:** four CSVs `Succeeded`, node back `Ready` post-reboot, and `kata-cc`
-> RuntimeClass present with the SNP handler. If the handler is wrong, KataConfig ran before
-> NFD labeled — re-apply KataConfig once the label exists.
+> **STOP-gate:** four CSVs `Succeeded`, node back `Ready` post-reboot, `kata` + `kata-cc`
+> (SNP handler) RuntimeClasses present. If the handler is wrong, KataConfig ran before NFD
+> labeled — re-apply KataConfig once the label exists.
 
 ---
 
@@ -785,8 +785,14 @@ show vcek-url` → downloaded on an **internet-connected** host (the rig node is
 ### 7.4 Generate RVPS reference values
 
 ```bash
-scripts/gen-rvps-veritas.sh        # coco-tools:1.12 veritas --tee snp — one run per distinct socket/hw config
+OCP_VERSION=4.20.18 scripts/gen-rvps-veritas.sh
 ```
+
+For node-local generation in the disconnected rig, set `NODE=<node>`, `DEBUG_IMAGE=<cached
+mirror image>`, and, if Veritas still tries public `quay.io` release refs through
+`oc adm release info`, provide a temporary `VERITAS_OC_WRAPPER` that rewrites the OpenShift
+release and `rhel-coreos-extensions` images to the mirror. The script expects Veritas's output
+directory and copies `rvps-reference-values.yaml` to `OUT`.
 
 ### 7.5 Wire both into Trustee
 
@@ -803,10 +809,24 @@ won't exist in production.
 
 ## Phase 8 — Capability rungs (a → b → c) + negative tests
 
-Replaces: `make negative-test`. A rung is **proven only when reproduced from these steps AND
-its negative test fails-closed** — a negative test that *passes* (secret released when it
-shouldn't be) is a sign-off-blocking finding, not a green. Do them **in order**. See
-[`docs/design/engagement-design.md`](design/engagement-design.md) §5 for the full matrix.
+Manual equivalent of the rig targets `make apply-rung-a`, `make apply-rung-b`,
+`make apply-rung-c`, and `make negative-test WHICH=all`. A rung is **proven only when
+reproduced from these steps AND its negative test fails-closed** — a negative test that
+*passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
+Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
+§5 for the full matrix. Rungs b/c have implementation scaffolding; rung-c has live rig
+accept/deny evidence, while rung-b still needs a completed direct encrypted-image guest-pull
+proof. The 2026-06-30 rig diagnosed the rung-b KID/KEK mismatch and proved guest decryption
+through a local alias diagnostic, but the production digest-pinned pod is still blocked before
+KBS by CRI-O host-side encrypted-layer pre-pull; CRI-O annotation and runtime
+`default_annotations` override attempts still left guest pull on the carrier image, and disabling
+CRI-O's host decryption key path did not change the direct digest failure. That blocker is now
+separate from policy enforcement: a later tag-shaped diagnostic applied a SHA-256 HOST_DATA
+attestation policy plus a resource policy that reads
+`ear.trustworthiness-vector.configuration`; the happy diagnostic received `image-kek`, while
+tampered initdata got KBS 401/`PolicyDeny`. See Phase 6 of
+[`docs/runbooks/install-execution-plan.md`](runbooks/install-execution-plan.md) for the
+execution sequence for encrypted-image and signed-image proof artifacts.
 
 Each rung adds one user-visible capability on top of the same attestation base:
 
@@ -825,15 +845,20 @@ Each rung adds one user-visible capability on top of the same attestation base:
   start. Keep `limits.memory ≥ default_memory + 256–512 MiB` or the host OOM-kills the CVM
   (SNP pins all guest RAM at launch). Read `oc describe pod` / `oc get events`, not just logs.
 - **Rung b — encrypted image.** **Happy:** pod Running (image key released after attestation).
-  **Negative:** wrong measurement → key withheld → pod won't start.
+  **Negative:** wrong measurement → key withheld → pod won't start. Plan details: build a
+  digest-pinned encrypted image, serve its actual wrapping key from KBS at the KID embedded in
+  the encrypted layer, then prove a measured-initdata mismatch prevents the key release.
 - **Rung c — signed image.** **Happy:** signed image pulls (mirror pull secret served as
   `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
-- **Air-gap negative test (cross-cutting).** Remove one VCEK secret / use a wrong-case HWID →
-  attestation **must fail**. Proves the OfflineStore cache — not a silently-reachable KDS — is
-  load-bearing.
+  Plan details: serve a restrictive signed-image policy and public key from KBS, while still
+  allowing or verifying the pause/release images the CVM pulls before the app image.
+- **Air-gap negative test (cross-cutting).** Temporarily remove the Trustee `vcek-*` Secrets,
+  then rerun an otherwise happy rung-a request. Attestation **must fail**, and the Secrets must
+  be restored. Proves the OfflineStore cache — not a silently-reachable KDS — is load-bearing.
 
 > **STOP-gate:** every rung's happy path **and** negative test green, and the air-gap negative
-> test fails closed.
+> test fails closed. For rungs b/c, confirm each happy + negative result on the node before
+> checking the rung off.
 
 ---
 
