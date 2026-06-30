@@ -404,7 +404,7 @@ mirror_log_context() {
 }
 
 check_mirror_image_pull() {
-	local label="$1" image="$2" context="$3" agent_label="$4" agent_pattern="$5"
+	local label="$1" image="$2" context="$3" agent_label="$4" agent_pattern="$5" require_blob="$6"
 	local repo digest digest_hex
 	if [[ -z "$image" ]]; then
 		fail "$label mirror image ref missing from manifest"
@@ -418,14 +418,27 @@ check_mirror_image_pull() {
 	fi
 	digest_hex="${digest#sha256:}"
 	if awk -v repo="$repo" -v digest="$digest" -v digest_hex="$digest_hex" -v agent="$agent_pattern" '
-		index($0, repo) && (index($0, digest) || index($0, digest_hex)) && index($0, agent) {
+		index($0, repo) && index($0, "/manifests/") && (index($0, digest) || index($0, digest_hex)) && index($0, agent) {
 			found = 1
 		}
 		END { exit found ? 0 : 1 }
 	' <<<"$context"; then
-		pass "$label mirror logs include ${agent_label} pull ${repo}@${digest}"
+		pass "$label mirror logs include ${agent_label} manifest pull ${repo}@${digest}"
 	else
-		fail "$label mirror logs missing ${agent_label} pull ${repo}@${digest}"
+		fail "$label mirror logs missing ${agent_label} manifest pull ${repo}@${digest}"
+	fi
+	if [[ "$require_blob" != "1" ]]; then
+		return
+	fi
+	if awk -v repo="$repo" -v agent="$agent_pattern" '
+		index($0, repo) && index($0, "/blobs/") && index($0, agent) {
+			found = 1
+		}
+		END { exit found ? 0 : 1 }
+	' <<<"$context"; then
+		pass "$label mirror logs include ${agent_label} blob pull ${repo}"
+	else
+		fail "$label mirror logs missing ${agent_label} blob pull ${repo}"
 	fi
 }
 
@@ -444,9 +457,9 @@ check_mirror_logs() {
 	rung_b_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest")"
 	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
 	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
-	check_mirror_image_pull "rung-b happy image" "$rung_b_image" "$context" "guest oci-client" "oci-client/"
-	check_mirror_image_pull "rung-c happy image" "$rung_c_image" "$context" "guest oci-client" "oci-client/"
-	check_mirror_image_pull "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context" "guest oci-client" "oci-client/"
+	check_mirror_image_pull "rung-b happy image" "$rung_b_image" "$context" "guest oci-client" "oci-client/" 1
+	check_mirror_image_pull "rung-c happy image" "$rung_c_image" "$context" "guest oci-client" "oci-client/" 1
+	check_mirror_image_pull "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context" "guest oci-client" "oci-client/" 0
 }
 
 check_summary() {

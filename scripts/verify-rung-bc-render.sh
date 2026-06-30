@@ -1578,7 +1578,9 @@ rung-c sigstore signature rejected by policy
 EOF
 	cat > "$evidence/mirror/files/access.log" <<'EOF'
 10.0.0.10 - - "GET /v2/coco/rung-b/manifests/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HTTP/1.1" 200 "-" "oci-client/0.15.0"
+10.0.0.10 - - "GET /v2/coco/rung-b/blobs/sha256:abababababababababababababababababababababababababababababababab HTTP/1.1" 200 "-" "oci-client/0.15.0"
 10.0.0.10 - - "GET /v2/coco/rung-c/manifests/sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb HTTP/1.1" 200 "-" "oci-client/0.15.0"
+10.0.0.10 - - "GET /v2/coco/rung-c/blobs/sha256:bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc HTTP/1.1" 200 "-" "oci-client/0.15.0"
 10.0.0.10 - - "GET /v2/coco/rung-c-unsigned/manifests/sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc HTTP/1.1" 200 "-" "oci-client/0.15.0"
 EOF
 	cat > "$evidence/pods/negtest-rung-b.describe.txt" <<'EOF'
@@ -1599,6 +1601,7 @@ verify_evidence_validation_gate() {
 	local broken_mirror="$tmpdir/broken-mirror-evidence" mirror_err="$tmpdir/validate-mirror-evidence.err"
 	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
 	local broken_guest_pull="$tmpdir/broken-guest-pull-evidence" guest_pull_err="$tmpdir/validate-guest-pull-evidence.err"
+	local broken_blob_pull="$tmpdir/broken-blob-pull-evidence" blob_pull_err="$tmpdir/validate-blob-pull-evidence.err"
 	local broken_b_initdata="$tmpdir/broken-b-initdata-evidence" b_initdata_err="$tmpdir/validate-b-initdata-evidence.err"
 	local broken_c_initdata="$tmpdir/broken-c-initdata-evidence" c_initdata_err="$tmpdir/validate-c-initdata-evidence.err"
 	local broken_decoded_initdata="$tmpdir/broken-decoded-initdata-evidence" decoded_initdata_err="$tmpdir/validate-decoded-initdata-evidence.err"
@@ -1722,15 +1725,22 @@ verify_evidence_validation_gate() {
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_digest" > /dev/null 2> "$digest_err"; then
 		die "evidence validator accepted a mirror log with the wrong digest"
 	fi
-	expect_grep "mirror logs missing guest oci-client pull coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$digest_err" "evidence validator mirror digest failure"
+	expect_grep "mirror logs missing guest oci-client manifest pull coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$digest_err" "evidence validator mirror digest failure"
 
 	cp -R "$evidence" "$broken_guest_pull"
-	sed -i '/coco\/rung-b\/manifests/s#"oci-client/0.15.0"#"cri-o/1.33.10 os/linux arch/amd64"#' \
+	sed -i '/coco\/rung-b\//s#"oci-client/0.15.0"#"cri-o/1.33.10 os/linux arch/amd64"#' \
 		"$broken_guest_pull/mirror/files/access.log"
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_guest_pull" > /dev/null 2> "$guest_pull_err"; then
 		die "evidence validator accepted a host-only mirror pull for rung-b"
 	fi
-	expect_grep "rung-b happy image mirror logs missing guest oci-client pull coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$guest_pull_err" "evidence validator guest-pull failure"
+	expect_grep "rung-b happy image mirror logs missing guest oci-client manifest pull coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$guest_pull_err" "evidence validator guest-pull failure"
+
+	cp -R "$evidence" "$broken_blob_pull"
+	sed -i '/coco\/rung-c\/blobs/d' "$broken_blob_pull/mirror/files/access.log"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_blob_pull" > /dev/null 2> "$blob_pull_err"; then
+		die "evidence validator accepted a happy image without a guest blob pull"
+	fi
+	expect_grep "rung-c happy image mirror logs missing guest oci-client blob pull coco/rung-c" "$blob_pull_err" "evidence validator blob-pull failure"
 
 	cp -R "$evidence" "$broken_b_initdata"
 	cp "$broken_b_initdata/pods/rung-b-encrypted.initdata.toml" "$broken_b_initdata/pods/negtest-rung-b.initdata.toml"

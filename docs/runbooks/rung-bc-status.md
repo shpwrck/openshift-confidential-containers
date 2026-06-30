@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T08:17:40Z
+Last updated: 2026-06-30T08:23:57Z
 
 Current PR: #8, `codex/rung-bc-support`
-Current head before this update: `df4e23e`
+Current head before this update: `f01852f`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -32,8 +32,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
 - Rung-b evidence tracks encrypted image key ID, initdata policy URI, Trustee resource fetches, mirror pulls, pod state, app-start evidence, and fail-closed tampered-initdata behavior.
 - Rung-c evidence tracks signed image policy URI, public key resource fetch, mirror pulls, pod state, app-start evidence, and fail-closed unsigned-image behavior.
 - Final rung-b/c evidence validation now requires mirror-log lines showing guest `oci-client`
-  pulls for the expected rung-b, rung-c signed, and rung-c unsigned digest refs, so host-only
-  CRI-O pulls cannot satisfy the guest-pull proof invariant.
+  manifest pulls for the expected rung-b, rung-c signed, and rung-c unsigned digest refs, plus
+  guest `oci-client` blob pulls for the rung-b and rung-c happy-image repositories. Host-only CRI-O
+  pulls or manifest-only happy pulls cannot satisfy the guest-pull proof invariant.
 - Evidence bundles record non-secret provenance in `summary.env`, including repo revision, branch, dirty state, KBS URL, policy URIs, pod role names, and app log markers.
 - Offline validation derives expected KBS resource log entries from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated against the actual run configuration.
 - Trustee seeding now derives the rung-b Secret resource/key from `RUNG_B_KEY_ID`, so a
@@ -89,7 +90,7 @@ Live rig check on 2026-06-30:
 - Rung-b apply reproduced the CRI-O encrypted-layer blocker: `rung-b-encrypted` stayed `ImagePullBackOff` with kubelet reporting that layer `sha256:346e9...` should be decrypted but the manifest could not be modified because the destination specifies a digest. Trustee logs did not show `resource/default/image-kek/...`, confirming the guest never reached KBS for the image key.
 - Rung-c apply succeeded: `rung-c-signed` reached Ready/Running, Trustee logs showed `security-policy/rung-c` and `sig-public-key/rung-c`, and mirror logs showed the signed image digest pull.
 - Rung-c negative succeeded: `negative-test.sh rung-c` denied `mirror.rig.local:8443/coco/rung-c-unsigned@sha256:4ba374...` as expected and kept `negtest-rung-c` for evidence.
-- Final evidence bundle for this pass: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z` on the bastion. With the current validator, this bundle passes the rung-c happy pod, pod-status app-start, same decoded initdata, Trustee fetch, unsigned image, `oci-client` guest-pull, and denial checks. It still exits non-zero on eight rung-b items: missing rung-b negative image proof-summary row, happy pod Pending, app container not started, missing rung-b negative pod, missing rung-b decoded negative relationship, missing rung-b negative decoded initdata, missing Trustee fetch for `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`, and missing guest `oci-client` pull for the rung-b digest. `oc exec` into the rung-c pod remains blocked by policy.
+- Final evidence bundle for this pass: `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z` on the bastion. With the current validator, this bundle passes the rung-c happy pod, pod-status app-start, same decoded initdata, Trustee fetch, unsigned image, `oci-client` guest manifest/blob pull, and denial checks. It still exits non-zero on nine rung-b items: missing rung-b negative image proof-summary row, happy pod Pending, app container not started, missing rung-b negative pod, missing rung-b decoded negative relationship, missing rung-b negative decoded initdata, missing Trustee fetch for `resource/default/image-kek/380af3e3-69f8-4985-9196-e9261a19072c`, missing guest `oci-client` manifest pull for the rung-b digest, and missing guest `oci-client` blob pull for the rung-b repository. `oc exec` into the rung-c pod remains blocked by policy.
 - Additional rung-b force-guest-pull probes on the same rig did not move the encrypted pull into
   the guest:
   - The live `kata-snp` config had `experimental_force_guest_pull = false`; `runtime_pull_image =
