@@ -462,8 +462,64 @@ check_mirror_logs() {
 	check_mirror_image_pull "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context" "guest oci-client" "oci-client/" 0
 }
 
+crio_log_context() {
+	local file
+	for file in "${EVIDENCE_DIR}"/crio/*.log; do
+		[[ -f "$file" ]] && cat "$file"
+		printf '\n'
+	done
+}
+
+check_crio_image_guest_pull_source() {
+	local label="$1" image="$2" context="$3"
+	local repo digest digest_hex
+	if [[ -z "$image" ]]; then
+		fail "$label CRI-O image ref missing from manifest"
+		return
+	fi
+	repo="$(image_repo_path "$image")"
+	digest="$(image_digest "$image")"
+	if [[ -z "$digest" ]]; then
+		fail "$label CRI-O image ref is not a sha256 digest ref: $image"
+		return
+	fi
+	digest_hex="${digest#sha256:}"
+	if awk -v repo="$repo" -v digest="$digest" -v digest_hex="$digest_hex" '
+		(index($0, "image_guest_pull") || index($0, "Adding mount info to pull image")) &&
+		index($0, repo) && (index($0, digest) || index($0, digest_hex)) {
+			found = 1
+		}
+		END { exit found ? 0 : 1 }
+	' <<<"$context"; then
+		pass "$label CRI-O logs include image_guest_pull source ${repo}@${digest}"
+	else
+		fail "$label CRI-O logs missing image_guest_pull source ${repo}@${digest}"
+	fi
+}
+
+check_crio_logs() {
+	local manifest="${EVIDENCE_DIR}/rung-bc-images.json" context
+	local rung_b_image rung_c_image rung_c_unsigned_image
+	context="$(crio_log_context)"
+	if [[ -z "$(tr -d '[:space:]' <<<"$context")" ]]; then
+		fail "CRI-O logs missing or empty"
+		return
+	fi
+	if [[ ! -s "$manifest" ]]; then
+		fail "cannot validate CRI-O image_guest_pull sources without rung-bc-images.json"
+		return
+	fi
+	rung_b_image="$(jq -r '.rung_b.digest_ref // ""' "$manifest")"
+	rung_c_image="$(jq -r '.rung_c.digest_ref // ""' "$manifest")"
+	rung_c_unsigned_image="$(jq -r '.rung_c.unsigned_digest_ref // ""' "$manifest")"
+	check_crio_image_guest_pull_source "rung-b happy image" "$rung_b_image" "$context"
+	check_crio_image_guest_pull_source "rung-b negative image" "$rung_b_image" "$context"
+	check_crio_image_guest_pull_source "rung-c happy image" "$rung_c_image" "$context"
+	check_crio_image_guest_pull_source "rung-c unsigned negative image" "$rung_c_unsigned_image" "$context"
+}
+
 check_summary() {
-	local summary="${EVIDENCE_DIR}/summary.env" dirty trustee_since mirror_since
+	local summary="${EVIDENCE_DIR}/summary.env" dirty trustee_since crio_since mirror_since
 	require_file "$summary" "evidence summary"
 	if [[ ! -s "$summary" ]]; then
 		return
@@ -479,6 +535,12 @@ check_summary() {
 		pass "Trustee logs are bounded by --since-time=$trustee_since"
 	else
 		fail "evidence trustee_log_since_time is ${trustee_since:-missing}; collect bounded Trustee logs for promotion evidence"
+	fi
+	crio_since="$(summary_value crio_log_since_time 2>/dev/null || true)"
+	if [[ "$crio_since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+		pass "CRI-O logs are bounded by since-time=$crio_since"
+	else
+		fail "evidence crio_log_since_time is ${crio_since:-missing}; collect bounded CRI-O logs for promotion evidence"
 	fi
 	mirror_since="$(summary_value mirror_log_since_time 2>/dev/null || true)"
 	if [[ "$mirror_since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
@@ -530,6 +592,7 @@ check_decoded_initdata "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_POLICY_URI" 
 check_decoded_initdata "$NEG_RUNG_C_POD" "rung-c negative" "$RUNG_C_POLICY_URI"
 check_kbs_logs
 check_mirror_logs
+check_crio_logs
 check_denial_signal "$NEG_RUNG_B_POD" "rung-b negative" "$RUNG_B_DENIAL_RE"
 check_denial_signal "$NEG_RUNG_C_POD" "rung-c negative" "$RUNG_C_DENIAL_RE"
 

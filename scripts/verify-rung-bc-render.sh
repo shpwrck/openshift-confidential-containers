@@ -914,6 +914,8 @@ vars=(
 	TRUSTEE_LOG_TAIL
 	TRUSTEE_LOG_SINCE_TIME
 	POD_LOG_TAIL
+	CRIO_LOG_TAIL
+	CRIO_LOG_SINCE_TIME
 	MIRROR_LOG_TAIL
 	MIRROR_LOG_SINCE_TIME
 	MIRROR_LOG_FILES
@@ -979,6 +981,8 @@ EOF
 		TRUSTEE_LOG_TAIL="111" \
 		TRUSTEE_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		POD_LOG_TAIL="222" \
+		CRIO_LOG_TAIL="444" \
+		CRIO_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_TAIL="333" \
 		MIRROR_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
@@ -1027,6 +1031,8 @@ EOF
 	expect_grep "TRUSTEE_LOG_TAIL=111" "$evidence_out" "Makefile evidence Trustee log tail override"
 	expect_grep "TRUSTEE_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$evidence_out" "Makefile evidence Trustee log since-time override"
 	expect_grep "POD_LOG_TAIL=222" "$evidence_out" "Makefile evidence pod log tail override"
+	expect_grep "CRIO_LOG_TAIL=444" "$evidence_out" "Makefile evidence CRI-O log tail override"
+	expect_grep "CRIO_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$evidence_out" "Makefile evidence CRI-O log since-time override"
 	expect_grep "MIRROR_LOG_TAIL=333" "$evidence_out" "Makefile evidence mirror log tail override"
 	expect_grep "MIRROR_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$evidence_out" "Makefile evidence mirror log since-time override"
 	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$evidence_out" "Makefile evidence mirror log file override"
@@ -1226,6 +1232,7 @@ verify_evidence_summary_provenance() {
 		RUNG_B_APP_LOG_MARKER="custom rung-b proof marker" \
 		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
 		TRUSTEE_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
+		CRIO_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_FILES="/tmp/mirror.log" \
 		MIRROR_CONTAINER_NAMES="registry" \
@@ -1248,6 +1255,7 @@ verify_evidence_summary_provenance() {
 	expect_grep "rung_b_app_log_marker=custom rung-b proof marker" "$summary" "evidence summary rung-b app marker"
 	expect_grep "rung_c_app_log_marker=custom rung-c proof marker" "$summary" "evidence summary rung-c app marker"
 	expect_grep "trustee_log_since_time=2026-06-29T00:00:00Z" "$summary" "evidence summary Trustee log since-time"
+	expect_grep "crio_log_since_time=2026-06-29T00:00:00Z" "$summary" "evidence summary CRI-O log since-time"
 	expect_grep "mirror_log_since_time=2026-06-29T00:00:00Z" "$summary" "evidence summary mirror log since-time"
 	expect_grep "tool_oc=" "$summary" "evidence summary oc path"
 	expect_grep "tool_jq=" "$summary" "evidence summary jq path"
@@ -1374,7 +1382,7 @@ write_valid_rung_bc_evidence_bundle() {
 	key_sha="$(printf '01234567890123456789012345678901' | sha256sum | awk '{print $1}')"
 	pub_sha="$(printf 'cosign public key' | sha256sum | awk '{print $1}')"
 	policy_sha="$(printf '{}' | sha256sum | awk '{print $1}')"
-	mkdir -p "$evidence/pods" "$evidence/trustee/secrets" "$evidence/trustee" "$evidence/cluster" "$evidence/mirror/files"
+	mkdir -p "$evidence/pods" "$evidence/trustee/secrets" "$evidence/trustee" "$evidence/cluster" "$evidence/crio" "$evidence/mirror/files"
 
 	cat > "$evidence/summary.env" <<'EOF'
 captured_at_utc=2026-06-29T00:00:00Z
@@ -1386,6 +1394,7 @@ rung_b_policy_uri=kbs:///default/security-policy/test
 rung_c_policy_uri=kbs:///default/security-policy/rung-c
 repo_git_dirty=false
 trustee_log_since_time=2026-06-29T00:00:00Z
+crio_log_since_time=2026-06-29T00:00:00Z
 mirror_log_since_time=2026-06-29T00:00:00Z
 rung_b_pod=rung-b-encrypted
 rung_c_pod=rung-c-signed
@@ -1616,6 +1625,13 @@ EOF
 10.0.0.10 - - "GET /v2/coco/rung-c/blobs/sha256:bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc HTTP/1.1" 200 "-" "oci-client/0.15.0"
 10.0.0.10 - - "GET /v2/coco/rung-c-unsigned/manifests/sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc HTTP/1.1" 200 "-" "oci-client/0.15.0"
 EOF
+	cat > "$evidence/crio/snp-worker-0.log" <<'EOF'
+Jun 30 00:01:01 sno-coco-node crio[1234]: Adding mount info to pull image mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Jun 30 00:01:02 sno-coco-node crio[1234]: CoCo : Mount volume information: &{image_guest_pull mirror.test.local:5000/coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa overlay_fs}
+Jun 30 00:01:03 sno-coco-node crio[1234]: Adding mount info to pull image mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Jun 30 00:01:04 sno-coco-node crio[1234]: CoCo : Mount volume information: &{image_guest_pull mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb overlay_fs}
+Jun 30 00:01:05 sno-coco-node crio[1234]: Adding mount info to pull image mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+EOF
 	cat > "$evidence/pods/negtest-rung-b.describe.txt" <<'EOF'
 Warning: attestation measurement denied; image-key/rung-b withheld
 EOF
@@ -1633,7 +1649,10 @@ verify_evidence_validation_gate() {
 	local broken_key_id="$tmpdir/broken-key-id-evidence" key_id_err="$tmpdir/validate-key-id-evidence.err"
 	local broken_mirror="$tmpdir/broken-mirror-evidence" mirror_err="$tmpdir/validate-mirror-evidence.err"
 	local broken_trustee_window="$tmpdir/broken-trustee-window-evidence" trustee_window_err="$tmpdir/validate-trustee-window-evidence.err"
+	local broken_crio_window="$tmpdir/broken-crio-window-evidence" crio_window_err="$tmpdir/validate-crio-window-evidence.err"
 	local broken_mirror_window="$tmpdir/broken-mirror-window-evidence" mirror_window_err="$tmpdir/validate-mirror-window-evidence.err"
+	local broken_crio="$tmpdir/broken-crio-evidence" crio_err="$tmpdir/validate-crio-evidence.err"
+	local broken_crio_source="$tmpdir/broken-crio-source-evidence" crio_source_err="$tmpdir/validate-crio-source-evidence.err"
 	local broken_digest="$tmpdir/broken-mirror-digest-evidence" digest_err="$tmpdir/validate-mirror-digest-evidence.err"
 	local broken_guest_pull="$tmpdir/broken-guest-pull-evidence" guest_pull_err="$tmpdir/validate-guest-pull-evidence.err"
 	local broken_blob_pull="$tmpdir/broken-blob-pull-evidence" blob_pull_err="$tmpdir/validate-blob-pull-evidence.err"
@@ -1761,12 +1780,34 @@ verify_evidence_validation_gate() {
 	fi
 	expect_grep "evidence trustee_log_since_time is missing" "$trustee_window_err" "evidence validator Trustee log window failure"
 
+	cp -R "$evidence" "$broken_crio_window"
+	sed -i '/^crio_log_since_time=/d' "$broken_crio_window/summary.env"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_crio_window" > /dev/null 2> "$crio_window_err"; then
+		die "evidence validator accepted unbounded CRI-O logs"
+	fi
+	expect_grep "evidence crio_log_since_time is missing" "$crio_window_err" "evidence validator CRI-O log window failure"
+
 	cp -R "$evidence" "$broken_mirror_window"
 	sed -i '/^mirror_log_since_time=/d' "$broken_mirror_window/summary.env"
 	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_mirror_window" > /dev/null 2> "$mirror_window_err"; then
 		die "evidence validator accepted unbounded mirror logs"
 	fi
 	expect_grep "evidence mirror_log_since_time is missing" "$mirror_window_err" "evidence validator mirror log window failure"
+
+	cp -R "$evidence" "$broken_crio"
+	rm -f "$broken_crio/crio/snp-worker-0.log"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_crio" > /dev/null 2> "$crio_err"; then
+		die "evidence validator accepted missing CRI-O logs"
+	fi
+	expect_grep "CRI-O logs missing or empty" "$crio_err" "evidence validator CRI-O log failure"
+
+	cp -R "$evidence" "$broken_crio_source"
+	sed -i 's#coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#coco/carrier@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd#g' \
+		"$broken_crio_source/crio/snp-worker-0.log"
+	if bash "$REPO_ROOT/scripts/validate-rung-bc-evidence.sh" "$broken_crio_source" > /dev/null 2> "$crio_source_err"; then
+		die "evidence validator accepted a CRI-O log without the expected rung-b source"
+	fi
+	expect_grep "rung-b happy image CRI-O logs missing image_guest_pull source coco/rung-b@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "$crio_source_err" "evidence validator CRI-O source failure"
 
 	cp -R "$evidence" "$broken_digest"
 	sed -i 's/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/' \
@@ -1997,14 +2038,15 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
 	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${IMAGE_SECURITY_POLICY_URI:-}" \
 	"${RUNG_B_POLICY_URI:-}" "${RUNG_C_POLICY_URI:-}" "${PODS:-}" "${RUNG_B_POD:-}" \
 	"${RUNG_C_POD:-}" "${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
 	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${TRUSTEE_LOG_SINCE_TIME:-}" "${POD_LOG_TAIL:-}" \
-	"${MIRROR_LOG_TAIL:-}" "${MIRROR_LOG_SINCE_TIME:-}" "${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" >> "$CALL_LOG"
+	"${CRIO_LOG_TAIL:-}" "${CRIO_LOG_SINCE_TIME:-}" "${MIRROR_LOG_TAIL:-}" "${MIRROR_LOG_SINCE_TIME:-}" \
+	"${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" >> "$CALL_LOG"
 EOF
 	} > "$path"
 	chmod +x "$path"
@@ -2049,6 +2091,8 @@ verify_prove_rung_bc_workflow() {
 		TRUSTEE_LOG_TAIL="111" \
 		TRUSTEE_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		POD_LOG_TAIL="222" \
+		CRIO_LOG_TAIL="444" \
+		CRIO_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_TAIL="333" \
 		MIRROR_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
 		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
@@ -2077,6 +2121,8 @@ verify_prove_rung_bc_workflow() {
 	expect_grep "TRUSTEE_LOG_TAIL=111" "$log" "prove-rung-bc collect Trustee log tail"
 	expect_grep "TRUSTEE_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$log" "prove-rung-bc collect Trustee log since-time"
 	expect_grep "POD_LOG_TAIL=222" "$log" "prove-rung-bc collect pod log tail"
+	expect_grep "CRIO_LOG_TAIL=444" "$log" "prove-rung-bc collect CRI-O log tail"
+	expect_grep "CRIO_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$log" "prove-rung-bc collect CRI-O log since-time"
 	expect_grep "MIRROR_LOG_TAIL=333" "$log" "prove-rung-bc collect mirror log tail"
 	expect_grep "MIRROR_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$log" "prove-rung-bc collect mirror log since-time"
 	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$log" "prove-rung-bc collect mirror log files"
@@ -2146,6 +2192,9 @@ EOF
 	fi
 	if ! grep -Eq 'collect-evidence-env.*MIRROR_LOG_SINCE_TIME=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' "$log"; then
 		die "prove-rung-bc did not default mirror log since-time for evidence collection"
+	fi
+	if ! grep -Eq 'collect-evidence-env.*CRIO_LOG_SINCE_TIME=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' "$log"; then
+		die "prove-rung-bc did not default CRI-O log since-time for evidence collection"
 	fi
 }
 

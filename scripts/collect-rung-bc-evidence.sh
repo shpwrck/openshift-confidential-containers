@@ -21,6 +21,8 @@ RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-rung-c: signed image accepted an
 TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-1000}"
 TRUSTEE_LOG_SINCE_TIME="${TRUSTEE_LOG_SINCE_TIME:-}"
 POD_LOG_TAIL="${POD_LOG_TAIL:-200}"
+CRIO_LOG_TAIL="${CRIO_LOG_TAIL:-1000}"
+CRIO_LOG_SINCE_TIME="${CRIO_LOG_SINCE_TIME:-}"
 MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-1000}"
 MIRROR_LOG_SINCE_TIME="${MIRROR_LOG_SINCE_TIME:-}"
 MIRROR_LOG_FILES="${MIRROR_LOG_FILES:-/var/log/nginx/access.log /var/log/nginx/error.log /var/log/mirror-bootstrap.log /opt/mirror/oc-mirror-push.log}"
@@ -133,6 +135,26 @@ record_trustee_logs() {
 		cmd+=(--since-time="$TRUSTEE_LOG_SINCE_TIME")
 	fi
 	record "trustee/logs.txt" "${cmd[@]}"
+}
+
+safe_log_name() {
+	printf '%s' "$1" | sed 's#^/##; s#[^A-Za-z0-9_.-]#_#g'
+}
+
+record_crio_logs() {
+	local node safe_name
+	if [[ ! -s "${EVIDENCE_DIR}/pods/summary.tsv" ]]; then
+		return
+	fi
+	awk -F '\t' 'NR > 1 && $7 != "" { print $7 }' "${EVIDENCE_DIR}/pods/summary.tsv" | sort -u | while IFS= read -r node; do
+		[[ -n "$node" ]] || continue
+		safe_name="$(safe_log_name "$node")"
+		if [[ -n "$CRIO_LOG_SINCE_TIME" ]]; then
+			record "crio/${safe_name}.log" oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL" --since="$CRIO_LOG_SINCE_TIME"
+		else
+			record "crio/${safe_name}.log" oc adm node-logs "$node" -u crio --tail="$CRIO_LOG_TAIL"
+		fi
+	done
 }
 
 redact_secret_json() {
@@ -420,6 +442,8 @@ write_summary() {
 		echo "rung_b_app_log_marker=${RUNG_B_APP_LOG_MARKER}"
 		echo "rung_c_app_log_marker=${RUNG_C_APP_LOG_MARKER}"
 		echo "trustee_log_since_time=${TRUSTEE_LOG_SINCE_TIME}"
+		echo "crio_log_since_time=${CRIO_LOG_SINCE_TIME}"
+		echo "crio_log_tail=${CRIO_LOG_TAIL}"
 		echo "mirror_log_since_time=${MIRROR_LOG_SINCE_TIME}"
 		echo "mirror_log_files=${MIRROR_LOG_FILES}"
 		echo "mirror_container_names=${MIRROR_CONTAINER_NAMES}"
@@ -512,6 +536,7 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 mkdir -p \
 	"${EVIDENCE_DIR}/cluster" \
+	"${EVIDENCE_DIR}/crio" \
 	"${EVIDENCE_DIR}/mirror/files" \
 	"${EVIDENCE_DIR}/mirror/containers" \
 	"${EVIDENCE_DIR}/pods" \
@@ -553,6 +578,7 @@ for pod in $PODS; do
 		pod_index_missing_row "$pod" >> "${EVIDENCE_DIR}/pods/summary.tsv"
 	fi
 done
+record_crio_logs
 
 record "trustee/kbsconfig.yaml" oc -n "$TRUSTEE_NS" get kbsconfig kbsconfig -o yaml
 record "trustee/deployment.yaml" oc -n "$TRUSTEE_NS" get deployment trustee-deployment -o yaml

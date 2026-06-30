@@ -539,13 +539,15 @@ bundle can be validated offline later without repeating the overrides. Some CC r
 empty `oc logs` stream even when the container is Ready; in that case the validator accepts the
 pod JSON only when the happy pod is Running/Succeeded and the `app` container status proves it
 started. `make prove-rung-bc` records the proof start time and passes it as
-`TRUSTEE_LOG_SINCE_TIME` and `MIRROR_LOG_SINCE_TIME` to evidence collection, so Trustee
-resource-fetch checks and mirror pull checks are bounded to the proof window. If evidence is
-collected manually after separate apply/negative-test commands, set
+`TRUSTEE_LOG_SINCE_TIME`, `CRIO_LOG_SINCE_TIME`, and `MIRROR_LOG_SINCE_TIME` to evidence
+collection, so Trustee resource-fetch checks, CRI-O image-source checks, and mirror pull checks
+are bounded to the proof window. If evidence is collected manually after separate
+apply/negative-test commands, set
 `TRUSTEE_LOG_SINCE_TIME=<UTC RFC3339 time before the first proof pod>` and
-`MIRROR_LOG_SINCE_TIME=<same timestamp>` yourself. The bundle includes pod YAML/describe/logs,
-per-pod summary TSVs, decoded initdata, bounded Trustee logs, events,
-KbsConfig/configmaps, mirror log snippets when the collector can read them, redacted Trustee
+`CRIO_LOG_SINCE_TIME=<same timestamp>` and `MIRROR_LOG_SINCE_TIME=<same timestamp>` yourself.
+The bundle includes pod YAML/describe/logs, per-pod summary TSVs, decoded initdata, bounded
+Trustee logs, bounded CRI-O node logs, events, KbsConfig/configmaps, mirror log snippets when
+the collector can read them, redacted Trustee
 Secret metadata plus data-key names and decoded byte lengths, redacted `vcek-*` Secret
 metadata, and copies of `rung-bc-images.json` and `rung-bc.env` when present. `pods/summary.tsv`
 indexes every requested pod, including missing pods, so reviewers can quickly check phase,
@@ -555,9 +557,10 @@ records non-secret decoded lengths and SHA-256 fingerprints for only `image-key/
 those fingerprints and the happy/negative pod image refs against `rung-bc-images.json`.
 `make validate-rung-bc-evidence EVIDENCE_DIR=...` fails if the proof summary has missing or
 non-matching required rows, the image manifest has the wrong rung-b KBS key ID, required pod
-phases/images are missing or wrong, the bundle lacks Trustee or mirror log `--since-time` windows,
-Trustee logs lack the expected KBS resource fetches,
-mirror logs lack guest `oci-client` manifest pulls for the expected rung-b/rung-c image digests,
+phases/images are missing or wrong, the bundle lacks Trustee, CRI-O, or mirror log `--since-time` windows,
+Trustee logs lack the expected KBS resource fetches, CRI-O logs lack `image_guest_pull` sources
+for the expected digest refs, mirror logs lack guest `oci-client` manifest pulls for the expected
+rung-b/rung-c image digests,
 happy-image mirror logs lack guest `oci-client` blob pulls for the rung-b/rung-c repositories, rung-b
 negative decoded initdata does not differ from the happy pod, rung-c negative decoded initdata
 does not match the happy pod, decoded initdata is missing or lacks the expected KBS URL, rung policy URI, or
@@ -565,16 +568,18 @@ tamper marker, happy pods lack both the expected app-start log markers and pod-s
 evidence, negative pods lack denial signals, or the bundle was collected from a dirty checkout. Expected KBS resource fetches are
 derived from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated
 against their actual Trustee log entries. `summary.env` records the repo revision, branch,
-dirty state, expected KBS URL, rung-b key ID, rung policy URIs, expected app-log markers, Trustee
-and mirror log `--since-time` values, and local tool paths used to collect the bundle. It does not dump Secret data, but still review the
+dirty state, expected KBS URL, rung-b key ID, rung policy URIs, expected app-log markers, Trustee,
+CRI-O, and mirror log `--since-time` values, and local tool paths used to collect the bundle. It does not dump Secret data, but still review the
 bundle before sharing it outside the engagement.
 
 When running from the bastion, the collector automatically tries common nginx, mirror bootstrap,
-oc-mirror, and quay container log locations. Override as needed; the same mirror log and tail
-settings are also honored by `make prove-rung-bc`:
+oc-mirror, and quay container log locations and records CRI-O logs from nodes referenced in
+`pods/summary.tsv`. Override as needed; the same CRI-O and mirror log tail settings are also
+honored by `make prove-rung-bc`:
 
 ```bash
 make collect-rung-bc-evidence \
+  CRIO_LOG_TAIL=2000 \
   MIRROR_LOG_FILES="/var/log/nginx/access.log /opt/mirror/custom-access.log" \
   MIRROR_CONTAINER_NAMES="quay-app" \
   MIRROR_LOG_TAIL=2000

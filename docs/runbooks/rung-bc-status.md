@@ -35,10 +35,14 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   manifest pulls for the expected rung-b, rung-c signed, and rung-c unsigned digest refs, plus
   guest `oci-client` blob pulls for the rung-b and rung-c happy-image repositories. Host-only CRI-O
   pulls or manifest-only happy pulls cannot satisfy the guest-pull proof invariant.
+- Final validation also requires bounded CRI-O node logs showing the `image_guest_pull` source
+  for each expected digest ref, so carrier-image or stale-source runs cannot satisfy the
+  digest-pinned proof invariant.
 - Evidence bundles record non-secret provenance in `summary.env`, including repo revision, branch, dirty state, KBS URL, policy URIs, pod role names, and app log markers.
-- `make prove-rung-bc` now records the proof start time and collects Trustee plus mirror logs with
-  proof-window bounds. Final validation rejects unbounded Trustee or mirror logs so stale KBS
-  resource fetches or stale registry pulls cannot satisfy key/policy or guest-pull checks.
+- `make prove-rung-bc` now records the proof start time and collects Trustee, CRI-O, and mirror
+  logs with proof-window bounds. Final validation rejects unbounded Trustee, CRI-O, or mirror
+  logs so stale KBS resource fetches, stale CRI-O sources, or stale registry pulls cannot satisfy
+  key/policy or guest-pull checks.
 - Offline validation derives expected KBS resource log entries from the recorded rung-b key ID and rung-c policy URI, so custom KBS paths are validated against the actual run configuration.
 - Trustee seeding now derives the rung-b Secret resource/key from `RUNG_B_KEY_ID`, so a
   keyprovider-generated URI such as `kbs:///default/image-kek/<uuid>` can be seeded and
@@ -81,8 +85,8 @@ make lint
 
 The updated validator was also run from this checkout against the older rig bundle
 `/home/rocky/occ-rung-bc-proof/rung-bc-artifacts/evidence-20260630T023159Z`; it correctly exits
-non-zero with eleven promotion-gate issues, including missing Trustee and mirror log proof-window
-metadata plus the known rung-b guest-pull gaps.
+non-zero with thirteen promotion-gate issues, including missing Trustee, CRI-O, and mirror log
+proof-window metadata, missing CRI-O source logs, plus the known rung-b guest-pull gaps.
 
 ## What is left
 
