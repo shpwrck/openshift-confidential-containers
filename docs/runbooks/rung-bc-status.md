@@ -43,6 +43,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   same strict proof-window, guest-pull, CRI-O-source, KBS, initdata, app-start, and denial gates;
   it is for isolated rung-c replay while rung-b is blocked, not a replacement for the full b/c
   promotion gate.
+- `make prove-rung-c` now gives that scoped replay path the same one-command shape as the full
+  proof: strict signature/manifest preflight, signed happy pod, unsigned denial pod, bounded
+  evidence collection, and `VALIDATION_SCOPE=rung-c` validation.
 - Evidence bundles record non-secret provenance in `summary.env`, including repo revision, branch, dirty state, KBS URL, policy URIs, pod role names, and app log markers.
 - `make prove-rung-bc` now records the proof start time and collects Trustee, CRI-O, and mirror
   logs with proof-window bounds. Final validation rejects unbounded Trustee, CRI-O, or mirror
@@ -110,8 +113,8 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
 The following no-hardware checks passed on 2026-06-30:
 
 ```bash
-bash -n scripts/apply-rung-image.sh scripts/collect-rung-bc-evidence.sh scripts/negative-test.sh scripts/prove-rung-bc.sh scripts/validate-rung-bc-evidence.sh scripts/verify-rung-bc-render.sh
-shellcheck scripts/apply-rung-image.sh scripts/collect-rung-bc-evidence.sh scripts/negative-test.sh scripts/prove-rung-bc.sh scripts/validate-rung-bc-evidence.sh scripts/verify-rung-bc-render.sh
+bash -n scripts/apply-rung-image.sh scripts/collect-rung-bc-evidence.sh scripts/negative-test.sh scripts/prove-rung-bc.sh scripts/prove-rung-c.sh scripts/validate-rung-bc-evidence.sh scripts/verify-rung-bc-render.sh
+shellcheck scripts/apply-rung-image.sh scripts/collect-rung-bc-evidence.sh scripts/negative-test.sh scripts/prove-rung-bc.sh scripts/prove-rung-c.sh scripts/validate-rung-bc-evidence.sh scripts/verify-rung-bc-render.sh
 git diff --check
 bash scripts/verify-rung-bc-render.sh
 make lint

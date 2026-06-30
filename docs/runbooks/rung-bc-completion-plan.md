@@ -122,6 +122,7 @@ The repo now carries the dry-run friendly tooling:
   - `make apply-rung-c`
   - `make collect-rung-bc-evidence`
   - `make validate-rung-bc-evidence`
+  - `make prove-rung-c`
   - `make prove-rung-bc`
 
 Makefile namespace convention: `NS` is the Trustee namespace, defaulting to
@@ -545,8 +546,21 @@ make collect-rung-bc-evidence
 make validate-rung-bc-evidence EVIDENCE_DIR=<bundle path printed above>
 ```
 
-When rung-b is still blocked and the run intentionally contains only rung-c happy/unsigned
-negative pods, validate the signed-image proof subset explicitly:
+When rung-b is still blocked and you need to replay the signed-image proof without the encrypted
+image path, use the scoped rung-c runner:
+
+```bash
+make prove-rung-c
+```
+
+It loads `RUNG_C_IMAGE`, `RUNG_C_UNSIGNED_IMAGE`, and `RUNG_C_COSIGN_PUB` from
+`rung-bc-artifacts/rung-bc.env` when the refs are not already digest-pinned, runs
+`verify-rung-c-signature` with `REQUIRE_RUNG_BC_IMAGES_MANIFEST=1`, applies the signed happy pod,
+keeps the unsigned negative pod for collection, collects a bounded evidence bundle under
+`rung-bc-artifacts/evidence-rung-c-proof-<timestamp>/`, and validates it with
+`VALIDATION_SCOPE=rung-c`.
+
+If you collect rung-c-only evidence manually, validate the signed-image proof subset explicitly:
 
 ```bash
 make validate-rung-c-evidence EVIDENCE_DIR=<bundle path printed above>
@@ -584,7 +598,7 @@ running `make collect-rung-bc-evidence`, `make validate-rung-bc-evidence`, or
 bundle can be validated offline later without repeating the overrides. Some CC runs expose an
 empty `oc logs` stream even when the container is Ready; in that case the validator accepts the
 pod JSON only when the happy pod is Running/Succeeded and the `app` container status proves it
-started. `make prove-rung-bc` records the proof start time and passes it as
+started. `make prove-rung-bc` and `make prove-rung-c` record the proof start time and pass it as
 `TRUSTEE_LOG_SINCE_TIME`, `CRIO_LOG_SINCE_TIME`, and `MIRROR_LOG_SINCE_TIME` to evidence
 collection, so Trustee resource-fetch checks, CRI-O image-source checks, and mirror pull checks
 are bounded to the proof window. If evidence is collected manually after separate

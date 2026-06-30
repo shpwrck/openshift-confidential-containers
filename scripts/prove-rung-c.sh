@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Run the rung-c happy path, unsigned-image denial proof, evidence collection, and scoped validation.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROOF_STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
+EVIDENCE_DIR="${EVIDENCE_DIR:-${ARTIFACT_DIR}/evidence-rung-c-proof-$(date -u +%Y%m%dT%H%M%SZ)}"
+RUNG_ENV_FILE="${RUNG_ENV_FILE:-${ARTIFACT_DIR}/rung-bc.env}"
+RUNG_C_IMAGE="${RUNG_C_IMAGE:-}"
+RUNG_C_UNSIGNED_IMAGE="${RUNG_C_UNSIGNED_IMAGE:-}"
+TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
+KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
+RUNG_B_KEY_ID="${RUNG_B_KEY_ID:-kbs:///default/image-key/rung-b}"
+RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/test}"
+RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/rung-c}"
+RUNG_BC_IMAGES_MANIFEST="${RUNG_BC_IMAGES_MANIFEST:-${ARTIFACT_DIR}/rung-bc-images.json}"
+RUNG_C_COSIGN_PUB="${RUNG_C_COSIGN_PUB:-${ARTIFACT_DIR}/cosign.pub}"
+COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:---insecure-ignore-tlog=true}"
+PODS="${PODS:-rung-c-signed negtest-rung-c}"
+RUNG_C_POD="${RUNG_C_POD:-rung-c-signed}"
+NEG_RUNG_C_POD="${NEG_RUNG_C_POD:-negtest-rung-c}"
+RUNG_C_APP_LOG_MARKER="${RUNG_C_APP_LOG_MARKER:-rung-c: signed image accepted and running}"
+TRUSTEE_LOG_TAIL="${TRUSTEE_LOG_TAIL:-1000}"
+TRUSTEE_LOG_SINCE_TIME="${TRUSTEE_LOG_SINCE_TIME:-$PROOF_STARTED_AT_UTC}"
+POD_LOG_TAIL="${POD_LOG_TAIL:-200}"
+CRIO_LOG_TAIL="${CRIO_LOG_TAIL:-1000}"
+CRIO_LOG_SINCE_TIME="${CRIO_LOG_SINCE_TIME:-$PROOF_STARTED_AT_UTC}"
+MIRROR_LOG_TAIL="${MIRROR_LOG_TAIL:-1000}"
+MIRROR_LOG_SINCE_TIME="${MIRROR_LOG_SINCE_TIME:-$PROOF_STARTED_AT_UTC}"
+MIRROR_LOG_FILES="${MIRROR_LOG_FILES:-}"
+MIRROR_CONTAINER_NAMES="${MIRROR_CONTAINER_NAMES:-}"
+APPLY_RUNG_C_SCRIPT="${APPLY_RUNG_C_SCRIPT:-${REPO_ROOT}/scripts/apply-rung-c.sh}"
+NEGATIVE_TEST_SCRIPT="${NEGATIVE_TEST_SCRIPT:-${REPO_ROOT}/scripts/negative-test.sh}"
+COLLECT_RUNG_BC_EVIDENCE_SCRIPT="${COLLECT_RUNG_BC_EVIDENCE_SCRIPT:-${REPO_ROOT}/scripts/collect-rung-bc-evidence.sh}"
+VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="${VALIDATE_RUNG_BC_EVIDENCE_SCRIPT:-${REPO_ROOT}/scripts/validate-rung-bc-evidence.sh}"
+VERIFY_RUNG_C_SIGNATURE_SCRIPT="${VERIFY_RUNG_C_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-c-signature.sh}"
+
+die() {
+	echo "ERROR: $*" >&2
+	exit 2
+}
+
+require_digest_ref() {
+	local var_name="$1" image="$2"
+	if [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+		return
+	fi
+	die "${var_name} must be a sha256 digest ref for proof runs: ${image:-<unset>}. Source ${ARTIFACT_DIR}/rung-bc.env after make build-rung-images."
+}
+
+rung_c_refs_are_digest_pinned() {
+	[[ "$RUNG_C_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] &&
+		[[ "$RUNG_C_UNSIGNED_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]
+}
+
+load_rung_env_if_needed() {
+	if rung_c_refs_are_digest_pinned; then
+		return
+	fi
+	if [[ ! -f "$RUNG_ENV_FILE" ]]; then
+		return
+	fi
+	echo "Loading rung c digest refs from $RUNG_ENV_FILE"
+	# shellcheck source=/dev/null
+	source "$RUNG_ENV_FILE"
+}
+
+require_script() {
+	local path="$1"
+	[[ -f "$path" ]] || die "missing script: $path"
+}
+
+load_rung_env_if_needed
+require_digest_ref RUNG_C_IMAGE "$RUNG_C_IMAGE"
+require_digest_ref RUNG_C_UNSIGNED_IMAGE "$RUNG_C_UNSIGNED_IMAGE"
+require_script "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
+require_script "$APPLY_RUNG_C_SCRIPT"
+require_script "$NEGATIVE_TEST_SCRIPT"
+require_script "$COLLECT_RUNG_BC_EVIDENCE_SCRIPT"
+require_script "$VALIDATE_RUNG_BC_EVIDENCE_SCRIPT"
+
+echo "== rung-c signature preflight =="
+ARTIFACT_DIR="$ARTIFACT_DIR" RUNG_C_IMAGE="$RUNG_C_IMAGE" RUNG_C_UNSIGNED_IMAGE="$RUNG_C_UNSIGNED_IMAGE" \
+	RUNG_C_COSIGN_PUB="$RUNG_C_COSIGN_PUB" RUNG_BC_IMAGES_MANIFEST="$RUNG_BC_IMAGES_MANIFEST" \
+	COSIGN_VERIFY_ARGS="$COSIGN_VERIFY_ARGS" REQUIRE_RUNG_BC_IMAGES_MANIFEST=1 bash "$VERIFY_RUNG_C_SIGNATURE_SCRIPT"
+
+echo
+echo "== rung-c happy path =="
+KBS_URL="$KBS_URL" IMAGE_SECURITY_POLICY_URI="$RUNG_C_POLICY_URI" RUNG_C_IMAGE="$RUNG_C_IMAGE" bash "$APPLY_RUNG_C_SCRIPT"
+
+echo
+echo "== rung-c fail-closed proof =="
+KBS_URL="$KBS_URL" RUNG_C_POLICY_URI="$RUNG_C_POLICY_URI" RUNG_C_UNSIGNED_IMAGE="$RUNG_C_UNSIGNED_IMAGE" KEEP_DENIED_PODS=1 bash "$NEGATIVE_TEST_SCRIPT" rung-c
+
+echo
+echo "== collect rung-c evidence =="
+EVIDENCE_DIR="$EVIDENCE_DIR" KBS_URL="$KBS_URL" RUNG_B_KEY_ID="$RUNG_B_KEY_ID" RUNG_B_POLICY_URI="$RUNG_B_POLICY_URI" RUNG_C_POLICY_URI="$RUNG_C_POLICY_URI" PODS="$PODS" \
+	RUNG_C_POD="$RUNG_C_POD" NEG_RUNG_C_POD="$NEG_RUNG_C_POD" RUNG_C_APP_LOG_MARKER="$RUNG_C_APP_LOG_MARKER" \
+	TRUSTEE_LOG_TAIL="$TRUSTEE_LOG_TAIL" TRUSTEE_LOG_SINCE_TIME="$TRUSTEE_LOG_SINCE_TIME" POD_LOG_TAIL="$POD_LOG_TAIL" CRIO_LOG_TAIL="$CRIO_LOG_TAIL" CRIO_LOG_SINCE_TIME="$CRIO_LOG_SINCE_TIME" MIRROR_LOG_TAIL="$MIRROR_LOG_TAIL" MIRROR_LOG_SINCE_TIME="$MIRROR_LOG_SINCE_TIME" \
+	MIRROR_LOG_FILES="$MIRROR_LOG_FILES" MIRROR_CONTAINER_NAMES="$MIRROR_CONTAINER_NAMES" \
+	bash "$COLLECT_RUNG_BC_EVIDENCE_SCRIPT"
+
+echo
+echo "== validate rung-c evidence =="
+VALIDATION_SCOPE=rung-c KBS_URL="$KBS_URL" RUNG_C_POLICY_URI="$RUNG_C_POLICY_URI" RUNG_C_POD="$RUNG_C_POD" \
+	NEG_RUNG_C_POD="$NEG_RUNG_C_POD" RUNG_C_APP_LOG_MARKER="$RUNG_C_APP_LOG_MARKER" \
+	bash "$VALIDATE_RUNG_BC_EVIDENCE_SCRIPT" "$EVIDENCE_DIR"
+
+echo
+echo "Rung c proof workflow complete. Evidence: $EVIDENCE_DIR"

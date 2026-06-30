@@ -2572,7 +2572,7 @@ create_prove_stub() {
 		printf 'set -euo pipefail\n'
 		printf 'PROOF_STUB_NAME=%q\n' "$name"
 		cat <<'EOF'
-printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tRUNG_B_KEY_FILE=%s\tRUNG_C_COSIGN_PUB=%s\tRUNG_BC_IMAGES_MANIFEST=%s\tREQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\tCOSIGN_VERIFY_ARGS=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\n' \
+printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_C_IMAGE=%s\tRUNG_C_UNSIGNED_IMAGE=%s\tNS=%s\tTRUSTEE_NS=%s\tKBS_URL=%s\tRUNG_B_KEY_ID=%s\tRUNG_B_KEY_FILE=%s\tRUNG_C_COSIGN_PUB=%s\tRUNG_BC_IMAGES_MANIFEST=%s\tREQUIRE_RUNG_BC_IMAGES_MANIFEST=%s\tCOSIGN_VERIFY_ARGS=%s\tIMAGE_SECURITY_POLICY_URI=%s\tRUNG_B_POLICY_URI=%s\tRUNG_C_POLICY_URI=%s\tPODS=%s\tRUNG_B_POD=%s\tRUNG_C_POD=%s\tNEG_RUNG_B_POD=%s\tNEG_RUNG_C_POD=%s\tRUNG_B_APP_LOG_MARKER=%s\tRUNG_C_APP_LOG_MARKER=%s\tTRUSTEE_LOG_TAIL=%s\tTRUSTEE_LOG_SINCE_TIME=%s\tPOD_LOG_TAIL=%s\tCRIO_LOG_TAIL=%s\tCRIO_LOG_SINCE_TIME=%s\tMIRROR_LOG_TAIL=%s\tMIRROR_LOG_SINCE_TIME=%s\tMIRROR_LOG_FILES=%s\tMIRROR_CONTAINER_NAMES=%s\tVALIDATION_SCOPE=%s\n' \
 	"$PROOF_STUB_NAME" "${1:-}" "${KEEP_DENIED_PODS:-}" "${EVIDENCE_DIR:-}" \
 	"${RUNG_B_IMAGE:-}" "${RUNG_C_IMAGE:-}" "${RUNG_C_UNSIGNED_IMAGE:-}" \
 	"${NS:-}" "${TRUSTEE_NS:-}" "${KBS_URL:-}" "${RUNG_B_KEY_ID:-}" "${RUNG_B_KEY_FILE:-}" \
@@ -2582,7 +2582,7 @@ printf '%s\targ=%s\tKEEP_DENIED_PODS=%s\tEVIDENCE_DIR=%s\tRUNG_B_IMAGE=%s\tRUNG_
 	"${RUNG_C_POD:-}" "${NEG_RUNG_B_POD:-}" "${NEG_RUNG_C_POD:-}" "${RUNG_B_APP_LOG_MARKER:-}" \
 	"${RUNG_C_APP_LOG_MARKER:-}" "${TRUSTEE_LOG_TAIL:-}" "${TRUSTEE_LOG_SINCE_TIME:-}" "${POD_LOG_TAIL:-}" \
 	"${CRIO_LOG_TAIL:-}" "${CRIO_LOG_SINCE_TIME:-}" "${MIRROR_LOG_TAIL:-}" "${MIRROR_LOG_SINCE_TIME:-}" \
-	"${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" >> "$CALL_LOG"
+	"${MIRROR_LOG_FILES:-}" "${MIRROR_CONTAINER_NAMES:-}" "${VALIDATION_SCOPE:-}" >> "$CALL_LOG"
 EOF
 	} > "$path"
 	chmod +x "$path"
@@ -2778,6 +2778,161 @@ EOF
 	fi
 }
 
+verify_prove_rung_c_workflow() {
+	local dir="$tmpdir/prove-rung-c" log="$tmpdir/prove-rung-c-calls.tsv" err="$tmpdir/prove-rung-c.err" bad_log="$tmpdir/prove-rung-c-bad-calls.tsv"
+	local c_signature apply_c negative collect validate first_call
+	mkdir -p "$dir"
+	c_signature="$dir/c-signature.sh"
+	apply_c="$dir/apply-c.sh"
+	negative="$dir/negative-test.sh"
+	collect="$dir/collect-evidence.sh"
+	validate="$dir/validate-evidence.sh"
+	create_prove_stub "$c_signature" c-signature-rung-c
+	create_prove_stub "$apply_c" apply-c-rung-c
+	create_prove_stub "$negative" negative-test-rung-c
+	create_prove_stub "$collect" collect-evidence-rung-c
+	create_prove_stub "$validate" validate-evidence-rung-c
+
+	CALL_LOG="$log" make -s prove-rung-c \
+		APPLY_RUNG_C_SCRIPT="$apply_c" \
+		NEGATIVE_TEST_SCRIPT="$negative" \
+		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature" \
+		NS="trustee-test" \
+		WORKLOAD_NS="workload-test" \
+		KBS_URL="http://kbs.trustee-test.svc:8080" \
+		RUNG_B_KEY_ID="kbs:///default/custom-image-key/rung-b" \
+		RUNG_B_POLICY_URI="kbs:///custom/security-policy/rung-b" \
+		RUNG_C_POLICY_URI="kbs:///custom/security-policy/rung-c" \
+		ARTIFACT_DIR="$tmpdir/artifacts" \
+		EVIDENCE_DIR="$tmpdir/rung-c-proof-evidence" \
+		PODS="custom-rung-c custom-neg-rung-c" \
+		RUNG_C_POD="custom-rung-c" \
+		NEG_RUNG_C_POD="custom-neg-rung-c" \
+		RUNG_C_APP_LOG_MARKER="custom rung-c proof marker" \
+		TRUSTEE_LOG_TAIL="111" \
+		TRUSTEE_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
+		POD_LOG_TAIL="222" \
+		CRIO_LOG_TAIL="444" \
+		CRIO_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
+		MIRROR_LOG_TAIL="333" \
+		MIRROR_LOG_SINCE_TIME="2026-06-29T00:00:00Z" \
+		MIRROR_LOG_FILES="/var/log/custom-mirror.log /srv/mirror/access.log" \
+		MIRROR_CONTAINER_NAMES="quay-app custom-registry" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		RUNG_C_COSIGN_PUB="$tmpdir/custom-cosign.pub" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
+		COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --allow-insecure-registry" \
+		> /dev/null
+
+	first_call="$(sed -n '1p' "$log")"
+	[[ "$first_call" == c-signature-rung-c$'\t'* ]] || die "prove-rung-c did not run rung-c signature preflight first"
+	[[ "$first_call" == *$'\tRUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t'* ]] ||
+		die "prove-rung-c signature preflight did not receive the digest-pinned rung-c image"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$log" "prove-rung-c signature unsigned image"
+	expect_grep "RUNG_C_COSIGN_PUB=$tmpdir/custom-cosign.pub" "$log" "prove-rung-c signature public key"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$log" "prove-rung-c image manifest"
+	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$log" "prove-rung-c requires image manifest during signature preflight"
+	expect_grep "COSIGN_VERIFY_ARGS=--insecure-ignore-tlog=true --allow-insecure-registry" "$log" "prove-rung-c signature verify args"
+	expect_grep "apply-c-rung-c	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/rung-c-proof-evidence" "$log" "prove-rung-c apply-c step"
+	expect_grep $'negative-test-rung-c\targ=rung-c\tKEEP_DENIED_PODS=1' "$log" "prove-rung-c negative step"
+	expect_grep "collect-evidence-rung-c	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/rung-c-proof-evidence" "$log" "prove-rung-c collect evidence dir"
+	expect_grep "validate-evidence-rung-c	arg=$tmpdir/rung-c-proof-evidence	KEEP_DENIED_PODS=	EVIDENCE_DIR=$tmpdir/rung-c-proof-evidence" "$log" "prove-rung-c validate evidence dir"
+	expect_grep "VALIDATION_SCOPE=rung-c" "$log" "prove-rung-c scoped validation"
+	expect_grep "NS=workload-test" "$log" "prove-rung-c workload namespace"
+	expect_grep "TRUSTEE_NS=trustee-test" "$log" "prove-rung-c Trustee namespace"
+	expect_grep "KBS_URL=http://kbs.trustee-test.svc:8080" "$log" "prove-rung-c KBS URL"
+	expect_grep "IMAGE_SECURITY_POLICY_URI=kbs:///custom/security-policy/rung-c" "$log" "prove-rung-c apply rung-c policy URI"
+	expect_grep "RUNG_B_KEY_ID=kbs:///default/custom-image-key/rung-b" "$log" "prove-rung-c collected rung-b key ID provenance"
+	expect_grep "RUNG_B_POLICY_URI=kbs:///custom/security-policy/rung-b" "$log" "prove-rung-c collected rung-b policy provenance"
+	expect_grep "RUNG_C_POLICY_URI=kbs:///custom/security-policy/rung-c" "$log" "prove-rung-c rung-c policy URI"
+	expect_grep "PODS=custom-rung-c custom-neg-rung-c" "$log" "prove-rung-c evidence pod list"
+	expect_grep "RUNG_C_POD=custom-rung-c" "$log" "prove-rung-c happy pod override"
+	expect_grep "NEG_RUNG_C_POD=custom-neg-rung-c" "$log" "prove-rung-c negative pod override"
+	expect_grep "TRUSTEE_LOG_TAIL=111" "$log" "prove-rung-c collect Trustee log tail"
+	expect_grep "TRUSTEE_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$log" "prove-rung-c collect Trustee log since-time"
+	expect_grep "POD_LOG_TAIL=222" "$log" "prove-rung-c collect pod log tail"
+	expect_grep "CRIO_LOG_TAIL=444" "$log" "prove-rung-c collect CRI-O log tail"
+	expect_grep "CRIO_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$log" "prove-rung-c collect CRI-O log since-time"
+	expect_grep "MIRROR_LOG_TAIL=333" "$log" "prove-rung-c collect mirror log tail"
+	expect_grep "MIRROR_LOG_SINCE_TIME=2026-06-29T00:00:00Z" "$log" "prove-rung-c collect mirror log since-time"
+	expect_grep "MIRROR_LOG_FILES=/var/log/custom-mirror.log /srv/mirror/access.log" "$log" "prove-rung-c collect mirror log files"
+	expect_grep "MIRROR_CONTAINER_NAMES=quay-app custom-registry" "$log" "prove-rung-c collect mirror containers"
+	expect_grep "RUNG_C_APP_LOG_MARKER=custom rung-c proof marker" "$log" "prove-rung-c validate rung-c app marker"
+	if grep -Eq '^(key-wrap|apply-b)' "$log"; then
+		die "prove-rung-c unexpectedly called rung-b-only steps"
+	fi
+
+	if CALL_LOG="$bad_log" make -s prove-rung-c \
+		APPLY_RUNG_C_SCRIPT="$apply_c" \
+		NEGATIVE_TEST_SCRIPT="$negative" \
+		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+		> /dev/null 2> "$err"; then
+		die "prove-rung-c accepted a tagged rung-c image"
+	fi
+	expect_grep "RUNG_C_IMAGE must be a sha256 digest ref" "$err" "prove-rung-c digest-ref guard"
+	[[ ! -s "$bad_log" ]] || die "prove-rung-c called child scripts after digest-ref guard failed"
+}
+
+verify_prove_rung_c_loads_artifact_env() {
+	local dir="$tmpdir/prove-rung-c-env" artifacts="$tmpdir/prove-rung-c-artifacts" log="$tmpdir/prove-rung-c-env-calls.tsv"
+	local c_signature apply_c negative collect validate first_call
+	mkdir -p "$dir" "$artifacts"
+	c_signature="$dir/c-signature.sh"
+	apply_c="$dir/apply-c.sh"
+	negative="$dir/negative-test.sh"
+	collect="$dir/collect-evidence.sh"
+	validate="$dir/validate-evidence.sh"
+	create_prove_stub "$c_signature" c-signature-rung-c-env
+	create_prove_stub "$apply_c" apply-c-rung-c-env
+	create_prove_stub "$negative" negative-test-rung-c-env
+	create_prove_stub "$collect" collect-evidence-rung-c-env
+	create_prove_stub "$validate" validate-evidence-rung-c-env
+
+cat > "$artifacts/rung-bc.env" <<'EOF'
+export RUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+export RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+export RUNG_C_COSIGN_PUB=/tmp/cosign.pub
+EOF
+
+	CALL_LOG="$log" make -s prove-rung-c \
+		APPLY_RUNG_C_SCRIPT="$apply_c" \
+		NEGATIVE_TEST_SCRIPT="$negative" \
+		COLLECT_RUNG_BC_EVIDENCE_SCRIPT="$collect" \
+		VALIDATE_RUNG_BC_EVIDENCE_SCRIPT="$validate" \
+		VERIFY_RUNG_C_SIGNATURE_SCRIPT="$c_signature" \
+		ARTIFACT_DIR="$artifacts" \
+		RUNG_C_IMAGE="mirror.test.local:5000/coco/rung-c:signed" \
+		RUNG_C_UNSIGNED_IMAGE="mirror.test.local:5000/coco/rung-c-unsigned:unsigned" \
+		> /dev/null
+
+	first_call="$(sed -n '1p' "$log")"
+	[[ "$first_call" == c-signature-rung-c-env$'\t'* ]] || die "prove-rung-c did not run artifact-env signature preflight first"
+	[[ "$first_call" == *$'\tRUNG_C_IMAGE=mirror.test.local:5000/coco/rung-c@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t'* ]] ||
+		die "prove-rung-c artifact-env preflight did not receive the digest-pinned rung-c image"
+	expect_grep "RUNG_C_UNSIGNED_IMAGE=mirror.test.local:5000/coco/rung-c-unsigned@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" "$log" "prove-rung-c loaded unsigned image from env"
+	expect_grep "RUNG_C_COSIGN_PUB=/tmp/cosign.pub" "$log" "prove-rung-c loaded cosign pub from env"
+	expect_grep "RUNG_BC_IMAGES_MANIFEST=$artifacts/rung-bc-images.json" "$log" "prove-rung-c artifact env image manifest"
+	expect_grep "REQUIRE_RUNG_BC_IMAGES_MANIFEST=1" "$log" "prove-rung-c artifact env requires image manifest"
+	expect_grep "apply-c-rung-c-env	arg=	KEEP_DENIED_PODS=	EVIDENCE_DIR=$artifacts/evidence-rung-c-proof-" "$log" "prove-rung-c artifact env apply-c step"
+	expect_grep "VALIDATION_SCOPE=rung-c" "$log" "prove-rung-c artifact env scoped validation"
+	if ! grep -Eq 'collect-evidence-rung-c-env.*TRUSTEE_LOG_SINCE_TIME=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' "$log"; then
+		die "prove-rung-c did not default Trustee log since-time for evidence collection"
+	fi
+	if ! grep -Eq 'collect-evidence-rung-c-env.*MIRROR_LOG_SINCE_TIME=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' "$log"; then
+		die "prove-rung-c did not default mirror log since-time for evidence collection"
+	fi
+	if ! grep -Eq 'collect-evidence-rung-c-env.*CRIO_LOG_SINCE_TIME=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' "$log"; then
+		die "prove-rung-c did not default CRI-O log since-time for evidence collection"
+	fi
+}
+
 need make
 need oc
 need jq
@@ -2833,6 +2988,8 @@ verify_rung_b_direct_pull_diagnostic_validation
 verify_evidence_validation_make_env
 verify_prove_rung_bc_workflow
 verify_prove_rung_bc_loads_artifact_env
+verify_prove_rung_c_workflow
+verify_prove_rung_c_loads_artifact_env
 
 render_pod b "$tmpdir/rung-b.yaml" "$rung_b_image" rung-b-render
 render_pod b "$tmpdir/rung-b-tampered.yaml" "$rung_b_image" negtest-rung-b 1
