@@ -751,7 +751,8 @@ EOF
 }
 
 verify_trustee_make_env() {
-	local stub="$tmpdir/trustee-stub.sh" seed_out="$tmpdir/seed-rung-bc-env" apply_out="$tmpdir/apply-trustee-rung-bc-env"
+	local stub="$tmpdir/trustee-stub.sh" key_wrap_stub="$tmpdir/key-wrap-target-stub.sh"
+	local seed_out="$tmpdir/seed-rung-bc-env" apply_out="$tmpdir/apply-trustee-rung-bc-env"
 	cat > "$stub" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -775,15 +776,38 @@ done
 EOF
 	chmod +x "$stub"
 
+	cat > "$key_wrap_stub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'KEY_WRAP_CALLED=1\n'
+vars=(
+	MIRROR_REGISTRY
+	ARTIFACT_DIR
+	RUNG_B_IMAGE
+	RUNG_B_KEY_FILE
+	RUNG_B_KEY_ID
+	RUNG_BC_IMAGES_MANIFEST
+)
+
+for var in "${vars[@]}"; do
+	printf 'KEY_WRAP_%s=%s\n' "$var" "${!var}"
+done
+EOF
+	chmod +x "$key_wrap_stub"
+
 	make -s seed-rung-bc-secrets \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap_stub" \
 		SEED_TRUSTEE_SECRETS_SCRIPT="$stub" \
 		NS="trustee-test" \
 		VCEK_BUNDLE="$tmpdir/vcek-bundle" \
 		HWID="$(printf 'b%.0s' {1..128})" \
 		HWIDS="$(printf 'c%.0s' {1..128})" \
 		MIRROR_REGISTRY="mirror.test.local:5000" \
+		ARTIFACT_DIR="$tmpdir/custom-artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		RUNG_B_KEY_FILE="$tmpdir/rung-b.key" \
 		RUNG_B_KEY_ID="kbs:///default/custom-image-kek/custom-rung-b" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
 		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
 		RUNG_C_COSIGN_PUB="$tmpdir/cosign.pub" \
 		RUNG_C_POLICY_FILE="$tmpdir/policy.json" \
@@ -791,14 +815,18 @@ EOF
 		> "$seed_out"
 
 	make -s apply-trustee-rung-bc \
+		VERIFY_RUNG_B_KEY_WRAP_SCRIPT="$key_wrap_stub" \
 		APPLY_TRUSTEE_SCRIPT="$stub" \
 		NS="trustee-test" \
 		VCEK_BUNDLE="$tmpdir/vcek-bundle" \
 		HWID="$(printf 'b%.0s' {1..128})" \
 		HWIDS="$(printf 'c%.0s' {1..128})" \
 		MIRROR_REGISTRY="mirror.test.local:5000" \
+		ARTIFACT_DIR="$tmpdir/custom-artifacts" \
+		RUNG_B_IMAGE="mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		RUNG_B_KEY_FILE="$tmpdir/rung-b.key" \
 		RUNG_B_KEY_ID="kbs:///default/custom-image-kek/custom-rung-b" \
+		RUNG_BC_IMAGES_MANIFEST="$tmpdir/custom-images.json" \
 		RUNG_C_IMAGE="mirror.test.local:5000/custom/rung-c@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" \
 		RUNG_C_COSIGN_PUB="$tmpdir/cosign.pub" \
 		RUNG_C_POLICY_FILE="$tmpdir/policy.json" \
@@ -815,6 +843,13 @@ EOF
 		expect_grep "RUNG_C_COSIGN_PUB=$tmpdir/cosign.pub" "$out" "Makefile Trustee cosign pub override"
 		expect_grep "RUNG_C_POLICY_FILE=$tmpdir/policy.json" "$out" "Makefile Trustee policy file override"
 		expect_grep "RUNG_C_POLICY_IMAGE_PREFIX=mirror.test.local:5000/custom/rung-c" "$out" "Makefile Trustee policy prefix override"
+		expect_grep "KEY_WRAP_CALLED=1" "$out" "Makefile Trustee target runs rung-b key-wrap verifier first"
+		expect_grep "KEY_WRAP_MIRROR_REGISTRY=mirror.test.local:5000" "$out" "Makefile Trustee key-wrap mirror override"
+		expect_grep "KEY_WRAP_ARTIFACT_DIR=$tmpdir/custom-artifacts" "$out" "Makefile Trustee key-wrap artifact dir override"
+		expect_grep "KEY_WRAP_RUNG_B_IMAGE=mirror.test.local:5000/custom/rung-b@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "$out" "Makefile Trustee key-wrap image override"
+		expect_grep "KEY_WRAP_RUNG_B_KEY_FILE=$tmpdir/rung-b.key" "$out" "Makefile Trustee key-wrap key file override"
+		expect_grep "KEY_WRAP_RUNG_B_KEY_ID=kbs:///default/custom-image-kek/custom-rung-b" "$out" "Makefile Trustee key-wrap key ID override"
+		expect_grep "KEY_WRAP_RUNG_BC_IMAGES_MANIFEST=$tmpdir/custom-images.json" "$out" "Makefile Trustee key-wrap manifest override"
 	done
 }
 

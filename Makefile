@@ -194,11 +194,11 @@ verify-rung-b-key-wrap: ## Phase 6: verify rung-b encrypted layer KID and KEK un
 	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_BC_IMAGES_MANIFEST="$(RUNG_BC_IMAGES_MANIFEST)" bash "$(VERIFY_RUNG_B_KEY_WRAP_SCRIPT)"
 
 .PHONY: seed-rung-bc-secrets
-seed-rung-bc-secrets: ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
+seed-rung-bc-secrets: verify-rung-b-key-wrap ## Phase 6: seed rung-b/c key, public key, and signed-image policy resources
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
 
 .PHONY: apply-trustee-rung-bc
-apply-trustee-rung-bc: ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
+apply-trustee-rung-bc: verify-rung-b-key-wrap ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_KEY_ID="$(RUNG_B_KEY_ID)" RUNG_B_KEY_FILE="$(RUNG_B_KEY_FILE)" RUNG_C_IMAGE="$(RUNG_C_IMAGE)" RUNG_C_COSIGN_PUB="$(RUNG_C_COSIGN_PUB)" RUNG_C_POLICY_FILE="$(RUNG_C_POLICY_FILE)" RUNG_C_POLICY_IMAGE_PREFIX="$(RUNG_C_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
 
 .PHONY: apply-rung-a

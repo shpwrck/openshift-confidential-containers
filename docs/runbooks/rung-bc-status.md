@@ -1,9 +1,9 @@
 # Rung b/c status
 
-Last updated: 2026-06-30T10:39:23Z
+Last updated: 2026-06-30T10:48:40Z
 
 Current PR: #8, `codex/rung-bc-support`
-Latest pushed proof-tooling checkpoint verified on the rig: `6c5536d`
+Latest pushed proof-tooling checkpoint verified on the rig: `cdfef51`
 Status: repo scaffolding and local no-hardware validation are green; live rig access is confirmed.
 Rung-c now has live happy-path and unsigned-control denial evidence, and offline validation accepts
 pod-status app-start evidence when CC logs are empty. Rung-b is not complete. Direct digest/tag
@@ -55,6 +55,9 @@ encrypted-image path. The remaining CRI-O direct-pull blocker is tracked upstrea
   earlier KEK mismatch: it verifies the encrypted layer annotation KID, checks
   `rung-bc-images.json` image/key consistency, and proves the configured 32-byte KEK decrypts the
   A256GCM-wrapped layer key without printing key material.
+- `make seed-rung-bc-secrets` and `make apply-trustee-rung-bc` now run
+  `verify-rung-b-key-wrap` first, so a wrong rung-b KEK fails before Trustee Secrets or KbsConfig
+  are updated.
 - Initdata encoding now uses deterministic gzip output, and evidence validation compares decoded
   initdata content for happy/negative relationships so gzip metadata cannot create false
   differences.

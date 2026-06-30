@@ -187,7 +187,8 @@ Dry-run acceptance:
 - `make verify-rung-b-key-wrap` passes before Trustee seeding. It inspects the encrypted layer
   annotation, checks `rung-bc-images.json` against the selected image/key, and proves the
   configured 32-byte KEK authenticates/decrypts the A256GCM-wrapped layer key without printing key
-  material.
+  material. `make seed-rung-bc-secrets` and `make apply-trustee-rung-bc` run this verifier first,
+  so a mismatched KEK fails before Trustee resources are changed.
 - `cosign verify --key <cosign.pub> <rung-c-image>@<digest>` succeeds on the connected/bastion
   side.
 - No private key, image key, registry credential, or generated initdata lands in git.
@@ -199,14 +200,17 @@ Secrets exist. Otherwise Trustee may fail in a way that looks like an attestatio
 
 Sequence:
 
-1. Verify the rung-b image metadata and local KEK before putting the key into Trustee:
+1. Verify the rung-b image metadata and local KEK before putting the key into Trustee. The
+   subsequent seed/apply targets run this verifier automatically too; keep the explicit command
+   when you want the failure isolated before the Trustee mutation step:
 
    ```bash
    . rung-bc-artifacts/rung-bc.env
    make verify-rung-b-key-wrap
    ```
 
-2. Create or update Secrets and render Trustee with the extra KBS resource names:
+2. Create or update Secrets and render Trustee with the extra KBS resource names. This reruns
+   `verify-rung-b-key-wrap` with the same image/key inputs before applying changes:
 
    ```bash
    make apply-trustee-rung-bc \
