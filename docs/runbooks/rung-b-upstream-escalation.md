@@ -1,14 +1,14 @@
 # Rung b upstream escalation packet
 
-Last updated: 2026-06-30T13:13:24Z
+Last updated: 2026-06-30T13:17:59Z
 
 This packet is the upstream summary for the remaining rung-b blocker. It is meant for a CRI-O,
 OpenShift sandboxed containers, Kata, or Confidential Containers maintainer without requiring them
 to read the whole engagement runbook first.
 
-Upstream issue: <https://github.com/cri-o/cri-o/issues/10084>. As of
-`2026-06-30T13:07:58Z`, the issue is closed without a visible maintainer comment or technical
-resolution in the timeline; the local evidence still treats the direct-pull path as blocked.
+Upstream issue: <https://github.com/cri-o/cri-o/issues/10084>. It briefly closed without a visible
+maintainer comment or technical resolution at `2026-06-30T13:07:58Z`, then was reopened with the
+latest strict manifest/env-aware diagnostic evidence at `2026-06-30T13:17:44Z`.
 
 ## Short version
 
