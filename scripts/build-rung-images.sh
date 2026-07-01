@@ -362,12 +362,28 @@ if [[ "${1:-}" == "default-cosign-sign-args" ]]; then
 fi
 
 if [[ "${1:-}" == "sign-rung-b-only" ]]; then
+	# rung-b (signed image) WITHOUT rung-c: skopeo copy + cosign sign only, so it needs no
+	# coco-keyprovider (which encrypts rung-c and may be unavailable in an air gap). Self-contained
+	# — generates the cosign key pair if absent so `make build-rung-b` is a single step.
 	[[ "$#" -eq 1 ]] || die "usage: $0 sign-rung-b-only"
 	need skopeo
 	need jq
 	need cosign
 	configure_cosign_args
+	mkdir -p "$ARTIFACT_DIR"
+	ensure_cosign_keys
 	sign_rung_b
+	# Emit the pushed DIGEST refs so `make deploy-trustee-rung-b` / `make run-rung-b-signed` need no
+	# manual `skopeo inspect` — apply-rung-image.sh rejects non-@sha256 refs, and the make defaults
+	# are the `:signed`/`:unsigned` TAGS. Source this file or read the digest refs from it.
+	rb_digest="$(skopeo_inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
+	ru_digest="$(skopeo_inspect "docker://${RUNG_B_UNSIGNED_IMAGE}" | jq -r '.Digest')"
+	{
+		echo "export RUNG_B_IMAGE=$(image_digest_ref "$RUNG_B_IMAGE" "$rb_digest")"
+		echo "export RUNG_B_UNSIGNED_IMAGE=$(image_digest_ref "$RUNG_B_UNSIGNED_IMAGE" "$ru_digest")"
+		echo "export RUNG_B_COSIGN_PUB=$COSIGN_PUB"
+	} > "$ARTIFACT_DIR/rung-b.env"
+	echo "Wrote $ARTIFACT_DIR/rung-b.env — 'source' it (or pass RUNG_B_IMAGE=<digest-ref>) before deploy-trustee-rung-b / run-rung-b-signed."
 	exit 0
 fi
 

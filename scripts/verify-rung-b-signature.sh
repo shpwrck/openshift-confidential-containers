@@ -147,4 +147,4 @@ if cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_B_COSIGN_PUB" "$unsigned_diges
 	fail "rung-b unsigned negative-control image unexpectedly verifies with the configured public key: $unsigned_digest_ref"
 fi
 pass "rung-b unsigned negative-control image does not verify with the configured public key"
-echo "Rung-c signature verification OK."
+echo "Rung-b signature verification OK."
