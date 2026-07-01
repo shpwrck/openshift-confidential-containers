@@ -3,6 +3,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/compat.sh
+source "${REPO_ROOT}/scripts/lib/compat.sh"
 MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
 RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
@@ -55,9 +57,9 @@ EOF
 file_sha256() {
 	local path="$1"
 	if [[ -r "$path" ]]; then
-		sha256sum "$path" | awk '{print $1}'
+		sha256_file "$path"
 	elif command -v sudo >/dev/null && sudo -n test -r "$path" 2>/dev/null; then
-		sudo -n sha256sum "$path" | awk '{print $1}'
+		sudo -n "${COMPAT_SHA256[@]}" "$path" | awk '{print $1}'
 	else
 		die "cannot read $path"
 	fi
@@ -123,7 +125,7 @@ fi
 
 need skopeo
 need jq
-need sha256sum
+have_sha256 || die "no sha256 tool found (need sha256sum, shasum, or openssl)"
 need cosign
 
 [[ -s "$RUNG_B_COSIGN_PUB" ]] || die "missing rung-b cosign public key: $RUNG_B_COSIGN_PUB"

@@ -3,6 +3,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/compat.sh
+source "${REPO_ROOT}/scripts/lib/compat.sh"
 NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
@@ -144,7 +146,8 @@ load_vcek_bundle() {
 			vcek_ders+=("$der")
 		done
 	else
-		mapfile -t ders < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
+		ders=()
+		while IFS= read -r der_line; do ders+=("$der_line"); done < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
 		[[ "${#ders[@]}" -gt 0 ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
 		for der in "${ders[@]}"; do
 			hwid="$(basename "$(dirname "$der")" | tr 'A-F' 'a-f')"
@@ -185,7 +188,7 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 tmpdir="$(mktemp -d)"
 load_vcek_bundle
 mirror_password="$(read_file "$MIRROR_PASSWORD_FILE" | tr -d '\n')"
-auth="$(printf '%s' "${MIRROR_USERNAME}:${mirror_password}" | base64 -w0)"
+auth="$(printf '%s' "${MIRROR_USERNAME}:${mirror_password}" | b64_oneline)"
 docker_auth_json="$(jq -nc --arg registry "$MIRROR_REGISTRY" --arg auth "$auth" '{auths:{($registry):{auth:$auth}}}')"
 
 stage_readable_file "$KBS_PUB" "$tmpdir/kbs.pub"
@@ -274,7 +277,7 @@ oc -n "$NS" create secret generic sample \
 # entries when the chip set changes; this hwid-derived name binds the secret to its chip, and hashing
 # the full CHIP_ID keeps two sockets distinct even if their CHIP_IDs share a leading prefix. The full
 # hwid stays in the mountPath.
-vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256sum | cut -c1-16)"; }
+vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256_stdin | cut -c1-16)"; }
 for i in "${!vcek_hwids[@]}"; do
 	vcek_name="$(vcek_secret_name "${vcek_hwids[$i]}")"
 	oc -n "$NS" create secret generic "$vcek_name" \

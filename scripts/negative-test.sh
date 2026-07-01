@@ -26,6 +26,8 @@ RUNG_C_POLICY_URI="${RUNG_C_POLICY_URI:-kbs:///default/security-policy/test}"
 RUNG_B_POLICY_URI="${RUNG_B_POLICY_URI:-kbs:///default/security-policy/rung-b}"
 RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/compat.sh
+source "${REPO_ROOT}/scripts/lib/compat.sh"
 pass=0 fail=0 skip=0
 # Denial-RESPONSE patterns ONLY. These are the load-bearing oracle: a match = "denied as
 # expected" = PASS. They are grepped against pod EVENTS + pod LOGS + Trustee LOGS (NOT
@@ -153,7 +155,7 @@ run_rung_a() {
   # default guards below keep the trap able to restore no matter which command triggered the abort.
   local initdata_file restrictive digest base_ap base_rp
   local resource_uri="${RUNG_A_RESOURCE_URI:-kbs:///default/attestation-status/status}"
-  command -v sha256sum >/dev/null || { skipt "rung-a: sha256sum required for the measured-initdata gate"; return; }
+  have_sha256 || { skipt "rung-a: a sha256 tool is required for the measured-initdata gate"; return; }
 
   restore_needed=0
   bakdir="$(mktemp -d)"; manifest_ctrl="$(mktemp)"; manifest_neg="$(mktemp)"
@@ -192,7 +194,7 @@ run_rung_a() {
       env EMIT_INITDATA=1 TAMPER_INITDATA=0 NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
         bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then _rung_a_finish; return; fi
-  digest="$(sha256sum "$initdata_file" | awk '{print $1}')"
+  digest="$(sha256_file "$initdata_file")"
 
   # Restrictive policy gating the rung-a secret path on that digest (the renderer is generic — the
   # gated resource is whatever RUNG_C_KEY_ID points at; its rego identifiers just read 'image_key').
@@ -320,7 +322,7 @@ run_air_gap() {
   # broken cluster-wide until manual repair (same failure class fixed in run_rung_a above).
   local vcek bogus
   vceks=()
-  mapfile -t vceks < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
+  while IFS= read -r vcek_line; do vceks+=("$vcek_line"); done < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
   if [[ "${#vceks[@]}" -eq 0 ]]; then skipt "no vcek-* secret in $TRUSTEE_NS — run make collect-vcek first"; return; fi
   command -v openssl >/dev/null || { skipt "openssl required to mint the wrong VCEK for the air-gap test"; return; }
   restore_needed=0
@@ -353,7 +355,7 @@ run_air_gap() {
     # Back up only the vcek.der DATA (not `get -o yaml`): restoring via create|apply avoids the
     # resourceVersion/managedFields Conflict that `oc apply` of a full backup hits once the swap
     # below bumps the live secret — which would otherwise leave the OfflineStore holding the wrong cert.
-    oc -n "$TRUSTEE_NS" get "$vcek" -o jsonpath='{.data.vcek\.der}' 2>/dev/null | base64 -d > "$bakdir/${vcek#secret/}.der"
+    oc -n "$TRUSTEE_NS" get "$vcek" -o jsonpath='{.data.vcek\.der}' 2>/dev/null | b64_decode > "$bakdir/${vcek#secret/}.der"
   done
   restore_needed=1
   trap air_gap_exit_cleanup EXIT

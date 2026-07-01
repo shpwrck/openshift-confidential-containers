@@ -21,6 +21,7 @@ SRC=/opt/install/src; ASSETS=/opt/install/cluster-assets
 sudo mkdir -p "$SRC" "$ASSETS"
 
 MIRROR_PW="$(sudo cat /opt/mirror/mirror-admin-password)"
+# Runs on the bastion (Rocky Linux / GNU coreutils; see header) — `base64 -w0` kept intentionally.
 MIRROR_AUTH_B64="$(printf 'init:%s' "$MIRROR_PW" | base64 -w0)"
 CA_INDENTED="$(sudo sed 's/^/  /' /opt/mirror/ca/rootCA.pem)"
 SSHKEY="$(cat ~/coco-rig.pub)"

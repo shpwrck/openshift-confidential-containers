@@ -25,6 +25,10 @@ See [`docs/architecture.md`](docs/architecture.md) for component diagrams, the a
   (bastion/mirror host + egress-firewalled node).
 - **Production** — full **multi-node** bare metal, **air-gapped**, separate Trustee cluster.
 
+> **Driving from macOS?** The operator scripts run on stock macOS (bash 3.2 + BSD userland) —
+> no GNU coreutils needed. See [macOS operator prerequisites](docs/runbooks/macos-operator-prerequisites.md)
+> for the required CLIs and which scripts run on your workstation vs the bastion.
+
 ## Capability rungs (prove on rig → apply to production)
 
 - **a** — KBS secret-resource release (attestation gates a credential)

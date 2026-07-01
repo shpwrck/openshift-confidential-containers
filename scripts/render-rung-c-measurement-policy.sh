@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Render restrictive Trustee policies for the rung-c measured-initdata gate.
 set -euo pipefail
+# shellcheck source=scripts/lib/compat.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compat.sh"
 
 NS="${NS:-trustee-operator-system}"
 RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
@@ -56,7 +58,7 @@ render() {
 	# HOST_DATA. If OSC measures a different encoding (e.g. the gzip+base64 annotation value, or a
 	# canonicalized form), the digest never matches and the key is silently withheld. Confirm against
 	# a real rung-c attestation report before relying on this.
-	initdata_sha256="$(sha256sum "$initdata_file" | awk '{print $1}')"
+	initdata_sha256="$(sha256_file "$initdata_file")"
 	key_path="$(kbs_uri_resource_path "$RUNG_C_KEY_ID")"
 	key_path_rego="$(rego_array_for_path "$key_path")"
 

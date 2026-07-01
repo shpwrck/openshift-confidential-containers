@@ -27,6 +27,9 @@ Ansible target [Latitude.sh](https://www.latitude.sh) as one worked example.
 **Targets:** OCP **4.20.18** (alt 4.19.28) · OSC **1.12** · Trustee **1.1** · TEE = **AMD
 SEV-SNP** (EPYC Genoa / 9004 or newer).
 
+> **On macOS?** These scripts run on stock macOS (bash 3.2 + BSD userland) — no GNU coreutils
+> needed. See [macOS operator prerequisites](runbooks/macos-operator-prerequisites.md).
+
 ---
 
 ## First-time reader orientation
