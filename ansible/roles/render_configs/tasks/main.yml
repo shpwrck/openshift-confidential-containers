@@ -50,17 +50,40 @@
     - "{{ install_src_dir }}"
     - "{{ cluster_assets_dir }}"
 
-- name: Read the mirror admin password
-  ansible.builtin.slurp:
-    src: "{{ mirror_password_path }}"
-  become: true
-  register: render_mirror_pw
-  no_log: true
+# Install-config pullSecret credential. Customer single-pull-secret model: when mirror_pull_secret is
+# set, read the mirror auth from that dockerconfigjson; else fall back to the mirror admin password.
+# Mirrors scripts/seed-trustee-secrets.sh + scripts/bastion-render-configs.sh.
+- name: Resolve the mirror auth from the pull secret (customer model)
+  when: mirror_pull_secret | length > 0
+  block:
+    - name: Slurp the mirror pull secret
+      ansible.builtin.slurp:
+        src: "{{ mirror_pull_secret }}"
+      become: true
+      register: render_mirror_pull_secret
+      no_log: true
+    - name: Set the mirror auth fact from the pull-secret entry
+      ansible.builtin.set_fact:
+        render_mirror_auth_b64: >-
+          {{ _entry.auth if (_entry.auth is defined and _entry.auth != '')
+          else ((_entry.username ~ ':' ~ _entry.password) | b64encode) }}
+      vars:
+        _entry: "{{ (render_mirror_pull_secret.content | b64decode | from_json).auths[mirror_endpoint] }}"
+      no_log: true
 
-- name: Set the mirror auth fact (install-config pullSecret = mirror creds only)
-  ansible.builtin.set_fact:
-    render_mirror_auth_b64: "{{ (mirror_user ~ ':' ~ (render_mirror_pw.content | b64decode | trim)) | b64encode }}"
-  no_log: true
+- name: Resolve the mirror auth from the mirror admin password (fallback)
+  when: mirror_pull_secret | length == 0
+  block:
+    - name: Read the mirror admin password
+      ansible.builtin.slurp:
+        src: "{{ mirror_password_path }}"
+      become: true
+      register: render_mirror_pw
+      no_log: true
+    - name: Set the mirror auth fact (install-config pullSecret = mirror creds only)
+      ansible.builtin.set_fact:
+        render_mirror_auth_b64: "{{ (mirror_user ~ ':' ~ (render_mirror_pw.content | b64decode | trim)) | b64encode }}"
+      no_log: true
 
 - name: Read the mirror CA PEM
   ansible.builtin.slurp:

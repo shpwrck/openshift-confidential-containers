@@ -14,15 +14,30 @@ NODE_VLAN_IP=192.168.66.11; BASTION_VLAN_IP=192.168.66.10; VLAN_PREFIX=24
 PARENT_IF=enp195s0f1                       # Genoa m4-metal-medium VLAN parent (internal/PXE NIC); VERIFY on metal
 ROOT_DEV=/dev/nvme0n1
 MIRROR_ENDPOINT="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
+MIRROR_PULL_SECRET="${MIRROR_PULL_SECRET:-}"   # dockerconfigjson pull secret; if set, the install-config mirror auth is read FROM it (customer model) instead of the mirror admin password.
 set -euo pipefail
 : "${PARENT_MAC:?set PARENT_MAC}"; : "${TOKEN:?set TOKEN}"; : "${VID:?set VID}"; : "${BASTION_PUB:?set BASTION_PUB}"
 
 SRC=/opt/install/src; ASSETS=/opt/install/cluster-assets
 sudo mkdir -p "$SRC" "$ASSETS"
 
-MIRROR_PW="$(sudo cat /opt/mirror/mirror-admin-password)"
-# Runs on the bastion (Rocky Linux / GNU coreutils; see header) — `base64 -w0` kept intentionally.
-MIRROR_AUTH_B64="$(printf 'init:%s' "$MIRROR_PW" | base64 -w0)"
+# Mirror credential for the install-config pullSecret. Customer model: read the mirror auth from a
+# single pull secret (dockerconfigjson) when MIRROR_PULL_SECRET is set; else build it from the rig's
+# mirror admin password. Runs on the bastion (Rocky Linux / GNU coreutils) — `base64 -w0` kept.
+if [ -n "$MIRROR_PULL_SECRET" ]; then
+	command -v jq >/dev/null || { echo "FATAL: jq required to read MIRROR_PULL_SECRET" >&2; exit 2; }
+	_ps="$(sudo cat "$MIRROR_PULL_SECRET" 2>/dev/null || cat "$MIRROR_PULL_SECRET")"
+	MIRROR_AUTH_B64="$(printf '%s' "$_ps" | jq -r --arg r "$MIRROR_ENDPOINT" '.auths[$r].auth // empty')"
+	if [ -z "$MIRROR_AUTH_B64" ]; then
+		_u="$(printf '%s' "$_ps" | jq -r --arg r "$MIRROR_ENDPOINT" '.auths[$r].username // empty')"
+		_p="$(printf '%s' "$_ps" | jq -r --arg r "$MIRROR_ENDPOINT" '.auths[$r].password // empty')"
+		{ [ -n "$_u" ] && [ -n "$_p" ]; } || { echo "FATAL: pull secret $MIRROR_PULL_SECRET has no auth for $MIRROR_ENDPOINT" >&2; exit 2; }
+		MIRROR_AUTH_B64="$(printf '%s:%s' "$_u" "$_p" | base64 -w0)"
+	fi
+else
+	MIRROR_PW="$(sudo cat /opt/mirror/mirror-admin-password)"
+	MIRROR_AUTH_B64="$(printf 'init:%s' "$MIRROR_PW" | base64 -w0)"
+fi
 CA_INDENTED="$(sudo sed 's/^/  /' /opt/mirror/ca/rootCA.pem)"
 SSHKEY="$(cat ~/coco-rig.pub)"
 

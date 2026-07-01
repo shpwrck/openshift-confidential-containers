@@ -10,6 +10,8 @@ VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
 MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
+MIRROR_PULL_SECRET="${MIRROR_PULL_SECRET:-}"   # dockerconfigjson pull secret (the customer model): when set, the
+                                               # mirror credential is read FROM it and MIRROR_USERNAME/PASSWORD are ignored.
 MIRROR_USERNAME="${MIRROR_USERNAME:-init}"
 MIRROR_PASSWORD_FILE="${MIRROR_PASSWORD_FILE:-/opt/mirror/mirror-admin-password}"
 MIRROR_CA="${MIRROR_CA:-/opt/mirror/ca/rootCA.pem}"
@@ -187,9 +189,24 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 tmpdir="$(mktemp -d)"
 load_vcek_bundle
-mirror_password="$(read_file "$MIRROR_PASSWORD_FILE" | tr -d '\n')"
-auth="$(printf '%s' "${MIRROR_USERNAME}:${mirror_password}" | b64_oneline)"
-docker_auth_json="$(jq -nc --arg registry "$MIRROR_REGISTRY" --arg auth "$auth" '{auths:{($registry):{auth:$auth}}}')"
+# Mirror credential for the Trustee `credential`/`regcred` secrets. Customer model: read the mirror
+# auth straight out of a single pull secret (dockerconfigjson) — no mirror admin password needed.
+# Fall back to the rig's mirror admin user + password file when MIRROR_PULL_SECRET is unset.
+if [[ -n "$MIRROR_PULL_SECRET" ]]; then
+	# Accept the mirror entry only if it carries a USABLE credential (auth, identitytoken, or
+	# username+password) — a present-but-empty {} would otherwise seed a credential that fails opaquely
+	# at guest pull time instead of loudly here.
+	mirror_auth_entry="$(read_file "$MIRROR_PULL_SECRET" | jq -c --arg r "$MIRROR_REGISTRY" '
+		.auths[$r] as $e
+		| if ($e.auth // "") != "" or ($e.identitytoken // "") != "" or (($e.username // "") != "" and ($e.password // "") != "")
+		  then $e else empty end')"
+	[[ -n "$mirror_auth_entry" ]] || die "pull secret ${MIRROR_PULL_SECRET} has no usable auth for ${MIRROR_REGISTRY} (need .auths[\"${MIRROR_REGISTRY}\"] with auth, identitytoken, or username+password)"
+	docker_auth_json="$(jq -nc --arg r "$MIRROR_REGISTRY" --argjson e "$mirror_auth_entry" '{auths:{($r):$e}}')"
+else
+	mirror_password="$(read_file "$MIRROR_PASSWORD_FILE" | tr -d '\n')"
+	auth="$(printf '%s' "${MIRROR_USERNAME}:${mirror_password}" | b64_oneline)"
+	docker_auth_json="$(jq -nc --arg registry "$MIRROR_REGISTRY" --arg auth "$auth" '{auths:{($registry):{auth:$auth}}}')"
+fi
 
 stage_readable_file "$KBS_PUB" "$tmpdir/kbs.pub"
 stage_readable_file "$ATTESTATION_CERT" "$tmpdir/attestation.crt"
