@@ -115,14 +115,18 @@ render_or_skip() { # render_or_skip <label> <output-file> <command...>
   return 1
 }
 
-# control_released <pod>: 0 if the pod reaches Ready within TIMEOUT (secret released), else 1 —
-# early-out to 1 the moment the attestation-gate init container terminates non-zero (withheld).
+# control_released <pod>: 0 if the secret was released, else 1. The release actually happens in the
+# attestation-gate INIT container, so key on ITS exit code (exit 0 = got the secret) rather than only
+# full pod-Ready — otherwise a slow/unrelated app-container start on slower-than-the-rig hardware would
+# be misread as "withheld" and produce a misleading SKIP. Non-zero init exit = withheld (early-out).
 control_released() {
-  local name="$1" deadline=$(( SECONDS + TIMEOUT )) ec
+  local name="$1" deadline=$(( SECONDS + TIMEOUT )) ec ready
   while (( SECONDS < deadline )); do
-    [[ "$(oc -n "$NS" get pod "$name" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]] && return 0
     ec="$(oc -n "$NS" get pod "$name" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.exitCode}' 2>/dev/null)"
+    [[ "$ec" == "0" ]] && return 0
     [[ -n "$ec" && "$ec" != "0" ]] && return 1
+    ready="$(oc -n "$NS" get pod "$name" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)"
+    [[ "$ready" == "True" ]] && return 0
     sleep 5
   done
   return 1
@@ -141,18 +145,25 @@ control_released() {
 # Proven on the rig 2026-07-01: untampered RELEASED, tampered WITHHELD (HTTP 403), base restored.
 run_rung_a() {
   echo "[rung-a] secret release — restrictive measured-initdata policy: untampered RELEASES, tampered WITHHELD (apply+revert)"
-  local bakdir manifest_ctrl manifest_neg initdata_file restrictive digest base_ap base_rp restore_needed=0
+  # restore_needed / bakdir / manifest_ctrl / manifest_neg are intentionally GLOBAL, NOT local: the
+  # EXIT backstop (rung_a_exit_cleanup) fires at GLOBAL scope after a `set -e` unwind, where this
+  # function's locals no longer exist. A local restore_needed would read unbound there — fatal under
+  # `set -u`, so the trap would die BEFORE restoring and leave the rig stuck on the restrictive
+  # policy (the exact rig-breaking failure this backstop exists to prevent). Globals + the `:-`
+  # default guards below keep the trap able to restore no matter which command triggered the abort.
+  local initdata_file restrictive digest base_ap base_rp
   local resource_uri="${RUNG_A_RESOURCE_URI:-kbs:///default/attestation-status/status}"
   command -v sha256sum >/dev/null || { skipt "rung-a: sha256sum required for the measured-initdata gate"; return; }
 
+  restore_needed=0
   bakdir="$(mktemp -d)"; manifest_ctrl="$(mktemp)"; manifest_neg="$(mktemp)"
   initdata_file="$bakdir/initdata.toml"; restrictive="$bakdir/restrictive.yaml"
 
   rung_a_restore() {
-    [[ "$restore_needed" == "1" ]] || return 0
+    [[ "${restore_needed:-0}" == "1" ]] || return 0
     echo "  (restoring base attestation-policy + resource-policy)"
-    oc -n "$TRUSTEE_NS" apply -f "$bakdir/attestation-policy.yaml" >/dev/null 2>&1 || true
-    oc -n "$TRUSTEE_NS" apply -f "$bakdir/resource-policy.yaml" >/dev/null 2>&1 || true
+    oc -n "$TRUSTEE_NS" apply -f "${bakdir}/attestation-policy.yaml" >/dev/null 2>&1 || true
+    oc -n "$TRUSTEE_NS" apply -f "${bakdir}/resource-policy.yaml" >/dev/null 2>&1 || true
     restart_kbs
     restore_needed=0
   }
@@ -160,9 +171,9 @@ run_rung_a() {
     rung_a_restore
     oc -n "$NS" delete pod negtest-rung-a-ctrl negtest-rung-a --ignore-not-found --wait=false >/dev/null 2>&1 || true
     trap - EXIT
-    rm -rf "$bakdir"; rm -f "$manifest_ctrl" "$manifest_neg"
+    rm -rf "${bakdir:-}"; rm -f "${manifest_ctrl:-}" "${manifest_neg:-}"
   }
-  rung_a_exit_cleanup() { local rc=$?; rung_a_restore || true; rm -rf "$bakdir"; rm -f "$manifest_ctrl" "$manifest_neg"; exit "$rc"; }
+  rung_a_exit_cleanup() { local rc=$?; rung_a_restore || true; rm -rf "${bakdir:-}"; rm -f "${manifest_ctrl:-}" "${manifest_neg:-}"; exit "$rc"; }
 
   # Back up base policies as clean, apply-able (data-only) manifests.
   base_ap="$(oc -n "$TRUSTEE_NS" get cm attestation-policy -o jsonpath='{.data.default_cpu\.rego}' 2>/dev/null || true)"
@@ -210,7 +221,9 @@ run_rung_a() {
         POD_NAME=negtest-rung-a-ctrl TAMPER_INITDATA=0 RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then _rung_a_finish; return; fi
   oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found --wait >/dev/null 2>&1 || true
-  oc -n "$NS" apply -f "$manifest_ctrl" >/dev/null
+  if ! oc -n "$NS" apply -f "$manifest_ctrl" >/dev/null; then
+    skipt "rung-a: failed to apply the control pod — cannot run the negative"; _rung_a_finish; return
+  fi
   if control_released negtest-rung-a-ctrl; then
     echo "  control OK: untampered secret released under the restrictive policy (digest matches HOST_DATA)"
     oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found >/dev/null 2>&1 || true
@@ -277,7 +290,7 @@ restart_kbs() {
   # (proven on the rig: a 1-second "restart" left the old policy serving). Capture the old pod UID,
   # restart, then block until a DIFFERENT pod is Running+Ready, then settle so KBS re-reads its
   # mounted policy/VCEK configmaps+secrets.
-  local old new deadline
+  local old new deadline confirmed=0
   old="$(oc -n "$TRUSTEE_NS" get pods -l app=kbs -o jsonpath='{.items[0].metadata.uid}' 2>/dev/null || true)"
   oc -n "$TRUSTEE_NS" rollout restart deployment/trustee-deployment >/dev/null 2>&1 || true
   sleep 6  # let the deployment controller OBSERVE the restart before rollout status is trustworthy
@@ -287,27 +300,38 @@ restart_kbs() {
     new="$(oc -n "$TRUSTEE_NS" get pods -l app=kbs --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.uid}' 2>/dev/null || true)"
     if [[ -n "$new" && "$new" != "$old" ]] && \
        oc -n "$TRUSTEE_NS" wait pod -l app=kbs --for=condition=Ready --timeout=10s >/dev/null 2>&1; then
-      break
+      confirmed=1; break
     fi
     sleep 5
   done
+  # Surface an unconfirmed rotation: not fatal (the callers fail SAFE — on apply, a still-permissive
+  # KBS makes the tampered NEGATIVE pod RUN, which reports as a loud FAIL not a silent false PASS; on
+  # restore, the durable base configmap is already applied), but the operator should know KBS may not
+  # have reloaded yet (e.g. old UID was empty, or a second pre-existing kbs pod matched).
+  [[ "$confirmed" == "1" ]] || echo "  ⚠️  restart_kbs: could not confirm the KBS pod rotated within 150s — proceeding (results still fail-safe)"
   sleep 10  # settle: KBS loads policy/secrets from the mounted configmaps+secrets on startup
 }
 
 run_air_gap() {
   echo "[air-gap] swap VCEK for a WRONG cert → OfflineStore present-but-wrong → attestation must fail (not silently hit KDS)"
-  local vceks=() bakdir manifest restore_needed=0 vcek bogus
+  # vceks/bakdir/manifest/restore_needed are GLOBAL (not local): the EXIT backstop restores at global
+  # scope after a `set -e` unwind, where locals are gone — a local restore_needed reads unbound under
+  # `set -u` and the trap dies before restoring, leaving the bogus wrong-cert VCEK live and attestation
+  # broken cluster-wide until manual repair (same failure class fixed in run_rung_a above).
+  local vcek bogus
+  vceks=()
   mapfile -t vceks < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
   if [[ "${#vceks[@]}" -eq 0 ]]; then skipt "no vcek-* secret in $TRUSTEE_NS — run make collect-vcek first"; return; fi
   command -v openssl >/dev/null || { skipt "openssl required to mint the wrong VCEK for the air-gap test"; return; }
+  restore_needed=0
   bakdir="$(mktemp -d)"
   manifest="$(mktemp)"
 
   air_gap_restore() {
     local backup name
-    [[ "$restore_needed" == "1" ]] || return 0
+    [[ "${restore_needed:-0}" == "1" ]] || return 0
     echo "  (restoring ${#vceks[@]} VCEK secret(s))"
-    for backup in "$bakdir"/*.der; do
+    for backup in "${bakdir}"/*.der; do
       [[ -e "$backup" ]] || continue
       name="$(basename "$backup" .der)"
       oc -n "$TRUSTEE_NS" create secret generic "$name" --from-file=vcek.der="$backup" --dry-run=client -o yaml \
@@ -320,8 +344,8 @@ run_air_gap() {
   air_gap_exit_cleanup() {
     local rc=$?
     air_gap_restore || true
-    rm -rf "$bakdir"
-    rm -f "$manifest"
+    rm -rf "${bakdir:-}"
+    rm -f "${manifest:-}"
     exit "$rc"
   }
 
