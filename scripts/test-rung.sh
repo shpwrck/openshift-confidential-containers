@@ -34,6 +34,10 @@ export KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
 export TIMEOUT="${TIMEOUT:-120}"
 export KEEP_DENIED_PODS="${KEEP_DENIED_PODS:-0}"
 RUNG_SIGNED_IMAGE="${RUNG_SIGNED_IMAGE:-}"
+# The signed positive must gate on the SAME KBS policy resource the rig serves; `make run-rung-signed`
+# threads RUNG_SIGNED_POLICY_URI into IMAGE_SECURITY_POLICY_URI, so forward it here too (a rig with a
+# custom signed policy would otherwise be proven against apply-rung-image.sh's default).
+RUNG_SIGNED_POLICY_URI="${RUNG_SIGNED_POLICY_URI:-kbs:///default/security-policy/rung-signed}"
 
 NEGATIVE_TEST_SCRIPT="${NEGATIVE_TEST_SCRIPT:-$REPO_ROOT/scripts/negative-test.sh}"
 APPLY_RUNG_KBS_SCRIPT="${APPLY_RUNG_KBS_SCRIPT:-$REPO_ROOT/scripts/apply-rung-kbs.sh}"
@@ -91,7 +95,11 @@ run_rung() {
   case "$1" in
     rung-kbs)
       run_positive "rung-kbs" bash "$APPLY_RUNG_KBS_SCRIPT"
-      run_negative "rung-kbs" "rung-kbs"
+      # Transitional (#16): `negative-test.sh rung-kbs` currently exercises the measured-initdata
+      # (MEASUREMENT) negative, not the bare no-valid-attestation denial. #17 authors the dedicated
+      # bare-attestation negative for rung-kbs; #18 relocates the measurement proof to run_rung_rvps.
+      # Label it honestly so the sign-off evidence isn't read as the bare-attestation denial.
+      run_negative "rung-kbs" "rung-kbs (measured-initdata/measurement negative; bare-attestation denial pending #17)"
       ;;
     rung-rvps)
       skipm "rung-rvps positive: RVPS measurement overlay not wired — see #18"
@@ -99,7 +107,8 @@ run_rung() {
       ;;
     rung-signed)
       if [[ "$RUNG_SIGNED_IMAGE" == *@sha256:* ]]; then
-        run_positive "rung-signed" env RUNG_SIGNED_IMAGE="$RUNG_SIGNED_IMAGE" bash "$APPLY_RUNG_SIGNED_SCRIPT"
+        run_positive "rung-signed" env RUNG_SIGNED_IMAGE="$RUNG_SIGNED_IMAGE" \
+          IMAGE_SECURITY_POLICY_URI="$RUNG_SIGNED_POLICY_URI" bash "$APPLY_RUNG_SIGNED_SCRIPT"
       else
         skipp "rung-signed positive: set RUNG_SIGNED_IMAGE=<...@sha256:...> (source rung-image-artifacts/rung-signed.env)"
       fi
@@ -134,4 +143,9 @@ echo
 echo "test-rung summary: ${pass} passed, ${fail} failed, ${skip_manual} skipped(by-design), ${skip_prereq} skipped(prereq)."
 (( fail == 0 )) || { echo "FAIL: a positive or negative proof did not hold — treat as a sign-off blocker."; exit 1; }
 (( skip_prereq == 0 )) || { echo "INCOMPLETE: ${skip_prereq} proof(s) could not run; fix the reported prerequisites and rerun."; exit 3; }
-echo "All attempted proofs held (rung-kbs + rung-signed pos+neg green; rung-rvps->#18, rung-encrypted->#20 are manual)."
+# Report only what THIS invocation actually ran — never claim rungs that were not selected.
+if (( skip_manual > 0 )); then
+  echo "All attempted proofs held for WHICH=${WHICH}: ${pass} passed, ${skip_manual} skipped by design (rung-rvps->#18 / rung-encrypted->#20 are not failures)."
+else
+  echo "All attempted proofs held for WHICH=${WHICH}: ${pass} passed."
+fi
