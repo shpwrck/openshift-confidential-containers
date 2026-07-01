@@ -58,7 +58,9 @@ need_cluster() {
 wait_for_api() {
 	local deadline=$((SECONDS + WAIT_TIMEOUT))
 	while (( SECONDS < deadline )); do
-		oc whoami >/dev/null 2>&1 && return 0
+		# Bound each probe: a blackholed API (accepts the connection but never answers) during the
+		# reboot would otherwise hang a single `oc whoami` indefinitely, defeating WAIT_TIMEOUT.
+		oc whoami --request-timeout=5s >/dev/null 2>&1 && return 0
 		echo "Waiting ${SLEEP_SECONDS}s for cluster API to become reachable (node may be rebooting)..."
 		sleep "$SLEEP_SECONDS"
 	done

@@ -373,6 +373,17 @@ if [[ "${1:-}" == "sign-rung-b-only" ]]; then
 	mkdir -p "$ARTIFACT_DIR"
 	ensure_cosign_keys
 	sign_rung_b
+	# Emit the pushed DIGEST refs so `make deploy-trustee-rung-b` / `make run-rung-b-signed` need no
+	# manual `skopeo inspect` — apply-rung-image.sh rejects non-@sha256 refs, and the make defaults
+	# are the `:signed`/`:unsigned` TAGS. Source this file or read the digest refs from it.
+	rb_digest="$(skopeo_inspect "docker://${RUNG_B_IMAGE}" | jq -r '.Digest')"
+	ru_digest="$(skopeo_inspect "docker://${RUNG_B_UNSIGNED_IMAGE}" | jq -r '.Digest')"
+	{
+		echo "export RUNG_B_IMAGE=$(image_digest_ref "$RUNG_B_IMAGE" "$rb_digest")"
+		echo "export RUNG_B_UNSIGNED_IMAGE=$(image_digest_ref "$RUNG_B_UNSIGNED_IMAGE" "$ru_digest")"
+		echo "export RUNG_B_COSIGN_PUB=$COSIGN_PUB"
+	} > "$ARTIFACT_DIR/rung-b.env"
+	echo "Wrote $ARTIFACT_DIR/rung-b.env — 'source' it (or pass RUNG_B_IMAGE=<digest-ref>) before deploy-trustee-rung-b / run-rung-b-signed."
 	exit 0
 fi
 

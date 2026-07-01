@@ -215,15 +215,19 @@ deploy-trustee-rung-bc: verify-rung-c-key-wrap verify-rung-b-signature ## Phase 
 # scripts stay rung-b-only (rung-c is gated on a non-empty RUNG_C_KEY_FILE).
 .PHONY: build-rung-b
 build-rung-b: ## Phase 6 (rung-b only): build/push + cosign-sign the signed image (no rung-c, no keyprovider)
-	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" SOURCE_IMAGE_REF="$(SOURCE_IMAGE_REF)" SKOPEO_COPY_ARGS="$(SKOPEO_COPY_ARGS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_UNSIGNED_IMAGE="$(RUNG_B_UNSIGNED_IMAGE)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)" sign-rung-b-only
+	# SOURCE_IMAGE is deliberately NOT forwarded here: the Makefile default ($(RUNG_A_IMAGE)) is a
+	# public registry.access.redhat.com ref, which would break the first `skopeo copy` on a
+	# mirror-only bastion. Omitting it lets build-rung-images.sh use its MIRROR_REGISTRY-derived
+	# default; override with `make build-rung-b SOURCE_IMAGE=<ref>` if you really need a custom source.
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SKOPEO_COPY_ARGS="$(SKOPEO_COPY_ARGS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_UNSIGNED_IMAGE="$(RUNG_B_UNSIGNED_IMAGE)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)" sign-rung-b-only
 
 .PHONY: seed-rung-b-secrets
 seed-rung-b-secrets: ## Phase 6 (rung-b only): seed rung-b cosign pub + signed-image policy (no rung-c)
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_COSIGN_PUB="$(RUNG_B_COSIGN_PUB)" RUNG_B_POLICY_FILE="$(RUNG_B_POLICY_FILE)" RUNG_B_POLICY_IMAGE_PREFIX="$(RUNG_B_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_C_KEY_ID= RUNG_C_KEY_FILE= RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_COSIGN_PUB="$(RUNG_B_COSIGN_PUB)" RUNG_B_POLICY_FILE="$(RUNG_B_POLICY_FILE)" RUNG_B_POLICY_IMAGE_PREFIX="$(RUNG_B_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
 
 .PHONY: deploy-trustee-rung-b
 deploy-trustee-rung-b: ## Phase 6 (rung-b only): apply Trustee with rung-b KBS resources (no rung-c, no keyprovider)
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_COSIGN_PUB="$(RUNG_B_COSIGN_PUB)" RUNG_B_POLICY_FILE="$(RUNG_B_POLICY_FILE)" RUNG_B_POLICY_IMAGE_PREFIX="$(RUNG_B_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_C_KEY_ID= RUNG_C_KEY_FILE= RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_COSIGN_PUB="$(RUNG_B_COSIGN_PUB)" RUNG_B_POLICY_FILE="$(RUNG_B_POLICY_FILE)" RUNG_B_POLICY_IMAGE_PREFIX="$(RUNG_B_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
 
 .PHONY: run-rung-a-secret
 run-rung-a-secret: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
