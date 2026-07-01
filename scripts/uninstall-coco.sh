@@ -39,12 +39,31 @@ log() {
 	printf '\n== %s ==\n' "$*"
 }
 
-need_cluster() {
+need_tools() {
 	command -v oc >/dev/null || { echo "ERROR: oc is not on PATH" >&2; exit 2; }
 	# jq is load-bearing for CSV cleanup, the finalizer sweep, and validation — require it up
 	# front so uninstall does not silently degrade to a best-effort no-op on a minimal box.
 	command -v jq >/dev/null || { echo "ERROR: jq is required (CSV cleanup, finalizer sweep, and validation all need it)" >&2; exit 2; }
+}
+
+need_cluster() {
+	need_tools
 	oc whoami >/dev/null 2>&1 || { echo "ERROR: oc is not logged into a cluster" >&2; exit 2; }
+}
+
+# Wait for the API server to become reachable, bounded by WAIT_TIMEOUT. The uninstall removes the
+# kata MachineConfig, which reboots the single node, so a validate run chained immediately after
+# (e.g. `make uninstall-coco && make validate-coco-uninstalled`) must ride out the API-down reboot
+# window rather than failing fast the way a one-shot `oc whoami` would.
+wait_for_api() {
+	local deadline=$((SECONDS + WAIT_TIMEOUT))
+	while (( SECONDS < deadline )); do
+		oc whoami >/dev/null 2>&1 && return 0
+		echo "Waiting ${SLEEP_SECONDS}s for cluster API to become reachable (node may be rebooting)..."
+		sleep "$SLEEP_SECONDS"
+	done
+	echo "ERROR: cluster API not reachable within ${WAIT_TIMEOUT}s" >&2
+	return 1
 }
 
 oc_delete() {
@@ -287,11 +306,15 @@ validate_once() {
 }
 
 validate_wait() {
-	need_cluster
+	need_tools
+	# The paired uninstall reboots the SNO node; wait out the API-down window before validating,
+	# then use collect_failures directly (not validate_once) so a transient API blip mid-loop
+	# counts as "not converged yet" and retries, instead of exiting via need_cluster.
+	wait_for_api || return 1
 	local deadline=$((SECONDS + WAIT_TIMEOUT))
 
 	while (( SECONDS < deadline )); do
-		if validate_once; then
+		if collect_failures; then
 			echo "CoCo uninstall validation OK"
 			return 0
 		fi
