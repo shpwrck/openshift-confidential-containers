@@ -28,6 +28,7 @@ modinfo kvm_amd 2>/dev/null | grep -qi 'parm:.*sev_snp' || test -e /sys/module/k
 
 # --- PSP / firmware + BIOS-dependent bring-up ------------------------------
 SEV_DMESG="$(dmesg 2>/dev/null | grep -Ei 'ccp.*SEV|SEV-SNP|RMP table|kvm_amd.*SEV' || true)"
+# shellcheck disable=SC2001  # per-line indent; parameter expansion can't prefix each line
 echo "${SEV_DMESG}" | sed 's/^/    /'
 chk "PSP reports SEV-SNP API"      "echo \"\$SEV_DMESG\" | grep -qi 'SEV-SNP API'"
 chk "RMP table initialized"        "echo \"\$SEV_DMESG\" | grep -qi 'RMP table'"

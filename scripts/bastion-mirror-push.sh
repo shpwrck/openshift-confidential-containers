@@ -13,6 +13,7 @@ sudo rm -f /opt/mirror/OCMIRROR_DONE /opt/mirror/OCMIRROR_FAILED
 sudo mkdir -p "$WORKSPACE"
 echo "=== oc-mirror v2 push -> ${MIRROR_ENDPOINT} (workspace ${WORKSPACE}) ==="
 # Run as root so it reads /root/.docker/config.json and can write the root-owned workspace.
+# shellcheck disable=SC2024  # sudo applies to `tee` inside the process substitution, not a redirect
 sudo env PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
   oc-mirror --v2 -c "$CONFIG" --workspace "file://${WORKSPACE}" "docker://${MIRROR_ENDPOINT}" \
   > >(sudo tee "$LOG") 2>&1

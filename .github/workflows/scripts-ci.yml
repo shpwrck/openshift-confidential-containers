@@ -1,0 +1,78 @@
+name: scripts-ci
+
+# Portability gate for the operator-local shell scripts. Customer operators drive the
+# runbooks from stock macOS (BSD userland + bash 3.2) as well as Linux, so every script
+# under scripts/ is syntax-checked, shellcheck'd, and lint'd on BOTH an Ubuntu and a
+# macOS runner. Node-side code (inside `oc debug`/chroot heredocs) runs on RHCOS = GNU
+# and is intentionally NOT exercised here — it never runs in the operator's local shell.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'gitops/**'
+      - '.github/workflows/scripts-ci.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'gitops/**'
+      - '.github/workflows/scripts-ci.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  shell-portability:
+    name: shell portability (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck + kustomize
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # BSD userland + Homebrew tooling — the operator's real environment.
+            brew install shellcheck kustomize
+          else
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+            # Pinned kustomize release binary — `kustomize build` is hardware-free (no cluster).
+            KUSTOMIZE_VERSION=5.4.3
+            curl -fsSL -o /tmp/kustomize.tgz \
+              "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+            tar -xzf /tmp/kustomize.tgz -C /tmp
+            sudo install -m 0755 /tmp/kustomize /usr/local/bin/kustomize
+          fi
+          shellcheck --version | sed -n '1,2p'
+          kustomize version
+
+      - name: Syntax check under the operator's bash (3.2 on macOS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # macOS ships bash 3.2 at /bin/bash — the operator's real interpreter — while $PATH
+          # points at a newer Homebrew bash. Use /bin/bash here so this leg actually rejects
+          # bash-4-only constructs (mapfile, ${x^^}, declare -A, readarray, …).
+          BN=bash
+          if [ "$RUNNER_OS" = "macOS" ] && [ -x /bin/bash ]; then BN=/bin/bash; fi
+          "$BN" --version | head -1
+          # One check per file: `bash -n a b c` parses only the first arg, and `find -exec … \;`
+          # swallows the child exit — so loop and let `set -e` fail the step on the first bad script.
+          while IFS= read -r f; do "$BN" -n "$f"; done < <(find scripts -type f -name '*.sh')
+          echo "bash -n OK on all scripts"
+
+      - name: ShellCheck (follows sourced lib via -x)
+        shell: bash
+        run: shellcheck -x scripts/*.sh scripts/lib/*.sh
+
+      - name: Hardware-free lint (scripts/lint.sh)
+        shell: bash
+        run: bash scripts/lint.sh
