@@ -106,8 +106,9 @@ This reads the report's `CHIP_ID`, fetches **that socket's** VCEK (snpguest uses
 ### 4. Seed the secrets and wire KbsConfig
 
 Carry `vcek-bundle/` into the air gap and re-run the collect (or the Trustee apply). Secrets are
-named **`vcek-snp-<first-32-hwid-hex>`** (hwid-derived, stable — never renumbered when the chip set
-changes), and `scripts/apply-trustee.sh` renders one `KbsConfig.spec.kbsLocalCertCacheSpec.secrets`
+named **`vcek-snp-<hwid-prefix>-<hash>`** (an hwid prefix plus a hash of the full CHIP_ID — stable,
+never renumbered when the chip set changes, and collision-free across sockets), and
+`scripts/apply-trustee.sh` renders one `KbsConfig.spec.kbsLocalCertCacheSpec.secrets`
 entry per hwid, mounting each at `…/kds-store/vcek/<hwid>/vcek.der`.
 
 ```bash
@@ -126,7 +127,11 @@ make deploy-trustee                 # re-renders KbsConfig with one entry per so
 
 ## TCB refresh
 
-A firmware/microcode update changes a chip's `reported_tcb`, which changes its VCEK. Re-run this
-procedure after any TCB change; the hwid-derived secret names mean the refreshed cert updates the
-right secret in place (re-fetching also gives a new cert *validity window* for the same VCEK key —
-harmless).
+A firmware/microcode update changes a chip's `reported_tcb`, which changes its VCEK — but **not**
+its `CHIP_ID`. So a TCB refresh reuses the same `vcek-bundle/<hwid>/` dir and secret: re-run this
+procedure and the refreshed cert updates the right secret in place (re-fetching also gives a new
+cert *validity window* for the same VCEK key — harmless).
+
+If you **replace** a socket/chip (a *new* `CHIP_ID`), delete the old `vcek-bundle/<old-hwid>/` dir
+and its `vcek-snp-*` secret — otherwise `collect-vcek.sh` re-seeds it and `apply-trustee.sh` renders
+a stale (unused) `KbsConfig` entry for a chip that is no longer present.

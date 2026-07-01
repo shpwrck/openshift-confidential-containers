@@ -49,13 +49,15 @@ fi
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-# Stable, self-describing VCEK secret name derived from the chip HWID. This MUST match
-# seed-trustee-secrets.sh and apply-trustee.sh render_kbsconfig, which map this same name to the
-# per-chip mountPath. Using an hwid-derived prefix (not a positional index) means a changed chip
-# set — a TCB refresh, or adding/replacing a socket — never renumbers existing secrets and so can
-# never remap a KbsConfig entry to the WRONG chip. 32 hex (16 bytes) of a hardware-unique id is
-# collision-free; the full lowercase hwid still goes in the mountPath the verifier reads.
-vcek_secret_name() { printf 'vcek-snp-%s\n' "${1:0:32}"; }
+# Stable, collision-free VCEK secret name: a readable hwid prefix + a hash of the FULL hwid. This
+# MUST match seed-trustee-secrets.sh and apply-trustee.sh render_kbsconfig, which map this same name
+# to the per-chip mountPath. An hwid-DERIVED name (not a positional index) means a changed chip set
+# — a TCB refresh, or adding/replacing a socket — never renumbers existing secrets and so can never
+# remap a KbsConfig entry to the WRONG chip. Hashing the full 64-byte CHIP_ID (not just a prefix)
+# keeps two sockets distinct even if AMD gives their CHIP_IDs a shared leading structure (the layout
+# is not publicly specified). <=63 chars (it becomes a pod volume name); the full lowercase hwid
+# still goes in the mountPath the verifier reads.
+vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256sum | cut -c1-16)"; }
 
 parse_hwid_from_url() {
   local url="$1" hwid

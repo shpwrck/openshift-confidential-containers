@@ -776,7 +776,8 @@ scripts/collect-vcek.sh <node-name> trustee-operator-system
 This collects the **master** socket's VCEK, keyed by **lowercase** HWID: fetched via `snphost show
 vcek-url` → downloaded on an **internet-connected** host (the rig node is egress-blocked) → carried
 in. Generation-agnostic (dodges the upstream Trustee `Milan`-hardcode bug). Secrets are named
-`vcek-snp-<first-32-hwid-hex>` (hwid-derived and stable — a changed chip set never renumbers them).
+`vcek-snp-<hwid-prefix>-<hash>` (hwid-derived, stable, collision-free — a changed chip set never
+renumbers them and two sockets never share a name).
 
 > **Single-socket nodes are fully covered by the command above.** On a **dual-socket (2P)** box,
 > host-side tools can only yield the **master** socket's VCEK (the master PSP answers all host-side
