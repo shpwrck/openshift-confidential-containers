@@ -277,12 +277,12 @@ run_rung_signed() {
   if ! render_or_skip "rung-signed negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
-        IMAGE_SECURITY_POLICY_URI="$RUNG_SIGNED_POLICY_URI" POD_NAME=negtest-rung-b RUNG_SIGNED_IMAGE="$unsigned_image" RENDER_ONLY=1 \
+        IMAGE_SECURITY_POLICY_URI="$RUNG_SIGNED_POLICY_URI" POD_NAME=negtest-rung-signed RUNG_SIGNED_IMAGE="$unsigned_image" RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-signed.sh"; then
     rm -f "$manifest"
     return
   fi
-  expect_fail_closed "negtest-rung-b" "$manifest" "rung-signed unsigned image rejected by image_security_policy" "$RUNG_SIGNED_DENIAL_RE" "rung-signed signature/policy denial"
+  expect_fail_closed "negtest-rung-signed" "$manifest" "rung-signed unsigned image rejected by image_security_policy" "$RUNG_SIGNED_DENIAL_RE" "rung-signed signature/policy denial"
   rm -f "$manifest"
 }
 

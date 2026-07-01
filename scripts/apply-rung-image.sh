@@ -213,8 +213,8 @@ case "$RUNG" in
 		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$RUNG_ENCRYPTED_KEY_ID")")
 		;;
 	signed)
-		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-b-signed-pod.yaml}"
-		POD_NAME="${POD_NAME:-rung-b-signed}"
+		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-signed-pod.yaml}"
+		POD_NAME="${POD_NAME:-rung-signed}"
 		RUNG_IMAGE="${RUNG_SIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
 		RUNG_IMAGE_VAR=RUNG_SIGNED_IMAGE
 		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/rung-signed}"
