@@ -42,17 +42,24 @@ echo "repro-loop start $(now) — durable status: $STATUS_FILE"
 
 hard_fail=0 prereq=0 ran=0 passed=0 skipped=0
 
-# run_step <step-label> <command...>: run one proof step, map its exit code, record it durably.
+# run_step <step-label> <command...>: run one proof step, map its result, record it durably.
 # Resumes: a step already recorded PASS is skipped. Stops the loop on the first hard FAIL.
+# Records PASS only when at least one proof actually held — a rung that exits 0 but ONLY logged
+# by-design skips (e.g. rung-rvps until #18) is recorded SKIP, not PASS, so the evidence never
+# over-claims coverage. The proof count is read from test-rung.sh/negative-test.sh's "N passed" summary.
 run_step() {
   local step="$1"; shift
   if recorded_pass "$step"; then echo "==== [$step] already PASS (resume) — skipping ===="; passed=$((passed+1)); return 0; fi
   echo "==== [$step] deploy -> positive -> negative ===="
-  local rc=0
-  "$@" || rc=$?
+  local out rc npass
+  out="$(mktemp)"
+  "$@" 2>&1 | tee "$out"; rc="${PIPESTATUS[0]}"
+  npass="$(grep -oE 'summary: [0-9]+ passed' "$out" 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)"; npass="${npass:-0}"
+  rm -f "$out"
   case "$rc" in
-    0) record "$step" PASS; passed=$((passed+1)); echo "[$step] PASS" ;;
-    3) record "$step" SKIP; skipped=$((skipped+1)); echo "[$step] SKIP (by-design or missing prerequisite — see output above)"; prereq=1 ;;
+    0) if [[ "$npass" -gt 0 ]]; then record "$step" PASS; passed=$((passed+1)); echo "[$step] PASS (${npass} proof(s) held)"
+       else record "$step" SKIP; skipped=$((skipped+1)); echo "[$step] SKIP (exit 0 but only by-design skips — nothing proven yet, e.g. rung-rvps until #18)"; fi ;;
+    3) record "$step" SKIP; skipped=$((skipped+1)); echo "[$step] SKIP (missing prerequisite — see output above)"; prereq=1 ;;
     *) record "$step" FAIL; echo "[$step] FAIL (exit $rc) — stopping the loop so the finding surfaces"; hard_fail=1 ;;
   esac
   ran=$((ran+1))
