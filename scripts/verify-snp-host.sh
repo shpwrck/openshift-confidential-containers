@@ -16,7 +16,6 @@ echo "== SEV-SNP host gate on ${NODE} =="
 
 # 1. PSP / firmware healthy, RMP table present, no INVALID_CONFIG (0x3 = Memory Interleaving off)
 SEV_DMESG="$(dbg "dmesg | grep -E 'ccp.*SEV|SEV-SNP|kvm_amd.*SEV' || true")"
-# shellcheck disable=SC2001  # per-line indent; parameter expansion can't prefix each line
 echo "${SEV_DMESG}" | sed 's/^/    /'
 chk "PSP reports SEV-SNP API"      "echo \"\$SEV_DMESG\" | grep -qi 'SEV-SNP API'"
 chk "RMP table initialized"        "echo \"\$SEV_DMESG\" | grep -qi 'RMP table'"
