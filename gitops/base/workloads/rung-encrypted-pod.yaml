@@ -7,7 +7,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: rung-c-encrypted
+  name: rung-encrypted
   namespace: default
   annotations:
     io.katacontainers.config.hypervisor.default_memory: "2048"
@@ -27,7 +27,7 @@ spec:
         - -c
         - |
           while true; do
-            echo 'rung-c: encrypted image decrypted and running'
+            echo 'rung-encrypted: encrypted image decrypted and running'
             sleep 60
           done
       resources:
