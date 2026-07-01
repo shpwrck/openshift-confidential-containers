@@ -32,10 +32,22 @@ See [`docs/architecture.md`](docs/architecture.md) for component diagrams, the a
 - **c** — encrypted container image (wrong measurement → pod won't start; direct pull is upstream-blocked, cri-o/cri-o#10084)
 
 Each rung is "done" only when (1) reproduced from written steps on a fresh node and (2) its
-**negative test** (the denial) passes. See [`docs/design/engagement-design.md`](docs/design/engagement-design.md).
-Rungs b/c have repo scaffolding, but are not yet hardware-proven; see Phase 6 of
-[`docs/runbooks/install-execution-plan.md`](docs/runbooks/install-execution-plan.md)
-for the artifact build, KBS resource, apply, and negative-test sequence.
+**negative test** (the denial) passes. Run `make negative-test WHICH=<a|b|c|air-gap|all>` — each
+denial is self-contained: the secret/policy/VCEK swap it needs is backed up and **automatically
+reverted**, so the rig returns to baseline.
+
+**Proof status** (rig: disconnected SNO, EPYC Genoa; last proven 2026-07-01):
+
+| Rung / test | Happy path | Negative (the denial) | State |
+|---|---|---|---|
+| **a** — secret release | ✅ air-gapped attest via VCEK **OfflineStore** | ✅ restrictive measured-initdata policy — tampered initdata → secret **withheld (403)**; untampered control still releases (apply+revert) | **PROVEN** |
+| **air-gap** — OfflineStore is load-bearing | (rung-a happy) | ✅ swap VCEK for a wrong cert → attestation **401** (not a silent KDS hit) | **PROVEN** |
+| **b** — signed image | scaffolding + tag-shaped diagnostics | `image_security_policy` rejects unsigned/tampered | signature **transport gap** — the minimal mirror-registry doesn't serve the Quay signature extension (see [`failure-modes.md`](docs/runbooks/failure-modes.md)) |
+| **c** — encrypted image | — | wrong measurement → key withheld → pod won't start | **upstream-blocked** — host encrypted-layer pre-pull, [cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084) |
+
+See Phase 6 of [`docs/runbooks/install-execution-plan.md`](docs/runbooks/install-execution-plan.md)
+for the build → KBS-resource → apply → negative sequence, and
+[`docs/design/engagement-design.md`](docs/design/engagement-design.md) §5 for the definition of "proven".
 
 ## Layout
 

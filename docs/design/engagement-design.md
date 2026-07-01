@@ -59,10 +59,10 @@ test passes:
 
 | Rung | Happy path | **Negative test (the proof)** |
 |------|-----------|-------------------------------|
-| a — secret release | `cdh/resource/.../attestation-status` → `{"status":"success"}` | restrictive policy + wrong/empty RVPS (or tampered initdata) → **error, secret withheld** |
+| a — secret release | `cdh/resource/.../attestation-status` → `{"status":"success"}` | `make negative-test WHICH=rung-a` auto-applies+reverts a restrictive measured-initdata policy: untampered pod releases (control), **tampered initdata → secret withheld (403)**. Proven on the rig 2026-07-01 (`init_data == sha256(initdata bytes)` confirmed as the measured HOST_DATA). |
 | b — signed image | signed image pulls | unsigned/tampered image → `image_security_policy` **rejects** |
 | c — encrypted image *(upstream-blocked: cri-o/cri-o#10084)* | pod Running | wrong measurement → key withheld → **pod won't start** |
-| air-gap | attestation succeeds offline | temporarily remove Trustee `vcek-*` Secrets, then rerun an otherwise happy rung-a request → **attestation fails** and Secrets are restored (proves the cache is load-bearing, not silently hitting a reachable KDS) |
+| air-gap | attestation succeeds offline | temporarily **swap each Trustee `vcek-*` Secret for a valid-but-wrong cert** (deleting the required-volume secret would only crash-loop KBS, not deny attestation), rerun an otherwise happy rung-a request → **attestation fails** (401, KDS-chain verify), then restore. Proves the cache is load-bearing, not silently hitting a reachable KDS. **Requires node egress locked**, else the wrong cert is silently repaired from the public KDS and the test falsely passes. |
 
 CI (no hardware): `kustomize build`, kubeconform, `conftest`/OPA on the Rego policies, yamllint.
 Hardware e2e is manual/scheduled on the rented node.

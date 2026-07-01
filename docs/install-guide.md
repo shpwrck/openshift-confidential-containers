@@ -215,7 +215,7 @@ Each file below has one consumer and one job.
 | [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml) | Trustee operator. | Wires ConfigMaps, Secrets, service mode, and OfflineStore VCEK cache into KBS. | This is where air-gapped SNP verification becomes real: no cached VCEK, no attestation. |
 | [`gitops/base/workloads/initdata.example.toml`](../gitops/base/workloads/initdata.example.toml) | Encoded into pod annotations. | Guest-side AA/CDH config: KBS URL, resources, policies, registry config. | The bytes are measured; any environment change can require regenerated RVPS values. |
 | [`gitops/base/workloads/rung-a-secret-pod.yaml`](../gitops/base/workloads/rung-a-secret-pod.yaml) | Kubernetes/Kata. | First proof workload: request a KBS secret before starting. | Verifies the complete pod → CVM → Trustee → secret path. |
-| [`gitops/base/airgap-egress/`](../gitops/base/airgap-egress/) | MachineConfigPool. | Optional post-install host egress lockdown. | Keeps the installed RHCOS node honest after the raw-OS nft rule is wiped by install. |
+| [`gitops/base/airgap-egress/`](../gitops/base/airgap-egress/) | MachineConfig (node-level, reboot-persistent oneshot). | **Required** post-install host egress lockdown — opt-in *timing* (apply after the cluster is healthy so a drop policy can't wedge bootstrap), **not** an optional outcome. Flip `role: master`→`worker` on a multi-node cluster. | Keeps the installed RHCOS node honest after the raw-OS nft rule is wiped by install; **without it the air-gap negative test can falsely pass by reaching the public KDS.** |
 
 #### Hardware-bound artifacts
 

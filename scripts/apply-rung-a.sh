@@ -17,6 +17,7 @@ WAIT_TIMEOUT="${WAIT_TIMEOUT:-900}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 CATALOGSOURCE="${CATALOGSOURCE:-cs-redhat-operator-index-v4-20}"
 RENDER_ONLY="${RENDER_ONLY:-0}"
+EMIT_INITDATA="${EMIT_INITDATA:-0}"
 TAMPER_INITDATA="${TAMPER_INITDATA:-0}"
 
 tmpdir=""
@@ -172,6 +173,15 @@ cd "$REPO_ROOT"
 tmpdir="$(mktemp -d)"
 
 render_initdata "$(read_file "$MIRROR_CA")" "$tmpdir/initdata.toml"
+
+# EMIT_INITDATA: print the exact TOML that gets hardware-measured into HOST_DATA and exit. Used to
+# compute the measured-initdata gate digest (sha256 of these bytes) for the rung-a restrictive
+# negative policy, so the policy and the deployed pod agree byte-for-byte. Honors TAMPER_INITDATA.
+if [[ "$EMIT_INITDATA" == "1" ]]; then
+	cat "$tmpdir/initdata.toml"
+	exit 0
+fi
+
 initdata="$(bash "$REPO_ROOT/scripts/encode-initdata.sh" encode "$tmpdir/initdata.toml")"
 render_pod "$initdata" "$tmpdir/rung-a-secret.yaml"
 
