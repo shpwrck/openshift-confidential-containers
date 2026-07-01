@@ -362,11 +362,16 @@ if [[ "${1:-}" == "default-cosign-sign-args" ]]; then
 fi
 
 if [[ "${1:-}" == "sign-rung-b-only" ]]; then
+	# rung-b (signed image) WITHOUT rung-c: skopeo copy + cosign sign only, so it needs no
+	# coco-keyprovider (which encrypts rung-c and may be unavailable in an air gap). Self-contained
+	# — generates the cosign key pair if absent so `make build-rung-b` is a single step.
 	[[ "$#" -eq 1 ]] || die "usage: $0 sign-rung-b-only"
 	need skopeo
 	need jq
 	need cosign
 	configure_cosign_args
+	mkdir -p "$ARTIFACT_DIR"
+	ensure_cosign_keys
 	sign_rung_b
 	exit 0
 fi

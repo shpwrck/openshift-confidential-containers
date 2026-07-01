@@ -208,6 +208,23 @@ seed-rung-bc-secrets: verify-rung-c-key-wrap verify-rung-b-signature ## Phase 6:
 deploy-trustee-rung-bc: verify-rung-c-key-wrap verify-rung-b-signature ## Phase 6: apply Trustee with rung-b/c KBS resources enabled
 	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_C_KEY_ID="$(RUNG_C_KEY_ID)" RUNG_C_KEY_FILE="$(RUNG_C_KEY_FILE)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_COSIGN_PUB="$(RUNG_B_COSIGN_PUB)" RUNG_B_POLICY_FILE="$(RUNG_B_POLICY_FILE)" RUNG_B_POLICY_IMAGE_PREFIX="$(RUNG_B_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
 
+## --- rung-b only (signed image, no rung-c / no coco-keyprovider) ----------
+# rung-b (signed image) is independent of rung-c (encrypted image). These targets prove rung-b
+# WITHOUT the rung-c encryption path, so they need neither coco-keyprovider (often unavailable in
+# an air gap) nor the rung-c artifacts. They deliberately omit all RUNG_C_* env so the trustee
+# scripts stay rung-b-only (rung-c is gated on a non-empty RUNG_C_KEY_FILE).
+.PHONY: build-rung-b
+build-rung-b: ## Phase 6 (rung-b only): build/push + cosign-sign the signed image (no rung-c, no keyprovider)
+	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" SOURCE_IMAGE_REF="$(SOURCE_IMAGE_REF)" SKOPEO_COPY_ARGS="$(SKOPEO_COPY_ARGS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_UNSIGNED_IMAGE="$(RUNG_B_UNSIGNED_IMAGE)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)" sign-rung-b-only
+
+.PHONY: seed-rung-b-secrets
+seed-rung-b-secrets: ## Phase 6 (rung-b only): seed rung-b cosign pub + signed-image policy (no rung-c)
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_COSIGN_PUB="$(RUNG_B_COSIGN_PUB)" RUNG_B_POLICY_FILE="$(RUNG_B_POLICY_FILE)" RUNG_B_POLICY_IMAGE_PREFIX="$(RUNG_B_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
+
+.PHONY: deploy-trustee-rung-b
+deploy-trustee-rung-b: ## Phase 6 (rung-b only): apply Trustee with rung-b KBS resources (no rung-c, no keyprovider)
+	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_B_IMAGE="$(RUNG_B_IMAGE)" RUNG_B_COSIGN_PUB="$(RUNG_B_COSIGN_PUB)" RUNG_B_POLICY_FILE="$(RUNG_B_POLICY_FILE)" RUNG_B_POLICY_IMAGE_PREFIX="$(RUNG_B_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
+
 .PHONY: run-rung-a-secret
 run-rung-a-secret: ## Phase 6: render initdata, launch rung-a, and wait for the CoCo pod to run
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_A_IMAGE="$(RUNG_A_IMAGE)" bash "$(APPLY_RUNG_A_SCRIPT)"
