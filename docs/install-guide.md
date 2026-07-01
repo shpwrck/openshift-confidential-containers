@@ -804,6 +804,17 @@ mirror image>`, and, if Veritas still tries public `quay.io` release refs throug
 release and `rhel-coreos-extensions` images to the mirror. The script expects Veritas's output
 directory and copies `rvps-reference-values.yaml` to `OUT`.
 
+> **Disconnected landmine (proven on the rig 2026-07-01):** Veritas's *release-payload
+> verification* does a registry **tags-list** on `quay.io/openshift-release-dev`, which
+> `registries.conf` mirroring does **not** redirect (mirrors cover digest/manifest pulls, not tag
+> enumeration) — so a **mirror-only** pull secret fails `401` at "Verifying release payload". Run
+> gen-rvps on the **bastion** (it has quay egress; the node is egress-locked) with a **MERGED
+> authfile** — RH/quay creds (for the tags-list) **plus** mirror creds (for the digest pulls the
+> `REGISTRIES_CONF` redirect sends to the mirror):
+> `jq -s '{auths:(.[0].auths + .[1].auths)}' pull-secret.json ~/.docker/config.json > authfile.json`,
+> then `PULL_SECRET=authfile.json`. Full recipe in the
+> [`scripts/gen-rvps-veritas.sh`](../scripts/gen-rvps-veritas.sh) header.
+
 ### 7.5 Wire both into Trustee
 
 Mount the VCEK secrets via `KbsConfig.spec.kbsLocalCertCacheSpec` at

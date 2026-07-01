@@ -283,7 +283,11 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
       per distinct socket/hardware config). On disconnected rigs, set `DEBUG_IMAGE` to a cached
       image for `oc debug node`; if Veritas's internal `oc adm release info` still reaches public
       `quay.io`, pass a temporary `VERITAS_OC_WRAPPER` that rewrites the release and
-      `rhel-coreos-extensions` refs to the mirror.
+      `rhel-coreos-extensions` refs to the mirror. **Also:** Veritas's release-payload
+      verification does a quay **tags-list** that `registries.conf` mirroring does not redirect,
+      so run on the **bastion** (has quay egress) with a **merged authfile** — RH/quay creds (for
+      the tags-list) + mirror creds (for the redirected digest pulls). See the
+      [`gen-rvps-veritas.sh`](../../scripts/gen-rvps-veritas.sh) header for the recipe.
 - [ ] **Wire both into Trustee:** mount the VCEK secrets via
       `KbsConfig.spec.kbsLocalCertCacheSpec` (path
       `…/kds-store/vcek/<hwid>/vcek.der`) and merge the RVPS output into the
