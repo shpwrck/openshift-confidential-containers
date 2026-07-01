@@ -33,7 +33,7 @@ runtimeclasses=(kata kata-cc kata-nvidia-gpu kata-cc-nvidia-gpu)
 # delete_kustomize never sweeps them; they must be deleted by name (see apply-rung-*.sh and
 # negative-test.sh). They live in WORKLOAD_NS (default `default`), bound to the kata-cc runtimeclass.
 WORKLOAD_NS="${WORKLOAD_NS:-default}"
-workload_pods=(rung-a rung-a-secret rung-c-encrypted rung-b-signed negtest-rung-a negtest-rung-c negtest-rung-b negtest-air-gap)
+workload_pods=(rung-a rung-a-secret rung-c-encrypted rung-signed negtest-rung-a negtest-rung-c negtest-rung-signed negtest-air-gap)
 
 log() {
 	printf '\n== %s ==\n' "$*"
