@@ -115,29 +115,121 @@ render_or_skip() { # render_or_skip <label> <output-file> <command...>
   return 1
 }
 
+# control_released <pod>: 0 if the pod reaches Ready within TIMEOUT (secret released), else 1 —
+# early-out to 1 the moment the attestation-gate init container terminates non-zero (withheld).
+control_released() {
+  local name="$1" deadline=$(( SECONDS + TIMEOUT )) ec
+  while (( SECONDS < deadline )); do
+    [[ "$(oc -n "$NS" get pod "$name" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == "True" ]] && return 0
+    ec="$(oc -n "$NS" get pod "$name" -o jsonpath='{.status.initContainerStatuses[0].state.terminated.exitCode}' 2>/dev/null)"
+    [[ -n "$ec" && "$ec" != "0" ]] && return 1
+    sleep 5
+  done
+  return 1
+}
+
+# rung-a is SELF-CONTAINED (mirrors the air-gap swap-and-restore): the base attestation-policy is
+# permissive by design (`default configuration := 2`, resource-policy `allow := true`), so an
+# init-data tamper alone changes HOST_DATA but nothing gates on it. Here we temporarily apply a
+# RESTRICTIVE measured-initdata policy (configuration affirmed ONLY when input.init_data == the
+# sha256 of the exact initdata bytes; the rung-a secret released ONLY when configuration is affirmed),
+# then:
+#   CONTROL  — untampered pod MUST release (proves the digest matches this build's measured HOST_DATA;
+#              a false-pass guard: if it doesn't release we SKIP, never claim a tamper denial), and
+#   NEGATIVE — tampered pod MUST be withheld.
+# Base policies are backed up (data-only) and ALWAYS restored (trap), so the rig returns to baseline.
+# Proven on the rig 2026-07-01: untampered RELEASED, tampered WITHHELD (HTTP 403), base restored.
 run_rung_a() {
-  echo "[rung-a] secret release — tamper measured initdata (HOST_DATA) so attestation is not affirmed → secret withheld"
-  local manifest
-  # The init-data tamper only DENIES if a RESTRICTIVE attestation policy gates the configuration
-  # claim on init_data/HOST_DATA. The base policy is permissive by design (attestation-policy:
-  # `default configuration := 2` with no init_data check; resource-policy: `allow := true`), so the
-  # tamper changes HOST_DATA but nothing gates on it → attestation still affirms → the pod RUNS.
-  # Skip honestly (not a false sign-off FAIL) until the restrictive Step-5/6 policy is applied.
-  if ! oc -n "$TRUSTEE_NS" get configmap attestation-policy -o jsonpath='{.data.default_cpu\.rego}' 2>/dev/null | grep -q 'init_data'; then
-    skipt "rung-a: attestation-policy does not gate on init_data (permissive base) — apply the restrictive measured-initdata policy (make render-rung-c-measurement-policy / Step 5-6) before this negative, or use WHICH=air-gap which denies via a wrong VCEK against the base policy"
-    return
+  echo "[rung-a] secret release — restrictive measured-initdata policy: untampered RELEASES, tampered WITHHELD (apply+revert)"
+  local bakdir manifest_ctrl manifest_neg initdata_file restrictive digest base_ap base_rp restore_needed=0
+  local resource_uri="${RUNG_A_RESOURCE_URI:-kbs:///default/attestation-status/status}"
+  command -v sha256sum >/dev/null || { skipt "rung-a: sha256sum required for the measured-initdata gate"; return; }
+
+  bakdir="$(mktemp -d)"; manifest_ctrl="$(mktemp)"; manifest_neg="$(mktemp)"
+  initdata_file="$bakdir/initdata.toml"; restrictive="$bakdir/restrictive.yaml"
+
+  rung_a_restore() {
+    [[ "$restore_needed" == "1" ]] || return 0
+    echo "  (restoring base attestation-policy + resource-policy)"
+    oc -n "$TRUSTEE_NS" apply -f "$bakdir/attestation-policy.yaml" >/dev/null 2>&1 || true
+    oc -n "$TRUSTEE_NS" apply -f "$bakdir/resource-policy.yaml" >/dev/null 2>&1 || true
+    restart_kbs
+    restore_needed=0
+  }
+  _rung_a_finish() {  # explicit teardown for every return path (EXIT trap is only a crash backstop)
+    rung_a_restore
+    oc -n "$NS" delete pod negtest-rung-a-ctrl negtest-rung-a --ignore-not-found --wait=false >/dev/null 2>&1 || true
+    trap - EXIT
+    rm -rf "$bakdir"; rm -f "$manifest_ctrl" "$manifest_neg"
+  }
+  rung_a_exit_cleanup() { local rc=$?; rung_a_restore || true; rm -rf "$bakdir"; rm -f "$manifest_ctrl" "$manifest_neg"; exit "$rc"; }
+
+  # Back up base policies as clean, apply-able (data-only) manifests.
+  base_ap="$(oc -n "$TRUSTEE_NS" get cm attestation-policy -o jsonpath='{.data.default_cpu\.rego}' 2>/dev/null || true)"
+  base_rp="$(oc -n "$TRUSTEE_NS" get cm resource-policy   -o jsonpath='{.data.policy\.rego}'      2>/dev/null || true)"
+  if [[ -z "$base_ap" || -z "$base_rp" ]]; then
+    skipt "rung-a: base attestation-policy/resource-policy not found in $TRUSTEE_NS — deploy Trustee first"; _rung_a_finish; return
   fi
-  manifest="$(mktemp)"
-  if ! render_or_skip "rung-a negative manifest" "$manifest" \
+  printf '%s' "$base_ap" > "$bakdir/attestation.rego"
+  printf '%s' "$base_rp" > "$bakdir/resource.rego"
+  oc -n "$TRUSTEE_NS" create cm attestation-policy --from-file=default_cpu.rego="$bakdir/attestation.rego" --dry-run=client -o yaml > "$bakdir/attestation-policy.yaml"
+  oc -n "$TRUSTEE_NS" create cm resource-policy   --from-file=policy.rego="$bakdir/resource.rego"          --dry-run=client -o yaml > "$bakdir/resource-policy.yaml"
+
+  # Untampered measured-initdata digest — must match the CONTROL/NEGATIVE pods byte-for-byte, so use
+  # the SAME env apply-rung-a.sh renders the pods with (render_initdata is deterministic).
+  if ! render_or_skip "rung-a untampered initdata" "$initdata_file" \
+      env EMIT_INITDATA=1 TAMPER_INITDATA=0 NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
+        bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then _rung_a_finish; return; fi
+  digest="$(sha256sum "$initdata_file" | awk '{print $1}')"
+
+  # Restrictive policy gating the rung-a secret path on that digest (the renderer is generic — the
+  # gated resource is whatever RUNG_C_KEY_ID points at; its rego identifiers just read 'image_key').
+  if ! render_or_skip "rung-a restrictive policy" "$restrictive" \
+      env RUNG_C_KEY_ID="$resource_uri" NS="$TRUSTEE_NS" \
+        bash "$REPO_ROOT/scripts/render-rung-c-measurement-policy.sh" "$initdata_file"; then _rung_a_finish; return; fi
+  if ! grep -q "$digest" "$restrictive"; then
+    skipt "rung-a: rendered policy is missing the initdata digest (renderer/initdata mismatch)"; _rung_a_finish; return
+  fi
+
+  # From here we MUTATE cluster policy — arm the crash backstop, then apply + wait until it is LIVE.
+  restore_needed=1; trap rung_a_exit_cleanup EXIT
+  echo "  applying restrictive measured-initdata policy (gating $resource_uri); will revert"
+  if ! oc -n "$TRUSTEE_NS" apply -f "$restrictive" >/dev/null; then
+    skipt "rung-a: failed to apply restrictive policy"; _rung_a_finish; return
+  fi
+  restart_kbs
+  if ! oc -n "$TRUSTEE_NS" get cm resource-policy -o jsonpath='{.data.policy\.rego}' 2>/dev/null | grep -q 'default allow := false'; then
+    skipt "rung-a: restrictive policy not live after apply+restart — cannot trust the negative"; _rung_a_finish; return
+  fi
+
+  # CONTROL: untampered MUST release under the restrictive policy (false-pass guard).
+  if ! render_or_skip "rung-a control manifest" "$manifest_ctrl" \
+      env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
+        POD_NAME=negtest-rung-a-ctrl TAMPER_INITDATA=0 RENDER_ONLY=1 \
+        bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then _rung_a_finish; return; fi
+  oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found --wait >/dev/null 2>&1 || true
+  oc -n "$NS" apply -f "$manifest_ctrl" >/dev/null
+  if control_released negtest-rung-a-ctrl; then
+    echo "  control OK: untampered secret released under the restrictive policy (digest matches HOST_DATA)"
+    oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found >/dev/null 2>&1 || true
+  else
+    skipt "rung-a: the restrictive policy ALSO withheld the UNTAMPERED secret — the measured-initdata digest does not match this build's HOST_DATA, so a tamper denial can't be attributed to the tamper. Not a sign-off pass; investigate the init_data measurement."
+    oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found >/dev/null 2>&1 || true
+    _rung_a_finish; return
+  fi
+
+  # NEGATIVE: tampered MUST be withheld under the same restrictive policy.
+  if render_or_skip "rung-a negative manifest" "$manifest_neg" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
         POD_NAME=negtest-rung-a TAMPER_INITDATA=1 RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-a.sh"; then
-    rm -f "$manifest"
-    return
+    expect_fail_closed "negtest-rung-a" "$manifest_neg" "rung-a measured-initdata tamper withheld the secret under the restrictive policy" "$RUNG_A_DENIAL_RE" "rung-a attestation/resource denial"
   fi
-  expect_fail_closed "negtest-rung-a" "$manifest" "rung-a measured-initdata mismatch withheld attestation-status" "$RUNG_A_DENIAL_RE" "rung-a attestation/resource denial"
-  rm -f "$manifest"
+
+  _rung_a_finish
 }
 
 run_rung_c() {
@@ -179,8 +271,27 @@ run_rung_b() {
 # fallback — leaving the deleted VCEK still mounted in the running pod, so the air-gap denial could
 # never actually hold (a false FAIL on a real OfflineStore).
 restart_kbs() {
+  # WAIT for the SERVING KBS pod to actually rotate, not just for `rollout status` — which races:
+  # it can report the OLD ReplicaSet complete before the restart's new rollout is observed, so a
+  # policy/secret swap applied just before this call would NOT yet be live when the caller proceeds
+  # (proven on the rig: a 1-second "restart" left the old policy serving). Capture the old pod UID,
+  # restart, then block until a DIFFERENT pod is Running+Ready, then settle so KBS re-reads its
+  # mounted policy/VCEK configmaps+secrets.
+  local old new deadline
+  old="$(oc -n "$TRUSTEE_NS" get pods -l app=kbs -o jsonpath='{.items[0].metadata.uid}' 2>/dev/null || true)"
   oc -n "$TRUSTEE_NS" rollout restart deployment/trustee-deployment >/dev/null 2>&1 || true
-  oc -n "$TRUSTEE_NS" rollout status deployment/trustee-deployment --timeout=120s >/dev/null 2>&1 || true
+  sleep 6  # let the deployment controller OBSERVE the restart before rollout status is trustworthy
+  oc -n "$TRUSTEE_NS" rollout status deployment/trustee-deployment --timeout=150s >/dev/null 2>&1 || true
+  deadline=$(( SECONDS + 150 ))
+  while (( SECONDS < deadline )); do
+    new="$(oc -n "$TRUSTEE_NS" get pods -l app=kbs --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.uid}' 2>/dev/null || true)"
+    if [[ -n "$new" && "$new" != "$old" ]] && \
+       oc -n "$TRUSTEE_NS" wait pod -l app=kbs --for=condition=Ready --timeout=10s >/dev/null 2>&1; then
+      break
+    fi
+    sleep 5
+  done
+  sleep 10  # settle: KBS loads policy/secrets from the mounted configmaps+secrets on startup
 }
 
 run_air_gap() {
