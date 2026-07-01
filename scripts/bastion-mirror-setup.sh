@@ -35,7 +35,7 @@ echo "oc-mirror: $(oc-mirror version 2>/dev/null || oc-mirror --v2 version 2>/de
 echo "=== 2. trust the mirror CA ==="
 sudo cp /opt/mirror/ca/rootCA.pem /etc/pki/ca-trust/source/anchors/coco-mirror-rootCA.pem
 sudo update-ca-trust
-curl -s https://${MIRROR_ENDPOINT}/health/instance | head -c 120; echo " <- mirror health (CA-trusted)"
+curl -s "https://${MIRROR_ENDPOINT}/health/instance" | head -c 120; echo " <- mirror health (CA-trusted)"
 
 echo "=== 3. merged /root/.docker/config.json (RH pull-secret + mirror creds) ==="
 test -f "$PULL_SECRET_SRC" || { echo "FATAL: $PULL_SECRET_SRC missing (scp it first)"; exit 2; }
