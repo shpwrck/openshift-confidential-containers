@@ -3,7 +3,10 @@
 set -euo pipefail
 
 echo "== shell syntax =="
-find scripts -maxdepth 1 -type f -name '*.sh' -print0 | xargs -0 -r bash -n
+# Syntax-check EVERY script (incl. scripts/lib). One `bash -n` per file on purpose:
+# `bash -n a b c` parses only the FIRST arg (the rest become $1 $2 …), and `find -exec … \;`
+# swallows the child exit status — so loop and let `set -e` fail on the first bad script.
+while IFS= read -r f; do bash -n "$f"; done < <(find scripts -type f -name '*.sh')
 
 echo "== endpoint parameterization gate (#34) =="
 bash ./scripts/check-endpoint-parameterization.sh

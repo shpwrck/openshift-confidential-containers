@@ -34,6 +34,8 @@
 #   ./scripts/collect-vcek.sh --from-report <r.bin>...  # add per-socket VCEK(s) from SNP report(s)
 # Env: OUT=./vcek-bundle  TOOLS_IMG=...  KDS_HOST=kdsintf.amd.com  PROCESSOR=milan|genoa (for snpguest)
 set -euo pipefail
+# shellcheck source=scripts/lib/compat.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compat.sh"
 
 OUT="${OUT:-./vcek-bundle}"
 TOOLS_IMG="${TOOLS_IMG:-quay.io/openshift_sandboxed_containers/coco-tools@sha256:89c219d2c7cb8359e8cc86605df1d31ce3be0f2565683b8bff882dba0c8e2605}"
@@ -57,7 +59,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 # keeps two sockets distinct even if AMD gives their CHIP_IDs a shared leading structure (the layout
 # is not publicly specified). <=63 chars (it becomes a pod volume name); the full lowercase hwid
 # still goes in the mountPath the verifier reads.
-vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256sum | cut -c1-16)"; }
+vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256_stdin | cut -c1-16)"; }
 
 parse_hwid_from_url() {
   local url="$1" hwid
@@ -96,7 +98,8 @@ require_writable_bundle_dir() {
 # Create one secret per <OUT>/<hwid>/vcek.der, named by vcek_secret_name (stable, hwid-derived).
 create_secrets() {
   local ns="$1" der hwid name created=0
-  mapfile -t ders < <(find "${OUT}" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
+  ders=()
+  while IFS= read -r der_line; do ders+=("$der_line"); done < <(find "${OUT}" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
   [[ "${#ders[@]}" -gt 0 ]] || { echo "No vcek.der files under ${OUT} yet — nothing to seed."; return 0; }
   for der in "${ders[@]}"; do
     hwid="$(basename "$(dirname "${der}")" | tr 'A-F' 'a-f')"
@@ -141,7 +144,7 @@ if [[ "${1:-}" == "--from-report" ]]; then
     dir="${OUT}/${hwid}"; mkdir -p "${dir}"; require_writable_bundle_dir "${dir}"
     # keep the report next to the cert for provenance (skip if it already IS that file, so a re-run
     # of `--from-report OUT/<hwid>/report.bin` doesn't hit cp's "same file" error)
-    [[ "$(readlink -f "${report}")" == "$(readlink -f "${dir}/report.bin")" ]] || cp -f "${report}" "${dir}/report.bin"
+    [[ "${report}" -ef "${dir}/report.bin" ]] || cp -f "${report}" "${dir}/report.bin"
     if [[ -s "${dir}/vcek.der" ]]; then
       echo ">> ${hwid}: vcek.der already present — kept"
     elif command -v snpguest >/dev/null && kds_reachable; then
@@ -194,7 +197,8 @@ echo ">> ${NODE}: ${SOCKETS} socket(s)"
 # The MASTER socket's VCEK — the only one host-side snphost can yield (no socket selector; the
 # master PSP answers regardless of CPU pinning). On a single-socket node this is THE socket.
 vcek_out="$(on_node "/tools/snphost show vcek-url" 2>&1)" || die "snphost show vcek-url failed: ${vcek_out}"
-mapfile -t urls < <(grep -oE 'https://[^[:space:]]+' <<<"${vcek_out}" | sort -u)
+urls=()
+while IFS= read -r url_line; do urls+=("$url_line"); done < <(grep -oE 'https://[^[:space:]]+' <<<"${vcek_out}" | sort -u)
 [[ "${#urls[@]}" -gt 0 ]] || die "snphost show vcek-url returned no VCEK URL: ${vcek_out}"
 for url in "${urls[@]}"; do
   hwid="$(parse_hwid_from_url "${url}")"

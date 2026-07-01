@@ -12,6 +12,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/compat.sh
+source "${REPO_ROOT}/scripts/lib/compat.sh"
 NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
@@ -95,7 +97,8 @@ load_vcek_bundle() {
 			vcek_hwids+=("$hwid")
 		done
 	else
-		mapfile -t ders < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
+		ders=()
+		while IFS= read -r der_line; do ders+=("$der_line"); done < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
 		[[ "${#ders[@]}" -gt 0 ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
 		for der in "${ders[@]}"; do
 			hwid="$(basename "$(dirname "$der")" | tr 'A-F' 'a-f')"
@@ -129,7 +132,7 @@ load_extra_secret_resources() {
 # collect-vcek.sh and seed-trustee-secrets.sh. The name binds to the chip (not a positional index),
 # so a changed chip set never remaps a KbsConfig entry to the wrong chip; hashing the full CHIP_ID
 # keeps two sockets distinct even if their CHIP_IDs share a leading prefix. Full hwid stays in mountPath.
-vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256sum | cut -c1-16)"; }
+vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256_stdin | cut -c1-16)"; }
 
 # Render KbsConfig from the template, expanding two regions:
 #   - the single `vcek-snp-0` OfflineStore entry -> one entry per HWID (the awk replaces the

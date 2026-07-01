@@ -11,6 +11,8 @@ FILE="${FILE:-/etc/kubernetes/kubelet.conf}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-1200}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-20}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/compat.sh
+source "${SCRIPT_DIR}/lib/compat.sh"
 
 die() {
 	echo "ERROR: $*" >&2
@@ -63,7 +65,7 @@ host_file_b64() {
 restore_host_file() {
 	local expected="$1" mode_octal="$2"
 	local payload
-	payload="$(base64 -w0 "$expected")"
+	payload="$(b64_oneline "$expected")"
 	local remote_script
 	remote_script="$(cat <<NODE_SCRIPT
 set -euo pipefail
@@ -132,14 +134,14 @@ mode_decimal="$(oc get machineconfig "$current_config" -o json \
 mode_octal="$(printf '%04o' "$mode_decimal")"
 
 decode_data_url "$source" "$expected_file"
-host_file_b64 "$FILE" | base64 -d > "$actual_file"
+host_file_b64 "$FILE" | b64_decode > "$actual_file"
 
 if cmp -s "$expected_file" "$actual_file"; then
 	echo "$FILE already matches machineconfig/$current_config"
 else
 	echo "Repairing $FILE on node/$NODE from machineconfig/$current_config"
 	wc -c "$expected_file" "$actual_file" | sed 's/^/  /'
-	sha256sum "$expected_file" "$actual_file" | sed 's/^/  /'
+	"${COMPAT_SHA256[@]}" "$expected_file" "$actual_file" | sed 's/^/  /'
 	restore_host_file "$expected_file" "$mode_octal"
 fi
 
