@@ -10,7 +10,7 @@ publicKey
 vcek-bundle/
 rvps-*.yaml
 initdata-*.toml
-rung-bc-artifacts/
+rung-image-artifacts/
 cosign.key
 cosign.pub
 *.tmp

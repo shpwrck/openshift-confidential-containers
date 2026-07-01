@@ -66,7 +66,7 @@ data:
     [policy_engine]
     policy_path = "/opt/confidential-containers/opa/policy.rego"
 ---
-# RVPS reference values — empty/permissive in the base (rung-a happy path). Step 5 (Veritas)
+# RVPS reference values — empty/permissive in the base (rung-kbs happy path). Step 5 (Veritas)
 # replaces this with the hardware-specific reference values for the negative test.
 apiVersion: v1
 kind: ConfigMap
@@ -78,7 +78,7 @@ data:
     []
 ---
 # Resource policy (Rego) — gates which registered resources a given attestation may read.
-# PERMISSIVE in the base (allow all) so rung a proves the release path; restrict in Step 6.
+# PERMISSIVE in the base (allow all) so rung-kbs proves the release path; restrict in Step 6.
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -5,7 +5,7 @@
 #   1. Load the VCEK bundle (one .der per SNP chip HWID) for the air-gap OfflineStore
 #   2. Seed all Trustee secrets idempotently (delegates to seed-trustee-secrets.sh)
 #   3. Render KbsConfig — expand the vcek-snp-0 placeholder into one OfflineStore mount
-#      per HWID, and (optionally) inject rung-b/c KBS resources
+#      per HWID, and (optionally) inject the signed and encrypted KBS resources
 #   4. Apply issuers + KBS ConfigMaps + KbsConfig
 #   5. Wait for the trustee-deployment rollout
 # Set RENDER_KBSCONFIG_ONLY=1 to print the rendered KbsConfig and exit (no cluster writes).
@@ -18,12 +18,12 @@ NS="${NS:-trustee-operator-system}"
 VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
-RUNG_C_KEY_FILE="${RUNG_C_KEY_FILE:-}"
-RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
-RUNG_B_IMAGE="${RUNG_B_IMAGE:-}"
-RUNG_B_COSIGN_PUB="${RUNG_B_COSIGN_PUB:-}"
-RUNG_B_POLICY_FILE="${RUNG_B_POLICY_FILE:-}"
-RUNG_B_POLICY_IMAGE_PREFIX="${RUNG_B_POLICY_IMAGE_PREFIX:-}"
+RUNG_ENCRYPTED_KEY_FILE="${RUNG_ENCRYPTED_KEY_FILE:-}"
+RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-encrypted}"
+RUNG_SIGNED_IMAGE="${RUNG_SIGNED_IMAGE:-}"
+RUNG_SIGNED_COSIGN_PUB="${RUNG_SIGNED_COSIGN_PUB:-}"
+RUNG_SIGNED_POLICY_FILE="${RUNG_SIGNED_POLICY_FILE:-}"
+RUNG_SIGNED_POLICY_IMAGE_PREFIX="${RUNG_SIGNED_POLICY_IMAGE_PREFIX:-}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-10}"
 
@@ -33,7 +33,7 @@ readonly VCEK_OFFLINESTORE_BASE="/opt/confidential-containers/attestation-servic
 tmpdir=""
 vcek_hwids=()
 extra_secret_resources=()
-RUNG_C_KEY_SECRET=""
+RUNG_ENCRYPTED_KEY_SECRET=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -60,10 +60,10 @@ file_size_bytes() {
 	fi
 }
 
-require_rung_c_key_size() {
+require_rung_encrypted_key_size() {
 	local path="$1" size
 	size="$(file_size_bytes "$path")"
-	[[ "$size" == "32" ]] || die "rung-c image key must be exactly 32 bytes: $path (${size} bytes)"
+	[[ "$size" == "32" ]] || die "encrypted-image key must be exactly 32 bytes: $path (${size} bytes)"
 }
 
 # Parse a `kbs:///default/<secret>/<key>` URI into the backing k8s Secret name and
@@ -112,19 +112,19 @@ load_vcek_bundle() {
 load_extra_secret_resources() {
 	local parsed
 	extra_secret_resources=()
-	if [[ -n "$RUNG_C_KEY_FILE" ]]; then
-		[[ -s "$RUNG_C_KEY_FILE" ]] || die "missing rung-c key file: $RUNG_C_KEY_FILE"
-		require_rung_c_key_size "$RUNG_C_KEY_FILE"
-		parsed="$(kbs_uri_default_secret_key "$RUNG_C_KEY_ID")"
-		RUNG_C_KEY_SECRET="${parsed%%	*}"
-		extra_secret_resources+=("$RUNG_C_KEY_SECRET")
+	if [[ -n "$RUNG_ENCRYPTED_KEY_FILE" ]]; then
+		[[ -s "$RUNG_ENCRYPTED_KEY_FILE" ]] || die "missing encrypted-image key file: $RUNG_ENCRYPTED_KEY_FILE"
+		require_rung_encrypted_key_size "$RUNG_ENCRYPTED_KEY_FILE"
+		parsed="$(kbs_uri_default_secret_key "$RUNG_ENCRYPTED_KEY_ID")"
+		RUNG_ENCRYPTED_KEY_SECRET="${parsed%%	*}"
+		extra_secret_resources+=("$RUNG_ENCRYPTED_KEY_SECRET")
 	fi
-	if [[ -n "$RUNG_B_COSIGN_PUB" ]]; then
-		[[ -s "$RUNG_B_COSIGN_PUB" ]] || die "missing rung-b cosign public key: $RUNG_B_COSIGN_PUB"
+	if [[ -n "$RUNG_SIGNED_COSIGN_PUB" ]]; then
+		[[ -s "$RUNG_SIGNED_COSIGN_PUB" ]] || die "missing signed-image cosign public key: $RUNG_SIGNED_COSIGN_PUB"
 		extra_secret_resources+=(sig-public-key)
 	fi
-	if [[ -n "$RUNG_B_POLICY_FILE" ]]; then
-		[[ -s "$RUNG_B_POLICY_FILE" ]] || die "missing rung-b policy file: $RUNG_B_POLICY_FILE"
+	if [[ -n "$RUNG_SIGNED_POLICY_FILE" ]]; then
+		[[ -s "$RUNG_SIGNED_POLICY_FILE" ]] || die "missing signed-image policy file: $RUNG_SIGNED_POLICY_FILE"
 	fi
 }
 
@@ -137,7 +137,7 @@ vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" |
 # Render KbsConfig from the template, expanding two regions:
 #   - the single `vcek-snp-0` OfflineStore entry -> one entry per HWID (the awk replaces the
 #     placeholder block, matched from `- secretName: vcek-snp-0` through its mountPath line);
-#   - extra rung-b/c KBS resources injected right after the `- registry-configuration` line.
+#   - extra signed/encrypted KBS resources injected right after the `- registry-configuration` line.
 render_kbsconfig() {
 	local out="$1" block="" extra_block="" i hwid resource
 	for i in "${!vcek_hwids[@]}"; do
@@ -211,12 +211,12 @@ oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
 log "Seed Trustee secrets (VCEK OfflineStore, credentials, policy)"
 NS="$NS" VCEK_BUNDLE="$VCEK_BUNDLE" HWIDS="${vcek_hwids[*]}" \
-	RUNG_C_KEY_FILE="$RUNG_C_KEY_FILE" \
-	RUNG_C_KEY_ID="$RUNG_C_KEY_ID" \
-	RUNG_B_IMAGE="$RUNG_B_IMAGE" \
-	RUNG_B_COSIGN_PUB="$RUNG_B_COSIGN_PUB" \
-	RUNG_B_POLICY_FILE="$RUNG_B_POLICY_FILE" \
-	RUNG_B_POLICY_IMAGE_PREFIX="$RUNG_B_POLICY_IMAGE_PREFIX" \
+	RUNG_ENCRYPTED_KEY_FILE="$RUNG_ENCRYPTED_KEY_FILE" \
+	RUNG_ENCRYPTED_KEY_ID="$RUNG_ENCRYPTED_KEY_ID" \
+	RUNG_SIGNED_IMAGE="$RUNG_SIGNED_IMAGE" \
+	RUNG_SIGNED_COSIGN_PUB="$RUNG_SIGNED_COSIGN_PUB" \
+	RUNG_SIGNED_POLICY_FILE="$RUNG_SIGNED_POLICY_FILE" \
+	RUNG_SIGNED_POLICY_IMAGE_PREFIX="$RUNG_SIGNED_POLICY_IMAGE_PREFIX" \
 	bash "$REPO_ROOT/scripts/seed-trustee-secrets.sh"
 
 log "Apply Trustee CRs (issuers, KBS ConfigMaps, KbsConfig)"

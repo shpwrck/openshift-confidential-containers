@@ -1,7 +1,7 @@
-# Runbook — interactive in-guest debug of the rung-a air-gap pull
+# Runbook — interactive in-guest debug of the rung-kbs air-gap pull
 
 Goal: from an **interactive terminal** (you, a human — `kata-runtime exec` needs a real TTY, which
-non-interactive automation can't provide), catch the confidential VM during a rung-a attempt and
+non-interactive automation can't provide), catch the confidential VM during a rung-kbs attempt and
 read what image-rs/CDH/attestation is actually doing. Background + recipe:
 [airgap-coco-guest-pull.md](../notes/airgap-coco-guest-pull.md).
 
@@ -13,16 +13,16 @@ read what image-rs/CDH/attestation is actually doing. Background + recipe:
   → bastion dnsmasq; node `create_container_timeout=600`, kubelet `runtimeRequestTimeout=20m`,
   kata `debug_console_enabled=true`. Air gap enforced (node egress to quay/KDS blocked).
 
-## 1. Deploy rung-a (terminal A, on the bastion)
+## 1. Deploy rung-kbs (terminal A, on the bastion)
 ```bash
 INITDATA=$(cat ~/initdata-rig.b64)
 UBI=registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
-oc delete pod rung-a -n default --force --grace-period=0 2>/dev/null
+oc delete pod rung-kbs -n default --force --grace-period=0 2>/dev/null
 cat <<EOF | oc apply -f -
 apiVersion: v1
 kind: Pod
 metadata:
-  name: rung-a
+  name: rung-kbs
   namespace: default
   annotations:
     io.katacontainers.config.hypervisor.default_memory: "2048"
@@ -78,7 +78,7 @@ the sandbox stays up (you lose the air-gap purity but get a stable CVM; the **ap
 the mirror+attestation path):
 ```bash
 oc delete -k <repo>/gitops/base/airgap-egress     # or on the node: nft delete table inet airgap
-# redeploy rung-a, catch + exec as above, watch the APP container pull from the mirror.
+# redeploy rung-kbs, catch + exec as above, watch the APP container pull from the mirror.
 # Re-apply airgap-egress afterwards.
 ```
 

@@ -26,7 +26,7 @@ automation is a **production sign-off gate**.
   monthly-commit provider to avoid upfront cost). Default node: EPYC **Genoa (9004)**.
 - **Bare-metal host path**, not peer-pods: the worker RHCOS kernel must be the SNP hypervisor
   host (cloud CVM/peer-pods would attest the guest, not give us the bare-metal Kata path).
-- Asset progression must be **incremental a → b → c**.
+- Asset progression must be **incremental A → B → C → D** (rung-kbs → rung-rvps → rung-signed → rung-encrypted).
 
 ## 3. Topology
 
@@ -61,10 +61,13 @@ test passes:
 
 | Rung | Happy path | **Negative test (the proof)** |
 |------|-----------|-------------------------------|
-| a — secret release | `cdh/resource/.../attestation-status` → `{"status":"success"}` | `make negative-test WHICH=rung-a` auto-applies+reverts a restrictive measured-initdata policy: untampered pod releases (control), **tampered initdata → secret withheld (403)**. Proven on the rig 2026-07-01 (`init_data == sha256(initdata bytes)` confirmed as the measured HOST_DATA). |
-| b — signed image | signed image pulls | unsigned/tampered image → `image_security_policy` **rejects** |
-| c — encrypted image *(upstream-blocked: cri-o/cri-o#10084)* | pod Running | wrong measurement → key withheld → **pod won't start** |
-| air-gap | attestation succeeds offline | temporarily **swap each Trustee `vcek-*` Secret for a valid-but-wrong cert** (deleting the required-volume secret would only crash-loop KBS, not deny attestation), rerun an otherwise happy rung-a request → **attestation fails** (401, KDS-chain verify), then restore. Proves the cache is load-bearing, not silently hitting a reachable KDS. **Requires node egress locked**, else the wrong cert is silently repaired from the public KDS and the test falsely passes. |
+| A — rung-kbs (secret release) | `cdh/resource/.../attestation-status` → `{"status":"success"}` | `make negative-test WHICH=rung-kbs`: with a valid attestation the secret is released (control), but with **no valid attestation the secret is withheld (403)**. Proves KBS gates release on attestation. |
+| B — rung-rvps (measurement verification) | populated `snp_launch_measurement` present → secret released | `make negative-test WHICH=rung-rvps` auto-applies+reverts a restrictive measured-initdata policy: untampered pod releases (control), **valid attestation but wrong/absent measurement (tampered initdata) → secret withheld**. Proven on the rig 2026-07-01 (`init_data == sha256(initdata bytes)` confirmed as the measured HOST_DATA). |
+| C — rung-signed (signed image) | signed image runs | `make negative-test WHICH=rung-signed`: unsigned/tampered image → `image_security_policy` **rejects** |
+| D — rung-encrypted (encrypted image) *(MANUAL; upstream-blocked: cri-o/cri-o#10084 — excluded from the hands-off loop, a skipped D is not a failure)* | pod Running | wrong measurement → key withheld → **pod won't start** |
+| air-gap | attestation succeeds offline | temporarily **swap each Trustee `vcek-*` Secret for a valid-but-wrong cert** (deleting the required-volume secret would only crash-loop KBS, not deny attestation), rerun an otherwise happy rung-kbs request → **attestation fails** (401, KDS-chain verify), then restore. Proves the cache is load-bearing, not silently hitting a reachable KDS. **Requires node egress locked**, else the wrong cert is silently repaired from the public KDS and the test falsely passes. |
+
+> **Transitional (keystone #16 → #17/#18):** the rung ↔ `WHICH=` mapping above is the *target*. In the code today the measured-initdata (measurement) negative still runs under `WHICH=rung-kbs`; `WHICH=rung-rvps` is a not-yet-wired skeleton that **SKIPs** (populated in #18), and rung-kbs's dedicated *bare-attestation* negative is authored in #17. So `WHICH=rung-kbs` currently exercises row B's measurement proof, and `WHICH=all` runs kbs + rvps + signed + air-gap (rung-encrypted / D is manual).
 
 CI (no hardware): `kustomize build`, kubeconform, `conftest`/OPA on the Rego policies, yamllint.
 Hardware e2e is manual/scheduled on the rented node.
