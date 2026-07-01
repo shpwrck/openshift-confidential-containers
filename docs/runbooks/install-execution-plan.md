@@ -229,9 +229,11 @@ A rung is **proven only when reproduced from the written steps AND its negative 
 - ✅ Happy: signed image pulls (mirror pull secret served as `regcred`).
 - ✅ Negative: unsigned/tampered image → `image_security_policy` **rejects** the pull.
 
-**Rung D (rung-encrypted) — encrypted image** *(MANUAL / upstream-blocked: cri-o/cri-o#10084 — excluded from the hands-off loop)*
+**Rung D (rung-encrypted) — encrypted image** *(MANUAL / upstream-blocked: cri-o/cri-o#10084 — excluded from the hands-off loop; `make test-rung`/`WHICH=all` report it skipped, never failed)*
+- **Manual pre-step (why it's not hands-off):** encrypt the image layer (`coco-keyprovider`, which isn't in the mirror and can't be built in-gap) and register its decryption KEK as the KBS resource `image-key/rung-encrypted` (`make build-rung-images` + `make deploy-trustee-rung-image`). Workload `gitops/base/workloads/rung-encrypted-pod.yaml` (pod `rung-encrypted`).
 - ✅ Happy: pod reaches `Running` (image key released after attestation).
 - ✅ Negative: wrong measurement → key withheld → **pod won't start.**
+- **⚠ upstream block:** direct host pre-pull of the encrypted layer is gated on cri-o/cri-o#10084 — so run D by hand (`make run-rung-encrypted` / `make negative-test WHICH=rung-encrypted`), and treat a skipped D as *not* a sign-off failure.
 
 **Air-gap (cross-cutting)**
 - ✅ Negative: remove one VCEK / wrong-case HWID → **attestation fails** — proving the OfflineStore cache, not a silently-reachable KDS, is load-bearing.

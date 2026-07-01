@@ -260,12 +260,12 @@ run_rung_encrypted() {
   if ! render_or_skip "rung-encrypted negative manifest" "$manifest" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" RUNG_ENCRYPTED_IMAGE="$RUNG_ENCRYPTED_IMAGE" \
-        IMAGE_SECURITY_POLICY_URI="$RUNG_ENCRYPTED_POLICY_URI" POD_NAME=negtest-rung-c TAMPER_INITDATA=1 RENDER_ONLY=1 \
+        IMAGE_SECURITY_POLICY_URI="$RUNG_ENCRYPTED_POLICY_URI" POD_NAME=negtest-rung-encrypted TAMPER_INITDATA=1 RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-encrypted.sh"; then
     rm -f "$manifest"
     return
   fi
-  expect_fail_closed "negtest-rung-c" "$manifest" "rung-encrypted measured-initdata mismatch withheld image key" "$RUNG_ENCRYPTED_DENIAL_RE" "rung-encrypted attestation/image-key denial"
+  expect_fail_closed "negtest-rung-encrypted" "$manifest" "rung-encrypted measured-initdata mismatch withheld image key" "$RUNG_ENCRYPTED_DENIAL_RE" "rung-encrypted attestation/image-key denial"
   rm -f "$manifest"
 }
 

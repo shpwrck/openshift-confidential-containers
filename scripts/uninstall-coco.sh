@@ -32,8 +32,12 @@ runtimeclasses=(kata kata-cc kata-nvidia-gpu kata-cc-nvidia-gpu)
 # Imperatively-applied workload pods (rung happy + negative pods) — NOT in any kustomization, so
 # delete_kustomize never sweeps them; they must be deleted by name (see apply-rung-*.sh and
 # negative-test.sh). They live in WORKLOAD_NS (default `default`), bound to the kata-cc runtimeclass.
+# Includes the LEGACY pre-rename names (rung-b-signed/rung-c-encrypted/negtest-rung-{b,c}): a rig that
+# ran the proofs before the #19/#20 capability rename still has those pods, and nothing else sweeps
+# them, so uninstall must clean both the new and the old names (harmless when absent — --ignore-not-found).
 WORKLOAD_NS="${WORKLOAD_NS:-default}"
-workload_pods=(rung-a rung-a-secret rung-c-encrypted rung-signed negtest-rung-a negtest-rung-c negtest-rung-signed negtest-air-gap)
+workload_pods=(rung-a rung-a-secret rung-encrypted rung-signed negtest-rung-a negtest-rung-encrypted negtest-rung-signed negtest-air-gap \
+  rung-b-signed rung-c-encrypted negtest-rung-b negtest-rung-c)
 
 log() {
 	printf '\n== %s ==\n' "$*"

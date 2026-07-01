@@ -204,8 +204,8 @@ verify_kbs_resource_logs() {
 
 case "$RUNG" in
 	encrypted)
-		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-c-encrypted-pod.yaml}"
-		POD_NAME="${POD_NAME:-rung-c-encrypted}"
+		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-encrypted-pod.yaml}"
+		POD_NAME="${POD_NAME:-rung-encrypted}"
 		RUNG_IMAGE="${RUNG_ENCRYPTED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
 		RUNG_IMAGE_VAR=RUNG_ENCRYPTED_IMAGE
 		RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-encrypted}"
