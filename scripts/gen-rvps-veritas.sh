@@ -23,6 +23,17 @@
 #   REGISTRY_CERTS_DIR=/etc/containers/certs.d     # NODE mode path must exist on the node
 #   VERITAS_OC_WRAPPER=./oc                         # mounted before /usr/local/bin/oc in PATH
 #   VERITAS_EXTRA_ARGS="--kernel-cmdline ..."
+#
+# DISCONNECTED (air-gap) RECIPE — proven on the rig 2026-07-01. Veritas verifies the OCP release
+# payload, and that verification does a registry TAGS-LIST on quay.io/openshift-release-dev, which
+# `registries.conf` mirroring does NOT redirect (mirrors cover digest/manifest pulls, not tag
+# enumeration). So a mirror-only PULL_SECRET fails 401 at "Verifying release payload". Run this on
+# the BASTION (which has quay egress) with a MERGED authfile:
+#   jq -s '{auths:(.[0].auths + .[1].auths)}' pull-secret.json ~/.docker/config.json > authfile.json
+# i.e. RH/quay creds (for the tags-list) PLUS mirror creds (for the digest pulls redirected by
+# REGISTRIES_CONF). Also set TOOLS_IMG=<mirror>/…/coco-tools@sha256:… and stage the mirror CA under
+# REGISTRY_CERTS_DIR=<dir>/<mirror-host:port>/ca.crt. Then the tags-list authenticates to quay while
+# the heavy component-image pulls come from the mirror.
 set -euo pipefail
 
 TEE="${TEE:-snp}"
