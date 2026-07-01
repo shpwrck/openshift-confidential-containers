@@ -2,7 +2,7 @@
 
 **Target:** OCP **4.20.18** · OSC **1.12** · Trustee **1.1** · TEE = **AMD SEV-SNP (Genoa)** · Single-Node OpenShift on disposable Latitude bare metal, behind a persistent mirror bastion.
 
-This is the disposable verification rig that proves each CoCo capability (secret release → encrypted image → signed image) under a *real* air gap before any of it touches a production cluster. For a fresh rig, start at Phase 0 and treat every stop-gate below as live. Current state: the SNO/Trustee rig is up, rung-b has scoped happy/unsigned-denial evidence, and rung-c remains blocked on the direct CRI-O/Kata encrypted-image pull path tracked upstream ([cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084)).
+This is the disposable verification rig that proves each CoCo capability (secret release → measurement verification → signed image → encrypted image) under a *real* air gap before any of it touches a production cluster. For a fresh rig, start at Phase 0 and treat every stop-gate below as live. Current state: the SNO/Trustee rig is up, rung-signed has scoped happy/unsigned-denial evidence, and rung-encrypted remains blocked on the direct CRI-O/Kata encrypted-image pull path tracked upstream ([cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084)).
 
 **Estimated total wall time:** ~5–7 h, of which **~1–2 h is the unattended mirror** (paid once; the bastion persists across node churn). **Billing note:** two hourly-billed bare-metal hosts (persistent bastion + disposable node) — every `terraform apply` starts hourly billing; destroy when done. **Hands-on note:** the BIOS recipe, the ISO boot, and the IPMI console are browser/console actions that require physical/console access — they cannot be automated from the CLI.
 
@@ -38,7 +38,7 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 | **Fix bastion tfvars OS drift** | `terraform.tfvars.example` line 7 ships `operating_system = "ubuntu_26_04_x64_lts"` — a verbatim copy boots the **wrong OS** and the Rocky-specific NM/dnf cloud-init silently fails → VLAN never comes up. Edit the active `terraform.tfvars` so OS starts with `rocky`. |
 | **Pre-fill bastion SKU** | `lsh plans list` → pick the cheapest metal with ≥200 GB disk. Write `plan = "<sku>"` (no longer `""`). |
 | **Verify local scaffold scripts** | `scripts/collect-vcek.sh`, `scripts/gen-rvps-veritas.sh`, and `make negative-test` are implemented, but their real evidence is hardware-bound. Before spend, run `make lint` to cover shell syntax and overlay builds. Then, on the rig, rerun the specific hardware targets in Phase 6. |
-| **Pin floating image tags** | `install/imageset-config.yaml` carries `ubi-minimal:latest` and `coco-tools:1.12` (a floating train tag). Pin both to digests before mirroring or rung-b/c image tests aren't reproducible. |
+| **Pin floating image tags** | `install/imageset-config.yaml` carries `ubi-minimal:latest` and `coco-tools:1.12` (a floating train tag). Pin both to digests before mirroring or the signed and encrypted image tests aren't reproducible. |
 | Fix cosmetic script header | `scripts/host-snp-check.sh` header still says "Ubuntu node" — update so the executor doesn't think it's the wrong script. |
 | **🛑 STOP-gate** | Confirm: `./bin/oc version`, `./bin/openshift-install version`, `./bin/oc-mirror --help` all resolve; pull secret present; active bastion tfvars has `rocky` OS + non-empty `plan`; `make lint` is green. **Hard gate before any spend.** |
 
@@ -128,24 +128,29 @@ Line these up **first**. ⛔ = hard blocker (the bring-up cannot start/continue 
 
 ---
 
-## Phase 6 — Rungs a → b → c (each proven only when reproduced AND its negative test passes)
+## Phase 6 — Rungs A → B → C → D (each proven only when reproduced AND its negative test passes)
 **Goal:** every rung's happy path **and** negative test pass, plus the air-gap VCEK-pull negative test. **~1–2 h hands-on, strictly in order.**
 
-Rung-a and the air-gapped guest-pull path have a proven recipe. **Rung-b (signed image) is proven**
-on the rig via the keyprovider-free build path (2026-07-01). **Rung-c (encrypted image)** has
-tag-shaped diagnostics for guest decryption and measured-initdata key gating, but the direct
-digest-pinned encrypted-image pod is still blocked by CRI-O host-side encrypted-layer pre-pull before
-Kata guest pull begins; the upstream blocker is tracked at
-[cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084). See the Phase 6 table below for
-the exact build/apply/negative sequence.
+Rung-kbs and the air-gapped guest-pull path have a proven recipe. **Rung-rvps (measurement
+verification) is proven** via the measured-initdata negative (untampered released / tampered
+withheld, 2026-07-01). **Rung-signed (signed image) is proven** on the rig via the keyprovider-free
+build path (2026-07-01). **Rung-encrypted (encrypted image)** has tag-shaped diagnostics for guest
+decryption and measured-initdata key gating, but the direct digest-pinned encrypted-image pod is
+still blocked by CRI-O host-side encrypted-layer pre-pull before Kata guest pull begins; the upstream
+blocker is tracked at [cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084). Rung-encrypted
+is **MANUAL and excluded from the hands-off loop — a skipped D is not a failure.** See the Phase 6
+table below for the exact build/apply/negative sequence.
 
 | Step | What happens / command |
 |---|---|
-| **Rung a — secret release** | Deploy `gitops/base/workloads/rung-a-secret-pod.yaml` (`runtimeClassName: kata-cc`). **Happy:** init `curl …/cdh/resource/default/attestation-status/status` → success → workload runs. **Negative (the proof):** `make negative-test WHICH=rung-a` is **self-contained** (mirrors the air-gap swap-and-restore) — it backs up the base policies, applies a **restrictive measured-initdata policy** (the secret is released only when `input.init_data` equals the sha256 of the exact initdata bytes), confirms the **untampered** pod still releases (a control that makes a false-pass impossible), then deploys a **tampered-initdata** pod which is **withheld** (HTTP 403), and restores the base policies. **Proven on the rig 2026-07-01: untampered RELEASED, tampered WITHHELD, base restored.** **Landmine:** keep `limits.memory ≥ default_memory + 256–512 MiB` or the host **OOM-kills the CVM** (DeadlineExceeded, QEMU dies in seconds). Primary signal: container status + `oc get events` + logs, **not** `oc describe pod` (it echoes the spec). |
-| **Rung b — signed image** | **Keyprovider-free path (recommended in an air gap):** `make build-rung-b` (skopeo copy + cosign sign — no `coco-keyprovider`; writes `rung-bc-artifacts/rung-b.env` with the pushed digest refs), then `source rung-bc-artifacts/rung-b.env` and `make deploy-trustee-rung-b` + `make run-rung-b-signed` (both consume `RUNG_B_IMAGE` = the `@sha256:` digest ref that `apply-rung-image.sh` requires). (`make build-rung-images` also builds rung-b, but it bundles rung-c and **requires `coco-keyprovider`**, which isn't in the mirror and can't be built in-gap — see follow-ups.) **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** `make negative-test WHICH=rung-b RUNG_B_UNSIGNED_IMAGE=<unsigned-digest-ref>` must fail closed through `image_security_policy` rejection. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. **Proven on the rig 2026-07-01 via the keyprovider-free path.** *(after rung a)* |
-| **Rung c — encrypted image** | Use the same artifacts, then `make deploy-trustee-rung-bc` and `make run-rung-c-encrypted RUNG_C_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-c`). **Negative:** `make negative-test WHICH=rung-c RUNG_C_IMAGE=<digest-ref>` must fail closed from a measured-initdata mismatch, not from a missing key. **⚠ upstream-blocked** (direct encrypted-image pull gated on cri-o/cri-o#10084 — the known frontier). *(after rung b)* |
-| **Air-gap negative test** | `make negative-test WHICH=air-gap`. The harness **swaps each Trustee `vcek-*` Secret for a valid-but-wrong self-signed cert** (KBS stays up — *deleting* the required-volume secret would only crash-loop KBS, which is **not** the same as attestation-denied), reruns an otherwise happy rung-a request, then restores the real certs. Attestation **must FAIL** (on the rig: `POST /kbs/v0/attest 401`, "Certificate chain from KDS failed verification") — proving the OfflineStore cache, not a leaky KDS, is load-bearing. **Precondition: node egress must be locked (Phase 5, step 1)** — with egress open, a wrong cached cert can still be silently "fixed" by reaching the public KDS and the test **falsely passes**. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
-| **🛑 STOP-gate** | All rung a/b/c happy+negative results green **and** the air-gap VCEK-pull negative test fails-closed as expected. Confirm each rung's happy + negative result on the node before sign-off. |
+| **Rung A (rung-kbs) — secret release** | Deploy `gitops/base/workloads/rung-a-secret-pod.yaml` (`runtimeClassName: kata-cc`). **Happy:** init `curl …/cdh/resource/default/attestation-status/status` → success → workload runs. **Negative (the proof):** `make negative-test WHICH=rung-kbs` fails closed with **no valid attestation** → secret **withheld** (HTTP 403). **Landmine:** keep `limits.memory ≥ default_memory + 256–512 MiB` or the host **OOM-kills the CVM** (DeadlineExceeded, QEMU dies in seconds). Primary signal: container status + `oc get events` + logs, **not** `oc describe pod` (it echoes the spec). |
+| **Rung B (rung-rvps) — measurement verification** | The RVPS `snp_launch_measurement` is populated (Phase 5) so a valid attestation only releases when its measurement matches. **Negative (the measurement proof):** `make negative-test WHICH=rung-rvps` is **self-contained** (mirrors the air-gap swap-and-restore) — it backs up the base policies, applies a **restrictive measured-initdata policy** (the secret is released only when `input.init_data` equals the sha256 of the exact initdata bytes), confirms the **untampered** pod still releases (a control that makes a false-pass impossible), then deploys a **tampered-initdata** pod which is **withheld** (HTTP 403), and restores the base policies. **Proven on the rig 2026-07-01: untampered RELEASED, tampered WITHHELD, base restored.** *(after rung A)* |
+| **Rung C (rung-signed) — signed image** | **Keyprovider-free path (recommended in an air gap):** `make build-rung-signed` (skopeo copy + cosign sign — no `coco-keyprovider`; writes `rung-image-artifacts/rung-signed.env` with the pushed digest refs), then `source rung-image-artifacts/rung-signed.env` and `make deploy-trustee-rung-signed` + `make run-rung-signed` (both consume `RUNG_SIGNED_IMAGE` = the `@sha256:` digest ref that `apply-rung-image.sh` requires). (`make build-rung-images` also builds the signed image, but it bundles the encrypted image and **requires `coco-keyprovider`**, which isn't in the mirror and can't be built in-gap — see follow-ups.) **Happy:** signed image pulls (mirror pull secret served as `regcred`). **Negative:** `make negative-test WHICH=rung-signed RUNG_SIGNED_UNSIGNED_IMAGE=<unsigned-digest-ref>` must fail closed through `image_security_policy` rejection. `regcred` name **without dots**; registry CA in initdata as **separate array elements**; policy must allow/verify pause/release images too. **Proven on the rig 2026-07-01 via the keyprovider-free path.** *(after rung B)* |
+| **Rung D (rung-encrypted) — encrypted image** *(MANUAL / upstream-blocked — excluded from the hands-off loop)* | Use the same artifacts, then `make deploy-trustee-rung-image` and `make run-rung-encrypted RUNG_ENCRYPTED_IMAGE=<digest-ref>`. **Happy:** pod Running (image key released after attestation from `image-key/rung-encrypted`). **Negative:** `make negative-test WHICH=rung-encrypted RUNG_ENCRYPTED_IMAGE=<digest-ref>` must fail closed from a measured-initdata mismatch, not from a missing key. **⚠ upstream-blocked** (direct encrypted-image pull gated on cri-o/cri-o#10084 — the known frontier); **a skipped D is not a loop failure.** *(after rung C)* |
+| **Air-gap negative test** | `make negative-test WHICH=air-gap`. The harness **swaps each Trustee `vcek-*` Secret for a valid-but-wrong self-signed cert** (KBS stays up — *deleting* the required-volume secret would only crash-loop KBS, which is **not** the same as attestation-denied), reruns an otherwise happy rung-kbs request, then restores the real certs. Attestation **must FAIL** (on the rig: `POST /kbs/v0/attest 401`, "Certificate chain from KDS failed verification") — proving the OfflineStore cache, not a leaky KDS, is load-bearing. **Precondition: node egress must be locked (Phase 5, step 1)** — with egress open, a wrong cached cert can still be silently "fixed" by reaching the public KDS and the test **falsely passes**. **If a negative test PASSES (secret released when it shouldn't), that's a real, sign-off-blocking finding** — policy/RVPS not actually wired; fix before sign-off. |
+| **🛑 STOP-gate** | All rung A/B/C happy+negative results green **and** the air-gap VCEK-pull negative test fails-closed as expected (rung D is MANUAL/upstream-blocked — a skipped D is not a gate failure). Confirm each rung's happy + negative result on the node before sign-off. |
+
+> **Transitional (keystone #16 → #17/#18):** the rung ↔ `WHICH=` mapping above is the *target*. In the code today the measured-initdata (measurement) negative still runs under `make negative-test WHICH=rung-kbs`; `WHICH=rung-rvps` is a not-yet-wired skeleton that **SKIPs** (populated in #18), and rung-kbs's dedicated *bare-attestation* negative is authored in #17. So today `WHICH=rung-kbs` exercises the Rung B measurement proof, and `WHICH=all` = kbs + rvps + signed + air-gap (rung-encrypted / D is manual).
 
 ---
 
@@ -208,15 +213,19 @@ the exact build/apply/negative sequence.
 
 A rung is **proven only when reproduced from the written steps AND its negative test fails-closed** (design §5). All preconditions: Phase-1/4 SNP-host gates green, air gap enforced (public egress dead), KBS up with OfflineStore + RVPS.
 
-**Rung a — secret release**
+**Rung A (rung-kbs) — secret release**
 - ✅ Happy: `cdh/resource/.../attestation-status` → `{"status":"success"}`; pod runs.
-- ✅ Negative: restrictive policy + wrong/empty RVPS (or tampered initdata) → **error, secret withheld, pod does not start.**
+- ✅ Negative: no valid attestation → **error, secret withheld (HTTP 403), pod does not start.**
 
-**Rung b — signed image**
+**Rung B (rung-rvps) — measurement verification**
+- ✅ Happy: valid attestation with the expected measurement → secret released; pod runs.
+- ✅ Negative: restrictive measured-initdata policy + wrong/absent measurement (tampered initdata) → **error, secret withheld (HTTP 403), pod does not start.**
+
+**Rung C (rung-signed) — signed image**
 - ✅ Happy: signed image pulls (mirror pull secret served as `regcred`).
 - ✅ Negative: unsigned/tampered image → `image_security_policy` **rejects** the pull.
 
-**Rung c — encrypted image** *(upstream-blocked: cri-o/cri-o#10084)*
+**Rung D (rung-encrypted) — encrypted image** *(MANUAL / upstream-blocked: cri-o/cri-o#10084 — excluded from the hands-off loop)*
 - ✅ Happy: pod reaches `Running` (image key released after attestation).
 - ✅ Negative: wrong measurement → key withheld → **pod won't start.**
 

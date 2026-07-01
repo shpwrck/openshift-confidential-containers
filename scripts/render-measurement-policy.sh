@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Render restrictive Trustee policies for the rung-c measured-initdata gate.
+# Render restrictive Trustee policies for the measured-initdata gate.
 set -euo pipefail
 # shellcheck source=scripts/lib/compat.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compat.sh"
 
 NS="${NS:-trustee-operator-system}"
-RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
+RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-encrypted}"
 
 die() {
 	echo "ERROR: $*" >&2
@@ -52,14 +52,14 @@ render() {
 		die "$initdata_file must declare algorithm = \"sha256\" for this SNP HOST_DATA policy renderer"
 	fi
 
-	# CAVEAT (verify on the rung-c path — currently upstream-blocked): this is the sha256 of the
+	# CAVEAT (verify on the encrypted-image path — currently upstream-blocked): this is the sha256 of the
 	# initdata FILE as-is. The policy below gates the image key on the attestation report's init_data
 	# matching this digest, so it is correct ONLY if OSC measures these same bytes into init_data /
 	# HOST_DATA. If OSC measures a different encoding (e.g. the gzip+base64 annotation value, or a
 	# canonicalized form), the digest never matches and the key is silently withheld. Confirm against
-	# a real rung-c attestation report before relying on this.
+	# a real encrypted-image attestation report before relying on this.
 	initdata_sha256="$(sha256_file "$initdata_file")"
-	key_path="$(kbs_uri_resource_path "$RUNG_C_KEY_ID")"
+	key_path="$(kbs_uri_resource_path "$RUNG_ENCRYPTED_KEY_ID")"
 	key_path_rego="$(rego_array_for_path "$key_path")"
 
 	cat <<YAML
@@ -138,17 +138,17 @@ YAML
 
 usage() {
 	cat >&2 <<'EOF'
-usage: render-rung-c-measurement-policy.sh <rendered-initdata.toml>
+usage: render-measurement-policy.sh <rendered-initdata.toml>
 
 Renders two ConfigMaps:
   - attestation-policy: affirms configuration only when input.init_data equals
     the SHA-256 HOST_DATA value for the provided initdata TOML.
-  - resource-policy: releases only the RUNG_C_KEY_ID resource when the EAR
+  - resource-policy: releases only the RUNG_ENCRYPTED_KEY_ID resource when the EAR
     trustworthiness-vector configuration claim is affirming.
 
 Environment:
   NS              Trustee namespace (default: trustee-operator-system)
-  RUNG_C_KEY_ID   KBS URI for the encrypted-image key
+  RUNG_ENCRYPTED_KEY_ID   KBS URI for the encrypted-image key
 EOF
 }
 

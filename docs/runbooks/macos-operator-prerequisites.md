@@ -21,8 +21,8 @@ scripts run where.
 | `oc` (OpenShift CLI) | `brew install openshift-cli`, or `scripts/install-tools.sh` on a connected host | almost every apply / verify / collect script |
 | `jq` | `brew install jq` | trustee / secret / verify scripts |
 | `skopeo` | `brew install skopeo` | build & verify rung images |
-| `cosign` | `brew install cosign` | rung-b signature verify |
-| `python3` | preinstalled, or `brew install python` | `repair-sno-baseline.sh`, rung-c key-wrap verify |
+| `cosign` | `brew install cosign` | rung-signed signature verify |
+| `python3` | preinstalled, or `brew install python` | `repair-sno-baseline.sh`, rung-encrypted key-wrap verify |
 | `podman` | `brew install podman` (+ `podman machine start`) | building rung images locally |
 
 Built into macOS and used directly (nothing to install): `shasum` (SHA-256), `base64`,
@@ -40,12 +40,12 @@ Every script's header comment states its execution context. In short:
 These drive the cluster via `oc` / `skopeo` / `cosign` and are the **bash-3.2 + BSD-portable
 set**:
 
-`apply-rung-a.sh`, `apply-rung-b.sh`, `apply-rung-c.sh`, `apply-rung-image.sh`,
+`apply-rung-kbs.sh`, `apply-rung-signed.sh`, `apply-rung-encrypted.sh`, `apply-rung-image.sh`,
 `apply-sno.sh`, `apply-trustee.sh`, `build-rung-images.sh`, `collect-vcek.sh`,
 `encode-initdata.sh`, `gen-rvps-veritas.sh`, `negative-test.sh`,
-`render-rung-c-measurement-policy.sh`, `repair-sno-baseline.sh`, `seed-trustee-secrets.sh`,
-`uninstall-coco.sh`, `validate-sno-baseline.sh`, `verify-rung-b-signature.sh`,
-`verify-rung-c-key-wrap.sh`, `verify-snp-host.sh`.
+`render-measurement-policy.sh`, `repair-sno-baseline.sh`, `seed-trustee-secrets.sh`,
+`uninstall-coco.sh`, `validate-sno-baseline.sh`, `verify-rung-signed-signature.sh`,
+`verify-rung-encrypted-key-wrap.sh`, `verify-snp-host.sh`.
 
 > `seed-trustee-secrets.sh` and `gen-rvps-veritas.sh` read bastion-local inputs (the VCEK
 > bundle, mirror password); run them wherever those files live (often the bastion), but they

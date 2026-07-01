@@ -6,7 +6,7 @@ ImageDigestMirrorSet does **NOT** apply in-guest. So the guest must be told — 
 **initdata** + **KBS-served resources** — how to reach the air-gapped mirror. This note records
 the complete wiring proven reachable on the rig and the chain of blockers found.
 
-> Status: ✅ **PROVEN END-TO-END 2026-06-29.** rung-a runs as `kata-cc` in the air-gapped cluster:
+> Status: ✅ **PROVEN END-TO-END 2026-06-29.** rung-kbs runs as `kata-cc` in the air-gapped cluster:
 > SNP-attested via the VCEK OfflineStore (KDS blocked), secrets released by the in-cluster KBS, and
 > the ubi9 image pulled from the bastion mirror over HTTPS (40MB layer, mirror nginx logged 200s).
 > The full blocker chain and its resolution are below — every item is fixed, none open.
@@ -75,14 +75,14 @@ the complete wiring proven reachable on the rig and the chain of blockers found.
     mirror :8443 → nginx 400 "plain HTTP sent to HTTPS port".                        [FIXED → drop insecure + extra_root_certificates (mirror CA) → HTTPS]
 
 ## End state (proven)
-rung-a `1/1 Running`, `runtimeClassName: kata-cc`. KBS log for the successful run:
+rung-kbs `1/1 Running`, `runtimeClassName: kata-cc`. KBS log for the successful run:
 `POST /kbs/v0/attest 200` → `Verifier/endorsement check passed. tee=Snp` → `GET …/resource/default/
 credential/test 200` + `…/security-policy/test 200`. Mirror nginx for the same run: `GET /v2/auth…
 200`, `…/manifests/sha256:4ba3… 200`, `…/blobs/sha256:837b… 200 (40,689,274 bytes)` from
 `oci-client/0.15.0`. The whole disconnected confidential-pull path works; remaining work
-is rungs b/c (release/pause-image workloads — extend `registry-configuration` with the
-`quay.io/openshift-release-dev/*` remaps) and the air-gap VCEK negative test. The b/c
-build/apply/negative-test sequence lives in Phase 6 of
+is the signed and encrypted image rungs (release/pause-image workloads — extend
+`registry-configuration` with the `quay.io/openshift-release-dev/*` remaps) and the air-gap
+VCEK negative test. The signed/encrypted build/apply/negative-test sequence lives in Phase 6 of
 [`../runbooks/install-execution-plan.md`](../runbooks/install-execution-plan.md).
 
 ## Diagnosis notes for next time (what was/wasn't useful)

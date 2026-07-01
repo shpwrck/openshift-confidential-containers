@@ -300,45 +300,55 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
 
 ---
 
-## Phase 6 — Rungs a → b → c (hands-on, incremental, ~1–2 h)
+## Phase 6 — Rungs A → B → C → D (hands-on, incremental, ~1–2 h)
 
 A rung is **proven only when reproduced from these steps AND its negative test passes** (design
 §5). Do them **in order** — do not skip ahead.
-Rungs b/c are scaffolded in the repo but still need hardware proof. Follow Phase 6 of
-[`install-execution-plan.md`](install-execution-plan.md) to build the image artifacts,
-enable the KBS resources, and run the b/c happy + negative paths before checking the boxes
-below.
+The signed and encrypted rungs are scaffolded in the repo but still need hardware proof. Follow
+Phase 6 of [`install-execution-plan.md`](install-execution-plan.md) to build the image
+artifacts, enable the KBS resources, and run the signed + encrypted happy + negative paths
+before checking the boxes below.
 
-- [ ] **Rung a — secret release.** Deploy the CoCo workload
+- [ ] **Rung A (rung-kbs) — secret release.** Deploy the CoCo workload
       ([`gitops/base/workloads/rung-a-secret-pod.yaml`](../../gitops/base/workloads/rung-a-secret-pod.yaml),
       `runtimeClassName: kata-cc`). It init-gates on the in-CVM **CDH** at `127.0.0.1:8006`.
       - **Happy path:** the init container's
         `curl …/cdh/resource/default/attestation-status/status` returns success → workload runs.
-      - **Negative test (the proof):** apply a **restrictive resource policy + wrong/empty
-        RVPS** (or tamper initdata) → attestation **errors, secret withheld**, pod does not
-        start. *(initdata `# FILL`s — `default_memory`, HOST_DATA — are per-overlay and
-        environment-bound; keep the pod memory limit ≥ `default_memory` + 256 MiB or the host
-        OOM-kills the CVM.)*
-- [ ] **Rung b — signed image.**
+      - **Negative test (the proof):** no valid attestation → attestation **errors, secret
+        withheld** (403), pod does not start. *(initdata `# FILL`s — `default_memory`, HOST_DATA
+        — are per-overlay and environment-bound; keep the pod memory limit ≥ `default_memory` +
+        256 MiB or the host OOM-kills the CVM.)*
+- [ ] **Rung B (rung-rvps) — measurement verification.**
+      - **Happy path:** a populated `snp_launch_measurement` in RVPS matches the evidence →
+        secret released.
+      - **Negative test (the proof):** a valid attestation with the wrong or absent measurement
+        (e.g. tampered initdata, since `init_data == sha256(initdata bytes) == HOST_DATA`) →
+        attestation **errors, secret withheld**. Proven 2026-07-01 on the rig: untampered
+        releases, tampered withheld (403).
+- [ ] **Rung C (rung-signed) — signed image.**
       - **Happy path:** signed image pulls (mirror pull secret served as `regcred`, per
         `kbsconfig.yaml` `kbsSecretResources`).
       - **Negative test:** unsigned/tampered image → `image_security_policy` **rejects** the pull.
       - **Implementation note:** the signed policy must account for the app image and every
         infrastructure image pulled inside the CVM, including release/pause images.
-- [ ] **Rung c — encrypted image.** *(upstream-blocked: cri-o/cri-o#10084)*
+- [ ] **Rung D (rung-encrypted) — encrypted image.** *(manual; upstream-blocked:
+      cri-o/cri-o#10084 — excluded from the hands-off loop, and a skipped D is not a failure)*
       - **Happy path:** pod reaches `Running` (image key released after attestation).
       - **Negative test:** wrong measurement → key withheld → **pod won't start**.
       - **Implementation note:** use a digest-pinned encrypted image and KBS resource
-        `image-key/rung-c`; do not count missing-key failure as the primary sign-off proof.
+        `image-key/rung-encrypted`; do not count missing-key failure as the primary sign-off proof.
 - [ ] **Air-gap negative test (proves the cache is load-bearing):** temporarily remove the
-      Trustee `vcek-*` Secrets, then rerun an otherwise happy rung-a request →
+      Trustee `vcek-*` Secrets, then rerun an otherwise happy rung-kbs request →
       **attestation fails** and the Secrets are restored. This proves the OfflineStore — not
       a silently reachable KDS — is doing the work.
 
 > Denial-proof automation now exists at `make negative-test WHICH=all`
-> ([Makefile](../../Makefile)); it renders the rung a/b/c negative manifests from the same
-> apply scripts used by the happy paths. Treat it as a rig-side proof helper, not as proof
-> by itself: it must run against the hardware cluster and fail closed for every rung.
+> ([Makefile](../../Makefile)); it renders the rung-kbs and rung-signed negative manifests from
+> the same apply scripts used by the happy paths, plus the air-gap VCEK swap (and invokes the
+> rung-rvps skeleton, which currently SKIPs — see #18). rung-encrypted (D) is manual/upstream-blocked
+> (cri-o/cri-o#10084) and is **deliberately excluded from `WHICH=all`** — run it on its own with
+> `make negative-test WHICH=rung-encrypted`. Treat it as a rig-side proof helper, not as proof by
+> itself: it must run against the hardware cluster and fail closed for every rung.
 
 > STOP-gate: every rung's happy path **and** negative test pass. Only then is a rung "proven".
 
@@ -372,5 +382,5 @@ destroy after each spike).
       reboot; `kata` + `kata-cc` RuntimeClasses.
 - [ ] **5 Attestation data** — `make deploy-trustee`; `make collect-vcek` (lowercase HWID);
       `make gen-rvps`; wire into KbsConfig + RVPS ConfigMap.
-- [ ] **6 Rungs a→b→c** — each happy path **+** negative test; air-gap VCEK-pull negative test.
+- [ ] **6 Rungs A→B→C→D** — each happy path **+** negative test; air-gap VCEK-pull negative test (D excluded from the hands-off loop).
 - [ ] **7 Teardown** — `terraform destroy`; BIOS resets on re-provision.

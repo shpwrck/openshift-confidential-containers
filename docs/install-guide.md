@@ -831,22 +831,22 @@ won't exist in production.
 
 ---
 
-## Phase 8 — Capability rungs (a → b → c) + negative tests
+## Phase 8 — Capability rungs (A → B → C → D) + negative tests
 
-Manual equivalent of the rig targets `make run-rung-a-secret`, `make run-rung-c-encrypted`,
-`make run-rung-b-signed`, and `make negative-test WHICH=all`. A rung is **proven only when
+Manual equivalent of the rig targets `make run-rung-kbs`, `make run-rung-signed`,
+`make run-rung-encrypted`, and `make negative-test WHICH=all`. A rung is **proven only when
 reproduced from these steps AND its negative test fails-closed** — a negative test that
 *passes* (secret released when it shouldn't be) is a sign-off-blocking finding, not a green.
 Do them **in order**. See [`docs/design/engagement-design.md`](design/engagement-design.md)
-§5 for the full matrix. Rungs b/c have implementation scaffolding; rung-b has live rig
-accept/deny evidence, while rung-c still needs a completed direct encrypted-image guest-pull
-proof. The 2026-06-30 rig diagnosed the rung-c KID/KEK mismatch and proved guest decryption
-through a local alias diagnostic, but the production digest-pinned pod is still blocked before
-KBS by CRI-O host-side encrypted-layer pre-pull; CRI-O annotation and runtime
-`default_annotations` override attempts still left guest pull on the carrier image, and disabling
-CRI-O's host decryption key path did not change the direct digest failure. That blocker is now
-separate from policy enforcement: a later tag-shaped diagnostic applied a SHA-256 HOST_DATA
-attestation policy plus a resource policy that reads
+§5 for the full matrix. The signed and encrypted rungs have implementation scaffolding; the
+signed rung has live rig accept/deny evidence, while the encrypted rung still needs a completed
+direct encrypted-image guest-pull proof. The 2026-06-30 rig diagnosed the encrypted-rung KID/KEK
+mismatch and proved guest decryption through a local alias diagnostic, but the production
+digest-pinned pod is still blocked before KBS by CRI-O host-side encrypted-layer pre-pull; CRI-O
+annotation and runtime `default_annotations` override attempts still left guest pull on the
+carrier image, and disabling CRI-O's host decryption key path did not change the direct digest
+failure. That blocker is now separate from policy enforcement: a later tag-shaped diagnostic
+applied a SHA-256 HOST_DATA attestation policy plus a resource policy that reads
 `ear.trustworthiness-vector.configuration`; the happy diagnostic received `image-kek`, while
 tampered initdata got KBS 401/`PolicyDeny`. See Phase 6 of
 [`docs/runbooks/install-execution-plan.md`](runbooks/install-execution-plan.md) for the
@@ -856,34 +856,44 @@ Each rung adds one user-visible capability on top of the same attestation base:
 
 | Rung | Capability being proven | Secret/resource being protected |
 |------|-------------------------|---------------------------------|
-| a | Attested secret release. | A sample KBS resource requested by the pod after CDH reports success. |
-| b | Attested signed-image policy. | The registry credential and image security policy. |
-| c | Attested encrypted-image pull. | The image decryption key. |
+| A (rung-kbs) | Attested secret release. | A sample KBS resource requested by the pod after CDH reports success. |
+| B (rung-rvps) | Attested measurement verification. | The same secret, now gated on a populated RVPS measurement. |
+| C (rung-signed) | Attested signed-image policy. | The registry credential and image security policy. |
+| D (rung-encrypted) | Attested encrypted-image pull. | The image decryption key. |
 | Air-gap | No hidden live dependency on AMD KDS. | The VCEK cache path itself. |
 
-- **Rung a — secret release.** Deploy
+- **Rung A (rung-kbs) — secret release.** Deploy
   [`gitops/base/workloads/rung-a-secret-pod.yaml`](../gitops/base/workloads/rung-a-secret-pod.yaml)
   (`runtimeClassName: kata-cc`). **Happy:** the init container's CDH attestation call returns
-  `{"status":"success"}` → workload runs. **Negative:** restrictive resource policy + wrong/
-  empty RVPS (or tampered initdata) → attestation errors, **secret withheld**, pod does not
-  start. Keep `limits.memory ≥ default_memory + 256–512 MiB` or the host OOM-kills the CVM
-  (SNP pins all guest RAM at launch). Read `oc describe pod` / `oc get events`, not just logs.
-- **Rung b — signed image.** **Happy:** signed image pulls (mirror pull secret served as
-  `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the pull.
-  Plan details: serve a restrictive signed-image policy and public key from KBS, while still
-  allowing or verifying the pause/release images the CVM pulls before the app image.
-- **Rung c — encrypted image** *(upstream-blocked: cri-o/cri-o#10084)*. **Happy:** pod Running
+  `{"status":"success"}` → workload runs. **Negative:** no valid attestation → attestation
+  errors, **secret withheld** (403), pod does not start. Keep `limits.memory ≥ default_memory +
+  256–512 MiB` or the host OOM-kills the CVM (SNP pins all guest RAM at launch). Read `oc
+  describe pod` / `oc get events`, not just logs.
+- **Rung B (rung-rvps) — measurement verification.** **Happy:** a populated
+  `snp_launch_measurement` in RVPS matches the attestation evidence → secret released.
+  **Negative:** a valid attestation with the wrong or absent measurement → **secret withheld**.
+  Tampered-initdata evidence (Proven 2026-07-01) is a *measurement* proof: because
+  `init_data == sha256(initdata bytes) == HOST_DATA`, an untampered release succeeds while a
+  tampered one is withheld (403), confirming the launch measurement is load-bearing.
+- **Rung C (rung-signed) — signed image.** **Happy:** signed image pulls (mirror pull secret
+  served as `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the
+  pull. Plan details: serve a restrictive signed-image policy and public key from KBS, while
+  still allowing or verifying the pause/release images the CVM pulls before the app image.
+- **Rung D (rung-encrypted) — encrypted image** *(manual; upstream-blocked: cri-o/cri-o#10084 —
+  excluded from the hands-off loop, and a skipped D is not a failure)*. **Happy:** pod Running
   (image key released after attestation). **Negative:** wrong measurement → key withheld → pod
   won't start. Plan details: build a digest-pinned encrypted image, serve its actual wrapping
   key from KBS at the KID embedded in the encrypted layer, then prove a measured-initdata
   mismatch prevents the key release.
 - **Air-gap negative test (cross-cutting).** Temporarily remove the Trustee `vcek-*` Secrets,
-  then rerun an otherwise happy rung-a request. Attestation **must fail**, and the Secrets must
-  be restored. Proves the OfflineStore cache — not a silently-reachable KDS — is load-bearing.
+  then rerun an otherwise happy rung-kbs request. Attestation **must fail**, and the Secrets
+  must be restored. Proves the OfflineStore cache — not a silently-reachable KDS — is
+  load-bearing.
 
 > **STOP-gate:** every rung's happy path **and** negative test green, and the air-gap negative
-> test fails closed. For rungs b/c, confirm each happy + negative result on the node before
-> checking the rung off.
+> test fails closed. For the signed and encrypted rungs, confirm each happy + negative result
+> on the node before checking the rung off (rung D is manual and excluded from the hands-off
+> loop).
 
 ---
 

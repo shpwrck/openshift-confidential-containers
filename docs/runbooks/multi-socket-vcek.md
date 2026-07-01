@@ -32,7 +32,7 @@ collects each socket's report, then fetches that socket's VCEK from it.
   container, or copy the binary out).
 - The `coco-tools` image must be **guest-pullable** in your air gap (present in the mirror; the
   guest's registry-configuration KBS resource must rewrite `quay.io/openshift_sandboxed_containers`
-  to your mirror, same as the rung-a images). If it isn't, bake `snpguest` into any image that
+  to your mirror, same as the rung-kbs images). If it isn't, bake `snpguest` into any image that
   already guest-pulls.
 
 ## Procedure
@@ -74,8 +74,8 @@ spec:
           sleep 3600      # keep alive so you can `oc cp` the report out
 ```
 
-The pod needs the **same initdata** (mirror registry config + CA) as rung-a so the guest can pull
-`coco-tools`; render it the way `scripts/apply-rung-a.sh` does for its pod.
+The pod needs the **same initdata** (mirror registry config + CA) as rung-kbs so the guest can pull
+`coco-tools`; render it the way `scripts/apply-rung-kbs.sh` does for its pod.
 
 Deploy N of these (e.g. `N = 2 × sockets`), read each `CHIP_ID` from its log, and copy out the
 reports for the **distinct** `CHIP_ID`s you haven't seen yet:
@@ -121,7 +121,7 @@ make deploy-trustee                 # re-renders KbsConfig with one entry per so
 - `vcek-bundle/` has **one dir per socket**, each with a **distinct** hwid and a `vcek.der`.
 - `oc -n trustee-operator-system get secret | grep vcek-snp-` shows **one secret per socket**.
 - `KbsConfig` `kbsLocalCertCacheSpec.secrets` has **one entry per socket**.
-- Schedule a rung-a pod (or your workload) **on each socket** and confirm each **attests
+- Schedule a rung-kbs pod (or your workload) **on each socket** and confirm each **attests
   successfully** — that is the real proof both sockets' VCEKs are load-bearing. If a CVM on one
   socket fails attestation while the other succeeds, that socket's VCEK is missing or wrong.
 

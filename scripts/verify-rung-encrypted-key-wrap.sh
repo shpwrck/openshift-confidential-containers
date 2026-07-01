@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Verify that the configured rung-c KEK unwraps the encrypted image layer key.
+# Verify that the configured rung-encrypted KEK unwraps the encrypted image layer key.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/compat.sh
 source "${REPO_ROOT}/scripts/lib/compat.sh"
 MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
-ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-bc-artifacts}"
-RUNG_C_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
-RUNG_C_IMAGE_REF="${RUNG_C_IMAGE_REF:-}"
-RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
-RUNG_C_KEY_FILE="${RUNG_C_KEY_FILE:-${ARTIFACT_DIR}/rung-c-image.key}"
-RUNG_BC_IMAGES_MANIFEST="${RUNG_BC_IMAGES_MANIFEST:-${ARTIFACT_DIR}/rung-bc-images.json}"
-REQUIRE_RUNG_BC_IMAGES_MANIFEST="${REQUIRE_RUNG_BC_IMAGES_MANIFEST:-0}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-image-artifacts}"
+RUNG_ENCRYPTED_IMAGE="${RUNG_ENCRYPTED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
+RUNG_ENCRYPTED_IMAGE_REF="${RUNG_ENCRYPTED_IMAGE_REF:-}"
+RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-encrypted}"
+RUNG_ENCRYPTED_KEY_FILE="${RUNG_ENCRYPTED_KEY_FILE:-${ARTIFACT_DIR}/rung-encrypted-image.key}"
+RUNG_IMAGE_MANIFEST="${RUNG_IMAGE_MANIFEST:-${ARTIFACT_DIR}/rung-image-manifest.json}"
+REQUIRE_RUNG_IMAGE_MANIFEST="${REQUIRE_RUNG_IMAGE_MANIFEST:-0}"
 ANNOTATION_KEY="org.opencontainers.image.enc.keys.provider.attestation-agent"
 
 die() {
@@ -35,19 +35,19 @@ need() {
 
 usage() {
 	cat <<EOF
-Usage: verify-rung-c-key-wrap.sh
+Usage: verify-rung-encrypted-key-wrap.sh
 
-Inspect the rung-c encrypted image metadata and verify that RUNG_C_KEY_FILE decrypts
+Inspect the encrypted image metadata and verify that RUNG_ENCRYPTED_KEY_FILE decrypts
 the A256GCM-wrapped layer key recorded in the attestation-agent annotation. The
 script does not print key material or the unwrapped layer key.
 
 Key env:
-  RUNG_C_IMAGE                    image ref without transport (default: ${MIRROR_REGISTRY}/coco/rung-c:encrypted)
-  RUNG_C_IMAGE_REF                full skopeo ref override, e.g. docker://... or dir:/...
-  RUNG_C_KEY_ID                   expected kbs:/// key ID
-  RUNG_C_KEY_FILE                 32-byte KEK file
-  RUNG_BC_IMAGES_MANIFEST         optional rung-bc-images.json consistency check
-  REQUIRE_RUNG_BC_IMAGES_MANIFEST set 1 to fail when the manifest is missing
+  RUNG_ENCRYPTED_IMAGE                    image ref without transport (default: ${MIRROR_REGISTRY}/coco/rung-c:encrypted)
+  RUNG_ENCRYPTED_IMAGE_REF                full skopeo ref override, e.g. docker://... or dir:/...
+  RUNG_ENCRYPTED_KEY_ID                   expected kbs:/// key ID
+  RUNG_ENCRYPTED_KEY_FILE                 32-byte KEK file
+  RUNG_IMAGE_MANIFEST         optional rung-image-manifest.json consistency check
+  REQUIRE_RUNG_IMAGE_MANIFEST set 1 to fail when the manifest is missing
 EOF
 }
 
@@ -99,21 +99,21 @@ image_digest_ref() {
 verify_manifest_consistency() {
 	local manifest="$1" digest_ref="$2" key_sha="$3"
 	if [[ ! -s "$manifest" ]]; then
-		if [[ "$REQUIRE_RUNG_BC_IMAGES_MANIFEST" == "1" ]]; then
-			fail "rung-b/c image manifest missing: $manifest"
+		if [[ "$REQUIRE_RUNG_IMAGE_MANIFEST" == "1" ]]; then
+			fail "signed/encrypted image manifest missing: $manifest"
 		fi
-		pass "rung-b/c image manifest not present; skipped manifest consistency check"
+		pass "signed/encrypted image manifest not present; skipped manifest consistency check"
 		return
 	fi
 	jq -e \
 		--arg digest_ref "$digest_ref" \
-		--arg key_id "$RUNG_C_KEY_ID" \
+		--arg key_id "$RUNG_ENCRYPTED_KEY_ID" \
 		--arg key_sha "$key_sha" '
-		.rung_c.digest_ref == $digest_ref and
-		.rung_c.key_id == $key_id and
-		.rung_c.key_sha256 == $key_sha
-	' "$manifest" >/dev/null || fail "rung-b/c manifest does not match image digest, key ID, or key fingerprint: $manifest"
-	pass "rung-b/c manifest matches image digest, key ID, and key fingerprint"
+		.rung_encrypted.digest_ref == $digest_ref and
+		.rung_encrypted.key_id == $key_id and
+		.rung_encrypted.key_sha256 == $key_sha
+	' "$manifest" >/dev/null || fail "signed/encrypted manifest does not match image digest, key ID, or key fingerprint: $manifest"
+	pass "signed/encrypted manifest matches image digest, key ID, and key fingerprint"
 }
 
 decrypt_annotation() {
@@ -213,24 +213,24 @@ need base64
 have_sha256 || die "no sha256 tool found (need sha256sum, shasum, or openssl)"
 need python3
 
-[[ -s "$RUNG_C_KEY_FILE" ]] || die "missing rung-c key file: $RUNG_C_KEY_FILE"
-key_size="$(file_size_bytes "$RUNG_C_KEY_FILE")"
-[[ "$key_size" == "32" ]] || fail "rung-c key must be exactly 32 bytes: $RUNG_C_KEY_FILE (${key_size} bytes)"
-pass "rung-c key file is 32 bytes"
+[[ -s "$RUNG_ENCRYPTED_KEY_FILE" ]] || die "missing rung-encrypted key file: $RUNG_ENCRYPTED_KEY_FILE"
+key_size="$(file_size_bytes "$RUNG_ENCRYPTED_KEY_FILE")"
+[[ "$key_size" == "32" ]] || fail "rung-encrypted key must be exactly 32 bytes: $RUNG_ENCRYPTED_KEY_FILE (${key_size} bytes)"
+pass "rung-encrypted key file is 32 bytes"
 
-image_ref="${RUNG_C_IMAGE_REF:-$(image_transport_ref "$RUNG_C_IMAGE")}"
+image_ref="${RUNG_ENCRYPTED_IMAGE_REF:-$(image_transport_ref "$RUNG_ENCRYPTED_IMAGE")}"
 inspect_json="$(mktemp)"
 annotation_json="$(mktemp)"
 trap 'rm -f "$inspect_json" "$annotation_json"' EXIT
 
 skopeo inspect "$image_ref" > "$inspect_json"
 digest="$(jq -r '.Digest // ""' "$inspect_json")"
-[[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "rung-c image digest missing from skopeo inspect: $image_ref"
-digest_ref="$(image_digest_ref "$RUNG_C_IMAGE" "$digest")"
-pass "rung-c image digest resolved to $digest_ref"
+[[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "encrypted image digest missing from skopeo inspect: $image_ref"
+digest_ref="$(image_digest_ref "$RUNG_ENCRYPTED_IMAGE" "$digest")"
+pass "encrypted image digest resolved to $digest_ref"
 
-key_sha="$(file_sha256 "$RUNG_C_KEY_FILE")"
-verify_manifest_consistency "$RUNG_BC_IMAGES_MANIFEST" "$digest_ref" "$key_sha"
+key_sha="$(file_sha256 "$RUNG_ENCRYPTED_KEY_FILE")"
+verify_manifest_consistency "$RUNG_IMAGE_MANIFEST" "$digest_ref" "$key_sha"
 
 annotation_count=0
 matching_count=0
@@ -242,20 +242,20 @@ while IFS= read -r annotation_b64; do
 		fail "encrypted layer annotation is not valid base64 JSON"
 	fi
 	kid="$(jq -r '.kid // ""' "$annotation_json")"
-	if [[ "$kid" != "$RUNG_C_KEY_ID" ]]; then
+	if [[ "$kid" != "$RUNG_ENCRYPTED_KEY_ID" ]]; then
 		continue
 	fi
 	matching_count=$((matching_count + 1))
 	wrap_type="$(jq -r '.wrap_type // ""' "$annotation_json")"
-	[[ "$wrap_type" == "A256GCM" ]] || fail "unsupported rung-c encrypted layer wrap_type: ${wrap_type:-missing}"
-	decrypt_output="$(decrypt_annotation "$annotation_json" "$RUNG_C_KEY_FILE" 2>&1)" || fail "$decrypt_output"
+	[[ "$wrap_type" == "A256GCM" ]] || fail "unsupported encrypted layer wrap_type: ${wrap_type:-missing}"
+	decrypt_output="$(decrypt_annotation "$annotation_json" "$RUNG_ENCRYPTED_KEY_FILE" 2>&1)" || fail "$decrypt_output"
 	decrypted_count=$((decrypted_count + 1))
 done < <(jq -r --arg key "$ANNOTATION_KEY" '.LayersData[]?.Annotations[$key]? // empty' "$inspect_json")
 
 (( annotation_count > 0 )) || fail "no attestation-agent encrypted layer annotations found in $image_ref"
 pass "found $annotation_count encrypted layer annotation(s)"
-(( matching_count > 0 )) || fail "no encrypted layer annotation matched RUNG_C_KEY_ID=$RUNG_C_KEY_ID"
-pass "found $matching_count encrypted layer annotation(s) for RUNG_C_KEY_ID"
+(( matching_count > 0 )) || fail "no encrypted layer annotation matched RUNG_ENCRYPTED_KEY_ID=$RUNG_ENCRYPTED_KEY_ID"
+pass "found $matching_count encrypted layer annotation(s) for RUNG_ENCRYPTED_KEY_ID"
 (( decrypted_count == matching_count )) || fail "only decrypted $decrypted_count of $matching_count matching annotation(s)"
-pass "configured rung-c key unwraps $decrypted_count encrypted layer key annotation(s)"
-echo "Rung-b key wrap verification OK."
+pass "configured rung-encrypted key unwraps $decrypted_count encrypted layer key annotation(s)"
+echo "rung-encrypted key wrap verification OK."

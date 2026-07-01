@@ -31,12 +31,13 @@ See [`docs/architecture.md`](docs/architecture.md) for component diagrams, the a
 
 ## Capability rungs (prove on rig → apply to production)
 
-- **a** — KBS secret-resource release (attestation gates a credential)
-- **b** — signed image (`image_security_policy`)
-- **c** — encrypted container image (wrong measurement → pod won't start; direct pull is upstream-blocked, cri-o/cri-o#10084)
+- **A** (`rung-kbs`) — KBS secret-resource release (attestation gates a credential)
+- **B** (`rung-rvps`) — RVPS measurement verification (a populated `snp_launch_measurement` gates release)
+- **C** (`rung-signed`) — signed image (`image_security_policy`)
+- **D** (`rung-encrypted`) — encrypted container image (wrong measurement → pod won't start; direct pull is upstream-blocked, cri-o/cri-o#10084) — **manual**, excluded from the hands-off loop
 
 Each rung is "done" only when (1) reproduced from written steps on a fresh node and (2) its
-**negative test** (the denial) passes. Run `make negative-test WHICH=<a|b|c|air-gap|all>` — each
+**negative test** (the denial) passes. Run `make negative-test WHICH=<rung-kbs|rung-rvps|rung-signed|rung-encrypted|air-gap|all>` — each
 denial is self-contained: the secret/policy/VCEK swap it needs is backed up and **automatically
 reverted**, so the rig returns to baseline.
 
@@ -44,10 +45,11 @@ reverted**, so the rig returns to baseline.
 
 | Rung / test | Happy path | Negative (the denial) | State |
 |---|---|---|---|
-| **a** — secret release | ✅ air-gapped attest via VCEK **OfflineStore** | ✅ restrictive measured-initdata policy — tampered initdata → secret **withheld (403)**; untampered control still releases (apply+revert) | **PROVEN** |
-| **air-gap** — OfflineStore is load-bearing | (rung-a happy) | ✅ swap VCEK for a wrong cert → attestation **401** (not a silent KDS hit) | **PROVEN** |
-| **b** — signed image | scaffolding + tag-shaped diagnostics | `image_security_policy` rejects unsigned/tampered | signature **transport gap** — the minimal mirror-registry doesn't serve the Quay signature extension (see [`failure-modes.md`](docs/runbooks/failure-modes.md)) |
-| **c** — encrypted image | — | wrong measurement → key withheld → pod won't start | **upstream-blocked** — host encrypted-layer pre-pull, [cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084) |
+| **A** (`rung-kbs`) — secret release | ✅ air-gapped attest via VCEK **OfflineStore** → secret released | no valid attestation → secret **withheld (403)** — bare-attestation negative **authored in #17** | happy **PROVEN**; bare negative pending #17 |
+| **B** (`rung-rvps`) — measurement verification | a populated `snp_launch_measurement` matches the evidence → released | ✅ restrictive measured-initdata policy — tampered initdata → secret **withheld (403)**; untampered control still releases (apply+revert) | **PROVEN 2026-07-01** — runs via `WHICH=rung-kbs` today; relocates to `WHICH=rung-rvps` in #18 (currently a SKIP) |
+| **air-gap** — OfflineStore is load-bearing | (rung-kbs happy) | ✅ swap VCEK for a wrong cert → attestation **401** (not a silent KDS hit) | **PROVEN** |
+| **C** (`rung-signed`) — signed image | scaffolding + tag-shaped diagnostics | `image_security_policy` rejects unsigned/tampered | signature **transport gap** — the minimal mirror-registry doesn't serve the Quay signature extension (see [`failure-modes.md`](docs/runbooks/failure-modes.md)) |
+| **D** (`rung-encrypted`) — encrypted image *(manual)* | — | wrong measurement → key withheld → pod won't start | **upstream-blocked** — host encrypted-layer pre-pull, [cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084) |
 
 See Phase 6 of [`docs/runbooks/install-execution-plan.md`](docs/runbooks/install-execution-plan.md)
 for the build → KBS-resource → apply → negative sequence, and

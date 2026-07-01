@@ -35,9 +35,10 @@ __TRUSTEE_CA_PEM__
 """
 '''
 
-# Confidential Data Hub — resource fetch (rung a secret) + image pull (rungs b/c). Same KBS URL.
+# Confidential Data Hub — resource fetch (rung-kbs secret) + image pull (the signed and encrypted
+# rungs). Same KBS URL.
 # The [image] block below is the AIR-GAP GUEST-PULL recipe PROVEN END-TO-END on the rig 2026-06-29
-# (rung-a Running as kata-cc, image pulled from the bastion mirror over HTTPS). Hard-won details:
+# (rung-kbs Running as kata-cc, image pulled from the bastion mirror over HTTPS). Hard-won details:
 #  - registry_configuration_uri (kbs:///…) is the form that WORKS. The inline `[image.registry_config]`
 #    table is SILENTLY IGNORED by the OSC 1.12 CDH → image-rs falls back to the upstream registry,
 #    which the air-gap firewall drops → CreateContainer hangs with no error. Serve the registries.conf

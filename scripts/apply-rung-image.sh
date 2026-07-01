@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Render and optionally apply the rung-b/rung-c confidential-image proof workloads.
+# Render and optionally apply the signed/encrypted confidential-image proof workloads.
 #
-# RUNG=b|c selects the workload. Key env knobs (all have rig defaults):
+# RUNG=signed|encrypted selects the workload. Key env knobs (all have rig defaults):
 #   NS=default  TRUSTEE_NS=trustee-operator-system  KBS_URL=http://kbs-service.<ns>.svc:8080
 #   ARTIFACTORY_REGISTRY=mirror.rig.local:8443  MIRROR_CA=/opt/mirror/ca/rootCA.pem  MIRROR_DOMAIN=rig.local  (legacy MIRROR_REGISTRY honored)
-#   RUNG_C_IMAGE / RUNG_B_IMAGE = <digest-ref>  RUNG_C_KEY_ID=  IMAGE_SECURITY_POLICY_URI=
+#   RUNG_ENCRYPTED_IMAGE / RUNG_SIGNED_IMAGE = <digest-ref>  RUNG_ENCRYPTED_KEY_ID=  IMAGE_SECURITY_POLICY_URI=
 #   RENDER_ONLY=1      print the rendered pod.yaml and exit (no cluster writes)
 #   TAMPER_INITDATA=1  corrupt the measured initdata (used by the negative tests)
 #   REQUIRE_KBS_RESOURCE_LOGS=1 (default) also assert the KBS resource fetch is visible in logs
@@ -40,7 +40,7 @@ require_digest_ref() {
 	if [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
 		return
 	fi
-	die "${var_name} must be a sha256 digest ref for proof runs: ${image}. Source rung-bc-artifacts/rung-bc.env from make build-rung-images, or read the digest refs from rung-bc-artifacts/rung-bc-images.json."
+	die "${var_name} must be a sha256 digest ref for proof runs: ${image}. Source rung-image-artifacts/rung-image.env from make build-rung-images, or read the digest refs from rung-image-artifacts/rung-image-manifest.json."
 }
 
 kbs_uri_resource_path() {
@@ -203,24 +203,24 @@ verify_kbs_resource_logs() {
 }
 
 case "$RUNG" in
-	c)
+	encrypted)
 		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-c-encrypted-pod.yaml}"
 		POD_NAME="${POD_NAME:-rung-c-encrypted}"
-		RUNG_IMAGE="${RUNG_C_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
-		RUNG_IMAGE_VAR=RUNG_C_IMAGE
-		RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
+		RUNG_IMAGE="${RUNG_ENCRYPTED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
+		RUNG_IMAGE_VAR=RUNG_ENCRYPTED_IMAGE
+		RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-encrypted}"
 		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/test}"
-		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$RUNG_C_KEY_ID")")
+		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$RUNG_ENCRYPTED_KEY_ID")")
 		;;
-	b)
+	signed)
 		BASE_MANIFEST="${BASE_MANIFEST:-$REPO_ROOT/gitops/base/workloads/rung-b-signed-pod.yaml}"
 		POD_NAME="${POD_NAME:-rung-b-signed}"
-		RUNG_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
-		RUNG_IMAGE_VAR=RUNG_B_IMAGE
-		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/rung-b}"
-		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$IMAGE_SECURITY_POLICY_URI")" default/sig-public-key/rung-b)
+		RUNG_IMAGE="${RUNG_SIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
+		RUNG_IMAGE_VAR=RUNG_SIGNED_IMAGE
+		IMAGE_SECURITY_POLICY_URI="${IMAGE_SECURITY_POLICY_URI:-kbs:///default/security-policy/rung-signed}"
+		EXPECTED_KBS_RESOURCES=("$(kbs_uri_resource_path "$IMAGE_SECURITY_POLICY_URI")" default/sig-public-key/rung-signed)
 		;;
-	*) die "set RUNG=b or RUNG=c" ;;
+	*) die "set RUNG=signed or RUNG=encrypted" ;;
 esac
 
 require_digest_ref "$RUNG_IMAGE_VAR" "$RUNG_IMAGE"

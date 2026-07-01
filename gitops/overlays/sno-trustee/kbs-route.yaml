@@ -1,5 +1,5 @@
 # Trustee side of the cross-cluster wiring: expose KBS OFF the verifier cluster so the separate
-# confidential-worker cluster can reach it. With Trustee in-cluster (rung a–c on one SNO) the
+# confidential-worker cluster can reach it. With Trustee in-cluster (rungs A–D on one SNO) the
 # worker uses the ClusterIP directly and this Route is unused; the THIRD SERVER topology needs it.
 #
 # Pairing checklist when the third server exists:

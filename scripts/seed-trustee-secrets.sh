@@ -16,18 +16,18 @@ MIRROR_CA="${MIRROR_CA:-/opt/mirror/ca/rootCA.pem}"
 KBS_PUB="${KBS_PUB:-${HOME}/kbs.pub}"
 ATTESTATION_CERT="${ATTESTATION_CERT:-$MIRROR_CA}"
 SAMPLE_SECRET="${SAMPLE_SECRET:-rung-a-demo-value}"
-RUNG_C_KEY_FILE="${RUNG_C_KEY_FILE:-}"
-RUNG_C_KEY_ID="${RUNG_C_KEY_ID:-kbs:///default/image-key/rung-c}"
-RUNG_B_COSIGN_PUB="${RUNG_B_COSIGN_PUB:-}"
-RUNG_B_POLICY_FILE="${RUNG_B_POLICY_FILE:-}"
-RUNG_B_IMAGE="${RUNG_B_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
-RUNG_B_POLICY_IMAGE_PREFIX="${RUNG_B_POLICY_IMAGE_PREFIX:-}"
+RUNG_ENCRYPTED_KEY_FILE="${RUNG_ENCRYPTED_KEY_FILE:-}"
+RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-encrypted}"
+RUNG_SIGNED_COSIGN_PUB="${RUNG_SIGNED_COSIGN_PUB:-}"
+RUNG_SIGNED_POLICY_FILE="${RUNG_SIGNED_POLICY_FILE:-}"
+RUNG_SIGNED_IMAGE="${RUNG_SIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
+RUNG_SIGNED_POLICY_IMAGE_PREFIX="${RUNG_SIGNED_POLICY_IMAGE_PREFIX:-}"
 
 tmpdir=""
 vcek_hwids=()
 vcek_ders=()
-RUNG_C_KEY_SECRET=""
-RUNG_C_KEY_NAME=""
+RUNG_ENCRYPTED_KEY_SECRET=""
+RUNG_ENCRYPTED_KEY_NAME=""
 
 die() {
 	echo "ERROR: $*" >&2
@@ -49,10 +49,10 @@ file_size_bytes() {
 	fi
 }
 
-require_rung_c_key_size() {
+require_rung_encrypted_key_size() {
 	local path="$1" size
 	size="$(file_size_bytes "$path")"
-	[[ "$size" == "32" ]] || die "rung-c image key must be exactly 32 bytes: $path (${size} bytes)"
+	[[ "$size" == "32" ]] || die "rung-encrypted image key must be exactly 32 bytes: $path (${size} bytes)"
 }
 
 kbs_uri_default_secret_key() {
@@ -106,7 +106,7 @@ image_repo_ref() {
 	printf '%s\n' "$base"
 }
 
-render_default_rung_b_policy() {
+render_default_rung_signed_policy() {
 	local image_prefix="$1"
 	jq -n --arg image_prefix "$image_prefix" --arg mirror_registry "$MIRROR_REGISTRY" '{
 		default: [{type: "reject"}],
@@ -115,7 +115,7 @@ render_default_rung_b_policy() {
 				($image_prefix): [
 					{
 						type: "sigstoreSigned",
-						keyPath: "kbs:///default/sig-public-key/rung-b"
+						keyPath: "kbs:///default/sig-public-key/rung-signed"
 					}
 				],
 				($mirror_registry + "/openshift/release"): [
@@ -162,22 +162,22 @@ apply_secret() {
 	oc -n "$NS" apply -f -
 }
 
-if [[ -z "$RUNG_B_POLICY_IMAGE_PREFIX" ]]; then
-	RUNG_B_POLICY_IMAGE_PREFIX="$(image_repo_ref "$RUNG_B_IMAGE")"
+if [[ -z "$RUNG_SIGNED_POLICY_IMAGE_PREFIX" ]]; then
+	RUNG_SIGNED_POLICY_IMAGE_PREFIX="$(image_repo_ref "$RUNG_SIGNED_IMAGE")"
 fi
 
-if [[ "${1:-}" == "render-rung-b-policy" ]]; then
-	[[ "$#" -eq 1 ]] || die "usage: $0 render-rung-b-policy"
+if [[ "${1:-}" == "render-rung-signed-policy" ]]; then
+	[[ "$#" -eq 1 ]] || die "usage: $0 render-rung-signed-policy"
 	need jq
-	render_default_rung_b_policy "$RUNG_B_POLICY_IMAGE_PREFIX"
+	render_default_rung_signed_policy "$RUNG_SIGNED_POLICY_IMAGE_PREFIX"
 	exit 0
 fi
 
-if [[ -n "$RUNG_C_KEY_FILE" ]]; then
-	parsed="$(kbs_uri_default_secret_key "$RUNG_C_KEY_ID")"
-	RUNG_C_KEY_SECRET="${parsed%%	*}"
-	RUNG_C_KEY_NAME="${parsed#*	}"
-	require_rung_c_key_size "$RUNG_C_KEY_FILE"
+if [[ -n "$RUNG_ENCRYPTED_KEY_FILE" ]]; then
+	parsed="$(kbs_uri_default_secret_key "$RUNG_ENCRYPTED_KEY_ID")"
+	RUNG_ENCRYPTED_KEY_SECRET="${parsed%%	*}"
+	RUNG_ENCRYPTED_KEY_NAME="${parsed#*	}"
+	require_rung_encrypted_key_size "$RUNG_ENCRYPTED_KEY_FILE"
 fi
 
 need oc
@@ -193,11 +193,11 @@ docker_auth_json="$(jq -nc --arg registry "$MIRROR_REGISTRY" --arg auth "$auth" 
 
 stage_readable_file "$KBS_PUB" "$tmpdir/kbs.pub"
 stage_readable_file "$ATTESTATION_CERT" "$tmpdir/attestation.crt"
-if [[ -n "$RUNG_C_KEY_FILE" ]]; then
-	stage_readable_file "$RUNG_C_KEY_FILE" "$tmpdir/rung-c-image.key"
+if [[ -n "$RUNG_ENCRYPTED_KEY_FILE" ]]; then
+	stage_readable_file "$RUNG_ENCRYPTED_KEY_FILE" "$tmpdir/rung-encrypted-image.key"
 fi
-if [[ -n "$RUNG_B_COSIGN_PUB" ]]; then
-	stage_readable_file "$RUNG_B_COSIGN_PUB" "$tmpdir/cosign.pub"
+if [[ -n "$RUNG_SIGNED_COSIGN_PUB" ]]; then
+	stage_readable_file "$RUNG_SIGNED_COSIGN_PUB" "$tmpdir/cosign.pub"
 fi
 
 printf '%s' "$docker_auth_json" > "$tmpdir/credential.json"
@@ -207,10 +207,10 @@ printf '%s' '{"status":"success"}' > "$tmpdir/attestation-status"
 cat > "$tmpdir/security-policy.json" <<EOF
 {"default":[{"type":"insecureAcceptAnything"}],"transports":{"docker":{"${MIRROR_REGISTRY}":[{"type":"insecureAcceptAnything"}]}}}
 EOF
-if [[ -n "$RUNG_B_POLICY_FILE" ]]; then
-	stage_readable_file "$RUNG_B_POLICY_FILE" "$tmpdir/security-policy-rung-b.json"
-elif [[ -n "$RUNG_B_COSIGN_PUB" ]]; then
-	render_default_rung_b_policy "$RUNG_B_POLICY_IMAGE_PREFIX" > "$tmpdir/security-policy-rung-b.json"
+if [[ -n "$RUNG_SIGNED_POLICY_FILE" ]]; then
+	stage_readable_file "$RUNG_SIGNED_POLICY_FILE" "$tmpdir/security-policy-rung-signed.json"
+elif [[ -n "$RUNG_SIGNED_COSIGN_PUB" ]]; then
+	render_default_rung_signed_policy "$RUNG_SIGNED_POLICY_IMAGE_PREFIX" > "$tmpdir/security-policy-rung-signed.json"
 fi
 cat > "$tmpdir/registries.conf" <<EOF
 [[registry]]
@@ -243,10 +243,10 @@ oc -n "$NS" create secret generic regcred \
 oc -n "$NS" create secret generic credential \
 	--from-file=test="$tmpdir/credential.json" \
 	--dry-run=client -o yaml | apply_secret
-if [[ -s "$tmpdir/security-policy-rung-b.json" ]]; then
+if [[ -s "$tmpdir/security-policy-rung-signed.json" ]]; then
 	oc -n "$NS" create secret generic security-policy \
 		--from-file=test="$tmpdir/security-policy.json" \
-		--from-file=rung-b="$tmpdir/security-policy-rung-b.json" \
+		--from-file=rung-signed="$tmpdir/security-policy-rung-signed.json" \
 		--dry-run=client -o yaml | apply_secret
 else
 	oc -n "$NS" create secret generic security-policy \
@@ -256,14 +256,14 @@ fi
 oc -n "$NS" create secret generic registry-configuration \
 	--from-file=test="$tmpdir/registries.conf" \
 	--dry-run=client -o yaml | apply_secret
-if [[ -s "$tmpdir/rung-c-image.key" ]]; then
-	oc -n "$NS" create secret generic "$RUNG_C_KEY_SECRET" \
-		--from-file="${RUNG_C_KEY_NAME}=$tmpdir/rung-c-image.key" \
+if [[ -s "$tmpdir/rung-encrypted-image.key" ]]; then
+	oc -n "$NS" create secret generic "$RUNG_ENCRYPTED_KEY_SECRET" \
+		--from-file="${RUNG_ENCRYPTED_KEY_NAME}=$tmpdir/rung-encrypted-image.key" \
 		--dry-run=client -o yaml | apply_secret
 fi
 if [[ -s "$tmpdir/cosign.pub" ]]; then
 	oc -n "$NS" create secret generic sig-public-key \
-		--from-file=rung-b="$tmpdir/cosign.pub" \
+		--from-file=rung-signed="$tmpdir/cosign.pub" \
 		--dry-run=client -o yaml | apply_secret
 fi
 oc -n "$NS" create secret generic attestation-status \
@@ -288,11 +288,11 @@ done
 
 echo "Trustee secrets seeded in $NS"
 echo "VCEK_COUNT=${#vcek_hwids[@]}"
-[[ -s "$tmpdir/rung-c-image.key" ]] && echo "RUNG_C_KEY_RESOURCE=${RUNG_C_KEY_SECRET}/${RUNG_C_KEY_NAME}"
-[[ -s "$tmpdir/cosign.pub" ]] && echo "RUNG_B_PUBLIC_KEY_RESOURCE=sig-public-key/rung-b"
-[[ -s "$tmpdir/security-policy-rung-b.json" ]] && echo "RUNG_B_POLICY_RESOURCE=security-policy/rung-b"
+[[ -s "$tmpdir/rung-encrypted-image.key" ]] && echo "RUNG_ENCRYPTED_KEY_RESOURCE=${RUNG_ENCRYPTED_KEY_SECRET}/${RUNG_ENCRYPTED_KEY_NAME}"
+[[ -s "$tmpdir/cosign.pub" ]] && echo "RUNG_SIGNED_PUBLIC_KEY_RESOURCE=sig-public-key/rung-signed"
+[[ -s "$tmpdir/security-policy-rung-signed.json" ]] && echo "RUNG_SIGNED_POLICY_RESOURCE=security-policy/rung-signed"
 
-# The optional `[[ -s ... ]] && echo` summary lines above are false in the plain (no-b/c)
-# case, which would otherwise leave this script's exit status at 1 and abort the caller
+# The optional `[[ -s ... ]] && echo` summary lines above are false in the plain (no signed
+# or encrypted image) case, which would otherwise leave this script's exit status at 1 and abort the caller
 # (apply-trustee.sh runs under `set -e`). Force success.
 exit 0

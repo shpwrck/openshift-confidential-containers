@@ -56,7 +56,7 @@ Replay the rig CoCo install through the scripted Make targets only:
 make verify-snp-host NODE=<node-name>
 make install-coco-operators
 make deploy-trustee
-make run-rung-a-secret
+make run-rung-kbs
 ```
 
 `make install-coco-operators` installs and validates the worker-side CoCo stack: operator CSVs, NFD SNP label,
@@ -80,8 +80,8 @@ collect-vcek` builds a socket-to-CPU map with `lscpu -p=CPU,SOCKET`, runs the co
 once per socket with `podman --cpuset-cpus=<socket-cpus>`, records the resulting HWIDs, and fails
 if a multi-socket node reports more sockets than the carried bundle covers.
 
-`make run-rung-a-secret` generates environment-bound initdata at runtime, configures the `rig.local`
-DNS forwarder to the bastion, applies the digest-pinned rung-a pod, and waits until the
+`make run-rung-kbs` generates environment-bound initdata at runtime, configures the `rig.local`
+DNS forwarder to the bastion, applies the digest-pinned rung-kbs pod, and waits until the
 confidential pod is `Ready`.
 
 ## Prerequisites

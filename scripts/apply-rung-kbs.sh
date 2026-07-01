@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render SNO initdata, launch rung-a, and wait until the confidential pod is running.
+# Render SNO initdata, launch the KBS secret-release workload (rung-kbs), and wait until the pod runs.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,7 +10,7 @@ MIRROR_CA="${MIRROR_CA:-/opt/mirror/ca/rootCA.pem}"
 MIRROR_DOMAIN="${MIRROR_DOMAIN:-rig.local}"
 MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"
 KBS_URL="${KBS_URL:-http://kbs-service.${TRUSTEE_NS}.svc:8080}"
-RUNG_A_IMAGE="${RUNG_A_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63}"
+RUNG_KBS_IMAGE="${RUNG_KBS_IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63}"
 POD_NAME="${POD_NAME:-rung-a-secret}"
 ATTESTATION_RESOURCE_PATH="${ATTESTATION_RESOURCE_PATH:-attestation-status/status}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-900}"
@@ -64,7 +64,7 @@ wait_until() {
 }
 
 sno_baseline_ok() {
-	CATALOGSOURCE="$CATALOGSOURCE" bash "$REPO_ROOT/scripts/validate-sno-baseline.sh" >/tmp/apply-rung-a-baseline.log 2>&1
+	CATALOGSOURCE="$CATALOGSOURCE" bash "$REPO_ROOT/scripts/validate-sno-baseline.sh" >/tmp/apply-rung-kbs-baseline.log 2>&1
 }
 
 runtimeclass_ok() {
@@ -139,7 +139,7 @@ EOF
 		--arg name "$POD_NAME" \
 		--arg namespace "$NS" \
 		--arg initdata "$initdata" \
-		--arg image "$RUNG_A_IMAGE" \
+		--arg image "$RUNG_KBS_IMAGE" \
 		--arg gate_command "$gate_command" \
 		'{
 			metadata: {
@@ -175,7 +175,7 @@ tmpdir="$(mktemp -d)"
 render_initdata "$(read_file "$MIRROR_CA")" "$tmpdir/initdata.toml"
 
 # EMIT_INITDATA: print the exact TOML that gets hardware-measured into HOST_DATA and exit. Used to
-# compute the measured-initdata gate digest (sha256 of these bytes) for the rung-a restrictive
+# compute the measured-initdata gate digest (sha256 of these bytes) for the rung-kbs restrictive
 # negative policy, so the policy and the deployed pod agree byte-for-byte. Honors TAMPER_INITDATA.
 if [[ "$EMIT_INITDATA" == "1" ]]; then
 	cat "$tmpdir/initdata.toml"
@@ -192,7 +192,7 @@ fi
 
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 
-wait_until "SNO baseline" sno_baseline_ok || { cat /tmp/apply-rung-a-baseline.log >&2; exit 1; }
+wait_until "SNO baseline" sno_baseline_ok || { cat /tmp/apply-rung-kbs-baseline.log >&2; exit 1; }
 wait_until "kata-cc runtime class" runtimeclass_ok
 wait_until "Trustee deployment available" trustee_available
 
@@ -214,4 +214,4 @@ echo
 echo "== app log =="
 oc -n "$NS" logs "pod/${POD_NAME}" -c app --tail=20
 echo
-echo "Rung-a confidential pod is running"
+echo "Rung-kbs confidential pod is running"
