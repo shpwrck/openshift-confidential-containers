@@ -3,31 +3,43 @@
 # Generation-agnostic (dodges trustee bug #591 'Milan' hardcode). Re-runnable so it also
 # serves the TCB-refresh case after a firmware update.
 #
+# MULTI-SOCKET (2P) REALITY — read this before touching a dual-socket box:
+#   Host-side chip-id queries (`snphost show vcek-url|identifier`) are answered by the board's
+#   single MASTER PSP, and snphost has NO socket selector. So the host can only ever yield ONE
+#   socket's VCEK (the master's) — cpuset pinning does NOT select a socket's PSP. A genuine 2P
+#   box has two physically distinct chips => two DISTINCT VCEKs; a CVM on socket 1 attests with
+#   socket 1's VCEK, so the OfflineStore needs BOTH or socket-1 CVMs fail attestation.
+#   The ONLY per-socket chip-id source is the SNP attestation REPORT's CHIP_ID (offset 0x1A0),
+#   which is exactly what Trustee keys the VCEK lookup on. Get it from a confidential (kata-cc)
+#   pod pinned to each socket's NUMA node — see `--from-report` below and
+#   docs/runbooks/multi-socket-vcek.md.
+#
 # DESIGN (see docs/design/engagement-design.md §4):
-#   per socket:  pin snphost to CPUs from that socket -> hwid + KDS URL
-#   connected:   download <url> -> vcek.der            (run where KDS is reachable)
+#   host-side:   snphost show vcek-url            -> the MASTER socket's hwid + KDS URL
+#   per-socket:  snpguest report (in a CVM on that socket) -> report.bin -> --from-report
+#   connected:   download <url|report> -> vcek.der         (run where KDS is reachable)
 #   air-gapped:  one short K8s secret per VCEK, mounted via KbsConfig.kbsLocalCertCacheSpec
 #                at /opt/confidential-containers/attestation-service/kds-store/vcek/<lowercase-hwid>/vcek.der
 #
-# This script does the real work; it is hardware-bound, so it MUST run against a live node
-# with `oc` logged in. Two-step flow when the admin host can't reach AMD KDS:
-#   1) run it once on a host with `oc` access  -> writes <OUT>/<hwid>/vcek.url per socket.
-#      snphost has no socket selector, so the script pins the coco-tools container to each
-#      socket's CPU set with podman --cpuset-cpus and aggregates the resulting HWIDs.
+# This script is hardware-bound; the collect + secret steps need `oc` logged into the node.
+# Two-step flow when the admin host can't reach AMD KDS:
+#   1) run it once with `oc` access  -> writes <OUT>/<hwid>/vcek.url for the master socket;
 #   2) on a KDS-CONNECTED host, run `--download` (curls each .url -> vcek.der);
 #   3) run it again with `oc` access (.der now present) -> creates one secret per hwid.
 # When the host running step 1 IS internet-connected, all three happen in one pass.
 #
 # Usage:
-#   ./scripts/collect-vcek.sh <node-name> [namespace]   # collect urls (+ download if KDS reachable) + create secrets
+#   ./scripts/collect-vcek.sh <node-name> [namespace]   # master hwid+url (+download if KDS) + secrets
 #   ./scripts/collect-vcek.sh --download                # offline KDS download step only (no oc needed)
-# Env: OUT=./vcek-bundle  TOOLS_IMG=...  KDS_HOST=kdsintf.amd.com
+#   ./scripts/collect-vcek.sh --from-report <r.bin>...  # add per-socket VCEK(s) from SNP report(s)
+# Env: OUT=./vcek-bundle  TOOLS_IMG=...  KDS_HOST=kdsintf.amd.com  PROCESSOR=milan|genoa (for snpguest)
 set -euo pipefail
 
 OUT="${OUT:-./vcek-bundle}"
 TOOLS_IMG="${TOOLS_IMG:-quay.io/openshift_sandboxed_containers/coco-tools@sha256:89c219d2c7cb8359e8cc86605df1d31ce3be0f2565683b8bff882dba0c8e2605}"
 PODMAN_AUTHFILE="${PODMAN_AUTHFILE:-/var/lib/kubelet/config.json}"
 KDS_HOST="${KDS_HOST:-kdsintf.amd.com}"
+PROCESSOR="${PROCESSOR:-}"
 PATH="/usr/local/bin:${PATH}"
 export PATH
 
@@ -37,6 +49,14 @@ fi
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+# Stable, self-describing VCEK secret name derived from the chip HWID. This MUST match
+# seed-trustee-secrets.sh and apply-trustee.sh render_kbsconfig, which map this same name to the
+# per-chip mountPath. Using an hwid-derived prefix (not a positional index) means a changed chip
+# set — a TCB refresh, or adding/replacing a socket — never renumbers existing secrets and so can
+# never remap a KbsConfig entry to the WRONG chip. 32 hex (16 bytes) of a hardware-unique id is
+# collision-free; the full lowercase hwid still goes in the mountPath the verifier reads.
+vcek_secret_name() { printf 'vcek-snp-%s\n' "${1:0:32}"; }
+
 parse_hwid_from_url() {
   local url="$1" hwid
   hwid="$(echo "${url}" | sed -E 's#.*/v1/[^/]+/([^?]+).*#\1#' | tr '[:upper:]' '[:lower:]')"
@@ -45,7 +65,54 @@ parse_hwid_from_url() {
   printf '%s\n' "${hwid}"
 }
 
-# --- download-only mode: curl every collected .url on a KDS-connected host ----------------
+# The SNP attestation report carries the chip's CHIP_ID as 64 bytes at a FIXED offset 0x1A0 (416).
+# That value IS the hwid Trustee looks the VCEK up by — read it straight from the binary (stable
+# ABI) rather than scraping `snpguest display report` text.
+hwid_from_report() {
+  local report="$1" hwid
+  [[ -s "${report}" ]] || die "report not found or empty: ${report}"
+  # od (coreutils, always present — unlike xxd); -v is REQUIRED or od collapses repeated bytes to '*'.
+  hwid="$(dd if="${report}" bs=1 skip=416 count=64 2>/dev/null | od -An -v -tx1 | tr -d ' \n' | tr 'A-F' 'a-f')"
+  [[ "${hwid}" =~ ^[0-9a-f]{128}$ ]] \
+    || die "no 128-hex CHIP_ID at offset 0x1A0 in ${report} — is it a raw SNP attestation report (snpguest report ...)?"
+  printf '%s\n' "${hwid}"
+}
+
+kds_reachable() { curl -fsS -m 8 -o /dev/null "https://${KDS_HOST}/" 2>/dev/null; }
+
+# Atomic der write: an interrupted curl must not leave a truncated vcek.der that the `[[ -s ]]`
+# guards would treat as complete on the next run.
+fetch_der_from_url() { local url="$1" dest="$2"; curl -fsSL "${url}" -o "${dest}.tmp" && mv -f "${dest}.tmp" "${dest}"; }
+
+require_writable_bundle_dir() {
+  local dir="$1"
+  # A prior privileged/root collection can leave OUT/<hwid> root-owned; fail with a clear,
+  # actionable message instead of the raw "Permission denied" a redirect would throw.
+  [[ -w "${dir}" ]] || die "bundle dir not writable: ${dir} (likely root-owned from a prior run — run: sudo chown -R \"\$(id -un)\" \"${OUT}\")"
+}
+
+# Create one secret per <OUT>/<hwid>/vcek.der, named by vcek_secret_name (stable, hwid-derived).
+create_secrets() {
+  local ns="$1" der hwid name created=0
+  mapfile -t ders < <(find "${OUT}" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
+  [[ "${#ders[@]}" -gt 0 ]] || { echo "No vcek.der files under ${OUT} yet — nothing to seed."; return 0; }
+  for der in "${ders[@]}"; do
+    hwid="$(basename "$(dirname "${der}")" | tr 'A-F' 'a-f')"
+    [[ "${hwid}" =~ ^[0-9a-f]{128}$ ]] || die "invalid HWID directory name for ${der}: ${hwid}"
+    name="$(vcek_secret_name "${hwid}")"
+    oc create secret generic "${name}" --from-file=vcek.der="${der}" \
+       -n "${ns}" --dry-run=client -o yaml | oc apply -f -
+    echo ">> ${name}: ${hwid}"
+    created=$((created+1))
+  done
+  echo
+  echo "Created/updated ${created} VCEK secret(s) in ${ns}."
+  echo "Each is referenced by KbsConfig.spec.kbsLocalCertCacheSpec (apply-trustee.sh renders one"
+  echo "  {secretName, mountPath .../kds-store/vcek/<hwid>/vcek.der} entry per hwid). VERIFY the"
+  echo "  .der carries the ARK/ASK chain or supply ASK/ARK separately; hwid dirs must be LOWERCASE."
+}
+
+# --- download-only mode: curl every collected .url on a KDS-connected host -----------------
 if [[ "${1:-}" == "--download" ]]; then
   shopt -s nullglob
   urls=("${OUT}"/*/vcek.url)
@@ -53,131 +120,109 @@ if [[ "${1:-}" == "--download" ]]; then
   for u in "${urls[@]}"; do
     d="$(dirname "$u")"
     echo ">> downloading VCEK for $(basename "$d")"
-    # atomic: a dropped connection must not leave a truncated vcek.der
-    curl -fsSL "$(cat "$u")" -o "${d}/vcek.der.tmp" && mv -f "${d}/vcek.der.tmp" "${d}/vcek.der"
+    fetch_der_from_url "$(cat "$u")" "${d}/vcek.der"
   done
   echo "Downloaded ${#urls[@]} VCEK cert(s). Carry ${OUT}/ into the air gap and re-run with <node> to create secrets."
   exit 0
 fi
 
-NODE="${1:?usage: collect-vcek.sh <node-name> [namespace]   |   collect-vcek.sh --download}"
+# --- --from-report mode: add a per-socket VCEK from that socket's SNP report ---------------
+# Run on a host that can reach AMD KDS and has snpguest (e.g. the coco-tools container). Reads the
+# socket's CHIP_ID from the report, fetches THAT socket's VCEK (snpguest uses the report's chip-id
+# AND its reported_tcb, so per-socket TCB differences are honored), and stages it in the bundle.
+if [[ "${1:-}" == "--from-report" ]]; then
+  shift
+  [[ $# -gt 0 ]] || die "usage: collect-vcek.sh --from-report <report.bin> [more-reports...]"
+  mkdir -p "${OUT}"
+  for report in "$@"; do
+    hwid="$(hwid_from_report "${report}")"
+    dir="${OUT}/${hwid}"; mkdir -p "${dir}"; require_writable_bundle_dir "${dir}"
+    # keep the report next to the cert for provenance (skip if it already IS that file, so a re-run
+    # of `--from-report OUT/<hwid>/report.bin` doesn't hit cp's "same file" error)
+    [[ "$(readlink -f "${report}")" == "$(readlink -f "${dir}/report.bin")" ]] || cp -f "${report}" "${dir}/report.bin"
+    if [[ -s "${dir}/vcek.der" ]]; then
+      echo ">> ${hwid}: vcek.der already present — kept"
+    elif command -v snpguest >/dev/null && kds_reachable; then
+      tmpc="$(mktemp -d)"
+      snpguest_args=(fetch vcek der "${tmpc}" "${report}")
+      [[ -n "${PROCESSOR}" ]] && snpguest_args+=(-p "${PROCESSOR}")
+      snpguest "${snpguest_args[@]}" >/dev/null 2>&1 \
+        || die "snpguest fetch vcek failed for ${report} (try PROCESSOR=milan|genoa; confirm KDS reachable)"
+      # snpguest writes vcek.der into the certs dir; take it (fall back to any *.der it produced).
+      src="${tmpc}/vcek.der"; [[ -s "${src}" ]] || src="$(find "${tmpc}" -name '*.der' -type f | head -1)"
+      [[ -s "${src}" ]] || die "snpguest produced no VCEK .der in ${tmpc} for ${report}"
+      mv -f "${src}" "${dir}/vcek.der"; rm -rf "${tmpc}"
+      echo ">> ${hwid}: fetched VCEK from report"
+    else
+      echo ">> ${hwid}: staged report.bin — no snpguest+KDS here; carry ${dir}/report.bin to a"
+      echo "   host with snpguest + KDS and re-run \`$0 --from-report ${dir}/report.bin\`."
+    fi
+  done
+  # Create/refresh secrets if we have oc access (so a re-run after adding a socket wires it in).
+  # Namespace comes from NS env (default trustee-operator-system) — the positional args are reports.
+  if command -v oc >/dev/null && oc whoami >/dev/null 2>&1; then
+    create_secrets "${NS:-trustee-operator-system}"
+  else
+    echo "No cluster access here — carry ${OUT}/ into the air gap and run \`$0 <node>\` to create secrets."
+  fi
+  exit 0
+fi
+
+# --- default collect mode -----------------------------------------------------------------
+NODE="${1:?usage: collect-vcek.sh <node-name> [namespace]   |   --download   |   --from-report <r.bin>...}"
 NS="${2:-trustee-operator-system}"
 command -v oc >/dev/null || die "oc not on PATH"
 oc whoami >/dev/null 2>&1 || die "not logged into a cluster (oc whoami failed)"
 mkdir -p "${OUT}"
 
-socket_cpu_map() {
-  oc debug "node/${NODE}" -- chroot /host lscpu -p=CPU,SOCKET 2>/dev/null \
-    | awk -F, '
-      /^#/ { next }
-      NF >= 2 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {
-        if ($2 in cpus) {
-          cpus[$2] = cpus[$2] "," $1
-        } else {
-          cpus[$2] = $1
-        }
-      }
-      END {
-        for (socket in cpus) {
-          print socket ":" cpus[socket]
-        }
-      }
-    ' | sort -n -t: -k1,1
-}
-
 # Run a command in a privileged coco-tools container on the node, via `oc debug node`.
-on_node() {  # on_node <shell-command-string> [cpuset-cpus]
-  local cmd="$1" cpuset="${2:-}"
-  local podman_args=(run --rm --authfile "${PODMAN_AUTHFILE}" --privileged -v /dev:/dev)
-  if [[ -n "$cpuset" ]]; then
-    podman_args+=(--cpuset-cpus="$cpuset")
-  fi
+on_node() {  # on_node <shell-command-string>
   oc debug "node/${NODE}" -- chroot /host \
-    podman "${podman_args[@]}" "${TOOLS_IMG}" bash -c "$cmd"
+    podman run --rm --authfile "${PODMAN_AUTHFILE}" --privileged -v /dev:/dev "${TOOLS_IMG}" bash -c "$1"
 }
 
-mapfile -t socket_maps < <(socket_cpu_map)
-[[ "${#socket_maps[@]}" -gt 0 ]] || die "could not read socket CPU map from the node"
-SOCKETS="${#socket_maps[@]}"
+socket_count() {
+  oc debug "node/${NODE}" -- chroot /host lscpu 2>/dev/null \
+    | awk -F: '/^Socket\(s\)/ { gsub(/ /,"",$2); print $2 }'
+}
+
+SOCKETS="$(socket_count)"; [[ "${SOCKETS}" =~ ^[0-9]+$ ]] || SOCKETS=1
 echo ">> ${NODE}: ${SOCKETS} socket(s)"
 
-declare -A seen_hwids=()
-for entry in "${socket_maps[@]}"; do
-  socket="${entry%%:*}"
-  cpus="${entry#*:}"
-  [[ -n "${cpus}" ]] || die "empty CPU set for socket ${socket}"
-  echo ">> socket ${socket}: cpuset ${cpus}"
-
-  vcek_out="$(on_node "/tools/snphost show vcek-url" "${cpus}" 2>&1)" || die "snphost show vcek-url failed on socket ${socket} cpuset ${cpus}: ${vcek_out}"
-  mapfile -t urls < <(grep -oE 'https://[^[:space:]]+' <<<"${vcek_out}" | sort -u)
-  [[ "${#urls[@]}" -gt 0 ]] || die "snphost show vcek-url returned no VCEK URLs for socket ${socket} cpuset ${cpus}"
-
-  for url in "${urls[@]}"; do
-    hwid="$(parse_hwid_from_url "${url}")"
-    if [[ -n "${seen_hwids[$hwid]:-}" ]]; then
-      echo "   duplicate hwid ${hwid} from socket ${socket} (already seen on socket ${seen_hwids[$hwid]}); keeping one bundle entry"
-      continue
+# The MASTER socket's VCEK — the only one host-side snphost can yield (no socket selector; the
+# master PSP answers regardless of CPU pinning). On a single-socket node this is THE socket.
+vcek_out="$(on_node "/tools/snphost show vcek-url" 2>&1)" || die "snphost show vcek-url failed: ${vcek_out}"
+mapfile -t urls < <(grep -oE 'https://[^[:space:]]+' <<<"${vcek_out}" | sort -u)
+[[ "${#urls[@]}" -gt 0 ]] || die "snphost show vcek-url returned no VCEK URL: ${vcek_out}"
+for url in "${urls[@]}"; do
+  hwid="$(parse_hwid_from_url "${url}")"
+  dir="${OUT}/${hwid}"; mkdir -p "${dir}"; require_writable_bundle_dir "${dir}"
+  echo "${url}" > "${dir}/vcek.url"
+  echo ">> master socket hwid ${hwid}"
+  if [[ ! -s "${dir}/vcek.der" ]]; then
+    if kds_reachable; then
+      fetch_der_from_url "${url}" "${dir}/vcek.der"
+    else
+      echo "   KDS unreachable here — run \`$0 --download\` on a connected host, then re-run this."
     fi
-    seen_hwids[$hwid]="$socket"
-    dir="${OUT}/${hwid}"; mkdir -p "${dir}"
-    # A prior privileged/root collection can leave OUT/<hwid> root-owned; fail with a clear,
-    # actionable message instead of the raw "Permission denied" the redirect below would throw.
-    [[ -w "${dir}" ]] || die "bundle dir not writable: ${dir} (likely root-owned from a prior run — run: sudo chown -R \"\$(id -un)\" \"${OUT}\")"
-    echo "${url}" > "${dir}/vcek.url"
-    echo "   hwid ${hwid}"
-
-    # Fetch the .der here if KDS is reachable; otherwise defer to the --download step.
-    if [[ ! -s "${dir}/vcek.der" ]]; then
-      if curl -fsS -m 8 -o /dev/null "https://${KDS_HOST}/" 2>/dev/null; then
-        # atomic write: an interrupted curl must not leave a truncated vcek.der that the
-        # `[[ ! -s ]]` guard above would treat as complete on the next run
-        curl -fsSL "${url}" -o "${dir}/vcek.der.tmp" && mv -f "${dir}/vcek.der.tmp" "${dir}/vcek.der"
-      else
-        echo "   KDS unreachable here — run \`$0 --download\` on a connected host, then re-run this."
-        continue
-      fi
-    fi
-  done
+  fi
 done
 
-# Reconcile two different counts: vcek.der FILES on disk (ders) vs unique HWIDs freshly collected
-# this run (seen_hwids). On a MULTI-SOCKET board these differ today: `snphost show vcek-url` (and
-# host-side PSP queries generally) are answered by the single MASTER PSP and return ONE chip-id
-# regardless of CPU pinning, so this script can only auto-enumerate socket 0's VCEK. A genuine 2P
-# box has a DISTINCT VCEK per socket; the robust way to get socket N's is an SNP attestation report
-# from a guest pinned to that socket (read its CHIP_ID). KNOWN LIMITATION — per-socket VCEK
-# enumeration is a pending redesign; until then, carry the other socket(s)' vcek.der in manually.
-mapfile -t ders < <(find "${OUT}" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
-if [[ "${#ders[@]}" -lt "${SOCKETS}" ]]; then
-  die "bundle has ${#ders[@]} VCEK DER file(s) but ${NODE} reports ${SOCKETS} socket(s).
-  snphost has no --socket flag and the master PSP returns only one chip-id, so per-socket VCEKs
-  cannot be auto-enumerated here. Obtain each remaining socket's VCEK from an SNP report's CHIP_ID
-  (a guest pinned to that socket), drop it at ${OUT}/<hwid>/vcek.der, then re-run."
-fi
-if [[ "${SOCKETS}" -gt 1 && "${#seen_hwids[@]}" -lt "${SOCKETS}" ]]; then
-  # ders >= SOCKETS already passed, so the operator carried the extra der(s) in manually.
-  echo "WARN: collected ${#seen_hwids[@]} unique HWID(s) from ${SOCKETS} socket(s); trusting the carried bundle (${#ders[@]} DER file(s))."
+# Multi-socket guidance — collect the master, then tell the operator exactly how to add the rest.
+# NOT a failure: the master VCEK is validly collected; the other socket(s) are a per-socket step.
+if [[ "${SOCKETS}" -gt 1 ]]; then
+  cat >&2 <<EOF
+
+NOTE: collected the MASTER socket's VCEK only. ${NODE} has ${SOCKETS} sockets, each with a DISTINCT
+VCEK that host-side tools CANNOT enumerate (no per-socket PSP selector). For EACH remaining socket:
+  1) run a confidential (kata-cc) pod pinned to that socket's NUMA node (e.g. nodeSelector +
+     Guaranteed QoS + single-numa-node topology, or cpuset), so its CVM lands on that socket;
+  2) inside the pod:  snpguest report /tmp/report.bin -r
+  3) carry report.bin to a host with snpguest + KDS and run:  $0 --from-report report.bin
+  4) re-run \`$0 ${NODE}\` (or seed) to create the secret and wire it into KbsConfig.
+See docs/runbooks/multi-socket-vcek.md. Until every socket's VCEK is present, CVMs scheduled on a
+missing socket will FAIL attestation (the OfflineStore has no cert for that chip).
+EOF
 fi
 
-created=0
-for der in "${ders[@]}"; do
-  hwid="$(basename "$(dirname "${der}")" | tr 'A-F' 'a-f')"
-  [[ "${hwid}" =~ ^[0-9a-f]{128}$ ]] || die "invalid HWID directory name for ${der}: ${hwid}"
-  secret="vcek-snp-${created}"
-  # Short secret names are required because the trustee operator uses secretName as a pod volume
-  # name (63-char cap). The full HWID belongs in KbsConfig.mountPath, not in the secret name.
-  # KNOWN LIMITATION: this index is POSITIONAL (find/sort order), so on multi-node/multi-socket a
-  # changed hwid set renumbers existing secrets and can remap a KbsConfig entry to the wrong chip.
-  # A stable hwid-derived name is part of the pending per-socket VCEK redesign (must change in
-  # lockstep with seed-trustee-secrets.sh + apply-trustee.sh render_kbsconfig).
-  oc create secret generic "${secret}" --from-file=vcek.der="${der}" \
-     -n "${NS}" --dry-run=client -o yaml | oc apply -f -
-  echo ">> ${secret}: ${hwid}"
-  created=$((created+1))
-done
-
-echo
-echo "Created/updated ${created} VCEK secret(s) in ${NS}."
-echo "Next: reference each secret in KbsConfig.spec.kbsLocalCertCacheSpec (mountPath"
-echo "  .../kds-store/vcek/<hwid>/vcek.der). VERIFY the .der carries the ARK/ASK chain or supply"
-echo "  ASK/ARK separately. Confirm hwid dirs are LOWERCASE."
+create_secrets "${NS}"

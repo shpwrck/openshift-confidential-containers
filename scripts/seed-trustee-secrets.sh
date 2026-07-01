@@ -269,11 +269,17 @@ oc -n "$NS" create secret generic attestation-status \
 oc -n "$NS" create secret generic sample \
 	--from-file=secret="$tmpdir/sample" \
 	--dry-run=client -o yaml | apply_secret
+# Stable, hwid-derived VCEK secret name — MUST match collect-vcek.sh and apply-trustee.sh
+# render_kbsconfig. A positional index renumbers/remaps KbsConfig entries when the chip set changes
+# (TCB refresh, added/replaced socket); an hwid-derived name binds the secret to its chip. 32 hex
+# (16 bytes of a hardware-unique id) is collision-free; the full hwid stays in the mountPath.
+vcek_secret_name() { printf 'vcek-snp-%s\n' "${1:0:32}"; }
 for i in "${!vcek_hwids[@]}"; do
-	oc -n "$NS" create secret generic "vcek-snp-${i}" \
+	vcek_name="$(vcek_secret_name "${vcek_hwids[$i]}")"
+	oc -n "$NS" create secret generic "$vcek_name" \
 		--from-file=vcek.der="${vcek_ders[$i]}" \
 		--dry-run=client -o yaml | apply_secret
-	echo "VCEK vcek-snp-${i}: ${vcek_hwids[$i]}"
+	echo "VCEK ${vcek_name}: ${vcek_hwids[$i]}"
 done
 
 echo "Trustee secrets seeded in $NS"

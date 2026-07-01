@@ -48,7 +48,9 @@ Install order (operators): **NFD → cert-manager → OSC → Trustee**.
   - `vcek_sources = [{ type = "OfflineStore" }]` (omit KDS for fully offline).
   - `KbsConfig.spec.kbsLocalCertCacheSpec` mounts per-chip secrets at
     `/opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-lowercase>/vcek.der`.
-  - Collect with `snphost show vcek-url` per socket → download `.der` on a connected host → carry in.
+  - Collect the master socket with `snphost show vcek-url` → download `.der` on a connected host →
+    carry in. On 2P, each **other** socket's VCEK must come from an SNP report's CHIP_ID on that
+    socket (host-side tools see only the master PSP) — see `docs/runbooks/multi-socket-vcek.md`.
 - Reference values via **Veritas** (`coco-tools:1.12 veritas --tee snp`), per hardware config.
 - initdata (gzip+base64 TOML pod annotation) is HW-measured (HOST_DATA, 32 bytes / sha256 for SNP).
 
