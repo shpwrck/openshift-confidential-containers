@@ -3,7 +3,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 # Default to the MIRROR copy: this repo targets an air-gapped bastion where the public
 # registry.access.redhat.com is unreachable. The mirror preserves the manifest digest; override
 # SOURCE_IMAGE for a connected build.

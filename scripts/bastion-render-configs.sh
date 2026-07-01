@@ -13,7 +13,7 @@ CLUSTER=sno-coco; BASE=coco.lab.local
 NODE_VLAN_IP=192.168.66.11; BASTION_VLAN_IP=192.168.66.10; VLAN_PREFIX=24
 PARENT_IF=enp195s0f1                       # Genoa m4-metal-medium VLAN parent (internal/PXE NIC); VERIFY on metal
 ROOT_DEV=/dev/nvme0n1
-MIRROR_ENDPOINT=mirror.rig.local:8443
+MIRROR_ENDPOINT="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 set -euo pipefail
 : "${PARENT_MAC:?set PARENT_MAC}"; : "${TOKEN:?set TOKEN}"; : "${VID:?set VID}"; : "${BASTION_PUB:?set BASTION_PUB}"
 

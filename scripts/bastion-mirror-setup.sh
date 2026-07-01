@@ -5,7 +5,7 @@
 set -euo pipefail
 OCP_VERSION="${OCP_VERSION:-4.20.18}"
 MIRROR="https://mirror.openshift.com/pub/openshift-v4/amd64/clients"
-MIRROR_ENDPOINT="mirror.rig.local:8443"
+MIRROR_ENDPOINT="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 MIRROR_USER="init"
 PULL_SECRET_SRC="${HOME}/pull-secret.json"
 MIRROR_PW="$(sudo cat /opt/mirror/mirror-admin-password)"

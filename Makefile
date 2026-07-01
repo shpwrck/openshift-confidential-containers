@@ -19,7 +19,14 @@ VERITAS_OC_WRAPPER ?=
 VERITAS_EXTRA_ARGS ?=
 HWID ?=
 HWIDS ?=
+# Endpoint seam (#26 keystone): ARTIFACTORY_REGISTRY is the canonical, provider-neutral registry
+# endpoint; MIRROR_REGISTRY stays as a back-compat alias. Env/CLI precedence ARTIFACTORY_REGISTRY >
+# MIRROR_REGISTRY > default matches scripts/*.sh. Default preserves the quay mirror host mid-migration.
+# `override` is load-bearing: without it a command-line `make MIRROR_REGISTRY=x` (command-line origin)
+# would beat the plain `:=` and let the legacy alias win over a command-line ARTIFACTORY_REGISTRY.
 MIRROR_REGISTRY ?= mirror.rig.local:8443
+ARTIFACTORY_REGISTRY ?= $(MIRROR_REGISTRY)
+override MIRROR_REGISTRY := $(ARTIFACTORY_REGISTRY)
 MIRROR_DNS_UPSTREAM ?= 192.168.66.10
 KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
 RUNG_A_IMAGE ?= registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63

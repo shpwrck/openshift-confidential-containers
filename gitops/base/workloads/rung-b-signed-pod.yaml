@@ -18,8 +18,10 @@ spec:
   restartPolicy: Never
   containers:
     - name: app
-      # FILL: signed image, digest-pinned, e.g. mirror.rig.local:8443/coco/rung-b@sha256:...
-      image: mirror.rig.local:8443/coco/rung-b:signed
+      # FILL: signed image, digest-pinned, e.g. ARTIFACTORY_REGISTRY/coco/rung-b@sha256:... (legacy MIRROR_REGISTRY).
+      # Placeholder only: scripts/apply-rung-b.sh overwrites this image (oc patch) at apply time, and this
+      # manifest is intentionally not in any kustomization — it is never applied or pulled as-is.
+      image: ARTIFACTORY_REGISTRY/coco/rung-b:signed
       imagePullPolicy: Always
       command:
         - /bin/sh

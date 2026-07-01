@@ -3,7 +3,7 @@
 #
 # RUNG=b|c selects the workload. Key env knobs (all have rig defaults):
 #   NS=default  TRUSTEE_NS=trustee-operator-system  KBS_URL=http://kbs-service.<ns>.svc:8080
-#   MIRROR_REGISTRY=mirror.rig.local:8443  MIRROR_CA=/opt/mirror/ca/rootCA.pem  MIRROR_DOMAIN=rig.local
+#   ARTIFACTORY_REGISTRY=mirror.rig.local:8443  MIRROR_CA=/opt/mirror/ca/rootCA.pem  MIRROR_DOMAIN=rig.local  (legacy MIRROR_REGISTRY honored)
 #   RUNG_C_IMAGE / RUNG_B_IMAGE = <digest-ref>  RUNG_C_KEY_ID=  IMAGE_SECURITY_POLICY_URI=
 #   RENDER_ONLY=1      print the rendered pod.yaml and exit (no cluster writes)
 #   TAMPER_INITDATA=1  corrupt the measured initdata (used by the negative tests)
@@ -14,7 +14,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNG="${RUNG:-}"
 NS="${NS:-default}"
 TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
-MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 MIRROR_CA="${MIRROR_CA:-/opt/mirror/ca/rootCA.pem}"
 MIRROR_DOMAIN="${MIRROR_DOMAIN:-rig.local}"
 MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"
