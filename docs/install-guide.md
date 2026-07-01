@@ -425,6 +425,29 @@ jq --arg ep "$MIRROR" --arg a "$AUTH" \
 chmod 600 ~/.docker/config.json
 ```
 
+> **Two distinct credentials — don't conflate them.** The **merged** authfile above (RH pull secret
+> **plus** mirror creds) is only for the bastion's **oc-mirror push**, which must reach the upstream
+> Red Hat registries — this matches how the customer mirrors content into their own registry.
+> Everything the **cluster/workloads** pull uses a **single pull secret** (the mirror entry alone),
+> which is the customer's day-2 model: one robot/service-account `dockerconfigjson`, no admin password.
+>
+> **Single pull secret (`MIRROR_PULL_SECRET`).** So a run resembles the customer's, the Trustee-seeding
+> and install-config steps read the mirror credential straight from a pull-secret file instead of the
+> rig's mirror admin password. Point them at a `dockerconfigjson` whose `.auths["<mirror>"]` entry
+> carries the credential:
+>
+> ```bash
+> export MIRROR_PULL_SECRET=~/mirror-pull-secret.json   # {"auths":{"mirror.rig.local:8443":{"auth":"<base64 user:token>"}}}
+> make deploy-trustee            # apply-trustee -> seed-trustee-secrets reads the pull secret
+> make bringup-sno-airgapped     # the Ansible render_configs role honors it too (install-config pullSecret)
+> # scripts/bastion-render-configs.sh honors it the same way for a manual install-config render
+> ```
+>
+> The mirror entry must carry `auth` (base64 `user:token`) or a `username`+`password` pair; an
+> `identitytoken`-only entry works for the Trustee `credential`/`regcred` secrets but not the
+> install-config `pullSecret` (which embeds an `auth` string). When `MIRROR_PULL_SECRET` is unset, all
+> paths fall back to the rig's `init` + `/opt/mirror/mirror-admin-password`.
+
 ### 2.4 DNS + NTP for the air-gapped node
 
 The node has no public DNS/NTP. Serve both from the bastion on the VLAN. See

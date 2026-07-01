@@ -27,6 +27,12 @@ HWIDS ?=
 MIRROR_REGISTRY ?= mirror.rig.local:8443
 ARTIFACTORY_REGISTRY ?= $(MIRROR_REGISTRY)
 override MIRROR_REGISTRY := $(ARTIFACTORY_REGISTRY)
+# Single pull secret (customer model): a dockerconfigjson whose mirror entry supplies the registry
+# credential — no mirror admin password needed. `export`ed so it reaches apply-trustee/seed-trustee
+# (and any other consumer) without threading it through every recipe. Empty = fall back to the
+# rig's mirror admin user + password file.
+MIRROR_PULL_SECRET ?=
+export MIRROR_PULL_SECRET
 MIRROR_DNS_UPSTREAM ?= 192.168.66.10
 KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
 RUNG_KBS_IMAGE ?= registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63

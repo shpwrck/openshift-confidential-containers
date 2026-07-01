@@ -41,6 +41,10 @@ artifactory_registry: >-
 mirror_endpoint: "{{ artifactory_registry }}"   # host:port consumed as {{ mirror_endpoint }} everywhere
 mirror_dns_name: "mirror.rig.local"          # DNS name / cert SAN companion (no port); #36/#37 retarget for Artifactory
 mirror_user: "init"                          # quay initUser; password looked up at runtime
+# Single pull secret (customer model): a dockerconfigjson path whose .auths[mirror_endpoint] entry
+# supplies the mirror credential — no mirror admin password. Env MIRROR_PULL_SECRET (exported by the
+# Makefile); empty = fall back to mirror_user + mirror_password_path. Mirrors scripts/seed-trustee-secrets.sh.
+mirror_pull_secret: "{{ lookup('ansible.builtin.env', 'MIRROR_PULL_SECRET') | default('', true) }}"
 # oc-mirror v2 layout (NOT source-preserving): these two source->mirror mappings are the
 # whole point of imageDigestSources for an air-gapped install. Do not "simplify".
 image_digest_sources:
