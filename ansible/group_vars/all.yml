@@ -30,8 +30,16 @@ cluster_network_host_prefix: 23
 service_network_cidr: "172.30.0.0/16"
 
 # ---- Mirror registry -------------------------------------------------------
-mirror_endpoint: "mirror.rig.local:8443"   # MIRROR_REGISTRY host:port (cert SAN = DNS name)
-mirror_dns_name: "mirror.rig.local"
+# Endpoint seam (#26 keystone): artifactory_registry is the canonical, provider-neutral registry
+# endpoint; mirror_endpoint stays as the in-tree consumer name (every task reads {{ mirror_endpoint }})
+# and as a back-compat alias. Env precedence ARTIFACTORY_REGISTRY > MIRROR_REGISTRY mirrors
+# scripts/*.sh + the Makefile (same idiom as latitude_token below); `-e mirror_endpoint=...` still wins.
+artifactory_registry: >-
+  {{ lookup('ansible.builtin.env', 'ARTIFACTORY_REGISTRY')
+  | default(lookup('ansible.builtin.env', 'MIRROR_REGISTRY'), true)
+  | default('mirror.rig.local:8443', true) }}
+mirror_endpoint: "{{ artifactory_registry }}"   # host:port consumed as {{ mirror_endpoint }} everywhere
+mirror_dns_name: "mirror.rig.local"          # DNS name / cert SAN companion (no port); #36/#37 retarget for Artifactory
 mirror_user: "init"                          # quay initUser; password looked up at runtime
 # oc-mirror v2 layout (NOT source-preserving): these two source->mirror mappings are the
 # whole point of imageDigestSources for an air-gapped install. Do not "simplify".

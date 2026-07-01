@@ -17,8 +17,10 @@ spec:
   restartPolicy: Never
   containers:
     - name: app
-      # FILL: encrypted image, digest-pinned, e.g. mirror.rig.local:8443/coco/rung-c@sha256:...
-      image: mirror.rig.local:8443/coco/rung-c:encrypted
+      # FILL: encrypted image, digest-pinned, e.g. ARTIFACTORY_REGISTRY/coco/rung-c@sha256:... (legacy MIRROR_REGISTRY).
+      # Placeholder only: scripts/apply-rung-c.sh overwrites this image (oc patch) at apply time, and this
+      # manifest is intentionally not in any kustomization — it is never applied or pulled as-is.
+      image: ARTIFACTORY_REGISTRY/coco/rung-c:encrypted
       imagePullPolicy: Always
       command:
         - /bin/sh

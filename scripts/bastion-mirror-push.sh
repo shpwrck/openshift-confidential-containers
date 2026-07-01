@@ -4,7 +4,7 @@
 # Markers: /opt/mirror/OCMIRROR_DONE | /opt/mirror/OCMIRROR_FAILED ; log /opt/mirror/oc-mirror-push.log
 set -uo pipefail
 unset REGISTRY_AUTH_FILE   # v2 embeds a distribution registry that hijacks REGISTRY_* -> panic
-MIRROR_ENDPOINT="mirror.rig.local:8443"
+MIRROR_ENDPOINT="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 WORKSPACE="/opt/mirror/ocm-workspace"
 CONFIG="${HOME}/imageset-config.yaml"
 LOG="/opt/mirror/oc-mirror-push.log"

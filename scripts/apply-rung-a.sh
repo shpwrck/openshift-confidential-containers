@@ -5,7 +5,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NS="${NS:-default}"
 TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
-MIRROR_REGISTRY="${MIRROR_REGISTRY:-mirror.rig.local:8443}"
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 MIRROR_CA="${MIRROR_CA:-/opt/mirror/ca/rootCA.pem}"
 MIRROR_DOMAIN="${MIRROR_DOMAIN:-rig.local}"
 MIRROR_DNS_UPSTREAM="${MIRROR_DNS_UPSTREAM:-192.168.66.10}"

@@ -8,8 +8,8 @@
 #                installer; they live under the workspace's cluster-resources/ dir.
 #
 # Usage:
-#   MIRROR_REGISTRY=bastion.example.com:8443 ./scripts/mirror.sh mirror
-#   MIRROR_REGISTRY=bastion.example.com:8443 ./scripts/mirror.sh resources
+#   ARTIFACTORY_REGISTRY=bastion.example.com:8443 ./scripts/mirror.sh mirror      # MIRROR_REGISTRY still honored
+#   ARTIFACTORY_REGISTRY=bastion.example.com:8443 ./scripts/mirror.sh resources
 #
 # Requires: oc-mirror on PATH (or ./bin from scripts/install-tools.sh) and a MERGED auth
 # (Red Hat pull secret + the mirror registry's push cred) in ~/.docker/config.json.
@@ -28,7 +28,9 @@ CONFIG="install/imageset-config.yaml"
 WORKSPACE="${WORKSPACE:-file://./mirror}"   # oc-mirror v2 workspace (cache + generated resources)
 MODE="${1:-mirror}"
 
-: "${MIRROR_REGISTRY:?set MIRROR_REGISTRY=<host:port> of the bastion mirror registry}"
+# Endpoint seam (#26): ARTIFACTORY_REGISTRY is canonical; MIRROR_REGISTRY is the legacy alias.
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-}}"
+: "${MIRROR_REGISTRY:?set ARTIFACTORY_REGISTRY (or legacy MIRROR_REGISTRY)=<host:port> of the mirror/Artifactory registry}"
 
 OCM="oc-mirror"
 [ -x "./bin/oc-mirror" ] && OCM="./bin/oc-mirror"
@@ -61,7 +63,7 @@ case "${MODE}" in
     ;;
 
   *)
-    echo "usage: MIRROR_REGISTRY=<host:port> $0 {mirror|resources}" >&2
+    echo "usage: ARTIFACTORY_REGISTRY=<host:port> $0 {mirror|resources}  (legacy MIRROR_REGISTRY honored)" >&2
     exit 2
     ;;
 esac
