@@ -213,6 +213,10 @@ table below for the exact build/apply/negative sequence.
 
 A rung is **proven only when reproduced from the written steps AND its negative test fails-closed** (design §5). All preconditions: Phase-1/4 SNP-host gates green, air gap enforced (public egress dead), KBS up with OfflineStore + RVPS.
 
+> **Automated proof runner (#21):** `make test-rung WHICH=all` runs BOTH proofs per rung — the **positive** (happy-path apply; fail-OPEN: secret released / signed image runs) and the **negative** (denial; fail-CLOSED, delegated to `negative-test.sh`). It reports rung-kbs + rung-signed green, **rung-rvps skipped** (measurement overlay pending #18), **rung-encrypted manual** (upstream-blocked, #20) — a skipped rung is not a failure. Pass the built digest refs `RUNG_SIGNED_IMAGE=<…@sha256:…>` and `RUNG_SIGNED_UNSIGNED_IMAGE=<…@sha256:…>` for the rung-signed proofs. Each negative backs up + restores its policy/VCEK, so the rig returns to baseline; `make negative-test WHICH=…` still runs the denial-only suite.
+>
+> **Post-#16 rig migration:** the capability rename moved the signed KBS resources to `security-policy/rung-signed` + `sig-public-key/rung-signed`. An existing rig seeded before #16 must re-seed once — `make seed-rung-signed-secrets` (idempotent; VCEK re-seed is a no-op when `VCEK_BUNDLE` matches) then restart the Trustee deployment — or the rung-signed pod fails with `[CDH] Get resource failed`.
+
 **Rung A (rung-kbs) — secret release**
 - ✅ Happy: `cdh/resource/.../attestation-status` → `{"status":"success"}`; pod runs.
 - ✅ Negative: no valid attestation → **error, secret withheld (HTTP 403), pod does not start.**

@@ -59,6 +59,7 @@ BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
 SEED_TRUSTEE_SECRETS_SCRIPT ?= ./scripts/seed-trustee-secrets.sh
 APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
 NEGATIVE_TEST_SCRIPT ?= ./scripts/negative-test.sh
+TEST_RUNG_SCRIPT ?= ./scripts/test-rung.sh
 APPLY_RUNG_KBS_SCRIPT ?= ./scripts/apply-rung-kbs.sh
 APPLY_RUNG_ENCRYPTED_SCRIPT ?= ./scripts/apply-rung-encrypted.sh
 APPLY_RUNG_SIGNED_SCRIPT ?= ./scripts/apply-rung-signed.sh
@@ -298,3 +299,7 @@ render-measurement-policy: ## Render the restrictive measured-initdata HOST_DATA
 .PHONY: negative-test
 negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-kbs|rung-rvps|rung-signed|rung-encrypted|air-gap)
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_ENCRYPTED_POLICY_URI="$(RUNG_ENCRYPTED_POLICY_URI)" RUNG_SIGNED_POLICY_URI="$(RUNG_SIGNED_POLICY_URI)" RUNG_ENCRYPTED_IMAGE="$(RUNG_ENCRYPTED_IMAGE)" RUNG_SIGNED_UNSIGNED_IMAGE="$(RUNG_SIGNED_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)
+
+.PHONY: test-rung
+test-rung: ## Run per-rung POSITIVE+NEGATIVE proofs (WHICH=all|rung-kbs|rung-rvps|rung-signed|rung-encrypted; set RUNG_SIGNED_IMAGE=<@sha256> for the signed positive)
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" bash "$(TEST_RUNG_SCRIPT)" $(WHICH)
