@@ -125,6 +125,12 @@ load_extra_secret_resources() {
 	fi
 }
 
+# Stable, collision-free VCEK secret name — readable hwid prefix + hash of the FULL hwid. MUST match
+# collect-vcek.sh and seed-trustee-secrets.sh. The name binds to the chip (not a positional index),
+# so a changed chip set never remaps a KbsConfig entry to the wrong chip; hashing the full CHIP_ID
+# keeps two sockets distinct even if their CHIP_IDs share a leading prefix. Full hwid stays in mountPath.
+vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256sum | cut -c1-16)"; }
+
 # Render KbsConfig from the template, expanding two regions:
 #   - the single `vcek-snp-0` OfflineStore entry -> one entry per HWID (the awk replaces the
 #     placeholder block, matched from `- secretName: vcek-snp-0` through its mountPath line);
@@ -133,7 +139,7 @@ render_kbsconfig() {
 	local out="$1" block="" extra_block="" i hwid resource
 	for i in "${!vcek_hwids[@]}"; do
 		hwid="${vcek_hwids[$i]}"
-		block+="      - secretName: vcek-snp-${i}"$'\n'
+		block+="      - secretName: $(vcek_secret_name "$hwid")"$'\n'
 		block+="        mountPath: ${VCEK_OFFLINESTORE_BASE}/${hwid}"$'\n'
 	done
 	for resource in "${extra_secret_resources[@]}"; do

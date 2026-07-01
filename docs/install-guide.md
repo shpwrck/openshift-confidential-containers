@@ -773,9 +773,19 @@ oc apply -k gitops/overlays/sno-trustee     # = gitops/base/trustee
 scripts/collect-vcek.sh <node-name> trustee-operator-system
 ```
 
-One secret **per socket**, keyed by **lowercase** HWID. The `.der` is fetched via `snphost
-show vcek-url` → downloaded on an **internet-connected** host (the rig node is egress-blocked)
-→ carried in. Generation-agnostic (dodges the upstream Trustee `Milan`-hardcode bug).
+This collects the **master** socket's VCEK, keyed by **lowercase** HWID: fetched via `snphost show
+vcek-url` → downloaded on an **internet-connected** host (the rig node is egress-blocked) → carried
+in. Generation-agnostic (dodges the upstream Trustee `Milan`-hardcode bug). Secrets are named
+`vcek-snp-<hwid-prefix>-<hash>` (hwid-derived, stable, collision-free — a changed chip set never
+renumbers them and two sockets never share a name).
+
+> **Single-socket nodes are fully covered by the command above.** On a **dual-socket (2P)** box,
+> host-side tools can only yield the **master** socket's VCEK (the master PSP answers all host-side
+> chip-id queries; snphost has no socket selector). Each **other** socket has a distinct VCEK that
+> must be fetched from an **SNP report generated on that socket** (`snpguest report` in a CVM there,
+> then `scripts/collect-vcek.sh --from-report <report.bin>`). Full procedure:
+> [`docs/runbooks/multi-socket-vcek.md`](runbooks/multi-socket-vcek.md). Without every socket's
+> VCEK, CVMs scheduled on a missing socket **fail attestation**.
 
 > **Landmine:** an UPPER-case HWID silently misses the cache and falls through to the
 > (unreachable) KDS → attestation fails for the wrong reason. The secret name must be short
