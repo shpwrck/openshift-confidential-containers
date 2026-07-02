@@ -19,6 +19,7 @@ CATALOGSOURCE="${CATALOGSOURCE:-cs-redhat-operator-index-v4-20}"
 RENDER_ONLY="${RENDER_ONLY:-0}"
 EMIT_INITDATA="${EMIT_INITDATA:-0}"
 TAMPER_INITDATA="${TAMPER_INITDATA:-0}"
+CONFIDENTIAL="${CONFIDENTIAL:-1}"   # 0 = render a NON-CoCo pod (no runtimeClassName) for the rung-kbs bare-attestation negative (#17)
 
 tmpdir=""
 
@@ -154,6 +155,12 @@ EOF
 		}')"
 	oc patch --local -f "$REPO_ROOT/gitops/base/workloads/rung-a-secret-pod.yaml" \
 		--type=strategic -p "$patch" -o yaml > "$out"
+	if [[ "$CONFIDENTIAL" == "0" ]]; then
+		# rung-kbs bare-attestation negative (#17): drop the confidential runtime so the pod runs as a
+		# plain (non-CoCo) workload. With no CVM there is no attestation-agent / CDH, so the attestation
+		# gate cannot fetch the KBS resource and the secret is withheld (fail-closed).
+		grep -v 'runtimeClassName:' "$out" > "$out.noconf" && mv "$out.noconf" "$out"
+	fi
 }
 
 collect_failure_context() {

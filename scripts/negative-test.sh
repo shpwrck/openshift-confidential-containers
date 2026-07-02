@@ -38,7 +38,11 @@ pass=0 fail=0 skip=0
 # a bare `attest` matches the init-container name "attestation-gate", `sign` matches the
 # scheduler's "Successfully a-ssign-ed" event, and `policy`/`secret` match routine KBS log
 # lines; any of those would score a false PASS on a fail-closed proof.
-RUNG_KBS_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|measurement|HTTP/[0-9.]+" (401|403)|failed to get resource|report data|attestation (failed|error|denied)|Verifier.*(fail|reject)'
+# rung-kbs BARE-attestation (#17): a non-CoCo pod has no CVM/CDH, so its attestation gate cannot reach
+# the resource endpoint — the signal is a CDH connection failure, not a KBS policy denial.
+RUNG_KBS_DENIAL_RE='Connection refused|Failed to connect|could not connect|ECONNREFUSED|curl: \(7\)|Init:Error|no attestation|attestation-agent'
+# rung-rvps MEASUREMENT (#18): valid attestation, wrong/absent measured-initdata -> KBS/policy withholds.
+RUNG_RVPS_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|measurement|HTTP/[0-9.]+" (401|403)|failed to get resource|report data|attestation (failed|error|denied)|Verifier.*(fail|reject)'
 RUNG_ENCRYPTED_DENIAL_RE='attestation.*(denied|failed|error)|failed.*attest|denied|forbidden|measurement|unauthorized|not authorized|HTTP/[0-9.]+" (401|403)|resource/default/image-(kek|key).*(401|403)'
 RUNG_SIGNED_DENIAL_RE='signature|sigstore|image security policy|SignatureValidation|signature.*(reject|invalid|missing|verif)|policy.*(reject|deny)|rejected|InvalidImageName'
 AIR_GAP_DENIAL_RE='denied|forbidden|unauthorized|PolicyDeny|HTTP/[0-9.]+" (401|403)|RcarAttestFailed|verify TEE evidence failed|[Cc]ertificate chain.*(fail|verif)|does not sign|failed to get resource|vcek|offline|Verifier.*(fail|reject)|attestation (failed|error|denied)'
@@ -59,9 +63,16 @@ denial_signal_seen() {
   # made spec strings match the denial regex and produced false PASSes. Instead we pull the
   # container waiting reasons/messages (real denial state) plus events + logs.
   context="$(
-    oc -n "$NS" get pod "$name" -o jsonpath='{range .status.containerStatuses[*]}{.state.waiting.reason}{" "}{.state.waiting.message}{"\n"}{end}{range .status.initContainerStatuses[*]}{.state.waiting.reason}{" "}{.state.waiting.message}{"\n"}{end}' 2>/dev/null || true
+    oc -n "$NS" get pod "$name" -o jsonpath='{range .status.containerStatuses[*]}{.state.waiting.reason}{" "}{.state.waiting.message}{" "}{.state.terminated.reason}{" "}{.state.terminated.message}{"\n"}{end}{range .status.initContainerStatuses[*]}{.state.waiting.reason}{" "}{.state.waiting.message}{" "}{.state.terminated.reason}{" "}{.state.terminated.message}{"\n"}{end}' 2>/dev/null || true
     oc -n "$NS" get events --field-selector "involvedObject.name=${name}" --sort-by=.lastTimestamp -o wide 2>/dev/null || true
     oc -n "$NS" logs "pod/${name}" --all-containers --prefix=true --tail=80 2>/dev/null || true
+    # Also pull each INIT container's log explicitly: a fail-closed pod often dies in its init gate
+    # (e.g. the rung-kbs bare-attestation negative — a non-CoCo pod's gate hits "Connection refused"),
+    # and `oc logs --all-containers` can bail on a still-PodInitializing app container without ever
+    # printing the init log. Per-init-container `oc logs` captures the real denial signal regardless.
+    for _ic in $(oc -n "$NS" get pod "$name" -o jsonpath='{.spec.initContainers[*].name}' 2>/dev/null); do
+      oc -n "$NS" logs "pod/${name}" -c "$_ic" --tail=40 2>/dev/null || true
+    done
     oc -n "$TRUSTEE_NS" logs deployment/trustee-deployment --since-time="$since_time" --tail=240 2>/dev/null || true
   )"
   grep -qiE "$pattern" <<<"$context"
@@ -147,27 +158,28 @@ control_released() {
 #   NEGATIVE — tampered pod MUST be withheld.
 # Base policies are backed up (data-only) and ALWAYS restored (trap), so the rig returns to baseline.
 # Proven on the rig 2026-07-01: untampered RELEASED, tampered WITHHELD (HTTP 403), base restored.
-# NOTE: what this function currently proves is a MEASUREMENT (measured-initdata) negative — which is
-# rung-rvps territory. It lives here, behavior-preserving, until the RVPS overlay is wired.
-# TODO(#18): relocate the measured-initdata proof to run_rung_rvps; rung-kbs then keeps only the
-# bare "no valid attestation → 403" negative.
-run_rung_kbs() {
-  echo "[rung-kbs] secret release — restrictive measured-initdata policy: untampered RELEASES, tampered WITHHELD (apply+revert)"
+# This is rung-B (rung-rvps): MEASUREMENT verification. The measured-initdata gate proves the guest's
+# launch state (HOST_DATA == sha256(initdata), carried in the SNP attestation report) is appraised —
+# a valid attestation with the WRONG measurement is withheld. The populated RVPS reference-values
+# overlay (snp_launch_measurement, generated per-rig via `make gen-rvps`; gitops/base stays permissive
+# []) is the appraisal input; see docs. rung-kbs's own bare-attestation negative lives in run_rung_kbs (#17).
+run_rung_rvps() {
+  echo "[rung-rvps] measurement verification — restrictive measured-initdata policy: untampered RELEASES, wrong measurement WITHHELD (apply+revert)"
   # restore_needed / bakdir / manifest_ctrl / manifest_neg are intentionally GLOBAL, NOT local: the
-  # EXIT backstop (rung_kbs_exit_cleanup) fires at GLOBAL scope after a `set -e` unwind, where this
+  # EXIT backstop (rung_rvps_exit_cleanup) fires at GLOBAL scope after a `set -e` unwind, where this
   # function's locals no longer exist. A local restore_needed would read unbound there — fatal under
   # `set -u`, so the trap would die BEFORE restoring and leave the rig stuck on the restrictive
   # policy (the exact rig-breaking failure this backstop exists to prevent). Globals + the `:-`
   # default guards below keep the trap able to restore no matter which command triggered the abort.
   local initdata_file restrictive digest base_ap base_rp
-  local resource_uri="${RUNG_KBS_RESOURCE_URI:-kbs:///default/attestation-status/status}"
-  have_sha256 || { skipt "rung-kbs: a sha256 tool is required for the measured-initdata gate"; return; }
+  local resource_uri="${RUNG_RVPS_RESOURCE_URI:-kbs:///default/attestation-status/status}"
+  have_sha256 || { skipt "rung-rvps: a sha256 tool is required for the measured-initdata gate"; return; }
 
   restore_needed=0
   bakdir="$(mktemp -d)"; manifest_ctrl="$(mktemp)"; manifest_neg="$(mktemp)"
   initdata_file="$bakdir/initdata.toml"; restrictive="$bakdir/restrictive.yaml"
 
-  rung_kbs_restore() {
+  rung_rvps_restore() {
     [[ "${restore_needed:-0}" == "1" ]] || return 0
     echo "  (restoring base attestation-policy + resource-policy)"
     oc -n "$TRUSTEE_NS" apply -f "${bakdir}/attestation-policy.yaml" >/dev/null 2>&1 || true
@@ -175,19 +187,19 @@ run_rung_kbs() {
     restart_kbs
     restore_needed=0
   }
-  _rung_kbs_finish() {  # explicit teardown for every return path (EXIT trap is only a crash backstop)
-    rung_kbs_restore
-    oc -n "$NS" delete pod negtest-rung-a-ctrl negtest-rung-a --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  _rung_rvps_finish() {  # explicit teardown for every return path (EXIT trap is only a crash backstop)
+    rung_rvps_restore
+    oc -n "$NS" delete pod negtest-rung-rvps-ctrl negtest-rung-rvps --ignore-not-found --wait=false >/dev/null 2>&1 || true
     trap - EXIT
     rm -rf "${bakdir:-}"; rm -f "${manifest_ctrl:-}" "${manifest_neg:-}"
   }
-  rung_kbs_exit_cleanup() { local rc=$?; rung_kbs_restore || true; rm -rf "${bakdir:-}"; rm -f "${manifest_ctrl:-}" "${manifest_neg:-}"; exit "$rc"; }
+  rung_rvps_exit_cleanup() { local rc=$?; rung_rvps_restore || true; rm -rf "${bakdir:-}"; rm -f "${manifest_ctrl:-}" "${manifest_neg:-}"; exit "$rc"; }
 
   # Back up base policies as clean, apply-able (data-only) manifests.
   base_ap="$(oc -n "$TRUSTEE_NS" get cm attestation-policy -o jsonpath='{.data.default_cpu\.rego}' 2>/dev/null || true)"
   base_rp="$(oc -n "$TRUSTEE_NS" get cm resource-policy   -o jsonpath='{.data.policy\.rego}'      2>/dev/null || true)"
   if [[ -z "$base_ap" || -z "$base_rp" ]]; then
-    skipt "rung-kbs: base attestation-policy/resource-policy not found in $TRUSTEE_NS — deploy Trustee first"; _rung_kbs_finish; return
+    skipt "rung-rvps: base attestation-policy/resource-policy not found in $TRUSTEE_NS — deploy Trustee first"; _rung_rvps_finish; return
   fi
   printf '%s' "$base_ap" > "$bakdir/attestation.rego"
   printf '%s' "$base_rp" > "$bakdir/resource.rego"
@@ -196,61 +208,61 @@ run_rung_kbs() {
 
   # Untampered measured-initdata digest — must match the CONTROL/NEGATIVE pods byte-for-byte, so use
   # the SAME env apply-rung-kbs.sh renders the pods with (render_initdata is deterministic).
-  if ! render_or_skip "rung-kbs untampered initdata" "$initdata_file" \
+  if ! render_or_skip "rung-rvps untampered initdata" "$initdata_file" \
       env EMIT_INITDATA=1 TAMPER_INITDATA=0 NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
-        bash "$REPO_ROOT/scripts/apply-rung-kbs.sh"; then _rung_kbs_finish; return; fi
+        bash "$REPO_ROOT/scripts/apply-rung-kbs.sh"; then _rung_rvps_finish; return; fi
   digest="$(sha256_file "$initdata_file")"
 
-  # Restrictive policy gating the rung-kbs secret path on that digest (the renderer is generic — the
+  # Restrictive policy gating the rung-rvps secret path on that digest (the renderer is generic — the
   # gated resource is whatever RUNG_ENCRYPTED_KEY_ID points at; its rego identifiers just read 'image_key').
-  if ! render_or_skip "rung-kbs restrictive policy" "$restrictive" \
+  if ! render_or_skip "rung-rvps restrictive policy" "$restrictive" \
       env RUNG_ENCRYPTED_KEY_ID="$resource_uri" NS="$TRUSTEE_NS" \
-        bash "$REPO_ROOT/scripts/render-measurement-policy.sh" "$initdata_file"; then _rung_kbs_finish; return; fi
+        bash "$REPO_ROOT/scripts/render-measurement-policy.sh" "$initdata_file"; then _rung_rvps_finish; return; fi
   if ! grep -q "$digest" "$restrictive"; then
-    skipt "rung-kbs: rendered policy is missing the initdata digest (renderer/initdata mismatch)"; _rung_kbs_finish; return
+    skipt "rung-rvps: rendered policy is missing the initdata digest (renderer/initdata mismatch)"; _rung_rvps_finish; return
   fi
 
   # From here we MUTATE cluster policy — arm the crash backstop, then apply + wait until it is LIVE.
-  restore_needed=1; trap rung_kbs_exit_cleanup EXIT
+  restore_needed=1; trap rung_rvps_exit_cleanup EXIT
   echo "  applying restrictive measured-initdata policy (gating $resource_uri); will revert"
   if ! oc -n "$TRUSTEE_NS" apply -f "$restrictive" >/dev/null; then
-    skipt "rung-kbs: failed to apply restrictive policy"; _rung_kbs_finish; return
+    skipt "rung-rvps: failed to apply restrictive policy"; _rung_rvps_finish; return
   fi
   restart_kbs
   if ! oc -n "$TRUSTEE_NS" get cm resource-policy -o jsonpath='{.data.policy\.rego}' 2>/dev/null | grep -q 'default allow := false'; then
-    skipt "rung-kbs: restrictive policy not live after apply+restart — cannot trust the negative"; _rung_kbs_finish; return
+    skipt "rung-rvps: restrictive policy not live after apply+restart — cannot trust the negative"; _rung_rvps_finish; return
   fi
 
   # CONTROL: untampered MUST release under the restrictive policy (false-pass guard).
-  if ! render_or_skip "rung-kbs control manifest" "$manifest_ctrl" \
+  if ! render_or_skip "rung-rvps control manifest" "$manifest_ctrl" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
-        POD_NAME=negtest-rung-a-ctrl TAMPER_INITDATA=0 RENDER_ONLY=1 \
-        bash "$REPO_ROOT/scripts/apply-rung-kbs.sh"; then _rung_kbs_finish; return; fi
-  oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found --wait >/dev/null 2>&1 || true
+        POD_NAME=negtest-rung-rvps-ctrl TAMPER_INITDATA=0 RENDER_ONLY=1 \
+        bash "$REPO_ROOT/scripts/apply-rung-kbs.sh"; then _rung_rvps_finish; return; fi
+  oc -n "$NS" delete pod negtest-rung-rvps-ctrl --ignore-not-found --wait >/dev/null 2>&1 || true
   if ! oc -n "$NS" apply -f "$manifest_ctrl" >/dev/null; then
-    skipt "rung-kbs: failed to apply the control pod — cannot run the negative"; _rung_kbs_finish; return
+    skipt "rung-rvps: failed to apply the control pod — cannot run the negative"; _rung_rvps_finish; return
   fi
-  if control_released negtest-rung-a-ctrl; then
+  if control_released negtest-rung-rvps-ctrl; then
     echo "  control OK: untampered secret released under the restrictive policy (digest matches HOST_DATA)"
-    oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found >/dev/null 2>&1 || true
+    oc -n "$NS" delete pod negtest-rung-rvps-ctrl --ignore-not-found >/dev/null 2>&1 || true
   else
-    skipt "rung-kbs: the restrictive policy ALSO withheld the UNTAMPERED secret — the measured-initdata digest does not match this build's HOST_DATA, so a tamper denial can't be attributed to the tamper. Not a sign-off pass; investigate the init_data measurement."
-    oc -n "$NS" delete pod negtest-rung-a-ctrl --ignore-not-found >/dev/null 2>&1 || true
-    _rung_kbs_finish; return
+    skipt "rung-rvps: the restrictive policy ALSO withheld the UNTAMPERED secret — the measured-initdata digest does not match this build's HOST_DATA, so a tamper denial can't be attributed to the tamper. Not a sign-off pass; investigate the init_data measurement."
+    oc -n "$NS" delete pod negtest-rung-rvps-ctrl --ignore-not-found >/dev/null 2>&1 || true
+    _rung_rvps_finish; return
   fi
 
   # NEGATIVE: tampered MUST be withheld under the same restrictive policy.
-  if render_or_skip "rung-kbs negative manifest" "$manifest_neg" \
+  if render_or_skip "rung-rvps negative manifest" "$manifest_neg" \
       env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
         MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
-        POD_NAME=negtest-rung-a TAMPER_INITDATA=1 RENDER_ONLY=1 \
+        POD_NAME=negtest-rung-rvps TAMPER_INITDATA=1 RENDER_ONLY=1 \
         bash "$REPO_ROOT/scripts/apply-rung-kbs.sh"; then
-    expect_fail_closed "negtest-rung-a" "$manifest_neg" "rung-kbs measured-initdata tamper withheld the secret under the restrictive policy" "$RUNG_KBS_DENIAL_RE" "rung-kbs attestation/resource denial"
+    expect_fail_closed "negtest-rung-rvps" "$manifest_neg" "rung-rvps measured-initdata tamper withheld the secret under the restrictive policy" "$RUNG_RVPS_DENIAL_RE" "rung-rvps attestation/resource denial"
   fi
 
-  _rung_kbs_finish
+  _rung_rvps_finish
 }
 
 run_rung_encrypted() {
@@ -325,7 +337,7 @@ run_air_gap() {
   # vceks/bakdir/manifest/restore_needed are GLOBAL (not local): the EXIT backstop restores at global
   # scope after a `set -e` unwind, where locals are gone — a local restore_needed reads unbound under
   # `set -u` and the trap dies before restoring, leaving the bogus wrong-cert VCEK live and attestation
-  # broken cluster-wide until manual repair (same failure class fixed in run_rung_kbs above).
+  # broken cluster-wide until manual repair (same failure class fixed in run_rung_rvps above).
   local vcek bogus
   vceks=()
   while IFS= read -r vcek_line; do vceks+=("$vcek_line"); done < <(oc -n "$TRUSTEE_NS" get secret -o name 2>/dev/null | grep '^secret/vcek-' || true)
@@ -394,13 +406,26 @@ run_air_gap() {
   trap - EXIT
 }
 
-# rung-rvps = RVPS measurement verification (populated snp_launch_measurement reference values). The
-# measured-initdata negative currently lives in run_rung_kbs (see its TODO(#18)); this is a visible
-# SKIP until the rig RVPS overlay (reference-values.snp.json) is wired, so the loop never reads a
-# missing rung as covered.
-run_rung_rvps() {
-  echo "[rung-rvps] RVPS measurement verification — overlay not wired yet"
-  skipt "rung-rvps: measurement overlay not wired yet — see #18"
+# rung-kbs (#17) = raw CoCo + KBS secret release. Its NEGATIVE is BARE ATTESTATION: a non-CoCo
+# (non-kata) pod has no CVM, hence no attestation-agent / CDH, so the attestation-gate init container
+# cannot fetch the KBS resource and the secret is withheld (fail-closed). CONFIDENTIAL=0 renders the
+# rung-kbs workload without runtimeClassName. Proven on the rig 2026-07-02: the non-kata pod's gate
+# hits `curl (7) Failed to connect to 127.0.0.1 port 8006: Connection refused`, pod Failed (init
+# exit 7). The measurement (measured-initdata) negative moved to run_rung_rvps in #18.
+run_rung_kbs() {
+  echo "[rung-kbs] bare attestation — a non-CoCo (non-kata) pod cannot attest, so the KBS secret is withheld"
+  local manifest
+  manifest="$(mktemp)"
+  if ! render_or_skip "rung-kbs bare non-CoCo manifest" "$manifest" \
+      env NS="$NS" TRUSTEE_NS="$TRUSTEE_NS" MIRROR_REGISTRY="$MIRROR_REGISTRY" \
+        MIRROR_DNS_UPSTREAM="$MIRROR_DNS_UPSTREAM" KBS_URL="$KBS_URL" \
+        POD_NAME=negtest-rung-kbs CONFIDENTIAL=0 RENDER_ONLY=1 \
+        bash "$REPO_ROOT/scripts/apply-rung-kbs.sh"; then
+    rm -f "$manifest"
+    return
+  fi
+  expect_fail_closed "negtest-rung-kbs" "$manifest" "rung-kbs non-CoCo pod could not attest — secret withheld" "$RUNG_KBS_DENIAL_RE" "rung-kbs no-attestation (non-CoCo) denial"
+  rm -f "$manifest"
 }
 
 case "$WHICH" in
