@@ -32,6 +32,41 @@ SEV-SNP** (EPYC Genoa / 9004 or newer).
 
 ---
 
+## Phases at a glance
+
+Ten phases (0–9), four reboot-crossing stretches (Phase 4 BIOS, Phase 5 install, Phase 6 KataConfig, teardown).
+`bastion` = admin host that holds the mirror · `node` = the raw-OS SNP box before/after OpenShift · `cluster` = the live SNO once installed.
+
+| Phase | What | Where | Rough cost |
+|---|---|---|---|
+| [Prerequisites — pre-flight inventory](#prerequisites--pre-flight-inventory) | Gather every value + credential **while still connected**. | bastion | do first |
+| [Phase 0 — Tooling](#phase-0--tooling-on-the-bastion--admin-host) | Fetch version-pinned `oc` / `openshift-install` / `oc-mirror`. | bastion | minutes |
+| [Phase 1 — Provision the infrastructure](#phase-1--provision-the-infrastructure-by-hand) | Create VLAN, bastion, SNP node by hand (bastion first). | provider console | — |
+| [Phase 2 — Bastion preparation](#phase-2--bastion-preparation) | Egress lockdown, DNS/NTP, registry, host-side firewall. | bastion | — |
+| [Phase 3 — Mirror the content](#phase-3--mirror-the-content-the-bottleneck-12-h-cacheable) | `oc-mirror` release + operator catalogs into the mirror (the bottleneck). | bastion | ~1–2 h, cacheable |
+| [Phase 4 — Rung-0 SNP host gate + BIOS](#phase-4--rung-0-snp-host-gate--the-bios-recipe) | Set the SNP BIOS recipe over IPMI, prove silicon before any install. | node (raw OS) | — |
+| [Phase 5 — Install SNO](#phase-5--install-sno-via-the-agent-based-installer) | Render + netboot the Agent-based Installer; wait for the cluster. | node → cluster | ~40–90 min |
+| [Phase 6 — Operators + KataConfig](#phase-6--operators--kataconfig) | Install OSC/NFD, build the `kata-snp` runtime handler. | cluster | — |
+| [Phase 7 — Trustee + air-gap attestation data](#phase-7--trustee--air-gap-attestation-data) | Deploy Trustee/KBS, load VCEK certs + RVPS reference values offline. | cluster | — |
+| [Phase 8 — Capability rungs (A → B → C → D)](#phase-8--capability-rungs-a--b--c--d--negative-tests) | Prove secret-release → measurement → signed → encrypted, plus negative tests. | cluster | — |
+| [Phase 9 — Teardown](#phase-9--teardown) | Deprovision the node; keep the bastion so the mirror persists. | provider console | — |
+
+Two cross-cutting sections close the guide: a [**Definition of done**](#definition-of-done) checklist you verify on the cluster, and a [**Recovery & re-running phases**](#recovery--re-running-phases) table for when a step needs a redo without a full re-provision.
+
+## Companion docs (open these when…)
+
+| Open this | When… |
+|---|---|
+| [`runbooks/failure-modes.md`](runbooks/failure-modes.md) | a step failed — symptom → cause → fast diagnostic → fix, ordered by phase (start at its "Top 7"). |
+| [`runbooks/multi-socket-vcek.md`](runbooks/multi-socket-vcek.md) | your SNP box is **dual-socket (2P)** — single-socket nodes don't need it. |
+| [`notes/latitude-snp-bringup.md`](notes/latitude-snp-bringup.md) | you want the Phase-4 BIOS recipe click-by-click. |
+| [`runbooks/install-execution-plan.md`](runbooks/install-execution-plan.md) | you need the signed/encrypted-rung proof state + stop-gates as an execution plan. |
+| [`design/engagement-design.md`](design/engagement-design.md) | you want to know **why** a decision was made, not just how. |
+
+> **If you get stuck →** [`runbooks/failure-modes.md`](runbooks/failure-modes.md) first. For a stuck CoCo pod, start with `oc describe pod` + `oc get events`, not just container logs.
+
+---
+
 ## First-time reader orientation
 
 This guide assumes you know Linux, Kubernetes, and OpenShift operations, but **not**
@@ -258,6 +293,39 @@ Provision these however your provider allows (cloud bare-metal API, your own DC,
    Used **only on the bastion** to populate the mirror. It is **never** carried onto the
    air-gapped node — the node only ever authenticates to the mirror.
 5. **An SSH keypair** for `core@`/host debugging (its public half goes into `install-config`).
+
+---
+
+## Prerequisites / pre-flight inventory
+
+Gather **every** value below **while you still have internet** — most are impossible to fetch
+once the air gap closes (Phase 4 locks node egress; nothing downloads from the public internet
+after that). Record these in a **local, untracked worksheet** — this guide is a tracked repo
+file, so never paste live secrets here; for credential rows keep only a **path or fingerprint**
+in the Value column, never the key material itself. The **Where it's used** column points at the
+phase that will bite you if the value is missing.
+
+> **STOP-gate:** every row that isn't marked *(generate now)* or *(discover in Phase 5.1)* must
+> have a concrete value before you **lock node egress (Phase 4)** — the internet-dependent ones
+> (Red Hat pull secret, `mirror-registry` tarball, VCEK-download host) cannot be fetched once the
+> air gap closes. The **node root device** and **node NIC MAC** are read from the booted node in
+> Phase 5.1, so they stay blank until then — that's expected, not a gap.
+
+| Item | Value | Where it's used |
+|------|-------|-----------------|
+| **Red Hat pull secret** → save as `~/pull-secret.json` on the bastion | `# FILL` | Phase 2.3 (merged into `~/.docker/config.json`), Phase 3 mirror push (`oc-mirror`), Phase 7.5 (gen-rvps authfile). From <https://console.redhat.com/openshift/install/pull-secret>. **Bastion only — never carried onto the node.** |
+| **SSH keypair** (public half) | `# FILL` | `sshKey` in `install-config` (Phase 5.2); host debugging. |
+| **Cluster name** (`metadata.name`) | `# FILL` | `install-config` (Phase 5.2); DNS names `api`/`api-int`/`*.apps`. |
+| **Base domain** (`baseDomain`) | `# FILL` | `install-config` (Phase 5.2); Phase 2.4 DNS (`dnsmasq`). |
+| **VLAN ID (VID)** | `# FILL` | Phase 1.1 `rigvlan`; the node's tagged VLAN child in `agent-config` `networkConfig` (Phase 5.2). |
+| **Parent NIC name** (private-network NIC, e.g. `bond0`/`enp195s0f1`) | `# FILL` | Phase 1.1 `PARENT=` (`ip -br link`); VLAN-child parent in `agent-config`. |
+| **Node root device** (`/dev/nvme0n1` vs `/dev/sda`) | *(discover in Phase 5.1)* | `rootDeviceHints.deviceName` in `agent-config` (Phase 5.1 `lsblk` on the booted node). |
+| **Node NIC MAC** (real MAC of the VLAN-parent interface) | *(discover in Phase 5.1)* | `interfaces[].macAddress` in `agent-config` (Phase 5.1 `ip link` on the booted node). **Per physical unit — a re-provision changes it.** |
+| **IP plan** — node VLAN IP (`192.168.66.11`), rendezvous IP (= node VLAN IP), bastion VLAN IP (`192.168.66.10`); DNS records for `api`/`api-int`/`*.apps` | `# FILL` | `rendezvousIP` + `networkConfig` (Phase 5.2); DNS (Phase 2.4); egress allow-rule (Phase 4). |
+| **`mirror-registry` tarball + pinned version/sha** | `# FILL` | Phase 2.2 (`./mirror-registry install`). Download while connected; pin for reproducibility. |
+| **Internet-connected host for VCEK download** (the node is egress-blocked) | `# FILL` | Phase 7.3 `collect-vcek.sh` — `snphost show vcek-url` is resolved on this host, then carried in. |
+| **ed25519 KBS admin keypair** — *(generate now, keep private half off-cluster)* | `# FILL` | Phase 7.1 `kbs-auth-public-key` (authorizes resource registration). |
+| **cosign keypair** — *(generate now, keep private half off-cluster)* | `# FILL` | Phase 8 rung **C** (rung-signed): the public half is served from KBS as `sig-public-key/rung-signed` to verify the signed image. |
 
 ---
 
@@ -753,7 +821,7 @@ spare — wait it out): `oc get mcp -w`.
 
 ```bash
 oc get runtimeclass         # expect: kata  AND  kata-cc
-oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-qemu-snp (a.k.a. kata-snp) on SEV-SNP
+oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-snp on SEV-SNP (RH docs also call it kata-qemu-snp)
 ```
 
 > **STOP-gate:** four CSVs `Succeeded`, node back `Ready` post-reboot, `kata` + `kata-cc`
@@ -818,10 +886,55 @@ renumbers them and two sockets never share a name).
 > (≤ 63 chars, it becomes a pod volume name); the full 128-hex lowercase HWID goes only in the
 > `kbsLocalCertCacheSpec` `mountPath` (see [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml)).
 
-### 7.4 Generate RVPS reference values
+### 7.4 Freeze initdata (do this BEFORE generating RVPS)
+
+initdata is the gzip+base64 TOML you hand the CVM as the `io.katacontainers.config.hypervisor.cc_init_data`
+pod annotation. Its **plaintext TOML bytes are hardware-measured into `HOST_DATA`** (32-byte sha256 on
+SNP), and the RVPS reference values in 7.5 (next) are computed over **exactly those bytes**. So the order
+is load-bearing — **freeze initdata → generate RVPS → deploy the pod** — because editing the TOML after
+RVPS is generated changes `HOST_DATA`, and KBS then logs a *measurement mismatch* and withholds the
+secret until you re-run `make gen-rvps`.
+
+1. **Fill the template** from
+   [`gitops/base/workloads/initdata.example.toml`](../gitops/base/workloads/initdata.example.toml).
+   Set both `url = "__KBS_URL__"` lines to the in-cluster KBS endpoint. **On this in-cluster SNO
+   that is the ClusterIP Service over plain HTTP** (`http://kbs-service.trustee-operator-system.svc:8080`),
+   so **delete the `aa.toml` `cert` and `cdh.toml` `kbs_cert` blocks** — there is no KBS TLS to pin
+   in-cluster (the `__TRUSTEE_CA_PEM__` variant is only for the separate-Trustee **Route** topology).
+   The template's lifecycle-header comment *also* names `__KBS_URL__`/`__TRUSTEE_CA_PEM__`, so
+   **strip those comment lines too** — the encoder greps the *whole* file (step 2). Fill
+   `__MIRROR_CA_PEM__` with the bastion mirror rootCA (one PEM per array element).
+
+2. **Encode** — `scripts/encode-initdata.sh` greps the **entire file** (comments included) and
+   refuses while any `__KBS_URL__` or `__TRUSTEE_CA_PEM__` string remains; it does **not** check
+   `__MIRROR_CA_PEM__`, so double-check you filled that one (a stray placeholder gets measured in
+   and image-rs then silently can't reach the mirror):
+
+   ```bash
+   scripts/encode-initdata.sh encode <filled.toml>   # -> one gzip+base64 line
+   ```
+
+3. **Set the annotation** per overlay, never in the base (rung A's pod `rung-a-secret-pod.yaml`
+   ships it commented as `# FILL per overlay`). For the in-cluster SNO (rungs A–C)
+   `scripts/apply-rung-kbs.sh` renders and applies it for you;
+   `overlays/sno-workers/initdata-patch.yaml` is the GitOps home for the
+   separate-Trustee (third-server) Route topology:
+
+   ```yaml
+   io.katacontainers.config.hypervisor.cc_init_data: <gzip+base64 string from step 2>
+   ```
+
+> **STOP-gate:** the filled TOML is final and encoded **before** you run 7.5. Once RVPS is generated,
+> any later edit to initdata invalidates it — re-freeze, then re-run `make gen-rvps`.
+
+### 7.5 Generate RVPS reference values
+
+Point Veritas at the **exact initdata file you froze in 7.4** — the script defaults `INITDATA`
+to `./initdata-flavour-b.toml` and dies if it's absent (or, worse, measures a *stale* file), so
+always pass it explicitly:
 
 ```bash
-OCP_VERSION=4.20.18 scripts/gen-rvps-veritas.sh
+OCP_VERSION=4.20.18 INITDATA=<filled.toml> scripts/gen-rvps-veritas.sh
 ```
 
 For node-local generation in the disconnected rig, set `NODE=<node>`, `DEBUG_IMAGE=<cached
@@ -841,7 +954,7 @@ directory and copies `rvps-reference-values.yaml` to `OUT`.
 > then `PULL_SECRET=authfile.json`. Full recipe in the
 > [`scripts/gen-rvps-veritas.sh`](../scripts/gen-rvps-veritas.sh) header.
 
-### 7.5 Wire both into Trustee
+### 7.6 Wire both into Trustee
 
 Mount the VCEK secrets via `KbsConfig.spec.kbsLocalCertCacheSpec` at
 `…/kds-store/vcek/<hwid-lowercase>/vcek.der`, and merge the RVPS output into the
@@ -851,6 +964,21 @@ won't exist in production.
 
 > **STOP-gate:** KBS restarts cleanly; its logs show no missing-cert / empty-RVPS / measurement
 > errors (`oc logs -n trustee-operator-system -l app=kbs`).
+
+> **What a measurement mismatch actually looks like** (the STOP-gate above is silent on the
+> failure shape). Dump the KBS log and grep the decision lines:
+>
+> ```bash
+> oc logs -n trustee-operator-system -l app=kbs --tail=100 | grep -Ei 'measurement|deny|reject'
+> ```
+>
+> | Symptom (log line) | Cause | Fix |
+> |---|---|---|
+> | `measurement mismatch` (KBS/AS rejects, secret withheld) | The initdata TOML bytes changed **after** Veritas ran, so live `HOST_DATA` no longer equals the RVPS reference value — RVPS is stale. | Re-freeze initdata (7.4), re-run `gen-rvps` (7.5), re-merge into `rvps-reference-values`, restart KBS. |
+>
+> The measured quantity is `sha256(initdata bytes) == HOST_DATA`; any edit (even whitespace)
+> after 7.5 invalidates the reference. Full string catalog:
+> [`runbooks/failure-modes.md`](runbooks/failure-modes.md) (Phase 5).
 
 ---
 
@@ -902,8 +1030,9 @@ Each rung adds one user-visible capability on top of the same attestation base:
   served as `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the
   pull. Plan details: serve a restrictive signed-image policy and public key from KBS, while
   still allowing or verifying the pause/release images the CVM pulls before the app image.
-- **Rung D (rung-encrypted) — encrypted image** *(manual; upstream-blocked: cri-o/cri-o#10084 —
-  excluded from the hands-off loop, and a skipped D is not a failure)*. **Happy:** pod Running
+- **Rung D (rung-encrypted) — encrypted image** *(manual; upstream-blocked by a CRI-O host-side
+  encrypted-layer pre-pull gap — excluded from the hands-off loop, and a skipped D is not a
+  failure)*. **Happy:** pod Running
   (image key released after attestation). **Negative:** wrong measurement → key withheld → pod
   won't start. Plan details: build a digest-pinned encrypted image, serve its actual wrapping
   key from KBS at the KID embedded in the encrypted layer, then prove a measured-initdata
@@ -917,6 +1046,60 @@ Each rung adds one user-visible capability on top of the same attestation base:
 > test fails closed. For the signed and encrypted rungs, confirm each happy + negative result
 > on the node before checking the rung off (rung D is manual and excluded from the hands-off
 > loop).
+
+---
+
+## Definition of done
+
+You are done when **all** of these hold — verify each on the cluster, not from intent:
+
+| # | Acceptance check | How to confirm |
+|---|------------------|----------------|
+| 1 | **Five operator CSVs `Succeeded`** (NFD, cert-manager, OSC, Trustee, Gatekeeper) **and the CoCo memory policy live.** | `oc get csv -A \| grep -Ei 'nfd\|cert-manager\|sandboxed\|trustee\|gatekeeper'` — all `Succeeded`; then confirm the pod-RAM guard is actually registered: `oc get assign coco-default-mem-limit coco-default-mem-request` and `oc get cococontainermemory coco-container-memory-floor` (a Succeeded Gatekeeper CSV with missing `Assign`/constraint still lets undersized `kata-cc` pods get OOM-killed). |
+| 2 | **Node `Ready` with the SNP NFD label.** | `oc get nodes` → `Ready`; `oc get nodes -l amd.feature.node.kubernetes.io/snp=true` lists it. The label is live proof the TEE is on. |
+| 3 | **`kata-cc` handler = `kata-snp`.** | `oc get runtimeclass kata-cc -o jsonpath='{.handler}'` → `kata-snp` (what `kata-cc` resolves to on SEV-SNP in this stack, and what the apply/rung scripts check for exactly; Red Hat's generic OSC docs also call it `kata-qemu-snp`). A wrong/empty handler means KataConfig ran before NFD labelled the node. |
+| 4 | **Trustee/KBS Running and serving.** | KBS pod up (`oc get pods -n trustee-operator-system`); logs clean — no missing-cert / empty-RVPS / measurement errors (`oc logs -n trustee-operator-system -l app=kbs`). |
+| 5 | **Rung A (kbs) proven** — happy **and** negative. | Happy: CDH attestation returns `{"status":"success"}`, the sample secret is delivered. Negative fails-closed: no valid attestation → secret **withheld** (403), pod does not start (read `oc describe pod` / `oc get events`, not just logs). |
+| 6 | **Rung B (rvps) proven** — happy **and** negative. | Happy: a populated `snp_launch_measurement` in RVPS matches the evidence → secret released. Negative fails-closed: tampered initdata (`HOST_DATA` ≠ reference) → secret **withheld** (403). |
+| 7 | **Rung C (signed) proven** — happy **and** negative. | Happy: the signed image pulls (mirror pull secret served as `regcred`). Negative fails-closed: unsigned/tampered image → `image_security_policy` rejects the pull. Confirm both on the node. |
+| 8 | **Rung D (encrypted) documented-blocked.** | Not a green — upstream-blocked by a CRI-O host-side encrypted-layer pre-pull gap (see Phase 8), excluded from the hands-off loop. Recorded as blocked with the diagnostic evidence, not silently skipped. |
+| 9 | **Air-gap negative test fails-closed.** | With the `vcek-*` Secrets removed, an otherwise-happy rung-A request **must fail** attestation; then the Secrets are restored. Proves the OfflineStore cache — not a reachable KDS — is load-bearing. |
+
+> **STOP-gate:** a negative or air-gap test that *passes* (secret released when it shouldn't be) is a
+> sign-off-blocking finding, **not** a green. Rung D blocked is expected; rungs A, B, and C must be
+> proven both ways before you call the bring-up done.
+
+---
+
+## Recovery & re-running phases
+
+Most phases are safe to re-run in place — you rarely need a full re-provision. Know which is which
+before you reach for teardown.
+
+**Safely idempotent / re-runnable (no teardown needed):**
+
+| Phase / step | Why it's safe to re-run |
+|--------------|-------------------------|
+| Phase 3 — mirror push (oc-mirror) | The workspace persists; a re-run fetches only **deltas**, not the whole payload. |
+| Phase 7 — `seed-trustee-secrets.sh` | Mints the Trustee Secrets **idempotently** — re-running reconciles, it does not duplicate. |
+| Phase 7.4 — freeze/encode initdata | Re-encoding is deterministic; re-freeze after any initdata edit (its bytes are measured). |
+| Phase 7.5 — `gen-rvps` | Re-runnable — regenerate the RVPS reference values whenever initdata/config changes, then re-apply. |
+
+**Needs teardown (state can't be safely re-applied over):** a drifted MachineConfigPool, a mis-bound
+`kata-cc` handler (KataConfig applied before the NFD label), or a broken KBS/RuntimeClass wiring —
+peel the CoCo layer with `uninstall-coco.sh` and re-run Phase 6–8, rather than re-provisioning the node.
+
+**Three helper scripts get you back to a clean state without destroying the cluster:**
+
+| Script | One-line purpose | Use it when |
+|--------|------------------|-------------|
+| [`scripts/validate-sno-baseline.sh`](../scripts/validate-sno-baseline.sh) | Read-only pre-apply gate for the SNO rig — checks the cluster baseline and exits non-zero on drift, mutating nothing. | Before applying GitOps, or any time you suspect the baseline has drifted. |
+| [`scripts/repair-sno-baseline.sh`](../scripts/repair-sno-baseline.sh) | Guarded repair for the known baseline drift where MCD reports a `content mismatch` for `/etc/kubernetes/kubelet.conf` (`make repair-sno-baseline`). | `validate-sno-baseline.sh` flags that specific MCP drift. |
+| [`scripts/uninstall-coco.sh`](../scripts/uninstall-coco.sh) | Scripted CoCo reset — peels off the CoCo layer (Trustee/OSC/NFD/cert-manager/Gatekeeper operators, `KataConfig`, workloads, `kata*` RuntimeClasses, and the imperatively-applied rung happy + negative pods) **without destroying the cluster** (`make uninstall-coco` → `make validate-coco-uninstalled`). | You need to retry Phase 6–8 from a clean CoCo slate. |
+
+> **Landmine:** `uninstall-coco` (and its `validate-coco-uninstalled` check) triggers a node reboot
+> as KataConfig unwinds — the API goes down mid-run. Both targets ride out the API-down window; don't
+> abort them when `oc` briefly stops responding.
 
 ---
 
