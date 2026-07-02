@@ -300,12 +300,16 @@ Provision these however your provider allows (cloud bare-metal API, your own DC,
 
 Gather **every** value below **while you still have internet** — most are impossible to fetch
 once the air gap closes (Phase 4 locks node egress; nothing downloads from the public internet
-after that). Fill the **Value** column now; the **Where it's used** column points at the phase
-that will bite you if the value is missing.
+after that). Record these in a **local, untracked worksheet** — this guide is a tracked repo
+file, so never paste live secrets here; for credential rows keep only a **path or fingerprint**
+in the Value column, never the key material itself. The **Where it's used** column points at the
+phase that will bite you if the value is missing.
 
-> **STOP-gate:** do not start Phase 1 until every row that isn't marked *(generate now)* has a
-> concrete value written down. A first-timer's classic failure is discovering a missing MAC, VLAN
-> ID, or VCEK-download host *after* egress is already locked.
+> **STOP-gate:** every row that isn't marked *(generate now)* or *(discover in Phase 5.1)* must
+> have a concrete value before you **lock node egress (Phase 4)** — the internet-dependent ones
+> (Red Hat pull secret, `mirror-registry` tarball, VCEK-download host) cannot be fetched once the
+> air gap closes. The **node root device** and **node NIC MAC** are read from the booted node in
+> Phase 5.1, so they stay blank until then — that's expected, not a gap.
 
 | Item | Value | Where it's used |
 |------|-------|-----------------|
@@ -315,8 +319,8 @@ that will bite you if the value is missing.
 | **Base domain** (`baseDomain`) | `# FILL` | `install-config` (Phase 5.2); Phase 2.4 DNS (`dnsmasq`). |
 | **VLAN ID (VID)** | `# FILL` | Phase 1.1 `rigvlan`; the node's tagged VLAN child in `agent-config` `networkConfig` (Phase 5.2). |
 | **Parent NIC name** (private-network NIC, e.g. `bond0`/`enp195s0f1`) | `# FILL` | Phase 1.1 `PARENT=` (`ip -br link`); VLAN-child parent in `agent-config`. |
-| **Node root device** (`/dev/nvme0n1` vs `/dev/sda`) | `# FILL` | `rootDeviceHints.deviceName` in `agent-config` (Phase 5.1 `lsblk`). |
-| **Node NIC MAC** (real MAC of the VLAN-parent interface) | `# FILL` | `interfaces[].macAddress` in `agent-config` (Phase 5.1 `ip link`). **Per physical unit — a re-provision changes it.** |
+| **Node root device** (`/dev/nvme0n1` vs `/dev/sda`) | *(discover in Phase 5.1)* | `rootDeviceHints.deviceName` in `agent-config` (Phase 5.1 `lsblk` on the booted node). |
+| **Node NIC MAC** (real MAC of the VLAN-parent interface) | *(discover in Phase 5.1)* | `interfaces[].macAddress` in `agent-config` (Phase 5.1 `ip link` on the booted node). **Per physical unit — a re-provision changes it.** |
 | **IP plan** — node VLAN IP (`192.168.66.11`), rendezvous IP (= node VLAN IP), bastion VLAN IP (`192.168.66.10`); DNS records for `api`/`api-int`/`*.apps` | `# FILL` | `rendezvousIP` + `networkConfig` (Phase 5.2); DNS (Phase 2.4); egress allow-rule (Phase 4). |
 | **`mirror-registry` tarball + pinned version/sha** | `# FILL` | Phase 2.2 (`./mirror-registry install`). Download while connected; pin for reproducibility. |
 | **Internet-connected host for VCEK download** (the node is egress-blocked) | `# FILL` | Phase 7.3 `collect-vcek.sh` — `snphost show vcek-url` is resolved on this host, then carried in. |
@@ -817,7 +821,7 @@ spare — wait it out): `oc get mcp -w`.
 
 ```bash
 oc get runtimeclass         # expect: kata  AND  kata-cc
-oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-qemu-snp (a.k.a. kata-snp) on SEV-SNP
+oc get runtimeclass kata-cc -o jsonpath='{.handler}'   # must be kata-snp on SEV-SNP (RH docs also call it kata-qemu-snp)
 ```
 
 > **STOP-gate:** four CSVs `Succeeded`, node back `Ready` post-reboot, `kata` + `kata-cc`
@@ -893,15 +897,18 @@ secret until you re-run `make gen-rvps`.
 
 1. **Fill the template** from
    [`gitops/base/workloads/initdata.example.toml`](../gitops/base/workloads/initdata.example.toml).
-   Set the KBS URL to the in-cluster KBS endpoint. **On this in-cluster SNO that is the ClusterIP
-   Service over plain HTTP** (`http://kbs-service.trustee-operator-system.svc:8080`), so
-   **delete the `aa.toml` `cert` and `cdh.toml` `kbs_cert` blocks** — there is no KBS TLS to pin
+   Set both `url = "__KBS_URL__"` lines to the in-cluster KBS endpoint. **On this in-cluster SNO
+   that is the ClusterIP Service over plain HTTP** (`http://kbs-service.trustee-operator-system.svc:8080`),
+   so **delete the `aa.toml` `cert` and `cdh.toml` `kbs_cert` blocks** — there is no KBS TLS to pin
    in-cluster (the `__TRUSTEE_CA_PEM__` variant is only for the separate-Trustee **Route** topology).
-   Fill `__MIRROR_CA_PEM__` with the bastion mirror rootCA (one PEM per array element).
+   The template's lifecycle-header comment *also* names `__KBS_URL__`/`__TRUSTEE_CA_PEM__`, so
+   **strip those comment lines too** — the encoder greps the *whole* file (step 2). Fill
+   `__MIRROR_CA_PEM__` with the bastion mirror rootCA (one PEM per array element).
 
-2. **Encode** — the encoder refuses while `__KBS_URL__` or `__TRUSTEE_CA_PEM__` remain, but it does
-   **not** check `__MIRROR_CA_PEM__`, so double-check you filled that one (a stray placeholder gets
-   measured in and image-rs then silently can't reach the mirror):
+2. **Encode** — `scripts/encode-initdata.sh` greps the **entire file** (comments included) and
+   refuses while any `__KBS_URL__` or `__TRUSTEE_CA_PEM__` string remains; it does **not** check
+   `__MIRROR_CA_PEM__`, so double-check you filled that one (a stray placeholder gets measured in
+   and image-rs then silently can't reach the mirror):
 
    ```bash
    scripts/encode-initdata.sh encode <filled.toml>   # -> one gzip+base64 line
@@ -922,8 +929,12 @@ secret until you re-run `make gen-rvps`.
 
 ### 7.5 Generate RVPS reference values
 
+Point Veritas at the **exact initdata file you froze in 7.4** — the script defaults `INITDATA`
+to `./initdata-flavour-b.toml` and dies if it's absent (or, worse, measures a *stale* file), so
+always pass it explicitly:
+
 ```bash
-OCP_VERSION=4.20.18 scripts/gen-rvps-veritas.sh
+OCP_VERSION=4.20.18 INITDATA=<filled.toml> scripts/gen-rvps-veritas.sh
 ```
 
 For node-local generation in the disconnected rig, set `NODE=<node>`, `DEBUG_IMAGE=<cached
@@ -1044,9 +1055,9 @@ You are done when **all** of these hold — verify each on the cluster, not from
 
 | # | Acceptance check | How to confirm |
 |---|------------------|----------------|
-| 1 | **Four operator CSVs `Succeeded`** (NFD, cert-manager, OSC, Trustee). | `oc get csv -A \| grep -Ei 'nfd\|cert-manager\|sandboxed\|trustee'` — all `Succeeded`. Gatekeeper's CoCo memory policy is also installed (a fifth operator, guarding pod RAM). |
+| 1 | **Five operator CSVs `Succeeded`** (NFD, cert-manager, OSC, Trustee, Gatekeeper) **and the CoCo memory policy live.** | `oc get csv -A \| grep -Ei 'nfd\|cert-manager\|sandboxed\|trustee\|gatekeeper'` — all `Succeeded`; then confirm the pod-RAM guard is actually registered: `oc get assign coco-default-mem-limit coco-default-mem-request` and `oc get cococontainermemory coco-container-memory-floor` (a Succeeded Gatekeeper CSV with missing `Assign`/constraint still lets undersized `kata-cc` pods get OOM-killed). |
 | 2 | **Node `Ready` with the SNP NFD label.** | `oc get nodes` → `Ready`; `oc get nodes -l amd.feature.node.kubernetes.io/snp=true` lists it. The label is live proof the TEE is on. |
-| 3 | **`kata-cc` handler = `kata-qemu-snp`.** | `oc get runtimeclass kata-cc -o jsonpath='{.handler}'` → `kata-qemu-snp` (a.k.a. `kata-snp`). A wrong handler means KataConfig ran before NFD labelled the node. |
+| 3 | **`kata-cc` handler = `kata-snp`.** | `oc get runtimeclass kata-cc -o jsonpath='{.handler}'` → `kata-snp` (what `kata-cc` resolves to on SEV-SNP in this stack, and what the apply/rung scripts check for exactly; Red Hat's generic OSC docs also call it `kata-qemu-snp`). A wrong/empty handler means KataConfig ran before NFD labelled the node. |
 | 4 | **Trustee/KBS Running and serving.** | KBS pod up (`oc get pods -n trustee-operator-system`); logs clean — no missing-cert / empty-RVPS / measurement errors (`oc logs -n trustee-operator-system -l app=kbs`). |
 | 5 | **Rung A (kbs) proven** — happy **and** negative. | Happy: CDH attestation returns `{"status":"success"}`, the sample secret is delivered. Negative fails-closed: no valid attestation → secret **withheld** (403), pod does not start (read `oc describe pod` / `oc get events`, not just logs). |
 | 6 | **Rung B (rvps) proven** — happy **and** negative. | Happy: a populated `snp_launch_measurement` in RVPS matches the evidence → secret released. Negative fails-closed: tampered initdata (`HOST_DATA` ≠ reference) → secret **withheld** (403). |
