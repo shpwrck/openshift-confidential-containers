@@ -1,0 +1,62 @@
+# =============================================================================================
+# initdata TEMPLATE — customer topology: FULLY AIR-GAPPED + IN-CLUSTER KBS + ARTIFACTORY registry.
+#
+# This is the in-cluster (ClusterIP, plain HTTP) variant — derived from the PROVEN rig render in
+# scripts/apply-rung-a.sh (render_initdata). It is deliberately SIMPLER than
+# gitops/base/workloads/initdata.example.toml, which is the SEPARATE-Trustee (Route + HTTPS) model:
+#   - KBS is reached over the in-cluster ClusterIP service on plain HTTP, so there is NO KBS TLS
+#     cert to pin (no `cert` in aa.toml, no `kbs_cert` in cdh.toml). Those only exist in the
+#     Route/HTTPS model. Do NOT add them here.
+#   - The ONLY TLS trust you carry is the ARTIFACTORY CA, in cdh.toml extra_root_certificates,
+#     for the in-guest image pull.
+#
+# Lifecycle (identical to the rig):
+#   1. Fill the __PLACEHOLDERS__ below.
+#   2. Encode:  scripts/encode-initdata.sh encode initdata.artifactory.filled.toml   -> gzip+base64
+#   3. Put the string in the pod annotation  io.katacontainers.config.hypervisor.cc_init_data
+#      (see rung-a-artifactory-pod.yaml).
+#   4. The TOML is HARDWARE-MEASURED into SNP HOST_DATA (32 bytes / sha256). ANY edit changes the
+#      measurement, so RVPS (make gen-rvps / Veritas) MUST be regenerated AFTER initdata is final,
+#      or the KBS logs "measurement mismatch" and withholds the secret.
+# =============================================================================================
+algorithm = "sha256"          # SNP HOST_DATA is 32 bytes -> sha256 (NOT sha384).
+version = "0.1.0"             # VERIFY against the initdata spec shipped with your OSC/guest-components.
+
+[data]
+
+# Attestation Agent — the CVM->KBS attestation channel. In-cluster ClusterIP over HTTP => URL only.
+"aa.toml" = '''
+[token_configs]
+[token_configs.kbs]
+url = "http://__KBS_SVC__"    # e.g. http://kbs-service.trustee-operator-system.svc:8080
+                              # VERIFY the service name/port: oc get svc -n trustee-operator-system
+'''
+
+# Confidential Data Hub — rung-a secret fetch + in-guest image pull from Artifactory.
+#  - registry_configuration_uri (kbs:///…) is the form that WORKS. The inline [image.registry_config]
+#    table is SILENTLY IGNORED by the OSC 1.12 CDH -> image-rs falls back to the upstream registry,
+#    which the air gap drops -> CreateContainer hangs with no error. Serve registries.conf as a KBS
+#    resource instead (see registries.conf.artifactory.example).
+#  - extra_root_certificates carries the ARTIFACTORY CA so image-rs uses HTTPS. Do NOT set the mirror
+#    `insecure = true` in registries.conf: this oci-client treats insecure as PLAIN HTTP and hits the
+#    TLS port -> nginx/Artifactory 400. CA + HTTPS works. One cert per array element (a multi-cert
+#    bundle in a single string fails to parse).
+"cdh.toml" = '''
+socket = "unix:///run/confidential-containers/cdh.sock"
+[kbc]
+name = "cc_kbc"
+url = "http://__KBS_SVC__"    # same in-cluster KBS ClusterIP as aa.toml.
+
+[image]
+authenticated_registry_credentials_uri = "kbs:///default/credential/test"   # Artifactory pull secret (KBS-served)
+image_security_policy_uri = "kbs:///default/security-policy/test"            # containers/image policy (needs `transports`)
+registry_configuration_uri = "kbs:///default/registry-configuration/test"   # registries.conf Artifactory remap (KBS-served)
+extra_root_certificates = ["""
+__ARTIFACTORY_CA_PEM__
+"""]                          # FILL: the Artifactory serving CA (PEM). One element per cert.
+'''
+
+# NOTE: do NOT carry a "policy.rego" (kata-agent policy) in initdata unless it is COMPLETE. A minimal
+# `package agent_policy / default allow := true` is INCOMPLETE — the agent queries per-API rules
+# (UpdateInterfaceRequest, CreateContainerRequest, …) which then return EMPTY, so the agent DENIES
+# network setup ("Cannot start VM"). Omit it to use the guest's complete built-in default policy.

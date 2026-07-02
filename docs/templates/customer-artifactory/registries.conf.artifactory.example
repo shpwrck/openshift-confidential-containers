@@ -1,0 +1,36 @@
+# =============================================================================================
+# registries.conf TEMPLATE — the KBS `registry-configuration` resource, translated for ARTIFACTORY.
+#
+# This is the ONE piece that scripts/seed-trustee-secrets.sh does NOT parameterize for you: the
+# script hard-codes the rig's mirror repo layout (…/ubi9, …/openshift/release). Artifactory's repo
+# paths will differ, so author this by hand and register it (see seed-artifactory-kbs-resources.sh).
+#
+# Rules (all learned the hard way on the rig):
+#  - One [[registry]] block per upstream ref the CVM pulls. You MUST include the pod SANDBOX/pause
+#    image and any OpenShift release images the guest pulls — not just your app image — or the pod
+#    never reaches Running (pause pull fails silently).
+#  - Do NOT set `insecure = true`. That forces plain HTTP against Artifactory's TLS port -> 400.
+#    Trust is carried by extra_root_certificates (Artifactory CA) in cdh.toml instead.
+#  - `location` is the Artifactory host:port + the repo path where that content is mirrored. Get the
+#    exact paths from whoever populated Artifactory / from the cluster's host-side IDMS/ITMS.
+# =============================================================================================
+
+# --- Your application image -------------------------------------------------------------------
+[[registry]]
+prefix = "__UPSTREAM_APP_PREFIX__"          # e.g. registry.access.redhat.com/ubi9  OR your app's upstream ref
+[[registry.mirror]]
+location = "__ARTIFACTORY__/__ARTIFACTORY_APP_PATH__"   # e.g. artifactory.corp:443/coco-docker/ubi9
+
+# --- Pod sandbox / pause image (REQUIRED — the guest pulls this too) --------------------------
+# The pause image comes from the OpenShift release payload. Find the exact upstream ref your OSC
+# build uses ( oc get pod <a-kata-cc-pod> -o jsonpath='{.spec.containers[*].image}' on a working
+# cluster, or the sandbox image in the runtimeclass/kata config ), then remap it here.
+[[registry]]
+prefix = "quay.io/openshift-release-dev/ocp-v4.0-art-dev"
+[[registry.mirror]]
+location = "__ARTIFACTORY__/__ARTIFACTORY_RELEASE_PATH__"        # e.g. artifactory.corp:443/ocp-release-art-dev
+
+[[registry]]
+prefix = "quay.io/openshift-release-dev/ocp-release"
+[[registry.mirror]]
+location = "__ARTIFACTORY__/__ARTIFACTORY_RELEASE_IMAGES_PATH__" # e.g. artifactory.corp:443/ocp-release
