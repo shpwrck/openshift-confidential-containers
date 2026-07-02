@@ -40,48 +40,62 @@ mkdir -p "$(dirname "$STATUS_FILE")"
 if [[ "$FRESH" == "1" ]]; then : > "$STATUS_FILE"; echo "repro-loop: fresh run — status reset ($STATUS_FILE)"; fi
 echo "repro-loop start $(now) — durable status: $STATUS_FILE"
 
-hard_fail=0 prereq=0 ran=0 passed=0 skipped=0
+hard_fail=0 incomplete=0 passed=0 skipped=0
 
 # run_step <step-label> <command...>: run one proof step, map its result, record it durably.
-# Resumes: a step already recorded PASS is skipped. Stops the loop on the first hard FAIL.
-# Records PASS only when at least one proof actually held — a rung that exits 0 but ONLY logged
-# by-design skips (e.g. rung-rvps until #18) is recorded SKIP, not PASS, so the evidence never
-# over-claims coverage. The proof count is read from test-rung.sh/negative-test.sh's "N passed" summary.
+# Four outcomes, each with a distinct meaning for hands-off sign-off:
+#   PASS       — exit 0 AND at least one proof actually held (read from the "N passed" summary).
+#   SKIP       — exit 0 but ONLY by-design skips (e.g. rung-rvps until #18): nothing to prove yet.
+#   INCOMPLETE — exit 2 (a `die` prereq: not logged in / no kata-cc runtimeclass — Phase 4 not done)
+#                or exit 3 (a proof could not run for a missing input). NOT a proof failure, but the
+#                environment isn't ready, so the loop STOPS — downstream rungs are not run against an
+#                unready cluster and cannot be recorded PASS off a compromised run.
+#   FAIL       — a positive or negative proof was VIOLATED: the loop STOPS so the finding surfaces.
+# Resumes: a step already recorded PASS is skipped; INCOMPLETE/FAIL rungs are retried on re-run.
 run_step() {
   local step="$1"; shift
   if recorded_pass "$step"; then echo "==== [$step] already PASS (resume) — skipping ===="; passed=$((passed+1)); return 0; fi
   echo "==== [$step] deploy -> positive -> negative ===="
   local out rc npass
   out="$(mktemp)"
+  # Disable errexit around the pipeline: under `set -e -o pipefail` a non-zero proof exit (1/2/3)
+  # propagates through the `| tee` and would abort the loop BEFORE we can capture it — the whole point
+  # here is to catch that exit and classify it. tee keeps the run's output streaming live to the log.
+  set +e
   "$@" 2>&1 | tee "$out"; rc="${PIPESTATUS[0]}"
+  set -e
   npass="$(grep -oE 'summary: [0-9]+ passed' "$out" 2>/dev/null | tail -1 | grep -oE '[0-9]+' | head -1)"; npass="${npass:-0}"
   rm -f "$out"
   case "$rc" in
     0) if [[ "$npass" -gt 0 ]]; then record "$step" PASS; passed=$((passed+1)); echo "[$step] PASS (${npass} proof(s) held)"
        else record "$step" SKIP; skipped=$((skipped+1)); echo "[$step] SKIP (exit 0 but only by-design skips — nothing proven yet, e.g. rung-rvps until #18)"; fi ;;
-    3) record "$step" SKIP; skipped=$((skipped+1)); echo "[$step] SKIP (missing prerequisite — see output above)"; prereq=1 ;;
-    *) record "$step" FAIL; echo "[$step] FAIL (exit $rc) — stopping the loop so the finding surfaces"; hard_fail=1 ;;
+    2|3) record "$step" INCOMPLETE; incomplete=1; echo "[$step] INCOMPLETE (missing prerequisite, exit $rc) — stopping so later rungs aren't run against an unready environment" ;;
+    *) record "$step" FAIL; hard_fail=1; echo "[$step] FAIL (exit $rc) — stopping the loop so the finding surfaces" ;;
   esac
-  ran=$((ran+1))
-  return "$rc"
+  return 0
 }
 
+# stopped: a hard failure OR an incomplete prerequisite halts the sequence (a by-design SKIP does not).
+stopped() { [[ "$hard_fail" == "1" || "$incomplete" == "1" ]]; }
+
 for rung in $RUNGS; do
-  run_step "$rung" bash "$TEST_RUNG_SCRIPT" "$rung" || { [[ "$hard_fail" == "1" ]] && break; }
+  run_step "$rung" bash "$TEST_RUNG_SCRIPT" "$rung"
+  stopped && break
 done
-# Cross-cutting air-gap negative (the VCEK OfflineStore is load-bearing) — only if no hard failure yet.
-if [[ "$hard_fail" == "0" ]]; then
-  run_step "air-gap" bash "$NEGATIVE_TEST_SCRIPT" air-gap || true
+# Cross-cutting air-gap negative (the VCEK OfflineStore is load-bearing) — only if the run is still healthy.
+if ! stopped; then
+  run_step "air-gap" bash "$NEGATIVE_TEST_SCRIPT" air-gap
 fi
-# rung-encrypted (D): manual / upstream-blocked — logged skip, never a failure.
-if ! recorded_pass "rung-encrypted"; then
+# rung-encrypted (D): manual / upstream-blocked — logged skip, never a failure. Not recorded if the
+# run stopped early (an incomplete/failed run must not advertise D as handled).
+if ! stopped && ! recorded_pass "rung-encrypted"; then
   echo "==== [rung-encrypted] SKIPPED (manual / upstream-blocked cri-o/cri-o#10084, #20) ===="
   record "rung-encrypted" SKIP; skipped=$((skipped+1))
 fi
 
 echo
-echo "repro-loop summary $(now): ${passed} passed, ${skipped} skipped, $([[ $hard_fail == 1 ]] && echo 1 || echo 0) failed."
+echo "repro-loop summary $(now): ${passed} passed, ${skipped} skipped, $([[ $hard_fail == 1 ]] && echo 1 || echo 0) failed, $([[ $incomplete == 1 ]] && echo 1 || echo 0) incomplete."
 echo "  (durable status in $STATUS_FILE — re-run to resume; --fresh to restart)"
 (( hard_fail == 0 )) || { echo "REPRO-LOOP FAIL: a rung's proof did not hold — sign-off blocker."; exit 1; }
-(( prereq == 0 ))    || { echo "REPRO-LOOP INCOMPLETE: a rung skipped on a missing prerequisite (rung-rvps overlay is wired in #18); fix and re-run to resume."; exit 3; }
+(( incomplete == 0 )) || { echo "REPRO-LOOP INCOMPLETE: a rung could not run (Phase 4 not finished, or a missing input); fix the reported prerequisite and re-run to resume."; exit 3; }
 echo "REPRO-LOOP GREEN: A->C proven hands-off (rung-encrypted/D manual, logged-skipped)."
