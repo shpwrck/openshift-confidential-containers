@@ -71,7 +71,7 @@ run_positive() {
 }
 
 # run_negative <which> <label>: the denial MUST hold (fail-CLOSED). Delegates to negative-test.sh and
-# maps its exit code: 0=held, 3=incomplete (skipped prereqs / a skeleton rung), other=denial breached.
+# maps its exit code: 0=held, 3=incomplete (a prerequisite was missing), other=denial breached.
 run_negative() {
   local which="$1" label="$2" rc out; out="$(mktemp)"
   echo "[$label -] negative — denial must hold (fail-CLOSED)"
@@ -82,11 +82,7 @@ run_negative() {
   rm -f "$out"
   case "$rc" in
     0) ok "$label negative: denial held" ;;
-    3) if [[ "$which" == "rung-rvps" ]]; then
-         skipm "$label negative: rvps measurement negative not wired — see #18"
-       else
-         skipp "$label negative: incomplete (a prerequisite was missing) — see output above"
-       fi ;;
+    3) skipp "$label negative: incomplete (a prerequisite was missing) — see output above" ;;
     *) bad "$label negative: denial did NOT hold (negative-test exit $rc)" ;;
   esac
 }
@@ -94,15 +90,15 @@ run_negative() {
 run_rung() {
   case "$1" in
     rung-kbs)
+      # POSITIVE: the confidential (kata-cc) pod attests -> KBS releases the secret -> pod runs.
+      # NEGATIVE (#17): a non-CoCo (non-kata) pod cannot attest -> secret withheld (fail-closed).
       run_positive "rung-kbs" bash "$APPLY_RUNG_KBS_SCRIPT"
-      # Transitional (#16): `negative-test.sh rung-kbs` currently exercises the measured-initdata
-      # (MEASUREMENT) negative, not the bare no-valid-attestation denial. #17 authors the dedicated
-      # bare-attestation negative for rung-kbs; #18 relocates the measurement proof to run_rung_rvps.
-      # Label it honestly so the sign-off evidence isn't read as the bare-attestation denial.
-      run_negative "rung-kbs" "rung-kbs (measured-initdata/measurement negative; bare-attestation denial pending #17)"
+      run_negative "rung-kbs" "rung-kbs (bare no-attestation / non-CoCo)"
       ;;
     rung-rvps)
-      skipm "rung-rvps positive: RVPS measurement overlay not wired — see #18"
+      # POSITIVE: measurement present (matches the appraised HOST_DATA) -> secret released.
+      # NEGATIVE (#18): valid attestation with the WRONG measurement (tampered initdata) -> withheld.
+      run_positive "rung-rvps" bash "$APPLY_RUNG_KBS_SCRIPT"
       run_negative "rung-rvps" "rung-rvps"
       ;;
     rung-signed)
