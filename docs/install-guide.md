@@ -1019,8 +1019,9 @@ Each rung adds one user-visible capability on top of the same attestation base:
   served as `regcred`). **Negative:** unsigned/tampered → `image_security_policy` rejects the
   pull. Plan details: serve a restrictive signed-image policy and public key from KBS, while
   still allowing or verifying the pause/release images the CVM pulls before the app image.
-- **Rung D (rung-encrypted) — encrypted image** *(manual; upstream-blocked: cri-o/cri-o#10084 —
-  excluded from the hands-off loop, and a skipped D is not a failure)*. **Happy:** pod Running
+- **Rung D (rung-encrypted) — encrypted image** *(manual; upstream-blocked by a CRI-O host-side
+  encrypted-layer pre-pull gap — excluded from the hands-off loop, and a skipped D is not a
+  failure)*. **Happy:** pod Running
   (image key released after attestation). **Negative:** wrong measurement → key withheld → pod
   won't start. Plan details: build a digest-pinned encrypted image, serve its actual wrapping
   key from KBS at the KID embedded in the encrypted layer, then prove a measured-initdata
