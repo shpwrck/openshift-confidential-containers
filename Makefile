@@ -60,6 +60,7 @@ SEED_TRUSTEE_SECRETS_SCRIPT ?= ./scripts/seed-trustee-secrets.sh
 APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
 NEGATIVE_TEST_SCRIPT ?= ./scripts/negative-test.sh
 TEST_RUNG_SCRIPT ?= ./scripts/test-rung.sh
+REPRO_LOOP_SCRIPT ?= ./scripts/repro-loop.sh
 APPLY_RUNG_KBS_SCRIPT ?= ./scripts/apply-rung-kbs.sh
 APPLY_RUNG_ENCRYPTED_SCRIPT ?= ./scripts/apply-rung-encrypted.sh
 APPLY_RUNG_SIGNED_SCRIPT ?= ./scripts/apply-rung-signed.sh
@@ -303,3 +304,7 @@ negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-kbs|rung-rvps|r
 .PHONY: test-rung
 test-rung: ## Run per-rung POSITIVE+NEGATIVE proofs (WHICH=all|rung-kbs|rung-rvps|rung-signed|rung-encrypted; set RUNG_SIGNED_IMAGE=<@sha256> for the signed positive)
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" bash "$(TEST_RUNG_SCRIPT)" $(WHICH)
+
+.PHONY: repro-loop
+repro-loop: ## Hands-off A->C loop: deploy->pos->neg per rung, resumable via a durable status file (D manual/skipped). REPRO_FRESH=1 restarts
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_UNSIGNED_IMAGE="$(RUNG_SIGNED_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" REPRO_FRESH="$(REPRO_FRESH)" bash "$(REPRO_LOOP_SCRIPT)"

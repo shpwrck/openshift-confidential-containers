@@ -11,6 +11,7 @@ vcek-bundle/
 rvps-*.yaml
 initdata-*.toml
 rung-image-artifacts/
+loop-runs/
 cosign.key
 cosign.pub
 *.tmp
