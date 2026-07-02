@@ -1,0 +1,49 @@
+---
+# Rung-a smoke test — customer topology (in-cluster KBS + Artifactory). Copied from the proven
+# gitops/base/workloads/rung-a-secret-pod.yaml; the ONLY thing you add is the cc_init_data annotation
+# (the gzip+base64 of your filled initdata.artifactory.toml).
+#
+# What a GREEN run proves — and why it's your fastest way out of the ttrpc error:
+#   - runtimeClassName kata-cc boots a real SNP confidential VM (handler resolves to kata-snp).
+#   - The init container reaches the in-CVM CDH at 127.0.0.1:8006 -> CDH attested to KBS and the
+#     `attestation-status` resource was released. That is the guest->AA->KBS ttrpc path working.
+#   - The app image pulls from Artifactory IN-GUEST (credential + registries.conf + Artifactory CA).
+#
+# Memory model (load-bearing): SNP pins ALL guest RAM at launch, so the pod memory limit MUST be
+# >= default_memory annotation + ~256Mi QEMU overhead, or the host OOM-kills QEMU in seconds and the
+# pod shows DeadlineExceeded (NOT an obvious OOM). Keep limit in sync with default_memory below.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rung-a-secret
+  namespace: default                 # FILL: your confidential workload namespace.
+  annotations:
+    io.katacontainers.config.hypervisor.default_memory: "2048"   # MiB CVM RAM. FILL per workload.
+    # FILL: paste the output of `scripts/encode-initdata.sh encode initdata.artifactory.filled.toml`
+    io.katacontainers.config.hypervisor.cc_init_data: "__GZIP_BASE64_INITDATA__"
+spec:
+  runtimeClassName: kata-cc          # CoCo runtime; handler resolves to kata-snp on SEV-SNP.
+  restartPolicy: Never
+  initContainers:
+    - name: attestation-gate
+      # FILL: an image reachable IN-GUEST via Artifactory (put a ubi-minimal in Artifactory and
+      # reference it by the upstream ref your registries.conf remaps, e.g. registry.access.redhat.com/...).
+      image: __ARTIFACTORY_UBI_MINIMAL_REF__
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          # CDH resource API, loopback inside the CVM. Non-200 / non-success fails the init
+          # container, so the app only runs once attestation released the secret.
+          curl -fsS http://127.0.0.1:8006/cdh/resource/default/attestation-status/status
+          echo "attestation: ok"
+  containers:
+    - name: app
+      image: __ARTIFACTORY_UBI_MINIMAL_REF__     # FILL: same Artifactory-reachable image.
+      command: ["/bin/sh", "-c", "echo 'rung-a: confidential workload running'; sleep 3600"]
+      resources:
+        limits:
+          memory: "2304Mi"           # FILL: >= default_memory (2048Mi) + 256Mi overhead.
+        requests:
+          memory: "2304Mi"
