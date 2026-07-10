@@ -714,9 +714,11 @@
   <div class="stack center">
     <p class="eyebrow">04 &middot; First, prove the silicon</p>
     <h2>Rung-0: The Gate Before Everything</h2>
-    <p>Confidential computing fails in expensive, hardware-shaped ways — so before a single
-      manifest is applied, one script must go green. <code>make verify-snp-host</code> proves
-      the machine can actually do SEV&#8209;SNP <em>as a host</em>.</p>
+    <p>Confidential computing fails in expensive, hardware-shaped ways — so the silicon must go
+      green twice before a single manifest is applied: <code>scripts/host-snp-check.sh</code>
+      on the raw metal (below, with the kernel/BIOS triage), then
+      <code>make verify-snp-host</code> re-proves the PSP, RMP table, and <code>/dev/sev</code>
+      on the RHCOS node itself.</p>
   </div>
 
   <div class="btnrow">
@@ -725,7 +727,7 @@
 
   <div class="term" id="gateTerm" aria-label="SEV-SNP host gate output">
     <div class="tdots" aria-hidden="true"><i></i><i></i><i></i></div>
-    <span class="tline tdim">$ make verify-snp-host NODE=rig-01</span>
+    <span class="tline tdim">$ scripts/host-snp-check.sh   # raw host, pre-OpenShift</span>
     <span class="tline" id="gl0"></span><span class="tline" id="gl1"></span>
     <span class="tline" id="gl2"></span><span class="tline" id="gl3"></span>
     <span class="tline" id="gl4"></span><span class="tline" id="gl5"></span>
@@ -926,7 +928,9 @@
     <h2>Now Let's Break It — On Purpose</h2>
     <p>A denial you've never seen is a denial you can't trust. Every rung ships with a
       scripted <strong>negative test</strong>: break exactly one thing, demand the refusal,
-      then auto-revert the rig to baseline. <code>make negative-test WHICH=all</code></p>
+      then auto-revert the rig to baseline. <code>make negative-test WHICH=all</code> runs
+      rungs A&ndash;C plus the air-gap proof — rung&nbsp;D is manual and deliberately excluded,
+      so a skipped D is not a failure (and not coverage, either).</p>
   </div>
 
   <div class="tablewrap">
@@ -937,10 +941,11 @@
       <tbody>
         <tr>
           <td>rung-kbs</td>
-          <td>Ask for the secret with <strong>no valid attestation</strong> — a bare request.
-            The attested control still releases.</td>
-          <td><span class="deny">Withheld &middot; 403</span> — the KBS gates release on
-            attestation, not on network position.</td>
+          <td>Launch the workload as a <strong>plain non-kata pod</strong> — no c-VM, no CDH, no
+            attestation. The attested control still releases.</td>
+          <td><span class="deny">No secret, ever</span> — the pod's gate dies with a CDH
+            connection failure (<code>curl (7)</code>, <code>Init:Error</code>), not a policy
+            403. Proven 2026&#8209;07&#8209;02.</td>
         </tr>
         <tr>
           <td>rung-rvps</td>
@@ -959,7 +964,7 @@
           <td>rung-signed</td>
           <td>Launch an <strong>unsigned / tampered image</strong> under
             <code>image_security_policy</code>.</td>
-          <td><span class="deny">Image rejected</span> — pod never admitted.</td>
+          <td><span class="deny">Guest pull fails</span> — the policy check runs inside the Kata guest, so the denial shows up in pod events and logs; the pod never starts.</td>
         </tr>
         <tr>
           <td>rung-encrypted</td>
@@ -971,7 +976,7 @@
       </tbody>
     </table>
   </div>
-  <p class="hint">Each denial backs up what it swaps and auto-reverts &middot; <code>make repro-loop</code> runs deploy &rarr; positive &rarr; negative for every rung, resumably</p>
+  <p class="hint">Each denial backs up what it swaps and auto-reverts &middot; <code>make repro-loop</code> runs deploy &rarr; positive &rarr; negative across rungs A&ndash;C, resumably &middot; rung D stays manual</p>
 </section>
 
 <!-- ================= GITOPS ================= -->
@@ -1058,8 +1063,8 @@
         <p class="cid">rung-kbs</p>
       </div>
       <p class="cdesc">Attestation gates a credential. Air-gapped attest via the VCEK
-        OfflineStore &rarr; the KBS releases the secret. No attestation &rarr; withheld with
-        a 403 (bare-attestation negative lands in #17).</p>
+        OfflineStore &rarr; the KBS releases the secret. No attestation &rarr; no release:
+        the bare non-CoCo negative dies as a CDH connection failure (proven 2026&#8209;07&#8209;02).</p>
     </article>
 
     <article class="card">
@@ -1201,9 +1206,10 @@
     </div>
     <div>
       <h3>Where do I start?</h3>
-      <p><code>make help</code> lists every target. The very first gate is
-        <code>make verify-snp-host NODE=&lt;node&gt;</code> — rung&#8209;0 proves the silicon
-        before a single manifest is applied. Then follow the runbooks, rung by rung.</p>
+      <p><code>make help</code> lists every target. Rung&#8209;0 comes first, always:
+        <code>scripts/host-snp-check.sh</code> on the raw metal, then
+        <code>make verify-snp-host NODE=&lt;node&gt;</code> on the RHCOS node — the silicon is
+        proven before a single manifest is applied. Then follow the runbooks, rung by rung.</p>
     </div>
   </div>
 </section>
@@ -1261,7 +1267,7 @@
       bD=document.getElementById("btnDenied");
   var COPY={
     a:'<strong>Attested.</strong> The pod boots inside a Kata confidential VM; its SNP launch measurement matches the reference values, its VCEK checks out against the offline cache, and the KBS releases the secret. The workload runs.',
-    d:'<strong>Denied.</strong> Tamper with anything — the initdata, the measurement, the VCEK cert — and the KBS withholds the resource with a 403. The pod fails closed, and the negative-test scripts prove it does, every time.'
+    d:'<strong>Denied.</strong> Tamper with anything and the Trustee refuses — a bad measurement earns a 403, a wrong VCEK cert fails attestation with a 401, and with no attestation at all there is no channel to ask on — the gate dies with a CDH connection failure. Every path fails closed, and the negative-test scripts prove each one, every time.'
   };
   function setState(denied){
     panel.classList.toggle("stateDenied",denied);
@@ -1305,7 +1311,7 @@
 
   /* ---- rung-0 gate terminal ---- */
   var GATE=[
-    '<span class="tdim">== SEV-SNP host gate (rig-01 &middot; EPYC Genoa) ==</span>',
+    '<span class="tdim">== SEV-SNP host gate (raw host rig-01 &middot; EPYC Genoa) ==</span>',
     '  <span class="tpass">PASS</span>  kernel &ge; 6.11',
     '  <span class="tpass">PASS</span>  CONFIG_KVM_AMD_SEV=y in kernel',
     '  <span class="tpass">PASS</span>  kvm_amd exposes sev_snp param',
@@ -1314,7 +1320,7 @@
     '  <span class="tpass">PASS</span>  no PSP Error: 0x3 (Mem Interleaving)',
     '  <span class="tpass">PASS</span>  kvm_amd sev_snp = Y',
     '  <span class="tpass">PASS</span>  /dev/sev present',
-    '<span class="tres">RESULT: SEV-SNP host <b>LIVE</b> — silicon + provider proven</span>'
+    '<span class="tres">RESULT: SEV-SNP host <b>LIVE</b> — silicon + provider proven. next: make verify-snp-host</span>'
   ];
   var gBtn=document.getElementById("btnGate"),gateTimer=null,gateRan=false;
   function gateLine(i,html){document.getElementById("gl"+i).innerHTML=html}
