@@ -71,6 +71,39 @@
   register: egress_nft_load
   changed_when: egress_nft_load.rc == 0
 
+# --- Reboot-persistence (#54) -----------------------------------------------
+# The three mitigations above are applied to LIVE state only: `ip -6 route del` and `ip route
+# change ... mtu` are runtime commands (NetworkManager/DHCP re-adds the v6 default + resets MTU on
+# reboot), and the nft ruleset is written to /etc/nftables/ but nothing loads it at boot. Within a
+# single site.yml run that's fine (mirror_push follows immediately), but a bastion reboot before a
+# later re-mirror silently reintroduces the v6-CDN blackhole. A oneshot systemd unit re-applies all
+# three on every boot.
+- name: Install the boot-persistence apply script
+  ansible.builtin.template:
+    src: bastion-egress-apply.sh.j2
+    dest: /usr/local/sbin/bastion-egress-apply.sh
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the bastion-egress systemd unit
+  ansible.builtin.template:
+    src: bastion-egress.service.j2
+    dest: /etc/systemd/system/bastion-egress.service
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Enable + start bastion-egress.service (re-applies the hardening on every boot)
+  ansible.builtin.systemd:
+    name: bastion-egress.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+
 - name: Confirm the SYN MSS clamp rule is present
   ansible.builtin.command: nft list table inet {{ bastion_egress_nft_table }}
   register: egress_nft_verify

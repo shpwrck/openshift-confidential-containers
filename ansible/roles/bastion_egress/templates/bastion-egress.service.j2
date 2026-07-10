@@ -1,0 +1,14 @@
+[Unit]
+Description=CoCo bastion egress hardening (drop v6 default, MTU {{ bastion_egress_mtu }}, SYN MSS {{ bastion_egress_mss_clamp }}) — fix #1/#54
+Documentation=https://github.com/shpwrck/openshift-confidential-containers/issues/54
+# Re-apply after networking is up (NetworkManager/DHCP re-adds the v6 default route on every boot).
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/bastion-egress-apply.sh
+
+[Install]
+WantedBy=multi-user.target

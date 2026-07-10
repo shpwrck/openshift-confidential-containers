@@ -4,6 +4,7 @@ kind: Kustomization
 # Subscriptions point `source` at the oc-mirror CatalogSource in openshift-marketplace; see
 # README.md. Populate from onboarding guide Gates 2-4 + Step 3.
 resources:
+  - operatorhub-disable-defaults.yaml   # disconnected: kill broken default catalogs (#57), else OLM can't resolve any sub
   - namespaces.yaml
   - operatorgroups.yaml
   - subscriptions.yaml
