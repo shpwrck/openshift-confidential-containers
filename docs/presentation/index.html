@@ -686,13 +686,13 @@
 
       <g class="grp g-trustee">
         <rect class="d fw" x="654" y="70" width="190" height="200" rx="14"/>
-        <text class="lbl ink big" x="670" y="56">TRUSTEE CLUSTER</text>
+        <text class="lbl ink big" x="670" y="56">TRUSTEE</text>
         <rect class="d fp" x="674" y="92" width="150" height="30" rx="6"/><text class="sub" x="684" y="111">kbs (key broker)</text>
         <rect class="d fp" x="674" y="130" width="150" height="30" rx="6"/><text class="sub" x="684" y="149">attestation service</text>
         <rect class="d fp" x="674" y="168" width="150" height="30" rx="6"/><text class="sub" x="684" y="187">rvps + rego policy</text>
         <rect class="db fbs" x="674" y="206" width="150" height="30" rx="6"/><text class="sub" x="684" y="225">vcek offlinestore</text>
         <g class="hotline"><path class="db" d="M654 60 v-18 h190 v18" opacity=".6"/></g>
-        <text class="sub" x="674" y="258">separate cluster, own gitops</text>
+        <text class="sub" x="674" y="258">rig: in-cluster &middot; prod: own</text>
       </g>
 
       <g class="dg">
@@ -1183,7 +1183,8 @@
     <div>
       <h3>Why a disposable rig?</h3>
       <p>Confidential computing fails in expensive, hardware-shaped ways. The rig — one hourly
-        SNO node plus a second Trustee cluster, egress-firewalled to simulate the air gap —
+        SNO node with Trustee in-cluster (a second Trustee cluster is the opt-in third-server
+        topology), egress-firewalled to simulate the air gap —
         lets every capability be proven and torn down before it ever touches customer metal.</p>
     </div>
     <div>
@@ -1302,8 +1303,8 @@
       tabs=document.querySelectorAll("#parts .tabs .btn");
   var PARTS={
     silicon:'<strong>The silicon.</strong> AMD SEV-SNP encrypts the confidential VM’s memory and signs a launch measurement of everything loaded at boot — firmware, kernel, initdata. The rung-0 gate (<code>make verify-snp-host</code>) proves the silicon before anything else is allowed to happen.',
-    kata:'<strong>The Kata host.</strong> No peer-pods here: the worker’s own RHCOS kernel is the SNP host. The sandboxed-containers operator (OSC 1.12) and a KataConfig turn any annotated pod into a hardware-isolated confidential VM on OpenShift &ge; 4.19.28, while a Gatekeeper constraint enforces the c-VM memory floor so undersized pods aren’t OOM-killed.',
-    trustee:'<strong>The Trustee.</strong> A separate cluster runs the KBS, the Attestation Service, and RVPS reference values behind a Rego policy. Its VCEK OfflineStore caches AMD’s certificates so evidence verifies with zero internet — the air gap’s load-bearing trick.',
+    kata:'<strong>The Kata host.</strong> No peer-pods here: the worker’s own RHCOS kernel is the SNP host. The sandboxed-containers operator (OSC 1.12) and a KataConfig turn any pod that sets <code>runtimeClassName: kata-cc</code> into a hardware-isolated confidential VM on OpenShift &ge; 4.19.28. A Gatekeeper constraint enforces the c-VM memory floor — for pods opted in with the <code>coco-resource-default: "true"</code> label — so undersized pods aren’t OOM-killed.',
+    trustee:'<strong>The Trustee.</strong> The KBS, the Attestation Service, and RVPS reference values behind a Rego policy. On the rig’s default path (rungs A–D) it rides the same SNO via ClusterIP; production — and the opt-in third-server topology — give it a separate cluster. Its VCEK OfflineStore caches AMD’s certificates so evidence verifies with zero internet.',
     bastion:'<strong>The bastion.</strong> Everything the sealed node will ever need — release payload, operator catalogs, workload images, DNS, NTP, boot artifacts, VCEK certs — is mirrored onto the bastion while it’s still connected. Then the gap closes.',
     all:'<strong>All together.</strong> The bastion feeds the node, the node runs the confidential VM, and the Trustee decides what it deserves. Three assemblies, one dashed line they never cross: the public internet.'
   };
