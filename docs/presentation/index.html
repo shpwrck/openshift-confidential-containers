@@ -8,6 +8,7 @@
   :root{
     --paper:#ffffff;
     --ink:#131417;
+    --body:#3c3f45;
     --graphite:#8a8f98;
     --graphite-2:#b9bdc4;
     --blue:#0099ff;
@@ -31,6 +32,7 @@
     -webkit-font-smoothing:antialiased;
   }
   ::selection{background:var(--blue);color:#fff}
+  header,section,footer{scroll-margin-top:72px}
 
   /* ---------- primitives ---------- */
   .eyebrow{
@@ -44,7 +46,7 @@
   }
   .section{max-width:1060px;margin:0 auto;padding:110px 24px 0}
   .prose{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
-  .prose p{color:#3c3f45}
+  .prose p{color:var(--body)}
   .prose .lede{font-size:19px;color:var(--ink)}
   .q{font-weight:650;color:var(--ink)}
   .q em{font-style:normal;color:var(--blue)}
@@ -54,6 +56,7 @@
   }
   .center{text-align:center}
   .stack{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .stack>p{max-width:58ch;color:var(--body)}
 
   .panel{
     background:var(--panel);border:1px solid var(--line);border-radius:20px;
@@ -69,7 +72,7 @@
     font-family:var(--font);font-size:12px;font-weight:700;letter-spacing:.14em;
     text-transform:uppercase;color:var(--ink);background:var(--paper);
     border:1.5px solid var(--ink);border-radius:999px;padding:12px 24px;
-    cursor:pointer;transition:background .18s,color .18s,border-color .18s,transform .18s;
+    cursor:pointer;transition:background .18s,color .18s,border-color .18s;
   }
   .btn:hover{border-color:var(--blue);color:var(--blue)}
   .btn:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
@@ -77,32 +80,41 @@
   .btn.on:hover{background:var(--blue);border-color:var(--blue)}
   .btnrow{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:30px}
 
-  /* ---------- nav ---------- */
+  /* scroll-reveal (class added by JS; no-JS stays visible) */
+  .reveal{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.in{opacity:1;transform:none}
+
+  /* ---------- progress + nav ---------- */
+  #progress{
+    position:fixed;top:0;left:0;right:0;height:2.5px;z-index:60;
+    background:var(--blue);transform:scaleX(0);transform-origin:0 50%;
+  }
   nav{
     position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
-    gap:16px;padding:16px 28px;background:rgba(255,255,255,.86);
+    gap:16px;padding:15px 28px;background:rgba(255,255,255,.86);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line);
   }
   nav .mark{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink)}
   nav .mark svg{display:block}
   nav .mark span{font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
-  nav .links{display:flex;gap:26px}
+  nav .links{display:flex;gap:22px}
   nav .links a{
-    font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+    font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
     color:var(--graphite);text-decoration:none;transition:color .15s;
   }
-  nav .links a:hover{color:var(--blue)}
-  @media(max-width:560px){nav .links a:nth-child(n+4){display:none}}
+  nav .links a:hover,nav .links a.active{color:var(--blue)}
+  @media(max-width:900px){nav .links a:nth-child(n+6){display:none}}
+  @media(max-width:640px){nav .links a:nth-child(n+4){display:none}}
 
   /* ---------- hero ---------- */
   header{
-    min-height:calc(100svh - 62px);display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:26px;text-align:center;
-    padding:60px 24px 40px;position:relative;
+    min-height:calc(100svh - 60px);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:24px;text-align:center;
+    padding:56px 24px 90px;position:relative;
   }
   header h1{
-    font-size:clamp(44px,8.5vw,104px);font-weight:800;letter-spacing:-.035em;
+    font-size:clamp(44px,8.5vw,102px);font-weight:800;letter-spacing:-.035em;
     line-height:.98;text-wrap:balance;max-width:12ch;
   }
   header h1 .thin{color:var(--graphite-2);font-weight:640}
@@ -111,32 +123,45 @@
     font-size:12px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--graphite);
   }
   .circa::before,.circa::after{content:"";width:44px;height:1px;background:var(--graphite-2)}
-  header .tag{max-width:44ch;color:#3c3f45;font-size:18px;text-wrap:balance}
+  header .tag{max-width:46ch;color:var(--body);font-size:18px;text-wrap:balance}
+  .heroFig{width:min(560px,88vw)}
+  .heroFig svg{width:100%;height:auto;display:block}
+
+  .specplate{
+    display:flex;flex-wrap:wrap;justify-content:center;gap:0;
+    border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  }
+  .specplate div{
+    padding:12px 22px;display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+    border-left:1px solid var(--line);min-width:120px;text-align:left;
+  }
+  .specplate div:first-child{border-left:none}
+  .specplate .sk{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--graphite)}
+  .specplate .sv{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums}
+  .specplate .sv em{font-style:normal;color:var(--blue)}
   .scrolldown{
-    position:absolute;bottom:26px;left:50%;transform:translateX(-50%);
+    position:absolute;bottom:24px;left:50%;transform:translateX(-50%);
     display:flex;flex-direction:column;align-items:center;gap:8px;
     font-size:10px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--graphite);
   }
   .scrolldown svg{animation:bob 1.6s ease-in-out infinite}
   @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
 
-  .heroFig{width:min(560px,88vw)}
-  .heroFig svg{width:100%;height:auto;display:block}
-
   /* ---------- shared svg drawing styles ---------- */
   .d  {fill:none;stroke:var(--ink);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   .dth{fill:none;stroke:var(--ink);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
   .dg {fill:none;stroke:var(--graphite-2);stroke-width:1.4;stroke-linecap:round}
   .db {fill:none;stroke:var(--blue);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .dr {fill:none;stroke:var(--red);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .lead{fill:none;stroke:var(--graphite);stroke-width:1;stroke-dasharray:2.5 4;stroke-linecap:round}
   .fw {fill:var(--paper)}
   .fp {fill:#e9ebee}
   .fb {fill:var(--blue)}
   .fbs{fill:var(--blue-soft)}
-  .fi {fill:var(--ink)}
   .lbl{font-family:var(--font);font-size:10px;font-weight:700;letter-spacing:.14em;fill:var(--graphite)}
   .lbl.ink{fill:var(--ink)}
   .lbl.blue{fill:var(--blue)}
+  .lbl.red{fill:var(--red)}
   .lbl.big{font-size:11.5px}
   .sub{font-family:var(--mono);font-size:9px;letter-spacing:.05em;fill:var(--graphite)}
   .dot{fill:var(--graphite)}
@@ -145,7 +170,7 @@
   #figDenied{display:none}
   .stateDenied #figAttested{display:none}
   .stateDenied #figDenied{display:block}
-  .stateCopy{max-width:560px;margin:26px auto 0;text-align:center;color:#3c3f45}
+  .stateCopy{max-width:560px;margin:26px auto 0;text-align:center;color:var(--body)}
 
   /* ---------- exploded view ---------- */
   #explodeFig .part{transition:transform .7s cubic-bezier(.22,.9,.28,1)}
@@ -175,15 +200,56 @@
   #partsFig[data-part="kata"]    .g-node .hotline,
   #partsFig[data-part="trustee"] .g-trustee .hotline,
   #partsFig[data-part="bastion"] .g-bastion .hotline{opacity:1}
-  .partCopy{max-width:600px;margin:26px auto 0;text-align:center;color:#3c3f45;min-height:5.5em}
+  .partCopy{max-width:600px;margin:26px auto 0;text-align:center;color:var(--body);min-height:5.5em}
   .partCopy strong{color:var(--ink)}
+
+  /* ---------- rung-0 gate ---------- */
+  .term{
+    max-width:640px;margin:44px auto 0;background:#17181c;border-radius:16px;
+    padding:22px 26px 24px;font-family:var(--mono);font-size:13px;line-height:1.75;
+    color:#e8eaee;overflow-x:auto;
+  }
+  .term .tdots{display:flex;gap:6px;margin-bottom:14px}
+  .term .tdots i{width:9px;height:9px;border-radius:50%;background:#3a3d45}
+  .term .tline{white-space:pre;display:block;min-height:1.75em}
+  .term .tpass{color:var(--green);font-weight:700}
+  .term .tdim{color:#8a8f98}
+  .term .tres{color:#fff;font-weight:700}
+  .term .tres b{color:var(--green)}
+  .bioschips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:30px}
+  .bioschips span{
+    font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    border:1px solid var(--line);background:var(--paper);border-radius:999px;
+    padding:7px 14px;color:var(--graphite);
+  }
+  .bioschips b{color:var(--ink);font-weight:800}
+  .bioschips .off b{color:var(--red)}
+  .triage{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:34px}
+  .triage .tcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px}
+  .triage h4{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px;color:var(--blue)}
+  .triage h4.veto{color:var(--red)}
+  .triage p{font-size:13.5px;color:var(--body);line-height:1.55}
+
+  /* ---------- build pipeline ---------- */
+  .phasegrid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:4px 34px;max-width:820px;margin:40px auto 0;counter-reset:ph -1;
+  }
+  .phasegrid div{
+    display:flex;gap:14px;align-items:baseline;padding:11px 4px;
+    border-bottom:1px solid var(--line);counter-increment:ph;font-size:14px;color:var(--body);
+  }
+  .phasegrid div::before{
+    content:counter(ph,decimal-leading-zero);font-family:var(--mono);font-size:11px;
+    font-weight:700;color:var(--blue);font-variant-numeric:tabular-nums;flex:none;
+  }
+  .phasegrid b{color:var(--ink);font-weight:680}
 
   /* ---------- mechanism stepper ---------- */
   .mech{margin-top:44px}
-  .mechHead{display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:8px}
   .stepnum{
     font-size:12px;font-weight:800;letter-spacing:.2em;color:var(--blue);
-    font-variant-numeric:tabular-nums;
+    font-variant-numeric:tabular-nums;text-align:center;display:block;
   }
   .mechDots{display:flex;gap:8px;justify-content:center;margin-top:24px}
   .mechDots button{
@@ -192,13 +258,40 @@
   }
   .mechDots button[aria-current="true"]{background:var(--blue);border-color:var(--blue)}
   .mechNav{display:flex;gap:10px;justify-content:center;margin-top:20px}
-  .mechCopy{max-width:600px;margin:24px auto 0;text-align:center;min-height:6.5em}
-  .mechCopy h3{font-size:15px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
-  .mechCopy p{color:#3c3f45}
+  .mechCopy{max-width:600px;margin:24px auto 0;text-align:center;min-height:7em}
+  .mechCopy h3{font-size:15px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;margin:8px 0}
+  .mechCopy p{color:var(--body)}
   #mechFig .step{opacity:0;transition:opacity .35s}
   #mechFig .step.on{opacity:1}
   #mechFig .fade{transition:opacity .35s}
   #mechFig .fade.off{opacity:.18}
+
+  /* ---------- negatives table ---------- */
+  .tablewrap{overflow-x:auto;margin-top:44px;border:1px solid var(--line);border-radius:20px}
+  table.neg{width:100%;border-collapse:collapse;background:var(--panel);min-width:640px}
+  table.neg th{
+    font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--graphite);
+    text-align:left;padding:16px 22px 12px;border-bottom:1px solid var(--line);
+  }
+  table.neg td{
+    padding:15px 22px;border-bottom:1px solid var(--line);font-size:14px;color:var(--body);
+    vertical-align:top;line-height:1.5;
+  }
+  table.neg tr:last-child td{border-bottom:none}
+  table.neg td:first-child{font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+  table.neg .deny{font-weight:700;color:var(--red);white-space:nowrap}
+  table.neg .ok{font-weight:700;color:var(--ink)}
+
+  /* ---------- gitops ---------- */
+  .twoworlds{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;max-width:820px;margin:34px auto 0}
+  .world{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+  .world h4{font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;margin-bottom:12px}
+  .world h4.port{color:var(--blue)}
+  .world ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+  .world li{font-size:13.5px;color:var(--body);padding-left:18px;position:relative;line-height:1.5}
+  .world li::before{content:"";position:absolute;left:2px;top:9px;width:7px;height:2px;background:var(--graphite-2)}
+  .world.hw li::before{background:var(--red)}
+  .world.pt li::before{background:var(--blue)}
 
   /* ---------- rungs grid ---------- */
   .grid{
@@ -214,7 +307,7 @@
   .card svg{width:74px;height:74px;display:block}
   .card .cname{font-size:15px;font-weight:760;letter-spacing:.02em;line-height:1.25}
   .card .cid{font-family:var(--mono);font-size:11.5px;color:var(--graphite)}
-  .card .cdesc{font-size:13.5px;color:#3c3f45;line-height:1.5}
+  .card .cdesc{font-size:13.5px;color:var(--body);line-height:1.5}
   .badge{
     position:absolute;top:18px;right:18px;
     font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
@@ -224,22 +317,40 @@
   .badge.gap{background:var(--ink);color:#fff}
   .badge.blocked{background:var(--graphite-2);color:var(--ink)}
 
+  /* ---------- repo map ---------- */
+  .repomap{
+    max-width:760px;margin:44px auto 0;background:var(--panel);border:1px solid var(--line);
+    border-radius:20px;padding:28px 30px;overflow-x:auto;
+  }
+  .repomap pre{
+    font-family:var(--mono);font-size:13px;line-height:1.9;color:var(--ink);white-space:pre;
+  }
+  .repomap .c{color:var(--graphite)}
+  .repomap .b{color:var(--blue);font-weight:700}
+  .startrow{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:30px}
+  .startrow code{font-size:13px;padding:9px 16px;border-radius:999px;background:var(--paper)}
+
   /* ---------- about ---------- */
   .faq{max-width:640px;margin:44px auto 0;display:flex;flex-direction:column;gap:34px}
   .faq h3{font-size:17px;font-weight:750;margin-bottom:6px}
-  .faq p{color:#3c3f45}
+  .faq p{color:var(--body)}
 
   /* ---------- footer ---------- */
   footer{
     margin-top:130px;border-top:1px solid var(--line);padding:44px 24px 52px;
-    display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;
+    display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;
   }
   footer .fmark{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}
-  footer p{font-size:12.5px;color:var(--graphite);max-width:52ch}
+  footer p{font-size:12.5px;color:var(--graphite);max-width:56ch}
   footer a{color:var(--graphite)}
+  .kbd{
+    font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:5px;padding:1px 6px;color:var(--ink);background:var(--paper);
+  }
 </style>
 </head>
 <body>
+<div id="progress" aria-hidden="true"></div>
 <nav>
   <a class="mark" href="#top" aria-label="Top">
     <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
@@ -249,10 +360,13 @@
     </svg>
     <span>OpenShift CoCo</span>
   </a>
-  <div class="links">
+  <div class="links" id="navlinks">
     <a href="#states">States</a>
     <a href="#inside">Inside</a>
+    <a href="#rung0">Rung-0</a>
+    <a href="#build">Build</a>
     <a href="#mechanism">Mechanism</a>
+    <a href="#breakit">Break it</a>
     <a href="#rungs">Rungs</a>
     <a href="#about">About</a>
   </div>
@@ -268,9 +382,7 @@
 
   <div class="heroFig" aria-hidden="true">
     <svg viewBox="0 0 560 190">
-      <!-- exploded pod teaser: chip / host / vm / pod in a row with leader lines -->
       <g class="dg"><line x1="30" y1="160" x2="530" y2="160"/></g>
-      <!-- chip -->
       <rect class="d fw" x="46" y="96" width="76" height="52" rx="6"/>
       <rect class="db fbs" x="62" y="110" width="44" height="24" rx="3"/>
       <g class="dg">
@@ -280,32 +392,36 @@
         <line x1="94" y1="148" x2="94" y2="156"/><line x1="112" y1="148" x2="112" y2="156"/>
       </g>
       <text class="lbl" x="46" y="76">EPYC &middot; SEV-SNP</text>
-      <!-- host -->
       <rect class="d fw" x="168" y="88" width="104" height="60" rx="8"/>
       <line class="dg" x1="168" y1="104" x2="272" y2="104"/>
       <circle class="dot" cx="178" cy="96" r="1.8"/><circle class="dot" cx="186" cy="96" r="1.8"/>
       <text class="sub" x="180" y="124">rhcos kernel</text>
       <text class="sub" x="180" y="138">= snp host</text>
       <text class="lbl" x="168" y="76">RHCOS HOST</text>
-      <!-- vm -->
       <rect class="db fbs" x="318" y="84" width="96" height="64" rx="10"/>
       <path class="db" d="M330 100c6-6 12 6 18 0s12 6 18 0 12 6 18 0 12 6 18 0" opacity=".55"/>
       <text class="sub" x="330" y="126">encrypted</text>
       <text class="sub" x="330" y="139">memory</text>
       <text class="lbl blue" x="318" y="72">KATA C-VM</text>
-      <!-- pod -->
       <rect class="dth fw" x="458" y="92" width="60" height="56" rx="10"/>
-      <path class="d" d="M480 118v-6a8 8 0 0 1 16 0v6" fill="none" transform="translate(-8 0)"/>
+      <path class="d" d="M472 118v-6a8 8 0 0 1 16 0v6" fill="none"/>
       <rect class="d fw" x="466" y="118" width="28" height="20" rx="4"/>
       <circle class="fb" cx="480" cy="126" r="3"/>
       <text class="lbl ink" x="452" y="80">WORKLOAD</text>
-      <!-- arrows between -->
       <g class="dg">
         <line x1="130" y1="120" x2="158" y2="120"/><path d="M153 116l6 4-6 4" fill="none"/>
         <line x1="280" y1="120" x2="308" y2="120"/><path d="M303 116l6 4-6 4" fill="none"/>
         <line x1="422" y1="120" x2="450" y2="120"/><path d="M445 116l6 4-6 4" fill="none"/>
       </g>
     </svg>
+  </div>
+
+  <div class="specplate" aria-label="Specification">
+    <div><span class="sk">TEE</span><span class="sv">AMD SEV-SNP</span></div>
+    <div><span class="sk">Path</span><span class="sv">Bare-metal Kata</span></div>
+    <div><span class="sk">Platform</span><span class="sv">OCP &ge; 4.19.28 &middot; OSC 1.12 &middot; Trustee 1.1</span></div>
+    <div><span class="sk">Attestation</span><span class="sv">VCEK OfflineStore</span></div>
+    <div><span class="sk">Internet at runtime</span><span class="sv"><em>0 bytes</em></span></div>
   </div>
 
   <div class="scrolldown" aria-hidden="true">
@@ -324,9 +440,9 @@
       attestation service would rather return a <code>403</code> than take your word for anything?</p>
     <p>This repo stands up <strong>OpenShift Confidential Containers (CoCo)</strong> on AMD
       SEV&#8209;SNP bare metal. Every capability is first proven on a disposable single-node
-      test rig — spun up, measured, torn down — and only then applied, unchanged, to the real
-      air-gapped multi-node cluster. No peer-pods, no cloud shims: the worker's own RHCOS
-      kernel <em>is</em> the SNP host.</p>
+      test rig — one hourly Latitude.sh machine, spun up, measured, torn down — and only then
+      applied, unchanged, to the real air-gapped multi-node cluster. No peer-pods, no cloud
+      shims: the worker's own RHCOS kernel <em>is</em> the SNP host.</p>
     <p class="q">The main question we want to answer: <em>why does a secret release only
       when the hardware proves what's running — on a cluster with no internet at all?</em></p>
     <p>Let's take a closer look.</p>
@@ -338,9 +454,8 @@
   <div class="stack center">
     <p class="eyebrow">01 &middot; Static states</p>
     <h2>What Are The Main States of This Design?</h2>
-    <p style="max-width:56ch;color:#3c3f45">Before we open anything up, let's establish the
-      two resting states of the system. Everything in this repo exists to force state two
-      whenever state one isn't earned.</p>
+    <p>Before we open anything up, let's establish the two resting states of the system.
+      Everything in this repo exists to force state two whenever state one isn't earned.</p>
   </div>
 
   <div class="btnrow" role="group" aria-label="Choose a state">
@@ -351,7 +466,6 @@
   <div class="panel" id="statePanel">
     <svg viewBox="0 0 760 300" role="img" aria-label="Diagram of the attested and denied states">
       <g id="figAttested">
-        <!-- pod -->
         <rect class="dth fw" x="70" y="86" width="150" height="128" rx="14"/>
         <text class="lbl ink big" x="86" y="72">CONFIDENTIAL POD</text>
         <path class="db" d="M86 106c8-7 15 7 23 0s15 7 23 0 15 7 23 0 15 7 23 0 15 7 22 0" opacity=".5"/>
@@ -360,20 +474,17 @@
         <circle class="fb" cx="145" cy="158" r="5"/>
         <line class="d" x1="145" y1="162" x2="145" y2="172"/>
         <text class="sub" x="104" y="202">secret mounted</text>
-        <!-- trustee -->
         <rect class="dth fw" x="540" y="86" width="150" height="128" rx="14"/>
         <text class="lbl ink big" x="556" y="72">TRUSTEE (KBS)</text>
         <rect class="d fp" x="556" y="104" width="114" height="24" rx="5"/><text class="sub" x="564" y="120">attestation svc</text>
         <rect class="d fp" x="556" y="136" width="114" height="24" rx="5"/><text class="sub" x="564" y="152">rvps ref values</text>
         <rect class="db fbs" x="556" y="168" width="114" height="24" rx="5"/><text class="sub" x="564" y="184">vcek offlinestore</text>
-        <!-- evidence up -->
         <g>
           <path class="d" d="M228 128 H532" stroke-dasharray="5 6"/>
           <path class="d" d="M526 122l8 6-8 6"/>
           <rect class="d fw" x="330" y="108" width="104" height="26" rx="13"/>
           <text class="lbl" x="344" y="125">EVIDENCE</text>
         </g>
-        <!-- key back -->
         <g>
           <path class="db" d="M532 176 H228"/>
           <path class="db" d="M236 170l-8 6 8 6"/>
@@ -384,13 +495,11 @@
           </g>
         </g>
         <text class="lbl blue" x="322" y="222">MEASUREMENT MATCHES &rarr; SECRET RELEASED</text>
-        <!-- check -->
         <circle class="db fw" cx="380" cy="258" r="14"/>
         <path class="db" d="M373 258l5 5 9-10"/>
       </g>
 
       <g id="figDenied">
-        <!-- pod tampered -->
         <rect class="dth fw" x="70" y="86" width="150" height="128" rx="14"/>
         <text class="lbl ink big" x="86" y="72">TAMPERED POD</text>
         <path class="d" d="M86 106l22 10-20 8 24 9-18 9" opacity=".6"/>
@@ -398,28 +507,24 @@
         <path class="d" d="M129 140v-9a16 16 0 0 1 32 0v9"/>
         <path class="d" d="M138 152l14 14m0-14l-14 14"/>
         <text class="sub" x="104" y="202">nothing mounted</text>
-        <!-- trustee -->
         <rect class="dth fw" x="540" y="86" width="150" height="128" rx="14"/>
         <text class="lbl ink big" x="556" y="72">TRUSTEE (KBS)</text>
         <rect class="d fp" x="556" y="104" width="114" height="24" rx="5"/><text class="sub" x="564" y="120">attestation svc</text>
         <rect class="d fp" x="556" y="136" width="114" height="24" rx="5"/><text class="sub" x="564" y="152">rvps ref values</text>
         <rect class="d fp" x="556" y="168" width="114" height="24" rx="5"/><text class="sub" x="564" y="184">vcek offlinestore</text>
-        <!-- evidence up -->
         <g>
           <path class="d" d="M228 128 H532" stroke-dasharray="5 6"/>
           <path class="d" d="M526 122l8 6-8 6"/>
           <rect class="d fw" x="318" y="108" width="128" height="26" rx="13"/>
           <text class="lbl" x="332" y="125">BAD EVIDENCE</text>
         </g>
-        <!-- 403 back -->
         <g>
-          <path d="M532 176 H228" fill="none" stroke="#e5484d" stroke-width="1.8" stroke-linecap="round"/>
-          <path d="M236 170l-8 6 8 6" fill="none" stroke="#e5484d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="dr" d="M532 176 H228"/>
+          <path class="dr" d="M236 170l-8 6 8 6"/>
           <rect x="352" y="162" width="60" height="26" rx="13" fill="#fff" stroke="#e5484d" stroke-width="1.6"/>
           <text x="366" y="180" style="font-family:var(--font);font-size:11px;font-weight:800;letter-spacing:.1em" fill="#e5484d">403</text>
         </g>
-        <text class="lbl" x="316" y="222" style="fill:#e5484d">RESOURCE WITHHELD &rarr; POD FAILS CLOSED</text>
-        <!-- cross -->
+        <text class="lbl red" x="316" y="222">RESOURCE WITHHELD &rarr; POD FAILS CLOSED</text>
         <circle cx="380" cy="258" r="14" fill="#fff" stroke="#e5484d" stroke-width="1.8"/>
         <path d="M374 252l12 12m0-12l-12 12" fill="none" stroke="#e5484d" stroke-width="1.8" stroke-linecap="round"/>
       </g>
@@ -436,9 +541,8 @@
   <div class="stack center">
     <p class="eyebrow">02 &middot; Teardown</p>
     <h2>What's Inside the Node?</h2>
-    <p style="max-width:56ch;color:#3c3f45">Let's take one bare-metal worker apart and find
-      out what parts live inside. Every layer below the pod exists to make the layer above
-      it measurable.</p>
+    <p>Let's take one bare-metal worker apart and find out what parts live inside.
+      Every layer below the pod exists to make the layer above it measurable.</p>
   </div>
 
   <div class="btnrow">
@@ -447,7 +551,6 @@
 
   <div class="panel">
     <svg id="explodeFig" viewBox="0 0 760 480" role="img" aria-label="Exploded view of the confidential node stack">
-      <!-- callout labels (appear when exploded) -->
       <g class="callout">
         <line class="lead" x1="446" y1="56" x2="560" y2="56"/>
         <text class="lbl ink big" x="568" y="52">WORKLOAD POD</text>
@@ -474,7 +577,6 @@
         <text class="sub" x="64" y="398">sev-snp firmware</text>
       </g>
 
-      <!-- CHIP (bottom) -->
       <g class="part p-chip">
         <rect class="d fw" x="300" y="318" width="160" height="60" rx="8"/>
         <rect class="db fbs" x="330" y="332" width="100" height="32" rx="4"/>
@@ -489,7 +591,6 @@
         </g>
       </g>
 
-      <!-- HOST -->
       <g class="part p-host">
         <rect class="d fw" x="286" y="256" width="188" height="56" rx="10"/>
         <line class="dg" x1="286" y1="272" x2="474" y2="272"/>
@@ -498,20 +599,17 @@
         <text class="sub" x="300" y="303">osc operator &middot; kataconfig</text>
       </g>
 
-      <!-- VM -->
       <g class="part p-vm">
         <rect class="db fbs" x="304" y="208" width="152" height="42" rx="10"/>
         <path class="db" d="M318 222c7-6 13 6 20 0s13 6 20 0 13 6 20 0 13 6 20 0 13 6 20 0" opacity=".5"/>
-        <text class="sub" x="322" y="242">confidential guest</text>
+        <text class="sub" x="322" y="242">guest kernel</text>
       </g>
 
-      <!-- INITDATA -->
       <g class="part p-init">
         <rect class="db fw" x="408" y="216" width="42" height="26" rx="6"/>
         <path class="db" d="M416 224h26m-26 6h18" opacity=".7"/>
       </g>
 
-      <!-- POD (top) -->
       <g class="part p-pod">
         <rect class="dth fw" x="322" y="150" width="116" height="52" rx="12"/>
         <rect class="d fw" x="352" y="164" width="34" height="26" rx="5"/>
@@ -519,7 +617,6 @@
         <circle class="fb" cx="369" cy="175" r="3.4"/>
       </g>
 
-      <!-- ground line -->
       <line class="dg" x1="150" y1="452" x2="610" y2="452"/>
       <text class="lbl" x="286" y="474">ONE BARE-METAL WORKER &middot; NO PEER-PODS</text>
     </svg>
@@ -537,8 +634,8 @@
   <div class="stack center">
     <p class="eyebrow">03 &middot; Moving parts</p>
     <h2>Let's Look at the Moving Parts</h2>
-    <p style="max-width:56ch;color:#3c3f45">The node never acts alone. To understand the
-      mechanism, let's walk through the critical assemblies around it.</p>
+    <p>The node never acts alone. To understand the mechanism, let's walk through the
+      critical assemblies around it.</p>
   </div>
 
   <div class="tabs" role="tablist" aria-label="Moving parts">
@@ -551,7 +648,6 @@
 
   <div class="panel">
     <svg id="partsFig" viewBox="0 0 880 340" data-part="silicon" role="img" aria-label="System diagram with bastion, node, and Trustee cluster">
-      <!-- BASTION -->
       <g class="grp g-bastion">
         <rect class="d fw" x="36" y="70" width="190" height="200" rx="14"/>
         <text class="lbl ink big" x="52" y="56">BASTION / MIRROR</text>
@@ -565,7 +661,6 @@
         <text class="sub" x="56" y="258">filled before the gap closes</text>
       </g>
 
-      <!-- NODE -->
       <g class="grp g-node">
         <rect class="d fw" x="330" y="70" width="220" height="200" rx="14"/>
         <text class="lbl ink big" x="346" y="56">SNO WORKER (AIR-GAPPED)</text>
@@ -589,7 +684,6 @@
         <text class="sub" x="352" y="262">rung-0 gate: verify-snp-host</text>
       </g>
 
-      <!-- TRUSTEE -->
       <g class="grp g-trustee">
         <rect class="d fw" x="654" y="70" width="190" height="200" rx="14"/>
         <text class="lbl ink big" x="670" y="56">TRUSTEE CLUSTER</text>
@@ -601,7 +695,6 @@
         <text class="sub" x="674" y="258">separate cluster, own gitops</text>
       </g>
 
-      <!-- links -->
       <g class="dg">
         <path d="M226 150 H322" stroke-dasharray="5 6"/><path d="M316 144l8 6-8 6" fill="none"/>
         <path d="M550 150 H646" stroke-dasharray="5 6"/><path d="M640 144l8 6-8 6" fill="none"/>
@@ -616,19 +709,147 @@
   </div>
 </section>
 
+<!-- ================= RUNG 0 ================= -->
+<section class="section" id="rung0">
+  <div class="stack center">
+    <p class="eyebrow">04 &middot; First, prove the silicon</p>
+    <h2>Rung-0: The Gate Before Everything</h2>
+    <p>Confidential computing fails in expensive, hardware-shaped ways — so before a single
+      manifest is applied, one script must go green. <code>make verify-snp-host</code> proves
+      the machine can actually do SEV&#8209;SNP <em>as a host</em>.</p>
+  </div>
+
+  <div class="btnrow">
+    <button class="btn on" id="btnGate">Run the gate</button>
+  </div>
+
+  <div class="term" id="gateTerm" aria-label="SEV-SNP host gate output">
+    <div class="tdots" aria-hidden="true"><i></i><i></i><i></i></div>
+    <span class="tline tdim">$ make verify-snp-host NODE=rig-01</span>
+    <span class="tline" id="gl0"></span><span class="tline" id="gl1"></span>
+    <span class="tline" id="gl2"></span><span class="tline" id="gl3"></span>
+    <span class="tline" id="gl4"></span><span class="tline" id="gl5"></span>
+    <span class="tline" id="gl6"></span><span class="tline" id="gl7"></span>
+    <span class="tline" id="gl8"></span><span class="tline" id="gl9"></span>
+  </div>
+
+  <div class="bioschips" aria-label="BIOS recipe (AMD CBS)">
+    <span>AMD CBS</span>
+    <span>SEV-SNP SUPPORT <b>ON</b></span>
+    <span>SMEE <b>ON</b></span>
+    <span>SEV-ES ASID LIMIT <b>&gt; 0</b></span>
+    <span>RMP TABLE <b>ON</b></span>
+    <span class="off">MEMORY INTERLEAVING <b>OFF</b></span>
+  </div>
+
+  <div class="triage">
+    <div class="tcard">
+      <h4>Kernel can't? &rarr; image problem</h4>
+      <p>If the kernel lacks SNP-host support (needs &ge; 6.11, <code>CONFIG_KVM_AMD_SEV=y</code>),
+        that's a boot-image problem. Boot a newer kernel — it is <em>not</em> a provider veto.</p>
+    </div>
+    <div class="tcard">
+      <h4>Kernel can, but sev_snp=N? &rarr; BIOS</h4>
+      <p>The toggle is off. Open the IPMI console into AMD CBS and apply the recipe above —
+        PSP <code>Error: 0x3</code> means Memory Interleaving is still enabled.</p>
+    </div>
+    <div class="tcard">
+      <h4 class="veto">Both fine, still dead? &rarr; veto</h4>
+      <p>Kernel-capable, BIOS on, and SNP still won't init: old PSP firmware or a genuine
+        provider veto. Only <em>this</em> case justifies abandoning the bare-metal path.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BUILD / AIR GAP ================= -->
+<section class="section" id="build">
+  <div class="stack center">
+    <p class="eyebrow">05 &middot; The build</p>
+    <h2>Fill the Bastion, Then Seal the Gap</h2>
+    <p>An air-gapped cluster can't fetch anything later — so everything it will ever need is
+      staged on a bastion host <em>while it's still connected</em>. Then the line to the
+      internet is cut, and the install runs entirely from the private side.</p>
+  </div>
+
+  <div class="panel">
+    <svg viewBox="0 0 880 250" role="img" aria-label="Bastion pipeline: pin tools, mirror content, serve, seal the gap">
+      <!-- internet line, cut -->
+      <text class="lbl" x="36" y="36">PUBLIC INTERNET</text>
+      <path class="dg" d="M180 32 H414" stroke-dasharray="5 6"/>
+      <g class="dr">
+        <path d="M438 22l-14 20m0-20l14 20"/>
+      </g>
+      <path class="dg" d="M462 32 H844" stroke-dasharray="2 7" opacity=".45"/>
+      <text class="lbl red" x="470" y="24">CUT AFTER STAGING</text>
+
+      <!-- stations -->
+      <g>
+        <rect class="d fw" x="36" y="70" width="180" height="110" rx="14"/>
+        <text class="lbl ink big" x="52" y="96">PIN THE TOOLS</text>
+        <text class="sub" x="52" y="118">oc &middot; oc-mirror v2</text>
+        <text class="sub" x="52" y="132">openshift-install</text>
+        <text class="sub" x="52" y="146">version-locked in ./bin</text>
+        <text class="lbl" x="52" y="206">PHASE 0</text>
+      </g>
+      <g class="dg"><line x1="216" y1="125" x2="242" y2="125"/><path d="M237 121l6 4-6 4" fill="none"/></g>
+      <g>
+        <rect class="d fw" x="246" y="70" width="180" height="110" rx="14"/>
+        <text class="lbl ink big" x="262" y="96">MIRROR IT ALL</text>
+        <text class="sub" x="262" y="118">release payload</text>
+        <text class="sub" x="262" y="132">operator catalogs</text>
+        <text class="sub" x="262" y="146">coco + trustee images</text>
+        <rect class="db fbs" x="262" y="154" width="124" height="16" rx="8"/>
+        <text class="lbl blue" x="270" y="166" style="font-size:8.5px">~1&ndash;2 H, CACHEABLE</text>
+        <text class="lbl" x="262" y="206">PHASES 2&ndash;3</text>
+      </g>
+      <g class="dg"><line x1="426" y1="125" x2="452" y2="125"/><path d="M447 121l6 4-6 4" fill="none"/></g>
+      <g>
+        <rect class="d fw" x="456" y="70" width="180" height="110" rx="14"/>
+        <text class="lbl ink big" x="472" y="96">SERVE THE NODE</text>
+        <text class="sub" x="472" y="118">dns &middot; ntp &middot; registry ca</text>
+        <text class="sub" x="472" y="132">ipxe boot artifacts</text>
+        <text class="sub" x="472" y="146">console proxy (sslip.io)</text>
+        <text class="lbl" x="472" y="206">PHASES 3&ndash;5</text>
+      </g>
+      <g class="dg"><line x1="636" y1="125" x2="662" y2="125"/><path d="M657 121l6 4-6 4" fill="none"/></g>
+      <g>
+        <rect class="dth fw" x="666" y="70" width="178" height="110" rx="14"/>
+        <text class="lbl ink big" x="682" y="96">SEAL THE GAP</text>
+        <text class="sub" x="682" y="118">nft egress clamp</text>
+        <text class="sub" x="682" y="132">node sees bastion only</text>
+        <text class="sub" x="682" y="146">vcek already cached</text>
+        <text class="lbl blue" x="682" y="206">THE RIG IS NOW OFFLINE</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="phasegrid" aria-label="The ten phases">
+    <div><span><b>Tooling</b> — pin oc, oc-mirror, openshift-install</span></div>
+    <div><span><b>Provision</b> — SNP node, bastion, private VLAN</span></div>
+    <div><span><b>Bastion prep</b> — registry, DNS, NTP, egress clamp</span></div>
+    <div><span><b>Mirror</b> — oc-mirror push + boot artifacts</span></div>
+    <div><span><b>Rung-0</b> — SNP host gate + BIOS recipe</span></div>
+    <div><span><b>SNO install</b> — agent-based, bastion-fed only</span></div>
+    <div><span><b>Operators</b> — NFD &rarr; cert-mgr &rarr; OSC &rarr; KataConfig</span></div>
+    <div><span><b>Trustee</b> — KBS + VCEK OfflineStore + RVPS</span></div>
+    <div><span><b>Rungs</b> — happy paths + negative tests</span></div>
+    <div><span><b>Teardown</b> — destroy the rig, keep the proof</span></div>
+  </div>
+  <p class="hint">Ten phases &middot; docs/install-guide.md walks every one by hand</p>
+</section>
+
 <!-- ================= MECHANISM ================= -->
 <section class="section" id="mechanism">
   <div class="stack center">
-    <p class="eyebrow">04 &middot; The mechanism</p>
+    <p class="eyebrow">06 &middot; The mechanism</p>
     <h2>Okay, Time To Walk Through the Mechanism</h2>
-    <p style="max-width:56ch;color:#3c3f45">Let's step through one attestation, end to end,
-      to understand how a secret actually earns its way into the pod.</p>
+    <p>Let's step through one attestation, end to end, to understand how a secret actually
+      earns its way into the pod.</p>
   </div>
 
   <div class="mech">
     <div class="panel">
       <svg id="mechFig" viewBox="0 0 880 300" role="img" aria-label="Step-by-step attestation sequence">
-        <!-- static: pod / trustee -->
         <g class="fade" id="mPod">
           <rect class="dth fw" x="60" y="90" width="170" height="130" rx="14"/>
           <text class="lbl ink big" x="76" y="76">POD &middot; KATA C-VM</text>
@@ -648,7 +869,6 @@
           <rect class="d fp" x="672" y="138" width="126" height="24" rx="5"/><text class="sub" x="682" y="154">rvps + policy</text>
           <rect class="db fbs" x="672" y="170" width="126" height="24" rx="5"/><text class="sub" x="682" y="186">vcek offlinestore</text>
         </g>
-        <!-- step overlays -->
         <g class="step" id="ms1">
           <path class="d" d="M214 44 v28" stroke-dasharray="4 5"/><path class="d" d="M208 66l6 8 6-8"/>
           <rect class="d fw" x="131" y="18" width="166" height="26" rx="13"/>
@@ -683,7 +903,7 @@
       </svg>
 
       <div class="mechCopy">
-        <div class="mechHead"><span class="stepnum" id="stepNum">STEP 1 / 6</span></div>
+        <span class="stepnum" id="stepNum">STEP 1 / 6</span>
         <h3 id="stepTitle">Launch</h3>
         <p id="stepBody">The operator applies a rung workload with <code>oc apply -k</code>.
           The pod spec carries the CoCo runtime class and an initdata TOML — the Trustee URL
@@ -694,6 +914,123 @@
         <button class="btn" id="stepPrev">&larr; Prev</button>
         <button class="btn" id="stepNext">Next &rarr;</button>
       </div>
+      <p class="hint">Tip: the <span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> keys drive these steps too</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NEGATIVES ================= -->
+<section class="section" id="breakit">
+  <div class="stack center">
+    <p class="eyebrow">07 &middot; Negative tests</p>
+    <h2>Now Let's Break It — On Purpose</h2>
+    <p>A denial you've never seen is a denial you can't trust. Every rung ships with a
+      scripted <strong>negative test</strong>: break exactly one thing, demand the refusal,
+      then auto-revert the rig to baseline. <code>make negative-test WHICH=all</code></p>
+  </div>
+
+  <div class="tablewrap">
+    <table class="neg">
+      <thead>
+        <tr><th>WHICH=</th><th>What we break</th><th>What must happen</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>rung-kbs</td>
+          <td>Ask for the secret with <strong>no valid attestation</strong> — a bare request.
+            The attested control still releases.</td>
+          <td><span class="deny">Withheld &middot; 403</span> — the KBS gates release on
+            attestation, not on network position.</td>
+        </tr>
+        <tr>
+          <td>rung-rvps</td>
+          <td><strong>Tamper the measured initdata</strong> under a restrictive
+            measured-initdata policy (applied, then reverted). Untampered control releases.</td>
+          <td><span class="deny">Withheld &middot; 403</span> — valid attestation, wrong
+            measurement. Proven on the rig 2026&#8209;07&#8209;01.</td>
+        </tr>
+        <tr>
+          <td>air-gap</td>
+          <td><strong>Swap the VCEK</strong> in the OfflineStore for a wrong certificate.</td>
+          <td><span class="deny">Attestation fails &middot; 401</span> — not a silent fallback
+            to AMD's public KDS. The cache is load-bearing.</td>
+        </tr>
+        <tr>
+          <td>rung-signed</td>
+          <td>Launch an <strong>unsigned / tampered image</strong> under
+            <code>image_security_policy</code>.</td>
+          <td><span class="deny">Image rejected</span> — pod never admitted.</td>
+        </tr>
+        <tr>
+          <td>rung-encrypted</td>
+          <td>Present a <strong>wrong measurement</strong> when requesting the image
+            decryption key <em>(manual rung)</em>.</td>
+          <td><span class="deny">Key withheld</span> — the layer never decrypts; the pod
+            never starts.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">Each denial backs up what it swaps and auto-reverts &middot; <code>make repro-loop</code> runs deploy &rarr; positive &rarr; negative for every rung, resumably</p>
+</section>
+
+<!-- ================= GITOPS ================= -->
+<section class="section" id="gitops">
+  <div class="stack center">
+    <p class="eyebrow">08 &middot; One tree, two worlds</p>
+    <h2>The Same GitOps, Rig and Production</h2>
+    <p>The whole point of the rig: what gets proven is what gets promoted. One Kustomize
+      base fans out into rig overlays and customer overlays — only the hardware-bound
+      parts change.</p>
+  </div>
+
+  <div class="panel">
+    <svg viewBox="0 0 880 300" role="img" aria-label="GitOps base fanning out to rig and production overlays">
+      <rect class="dth fw" x="290" y="30" width="300" height="104" rx="14"/>
+      <text class="lbl ink big" x="308" y="56">GITOPS/BASE</text>
+      <g>
+        <rect class="d fp" x="308" y="68" width="82" height="20" rx="10"/><text class="sub" x="318" y="82">operators</text>
+        <rect class="d fp" x="396" y="68" width="88" height="20" rx="10"/><text class="sub" x="406" y="82">kataconfig</text>
+        <rect class="d fp" x="490" y="68" width="70" height="20" rx="10"/><text class="sub" x="500" y="82">trustee</text>
+        <rect class="d fp" x="308" y="94" width="88" height="20" rx="10"/><text class="sub" x="318" y="108">workloads</text>
+        <rect class="d fp" x="402" y="94" width="90" height="20" rx="10"/><text class="sub" x="412" y="108">gatekeeper</text>
+        <rect class="d fp" x="498" y="94" width="62" height="20" rx="10"/><text class="sub" x="508" y="108">nfd</text>
+      </g>
+      <g class="dg">
+        <path d="M400 134 C400 176 260 156 260 196"/>
+        <path d="M256 190l4 8 8-4" fill="none"/>
+        <path d="M480 134 C480 176 620 156 620 196"/>
+        <path d="M608 194l8 4 4-8" fill="none"/>
+      </g>
+      <rect class="d fw" x="120" y="200" width="280" height="70" rx="14"/>
+      <text class="lbl ink big" x="138" y="228">SNO-* OVERLAYS &middot; THE RIG</text>
+      <text class="sub" x="138" y="248">single node &middot; disposable &middot; simulated gap</text>
+      <text class="sub" x="138" y="261">oc apply -k + makefile</text>
+      <rect class="d fw" x="480" y="200" width="280" height="70" rx="14"/>
+      <text class="lbl ink big" x="498" y="228">CUSTOMER-* OVERLAYS &middot; PROD</text>
+      <text class="sub" x="498" y="248">multi-node &middot; real air gap &middot; own trustee</text>
+      <text class="sub" x="498" y="261">argocd, mirrored</text>
+    </svg>
+  </div>
+
+  <div class="twoworlds">
+    <div class="world pt">
+      <h4 class="port">Portable — promoted unchanged</h4>
+      <ul>
+        <li>Manifests and operator ordering</li>
+        <li>Policy shape (Rego + Gatekeeper)</li>
+        <li>KBS resource definitions</li>
+        <li>Workload patterns and runtime classes</li>
+      </ul>
+    </div>
+    <div class="world hw">
+      <h4>Hardware-bound — regenerated on customer metal</h4>
+      <ul>
+        <li>VCEK certificates (per-socket)</li>
+        <li>RVPS reference values (Veritas, on-target)</li>
+        <li>TLS identity + Trustee URL</li>
+        <li>The exact initdata bytes the TEE measures</li>
+      </ul>
     </div>
   </div>
 </section>
@@ -701,12 +1038,12 @@
 <!-- ================= RUNGS ================= -->
 <section class="section" id="rungs">
   <div class="stack center">
-    <p class="eyebrow">05 &middot; The ladder</p>
+    <p class="eyebrow">09 &middot; The ladder</p>
     <h2>Prove It, One Rung at a Time</h2>
-    <p style="max-width:58ch;color:#3c3f45">Each capability is a rung: proven on the rig,
-      then applied to production. A rung is "done" only when it reproduces from written steps
-      on a fresh node <strong>and</strong> its negative test — the denial — passes and
-      auto-reverts. <code>make negative-test WHICH=all</code></p>
+    <p>Each capability is a rung: proven on the rig, then applied to production. A rung is
+      "done" only when it reproduces from written steps on a fresh node <strong>and</strong>
+      its negative test passes. Status below is from the rig — disconnected SNO on EPYC
+      Genoa, last proven 2026&#8209;07&#8209;01.</p>
   </div>
 
   <div class="grid">
@@ -721,7 +1058,8 @@
         <p class="cid">rung-kbs</p>
       </div>
       <p class="cdesc">Attestation gates a credential. Air-gapped attest via the VCEK
-        OfflineStore &rarr; the KBS releases the secret. No attestation &rarr; withheld with a 403.</p>
+        OfflineStore &rarr; the KBS releases the secret. No attestation &rarr; withheld with
+        a 403 (bare-attestation negative lands in #17).</p>
     </article>
 
     <article class="card">
@@ -735,8 +1073,9 @@
         <p class="cname">Rung B &middot; Measurement</p>
         <p class="cid">rung-rvps</p>
       </div>
-      <p class="cdesc">A populated <code>snp_launch_measurement</code> gates release. Tamper
-        with the initdata &rarr; 403; the untampered control still releases. Proven 2026&#8209;07&#8209;01.</p>
+      <p class="cdesc">A populated <code>snp_launch_measurement</code> gates release —
+        <code>init_data == sha256(initdata bytes)</code> confirmed as the measured HOST_DATA.
+        Tampered initdata &rarr; 403. Proven 2026&#8209;07&#8209;01.</p>
     </article>
 
     <article class="card">
@@ -785,30 +1124,62 @@
       </div>
       <p class="cdesc">Wrong measurement &rarr; the decryption key is withheld and the pod
         never starts. Manual for now: host encrypted-layer pre-pull is blocked upstream
-        (cri-o&nbsp;#10084).</p>
+        (cri-o&nbsp;#10084) — a skipped D is not a failure.</p>
     </article>
   </div>
+</section>
+
+<!-- ================= REPO MAP ================= -->
+<section class="section" id="map">
+  <div class="stack center">
+    <p class="eyebrow">10 &middot; The box it ships in</p>
+    <h2>What's In the Repo?</h2>
+    <p>Two ways in: a fully manual, provider-neutral guide — or the automated
+      Terraform + Ansible + Makefile path. Both land on the same GitOps tree.</p>
+  </div>
+
+  <div class="repomap">
+    <pre><span class="b">openshift-confidential-containers/</span>
+├── docs/
+│   ├── install-guide.md   <span class="c">the fully MANUAL, provider-neutral bring-up</span>
+│   ├── architecture.md    <span class="c">diagrams: components, attestation, promotion</span>
+│   ├── runbooks/          <span class="c">phase checklists, failure modes, debug guides</span>
+│   ├── design/            <span class="c">engagement design + customer scoping</span>
+│   └── notes/             <span class="c">hardware bring-up, guest-pull references</span>
+├── infra/                 <span class="c">Terraform: node, bastion, VLAN, firewall, netboot</span>
+├── ansible/               <span class="c">bastion config + air-gapped SNO install</span>
+├── gitops/                <span class="c">Kustomize base + {sno,customer} x {workers,trustee}</span>
+├── scripts/               <span class="c">rung-0 gate, VCEK collection, RVPS, negatives</span>
+└── Makefile               <span class="c">the rig driver - 40+ documented targets</span></pre>
+  </div>
+
+  <div class="startrow" aria-label="Start here">
+    <code>make help</code>
+    <code>make verify-snp-host NODE=&lt;node&gt;</code>
+    <code>make bringup-sno-airgapped</code>
+    <code>make repro-loop</code>
+  </div>
+  <p class="hint">Start here &middot; rung-0 first, always</p>
 </section>
 
 <!-- ================= ABOUT ================= -->
 <section class="section" id="about">
   <div class="stack center">
     <p class="eyebrow">About this breakdown</p>
-    <h2>What Is This Repo?</h2>
+    <h2>Questions People Actually Ask</h2>
   </div>
   <div class="faq">
-    <div>
-      <h3>What is this repository?</h3>
-      <p>A complete, reproducible path to OpenShift Confidential Containers on AMD SEV&#8209;SNP
-        bare metal: Terraform for the metal, Ansible for the bastion and install, a Kustomize
-        GitOps tree shared between rig and production, and a Makefile that drives the proof
-        gates. A fully manual, provider-neutral guide lives in <code>docs/install-guide.md</code>.</p>
-    </div>
     <div>
       <h3>Why a disposable rig?</h3>
       <p>Confidential computing fails in expensive, hardware-shaped ways. The rig — one hourly
         SNO node plus a second Trustee cluster, egress-firewalled to simulate the air gap —
         lets every capability be proven and torn down before it ever touches customer metal.</p>
+    </div>
+    <div>
+      <h3>What counts as "proven"?</h3>
+      <p>Two things, both mandatory: the rung reproduces from <em>written steps</em> on a
+        fresh node, and its negative test — the denial — passes. A demo that works once is
+        not a proof; a refusal you've never seen is not a control.</p>
     </div>
     <div>
       <h3>What changes between rig and production?</h3>
@@ -817,8 +1188,20 @@
         policy shape, and workload patterns promote unchanged through GitOps overlays.</p>
     </div>
     <div>
+      <h3>Can I drive it from macOS?</h3>
+      <p>Yes — the operator scripts run on stock macOS (bash 3.2 + BSD userland, no GNU
+        coreutils needed). A runbook covers which scripts run on your workstation and which
+        belong on the bastion.</p>
+    </div>
+    <div>
+      <h3>What about Intel TDX?</h3>
+      <p>SEV&#8209;SNP first. TDX arrives later as an additive overlay on the same GitOps
+        shape — with one caveat: its air-gapped attestation story (the equivalent of the
+        VCEK OfflineStore) has to be proven the same way, negatives and all.</p>
+    </div>
+    <div>
       <h3>Where do I start?</h3>
-      <p><code>make help</code> lists the targets. The very first gate is
+      <p><code>make help</code> lists every target. The very first gate is
         <code>make verify-snp-host NODE=&lt;node&gt;</code> — rung&#8209;0 proves the silicon
         before a single manifest is applied. Then follow the runbooks, rung by rung.</p>
     </div>
@@ -830,11 +1213,46 @@
   <p>Thanks for reading! This breakdown is a tribute to the illustrated teardowns at
     <a href="https://mechanical-pencil.com" rel="noopener">mechanical-pencil.com</a> —
     same spirit, different machine: instead of a pencil, a cluster that proves itself.</p>
+  <p>Presenting? <span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> step between
+    sections — and through the mechanism when you're on it.</p>
 </footer>
 
 <script>
 (function(){
   "use strict";
+  var reduced=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---- scroll progress ---- */
+  var prog=document.getElementById("progress");
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    prog.style.transform="scaleX("+(max>0?(h.scrollTop||document.body.scrollTop)/max:0)+")";
+  }
+  addEventListener("scroll",onScroll,{passive:true});onScroll();
+
+  /* ---- scroll reveal (JS adds the class, so no-JS stays visible) ---- */
+  if(!reduced&&"IntersectionObserver" in window){
+    var toReveal=document.querySelectorAll(".section .stack, .section .prose, .panel, .triage, .term, .tablewrap, .twoworlds, .grid, .repomap, .phasegrid, .faq");
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}});
+    },{threshold:.08});
+    toReveal.forEach(function(el){el.classList.add("reveal");io.observe(el)});
+  }
+
+  /* ---- active nav link ---- */
+  var navlinks=document.querySelectorAll("#navlinks a");
+  var navTargets=[];
+  navlinks.forEach(function(a){
+    var t=document.querySelector(a.getAttribute("href"));
+    if(t)navTargets.push({a:a,el:t});
+  });
+  addEventListener("scroll",function(){
+    var y=scrollY+innerHeight*.4,cur=null;
+    navTargets.forEach(function(n){if(n.el.offsetTop<=y)cur=n});
+    navlinks.forEach(function(a){a.classList.remove("active")});
+    if(cur)cur.a.classList.add("active");
+  },{passive:true});
 
   /* ---- states toggle ---- */
   var panel=document.getElementById("statePanel"),
@@ -870,7 +1288,7 @@
       tabs=document.querySelectorAll("#parts .tabs .btn");
   var PARTS={
     silicon:'<strong>The silicon.</strong> AMD SEV-SNP encrypts the confidential VM’s memory and signs a launch measurement of everything loaded at boot — firmware, kernel, initdata. The rung-0 gate (<code>make verify-snp-host</code>) proves the silicon before anything else is allowed to happen.',
-    kata:'<strong>The Kata host.</strong> No peer-pods here: the worker’s own RHCOS kernel is the SNP host. The sandboxed-containers operator and a KataConfig turn any annotated pod into a hardware-isolated confidential VM, on OpenShift 4.19+ with OSC 1.12.',
+    kata:'<strong>The Kata host.</strong> No peer-pods here: the worker’s own RHCOS kernel is the SNP host. The sandboxed-containers operator (OSC 1.12) and a KataConfig turn any annotated pod into a hardware-isolated confidential VM on OpenShift &ge; 4.19.28.',
     trustee:'<strong>The Trustee.</strong> A separate cluster runs the KBS, the Attestation Service, and RVPS reference values behind a Rego policy. Its VCEK OfflineStore caches AMD’s certificates so evidence verifies with zero internet — the air gap’s load-bearing trick.',
     bastion:'<strong>The bastion.</strong> Everything the sealed node will ever need — release payload, operator catalogs, workload images, DNS, NTP, boot artifacts, VCEK certs — is mirrored onto the bastion while it’s still connected. Then the gap closes.',
     all:'<strong>All together.</strong> The bastion feeds the node, the node runs the confidential VM, and the Trustee decides what it deserves. Three assemblies, one dashed line they never cross: the public internet.'
@@ -884,6 +1302,40 @@
     });
   });
   pCopy.innerHTML=PARTS.silicon;
+
+  /* ---- rung-0 gate terminal ---- */
+  var GATE=[
+    '<span class="tdim">== SEV-SNP host gate (rig-01 &middot; EPYC Genoa) ==</span>',
+    '  <span class="tpass">PASS</span>  kernel &ge; 6.11',
+    '  <span class="tpass">PASS</span>  CONFIG_KVM_AMD_SEV=y in kernel',
+    '  <span class="tpass">PASS</span>  kvm_amd exposes sev_snp param',
+    '  <span class="tpass">PASS</span>  PSP reports SEV-SNP API',
+    '  <span class="tpass">PASS</span>  RMP table initialized',
+    '  <span class="tpass">PASS</span>  no PSP Error: 0x3 (Mem Interleaving)',
+    '  <span class="tpass">PASS</span>  kvm_amd sev_snp = Y',
+    '  <span class="tpass">PASS</span>  /dev/sev present',
+    '<span class="tres">RESULT: SEV-SNP host <b>LIVE</b> — silicon + provider proven</span>'
+  ];
+  var gBtn=document.getElementById("btnGate"),gateTimer=null,gateRan=false;
+  function gateLine(i,html){document.getElementById("gl"+i).innerHTML=html}
+  function runGate(){
+    if(gateTimer){clearInterval(gateTimer);gateTimer=null}
+    for(var i=0;i<GATE.length;i++)gateLine(i,"");
+    if(reduced){GATE.forEach(function(l,i){gateLine(i,l)});return}
+    var i=0;
+    gateTimer=setInterval(function(){
+      gateLine(i,GATE[i]);i++;
+      if(i>=GATE.length){clearInterval(gateTimer);gateTimer=null}
+    },230);
+  }
+  gBtn.addEventListener("click",runGate);
+  /* auto-run once when scrolled into view */
+  if("IntersectionObserver" in window){
+    var gio=new IntersectionObserver(function(es){
+      es.forEach(function(e){if(e.isIntersecting&&!gateRan){gateRan=true;runGate();gio.disconnect()}});
+    },{threshold:.5});
+    gio.observe(document.getElementById("gateTerm"));
+  }else{runGate();gateRan=true}
 
   /* ---- mechanism stepper ---- */
   var STEPS=[
@@ -924,6 +1376,35 @@
   prev.addEventListener("click",function(){go(idx-1)});
   next.addEventListener("click",function(){go(idx+1)});
   go(0);
+
+  /* ---- presenter keys: arrows step sections; inside mechanism they step the sequence ---- */
+  var seq=[document.getElementById("top")].concat(
+    Array.prototype.slice.call(document.querySelectorAll("section")),
+    [document.querySelector("footer")]
+  );
+  function currentSection(){
+    var y=scrollY+innerHeight*.35,cur=0;
+    seq.forEach(function(s,i){if(s.offsetTop<=y)cur=i});
+    return cur;
+  }
+  addEventListener("keydown",function(e){
+    if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;
+    var t=document.activeElement&&document.activeElement.tagName;
+    if(t==="INPUT"||t==="TEXTAREA"||t==="SELECT")return;
+    var fwd=e.key==="ArrowRight";
+    var mech=document.getElementById("mechanism");
+    var r=mech.getBoundingClientRect();
+    var mechActive=r.top<innerHeight*.5&&r.bottom>innerHeight*.5;
+    if(mechActive&&((fwd&&idx<STEPS.length-1)||(!fwd&&idx>0))){
+      e.preventDefault();go(fwd?idx+1:idx-1);return;
+    }
+    var cur=currentSection();
+    var nxt=fwd?Math.min(cur+1,seq.length-1):Math.max(cur-1,0);
+    if(nxt!==cur){
+      e.preventDefault();
+      seq[nxt].scrollIntoView({behavior:reduced?"auto":"smooth",block:"start"});
+    }
+  });
 })();
 </script>
 </body>
