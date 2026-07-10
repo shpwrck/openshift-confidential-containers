@@ -770,7 +770,11 @@
     <h2>Fill the Bastion, Then Seal the Gap</h2>
     <p>An air-gapped cluster can't fetch anything later — so everything it will ever need is
       staged on a bastion host <em>while it's still connected</em>. Then the line to the
-      internet is cut, and the install runs entirely from the private side.</p>
+      internet is cut — twice: an nft clamp on the raw host, and again on RHCOS after the
+      install (which wipes the first clamp) via the opt-in <code>airgap-egress</code>
+      MachineConfig. One deliberate exception: the node's very first iPXE fetch rides a
+      tokenized endpoint on the bastion's <em>public</em> IP (the private VLAN isn't up yet) —
+      closed with <code>make pxe-stop</code> the moment the node boots.</p>
   </div>
 
   <div class="panel">
@@ -809,7 +813,7 @@
         <rect class="d fw" x="456" y="70" width="180" height="110" rx="14"/>
         <text class="lbl ink big" x="472" y="96">SERVE THE NODE</text>
         <text class="sub" x="472" y="118">dns &middot; ntp &middot; registry ca</text>
-        <text class="sub" x="472" y="132">ipxe boot artifacts</text>
+        <text class="sub" x="472" y="132">tokenized ipxe boot (public)</text>
         <text class="sub" x="472" y="146">console proxy (sslip.io)</text>
         <text class="lbl" x="472" y="206">PHASES 3&ndash;5</text>
       </g>
@@ -874,7 +878,7 @@
         <g class="step" id="ms1">
           <path class="d" d="M214 44 v28" stroke-dasharray="4 5"/><path class="d" d="M208 66l6 8 6-8"/>
           <rect class="d fw" x="131" y="18" width="166" height="26" rx="13"/>
-          <text class="lbl ink" x="145" y="35">OC APPLY &middot; RUNG POD</text>
+          <text class="lbl ink" x="214" y="35" text-anchor="middle">MAKE RUN-RUNG-*</text>
         </g>
         <g class="step" id="ms2">
           <circle class="db fw" cx="145" cy="250" r="16"/>
@@ -907,9 +911,7 @@
       <div class="mechCopy">
         <span class="stepnum" id="stepNum">STEP 1 / 6</span>
         <h3 id="stepTitle">Launch</h3>
-        <p id="stepBody">The operator applies a rung workload with <code>oc apply -k</code>.
-          The pod spec carries the CoCo runtime class and an initdata TOML — the Trustee URL
-          and policy bytes that will be measured into the TEE.</p>
+        <p id="stepBody">The operator launches a rung workload — <code>make run-rung-kbs</code> (rung A is the only pod in kustomize; the signed and encrypted pods are rendered by their <code>run-rung-*</code> scripts). The spec carries the CoCo runtime class and a measured initdata TOML: the Trustee URL plus KBS resource URIs — the policy bytes themselves live in the KBS, never in initdata.</p>
       </div>
       <div class="mechDots" id="mechDots" role="group" aria-label="Steps"></div>
       <div class="mechNav">
@@ -986,8 +988,8 @@
     <p class="eyebrow">08 &middot; One tree, two worlds</p>
     <h2>The Same GitOps, Rig and Production</h2>
     <p>The whole point of the rig: what gets proven is what gets promoted. One Kustomize
-      base fans out into rig overlays and customer overlays — only the hardware-bound
-      parts change.</p>
+      base fans out into rig overlays and customer overlays — in principle, only the
+      hardware-bound parts change.</p>
   </div>
 
   <div class="panel">
@@ -1039,6 +1041,8 @@
       </ul>
     </div>
   </div>
+  <p class="hint">One tracked drift to close at promotion: <code>customer-workers</code> does not
+    yet include <code>base/nfd</code> or <code>base/gatekeeper</code> — the rig overlay does</p>
 </section>
 
 <!-- ================= RUNGS ================= -->
@@ -1192,7 +1196,9 @@
       <h3>What changes between rig and production?</h3>
       <p>Only the hardware-bound parts: VCEK certificates, RVPS reference values, TLS identity,
         and the exact initdata bytes measured by the TEE. The manifests, operator ordering,
-        policy shape, and workload patterns promote unchanged through GitOps overlays.</p>
+        policy shape, and workload patterns promote unchanged through GitOps overlays — with one
+        tracked drift: the customer-workers overlay doesn't yet pull in <code>base/nfd</code>
+        or <code>base/gatekeeper</code>; add them when promoting.</p>
     </div>
     <div>
       <h3>Can I drive it from macOS?</h3>
@@ -1347,7 +1353,7 @@
 
   /* ---- mechanism stepper ---- */
   var STEPS=[
-    {t:"Launch",b:'The operator applies a rung workload with <code>oc apply -k</code>. The pod spec carries the CoCo runtime class and an initdata TOML — the Trustee URL and policy bytes that will be measured into the TEE.'},
+    {t:"Launch",b:'The operator launches a rung workload — <code>make run-rung-kbs</code> (rung A is the only pod in kustomize; the signed and encrypted pods are rendered by their <code>run-rung-*</code> scripts). The spec carries the CoCo runtime class and a measured initdata TOML: the Trustee URL plus KBS resource URIs — the policy bytes themselves live in the KBS, never in initdata.'},
     {t:"Measure",b:'The silicon launches the Kata VM with encrypted memory and signs an <code>snp_launch_measurement</code> covering everything loaded at boot — including a digest of that initdata. Tampering changes the number.'},
     {t:"Request",b:'The guest needs its secret — a credential, a key, a resource. It sends the signed SNP evidence to the KBS over the private network and asks.'},
     {t:"Verify the cert",b:'The Attestation Service validates the evidence’s VCEK signature against the OfflineStore cache, collected while the bastion was still online. AMD’s public KDS is never contacted — and a swapped cert fails with a 401.'},
