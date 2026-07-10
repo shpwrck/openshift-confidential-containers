@@ -816,11 +816,11 @@
       <g class="dg"><line x1="636" y1="125" x2="662" y2="125"/><path d="M657 121l6 4-6 4" fill="none"/></g>
       <g>
         <rect class="dth fw" x="666" y="70" width="178" height="110" rx="14"/>
-        <text class="lbl ink big" x="682" y="96">SEAL THE GAP</text>
-        <text class="sub" x="682" y="118">nft egress clamp</text>
-        <text class="sub" x="682" y="132">node sees bastion only</text>
-        <text class="sub" x="682" y="146">vcek already cached</text>
-        <text class="lbl blue" x="682" y="206">THE RIG IS NOW OFFLINE</text>
+        <text class="lbl ink big" x="682" y="96">SEAL THE GAP &middot; &times;2</text>
+        <text class="sub" x="682" y="118">raw-host nft clamp first;</text>
+        <text class="sub" x="682" y="132">the install wipes it, so</text>
+        <text class="sub" x="682" y="146">re-apply airgap-egress</text>
+        <text class="lbl blue" x="682" y="206">RE-SEAL, THEN VERIFY</text>
       </g>
     </svg>
   </div>
@@ -832,12 +832,12 @@
     <div><span><b>Mirror</b> — oc-mirror push + boot artifacts</span></div>
     <div><span><b>Rung-0</b> — SNP host gate + BIOS recipe</span></div>
     <div><span><b>SNO install</b> — agent-based, bastion-fed only</span></div>
-    <div><span><b>Operators</b> — NFD &rarr; cert-mgr &rarr; OSC &rarr; KataConfig</span></div>
-    <div><span><b>Trustee</b> — KBS + VCEK OfflineStore + RVPS</span></div>
+    <div><span><b>Operators</b> — NFD &middot; certs &middot; OSC &middot; Gatekeeper &middot; Kata</span></div>
+    <div><span><b>Trustee</b> — re-lock egress, KBS + VCEK cache + RVPS</span></div>
     <div><span><b>Rungs</b> — happy paths + negative tests</span></div>
     <div><span><b>Teardown</b> — destroy the rig, keep the proof</span></div>
   </div>
-  <p class="hint">Ten phases &middot; docs/install-guide.md walks every one by hand</p>
+  <p class="hint">Ten phases &middot; docs/install-guide.md walks every one by hand &middot; verify the re-seal: curl to quay.io from the node must fail, or the air-gap negative can falsely pass via public KDS</p>
 </section>
 
 <!-- ================= MECHANISM ================= -->
@@ -942,7 +942,8 @@
         <tr>
           <td>rung-kbs</td>
           <td>Launch the workload as a <strong>plain non-kata pod</strong> — no c-VM, no CDH, no
-            attestation. The attested control still releases.</td>
+            attestation. (The attested happy path is a separate check:
+            <code>make test-rung WHICH=rung-kbs</code> runs positive + negative together.)</td>
           <td><span class="deny">No secret, ever</span> — the pod's gate dies with a CDH
             connection failure (<code>curl (7)</code>, <code>Init:Error</code>), not a policy
             403. Proven 2026&#8209;07&#8209;02.</td>
@@ -1100,7 +1101,7 @@
     </article>
 
     <article class="card">
-      <span class="badge gap">Transport gap</span>
+      <span class="badge proven">Proven</span>
       <svg viewBox="0 0 74 74" aria-hidden="true">
         <rect class="d fw" x="14" y="16" width="46" height="42" rx="6"/>
         <path class="dg" d="M22 26h30M22 34h30M22 42h18"/>
@@ -1111,9 +1112,10 @@
         <p class="cname">Rung C &middot; Signed Image</p>
         <p class="cid">rung-signed</p>
       </div>
-      <p class="cdesc"><code>image_security_policy</code> rejects unsigned or tampered images.
-        Blocked on the rig only because the minimal mirror registry doesn't serve the Quay
-        signature extension.</p>
+      <p class="cdesc">Proven 2026&#8209;07&#8209;01 via the keyprovider-free path (skopeo copy +
+        cosign sign): the signed image runs, and unsigned &rarr; rejected by
+        <code>image_security_policy</code>. Only the older keyprovider build path stays blocked
+        by the mirror's missing Quay signature extension.</p>
     </article>
 
     <article class="card">
@@ -1294,7 +1296,7 @@
       tabs=document.querySelectorAll("#parts .tabs .btn");
   var PARTS={
     silicon:'<strong>The silicon.</strong> AMD SEV-SNP encrypts the confidential VM’s memory and signs a launch measurement of everything loaded at boot — firmware, kernel, initdata. The rung-0 gate (<code>make verify-snp-host</code>) proves the silicon before anything else is allowed to happen.',
-    kata:'<strong>The Kata host.</strong> No peer-pods here: the worker’s own RHCOS kernel is the SNP host. The sandboxed-containers operator (OSC 1.12) and a KataConfig turn any annotated pod into a hardware-isolated confidential VM on OpenShift &ge; 4.19.28.',
+    kata:'<strong>The Kata host.</strong> No peer-pods here: the worker’s own RHCOS kernel is the SNP host. The sandboxed-containers operator (OSC 1.12) and a KataConfig turn any annotated pod into a hardware-isolated confidential VM on OpenShift &ge; 4.19.28, while a Gatekeeper constraint enforces the c-VM memory floor so undersized pods aren’t OOM-killed.',
     trustee:'<strong>The Trustee.</strong> A separate cluster runs the KBS, the Attestation Service, and RVPS reference values behind a Rego policy. Its VCEK OfflineStore caches AMD’s certificates so evidence verifies with zero internet — the air gap’s load-bearing trick.',
     bastion:'<strong>The bastion.</strong> Everything the sealed node will ever need — release payload, operator catalogs, workload images, DNS, NTP, boot artifacts, VCEK certs — is mirrored onto the bastion while it’s still connected. Then the gap closes.',
     all:'<strong>All together.</strong> The bastion feeds the node, the node runs the confidential VM, and the Trustee decides what it deserves. Three assemblies, one dashed line they never cross: the public internet.'
