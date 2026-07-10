@@ -2,6 +2,9 @@
 # Run ON THE BASTION (as rocky, uses sudo). Installs pinned tools to /usr/local/bin, trusts the
 # mirror CA, and builds the merged /root/.docker/config.json (RH pull-secret + mirror creds).
 # Does NOT run the oc-mirror push — that is a separate backgrounded step (bastion-mirror-push.sh).
+#
+# NOTE (#55): low-level "manual equivalent" script. Prefer `make bringup-sno-airgapped` (Ansible),
+# which wires these steps in order incl. the bastion_egress hardening (fix #1) the push depends on.
 set -euo pipefail
 OCP_VERSION="${OCP_VERSION:-4.20.18}"
 MIRROR="https://mirror.openshift.com/pub/openshift-v4/amd64/clients"

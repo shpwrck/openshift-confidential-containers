@@ -6,9 +6,11 @@
 # nfd-master/nfd-worker that actually label nodes. (Gap found 2026-06-28: KataConfig hung with
 # "no TEE platform labels found" until this + amd-snp-rule.yaml were applied.)
 #
-# AIR-GAP: operand pinned to the MIRRORED DIGEST (not the upstream `:v4.20` tag) so the
-# digest-based IDMS (registry.redhat.io/openshift4 -> mirror) redirects it. A tag would need an
-# ITMS we don't ship. Digest sourced from the NFD CSV relatedImages on the mirrored catalog.
+# AIR-GAP: do NOT pin spec.operand.image. The NFD operator defaults the operand to its own
+# NODE_FEATURE_DISCOVERY_IMAGE — a registry.redhat.io/openshift4 DIGEST that the digest-based IDMS
+# redirects to the mirror, and that default always matches the mirrored operator version. A
+# hardcoded digest silently drifts per z-stream: if it isn't the exact one oc-mirror mirrored,
+# nfd-worker goes ImagePullBackOff -> no SEV-SNP label -> KataConfig never installs (see #58).
 apiVersion: nfd.openshift.io/v1
 kind: NodeFeatureDiscovery
 metadata:
@@ -16,7 +18,6 @@ metadata:
   namespace: openshift-nfd
 spec:
   operand:
-    # FILL/VERIFY per mirror: `oc get csv -n openshift-nfd -o json | grep ose-node-feature-discovery`
-    image: registry.redhat.io/openshift4/ose-node-feature-discovery-rhel9@sha256:4a055855a396a4db6a31908278c9dd35a021a81c0cc15b9e0f1e3097b1a5ad08
+    # No image pin: the NFD operator uses its own default operand digest (mirrored, IDMS-redirected).
     imagePullPolicy: IfNotPresent
     servicePort: 12000

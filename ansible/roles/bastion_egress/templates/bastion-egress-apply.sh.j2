@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Managed by Ansible role bastion_egress (fix #1 / #54). Idempotent; run at boot by
+# bastion-egress.service so the fresh-Latitude IPv6-CDN blackhole fix SURVIVES A BASTION REBOOT
+# (the live `ip`/`nft` state applied at play time does not). Safe to run repeatedly.
+set -uo pipefail
+
+# 1. Drop the IPv6 default route. oc-mirror is a Go binary (ignores /etc/gai.conf IPv4-preference),
+#    so it would reach quay's CDN over v6 and blackhole large blobs ("unexpected EOF").
+if ip -6 route show default 2>/dev/null | grep -q .; then
+  ip -6 route del default 2>/dev/null || true
+fi
+
+# 2. Clamp the IPv4 default-route MTU (residual PMTU blackhole on the Akamai v4 path).
+v4="$(ip -4 route show default 2>/dev/null | head -1)"
+if [ -n "$v4" ] && ! printf '%s' "$v4" | grep -q 'mtu {{ bastion_egress_mtu }}'; then
+  # shellcheck disable=SC2086  # the route line must expand into multiple args
+  ip route change $(printf '%s' "$v4" | sed -E 's/[[:space:]]+mtu[[:space:]]+[0-9]+//') mtu {{ bastion_egress_mtu }} 2>/dev/null || true
+fi
+
+# 3. (Re)load the SYN MSS clamp ruleset (the .nft template flushes-then-recreates => idempotent).
+if [ -f /etc/nftables/{{ bastion_egress_nft_table }}.nft ]; then
+  nft -f /etc/nftables/{{ bastion_egress_nft_table }}.nft
+fi

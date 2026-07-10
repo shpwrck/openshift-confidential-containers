@@ -1,0 +1,13 @@
+---
+# Disconnected clusters MUST disable the default OperatorHub CatalogSources (certified-operators,
+# community-operators, redhat-marketplace, redhat-operators). They point at registry.redhat.io index
+# images that are not mirrored, so their registry pods go ImagePullBackOff and their grpc endpoints
+# die. OLM's dependency resolver lists bundles across ALL CatalogSources, so those broken defaults
+# make resolution FAIL for every Subscription (STATE=<none>, zero InstallPlans) — even when the
+# oc-mirror CatalogSource is perfectly healthy. Disabling them leaves only the mirror catalog. (#57)
+apiVersion: config.openshift.io/v1
+kind: OperatorHub
+metadata:
+  name: cluster
+spec:
+  disableAllDefaultSources: true
