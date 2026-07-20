@@ -203,6 +203,13 @@
   .partCopy{max-width:600px;margin:26px auto 0;text-align:center;color:var(--body);min-height:5.5em}
   .partCopy strong{color:var(--ink)}
 
+  /* ---------- config layer tabs ---------- */
+  #cfgFig .grp{transition:opacity .3s}
+  #cfgFig[data-cfg="pod"] .g-init,#cfgFig[data-cfg="pod"] .g-trustee,#cfgFig[data-cfg="pod"] .g-shelf,
+  #cfgFig[data-cfg="init"] .g-pod,#cfgFig[data-cfg="init"] .g-trustee,#cfgFig[data-cfg="init"] .g-shelf,
+  #cfgFig[data-cfg="trustee"] .g-pod,#cfgFig[data-cfg="trustee"] .g-init,#cfgFig[data-cfg="trustee"] .g-shelf,
+  #cfgFig[data-cfg="shelf"] .g-pod,#cfgFig[data-cfg="shelf"] .g-init,#cfgFig[data-cfg="shelf"] .g-trustee{opacity:.22}
+
   /* ---------- rung-0 gate ---------- */
   .term{
     max-width:640px;margin:44px auto 0;background:#17181c;border-radius:16px;
@@ -366,6 +373,7 @@
     <a href="#rung0">Rung-0</a>
     <a href="#build">Build</a>
     <a href="#mechanism">Mechanism</a>
+    <a href="#config">Config</a>
     <a href="#breakit">Break it</a>
     <a href="#rungs">Rungs</a>
     <a href="#about">About</a>
@@ -923,10 +931,163 @@
   </div>
 </section>
 
+<!-- ================= CONFIG ================= -->
+<section class="section" id="config">
+  <div class="stack center">
+    <p class="eyebrow">07 &middot; The configuration</p>
+    <h2>Every Knob That Shapes the Running Pod</h2>
+    <p>So where does all of that behavior come from? Three assemblies of config at once: a pod
+      spec that turns a container into a hardware-isolated VM, an initdata document whose
+      <strong>bytes are hashed into the silicon's attestation report</strong>, and the
+      Trustee-side policies and reference values that decide what that hash deserves.
+      Click through the layers — then the schedule below maps every knob to its exact
+      file and key.</p>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Configuration layers">
+    <button class="btn on" data-cfg="pod" role="tab" aria-selected="true">Pod spec</button>
+    <button class="btn" data-cfg="init" role="tab" aria-selected="false">Initdata</button>
+    <button class="btn" data-cfg="trustee" role="tab" aria-selected="false">Trustee</button>
+    <button class="btn" data-cfg="shelf" role="tab" aria-selected="false">The shelf</button>
+    <button class="btn" data-cfg="all" role="tab" aria-selected="false">All</button>
+  </div>
+
+  <div class="panel">
+    <svg id="cfgFig" viewBox="0 0 880 356" data-cfg="pod" role="img" aria-label="Configuration flow: the pod spec carries the initdata as an annotation, the initdata's sha256 becomes HOST_DATA in the SNP report, Trustee policy checks it and releases KBS resources back to the guest">
+      <g class="grp g-pod">
+        <rect class="d fw" x="36" y="70" width="200" height="200" rx="14"/>
+        <text class="lbl ink big" x="52" y="56">THE POD SPEC</text>
+        <rect class="d fp" x="52" y="92" width="168" height="30" rx="6"/><text class="sub" x="62" y="111">runtimeclassname: kata-cc</text>
+        <rect class="d fp" x="52" y="130" width="168" height="30" rx="6"/><text class="sub" x="62" y="149">handler = kata-snp (exact)</text>
+        <rect class="d fp" x="52" y="168" width="168" height="30" rx="6"/><text class="sub" x="62" y="187">default_memory 2048 +256mi</text>
+        <rect class="db fbs" x="52" y="206" width="168" height="30" rx="6"/><text class="sub" x="62" y="225">annotation: cc_init_data</text>
+        <text class="sub" x="52" y="258">peer-pods off &middot; feature gate on</text>
+      </g>
+
+      <g class="grp g-init">
+        <rect class="d fw" x="340" y="70" width="200" height="200" rx="14"/>
+        <text class="lbl ink big" x="356" y="56">MEASURED INITDATA</text>
+        <rect class="d fp" x="356" y="92" width="168" height="30" rx="6"/><text class="sub" x="366" y="111">algorithm = "sha256"</text>
+        <rect class="d fp" x="356" y="130" width="168" height="30" rx="6"/><text class="sub" x="366" y="149">aa.toml &rarr; kbs url</text>
+        <rect class="d fp" x="356" y="168" width="168" height="30" rx="6"/><text class="sub" x="366" y="187">cdh.toml &rarr; kbs:/// uris</text>
+        <rect class="db fbs" x="356" y="206" width="168" height="30" rx="6"/><text class="sub" x="366" y="225">sha256(bytes) = host_data</text>
+        <text class="sub" x="356" y="258">no policy.rego — on purpose</text>
+      </g>
+
+      <g class="grp g-trustee">
+        <rect class="d fw" x="644" y="70" width="200" height="200" rx="14"/>
+        <text class="lbl ink big" x="660" y="56">TRUSTEE CONFIG</text>
+        <rect class="d fp" x="660" y="92" width="168" height="30" rx="6"/><text class="sub" x="670" y="111">default_cpu.rego &middot; appraise</text>
+        <rect class="d fp" x="660" y="130" width="168" height="30" rx="6"/><text class="sub" x="670" y="149">policy.rego &middot; release</text>
+        <rect class="d fp" x="660" y="168" width="168" height="30" rx="6"/><text class="sub" x="670" y="187">rvps: [] &rarr; make gen-rvps</text>
+        <rect class="db fbs" x="660" y="206" width="168" height="30" rx="6"/><text class="sub" x="670" y="225">vcek: offlinestore only</text>
+        <text class="sub" x="660" y="258">wired by the kbsconfig cr</text>
+      </g>
+
+      <g class="dg">
+        <path d="M332 152 H252" stroke-dasharray="5 6"/><path d="M258 146l-6 6 6 6" fill="none"/>
+        <path d="M548 152 H628" stroke-dasharray="5 6"/><path d="M622 146l6 6-6 6" fill="none"/>
+      </g>
+      <text class="lbl" x="288" y="142" text-anchor="middle">CC_INIT_DATA</text>
+      <text class="lbl" x="592" y="142" text-anchor="middle">HOST_DATA</text>
+
+      <g class="grp g-shelf">
+        <path class="db" d="M744 270 V308 H136 V276"/>
+        <path class="db" d="M130 284l6-8 6 8" fill="none"/>
+        <rect class="db fw" x="300" y="292" width="280" height="32" rx="16"/>
+        <text class="sub" x="440" y="312" text-anchor="middle">kbs:///default/* &rarr; cdh 127.0.0.1:8006</text>
+        <text class="lbl blue" x="440" y="348" text-anchor="middle">RELEASED ONLY ON AFFIRMING CLAIMS &middot; ELSE 403</text>
+      </g>
+    </svg>
+    <p class="partCopy" id="cfgCopy"></p>
+    <p class="hint">Click through to explore each layer</p>
+  </div>
+
+  <div class="tablewrap">
+    <table class="neg">
+      <thead>
+        <tr><th>The knob</th><th>Lives at</th><th>The detail that bites</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>kata-cc</td>
+          <td>RuntimeClass, built by the OSC operator; the switches live in
+            <code>gitops/base/kataconfig/</code></td>
+          <td>The handler must be exactly <code>kata-snp</code> (Red Hat's generic docs say
+            <code>kata-qemu-snp</code>) — the apply scripts assert it. The real CoCo on-switch
+            is the <code>osc-feature-gates</code> ConfigMap, <code>confidential: "true"</code>,
+            applied <em>before</em> KataConfig; <code>enablePeerPods: false</code> keeps the
+            bare-metal path.</td>
+        </tr>
+        <tr>
+          <td>cc_init_data</td>
+          <td>Pod annotation — <code>gitops/base/workloads/rung-a-secret-pod.yaml</code></td>
+          <td>Full key <code>io.katacontainers.config.hypervisor.cc_init_data</code>; the
+            <code>io.confidentialcontainers.org/initdata</code> spelling is silently skipped.
+            Sibling <code>default_memory: "2048"</code> sizes the c-VM — the memory limit must be
+            &ge; 2304Mi (+256Mi QEMU overhead, Gatekeeper-enforced for labelled pods).</td>
+        </tr>
+        <tr>
+          <td>initdata.toml</td>
+          <td><code>gitops/base/workloads/initdata.example.toml</code> &middot; customer:
+            <code>docs/templates/customer-artifactory/</code></td>
+          <td><code>algorithm = "sha256"</code> because HOST_DATA is exactly 32 bytes.
+            <code>[data]</code> embeds <code>aa.toml</code> + <code>cdh.toml</code> — and
+            deliberately no agent <code>policy.rego</code>: a minimal allow-all is incomplete,
+            and the VM never starts.</td>
+        </tr>
+        <tr>
+          <td>cdh.toml [image]</td>
+          <td>Inside the initdata</td>
+          <td>Three <code>kbs:///</code> URIs — credentials, image policy, and the load-bearing
+            <code>registry_configuration_uri</code>: the inline <code>[image.registry_config]</code>
+            table is silently ignored on OSC 1.12. Mirror trust rides
+            <code>extra_root_certificates</code>, never <code>insecure = true</code>.</td>
+        </tr>
+        <tr>
+          <td>default_cpu.rego</td>
+          <td>ConfigMap <code>attestation-policy</code> —
+            <code>gitops/base/trustee/kbs-configmaps.yaml</code></td>
+          <td>The key name is load-bearing (it's subPath-mounted). Emits AR4SI
+            <code>trust_claims</code> — a bare <code>allow := true</code> here 401s every
+            attestation. The restrictive form (<code>scripts/render-measurement-policy.sh</code>)
+            affirms <code>configuration := 2</code> only when <code>input.init_data</code> equals
+            the sha256 of the frozen initdata.</td>
+        </tr>
+        <tr>
+          <td>policy.rego</td>
+          <td>ConfigMap <code>resource-policy</code>, same file</td>
+          <td>Gates every resource GET. Base: <code>default allow := true</code>. Restrictive:
+            the image key releases only while the EAR <code>configuration</code> claim is
+            affirming — the two policies chain.</td>
+        </tr>
+        <tr>
+          <td>reference-values.json</td>
+          <td>ConfigMap <code>rvps-reference-values</code>, same file</td>
+          <td>Ships permissive — literally <code>[]</code>. The real values are hardware-bound:
+            <code>make gen-rvps</code> runs Veritas against the live firmware, on the bastion
+            with a merged quay+mirror authfile (the release tags-list isn't mirror-redirected).</td>
+        </tr>
+        <tr>
+          <td>KbsConfig</td>
+          <td><code>gitops/base/trustee/kbsconfig.yaml</code></td>
+          <td>The wiring CR: names all three ConfigMaps, lists every shelf Secret
+            (<code>kbsSecretResources</code> — dotless keys only: <code>regcred</code>, never
+            <code>.dockerconfigjson</code>), and mounts the VCEK OfflineStore via
+            <code>kbsLocalCertCacheSpec</code>. <code>AllInOneDeployment</code> is required.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">The freeze rule: one edited initdata byte = a new HOST_DATA &middot;
+    re-encode the annotation <em>and</em> re-run <code>make gen-rvps</code> together, or
+    everything answers 403</p>
+</section>
+
 <!-- ================= NEGATIVES ================= -->
 <section class="section" id="breakit">
   <div class="stack center">
-    <p class="eyebrow">07 &middot; Negative tests</p>
+    <p class="eyebrow">08 &middot; Negative tests</p>
     <h2>Now Let's Break It — On Purpose</h2>
     <p>A denial you've never seen is a denial you can't trust. Every rung ships with a
       scripted <strong>negative test</strong>: break exactly one thing, demand the refusal,
@@ -985,7 +1146,7 @@
 <!-- ================= GITOPS ================= -->
 <section class="section" id="gitops">
   <div class="stack center">
-    <p class="eyebrow">08 &middot; One tree, two worlds</p>
+    <p class="eyebrow">09 &middot; One tree, two worlds</p>
     <h2>The Same GitOps, Rig and Production</h2>
     <p>The whole point of the rig: what gets proven is what gets promoted. One Kustomize
       base fans out into rig overlays and customer overlays — in principle, only the
@@ -1048,7 +1209,7 @@
 <!-- ================= RUNGS ================= -->
 <section class="section" id="rungs">
   <div class="stack center">
-    <p class="eyebrow">09 &middot; The ladder</p>
+    <p class="eyebrow">10 &middot; The ladder</p>
     <h2>Prove It, One Rung at a Time</h2>
     <p>Each capability is a rung: proven on the rig, then applied to production. A rung is
       "done" only when it reproduces from written steps on a fresh node <strong>and</strong>
@@ -1143,7 +1304,7 @@
 <!-- ================= REPO MAP ================= -->
 <section class="section" id="map">
   <div class="stack center">
-    <p class="eyebrow">10 &middot; The box it ships in</p>
+    <p class="eyebrow">11 &middot; The box it ships in</p>
     <h2>What's In the Repo?</h2>
     <p>Two ways in: a fully manual, provider-neutral guide — or the automated
       Terraform + Ansible + Makefile path. Both land on the same GitOps tree.</p>
@@ -1317,6 +1478,27 @@
     });
   });
   pCopy.innerHTML=PARTS.silicon;
+
+  /* ---- config layer tabs ---- */
+  var cfgFig=document.getElementById("cfgFig"),
+      cfgCopy=document.getElementById("cfgCopy"),
+      cfgTabs=document.querySelectorAll("#config .tabs .btn");
+  var CFG={
+    pod:'<strong>The pod spec.</strong> One line makes it confidential: <code>runtimeClassName: kata-cc</code> — the runtime class the OSC operator builds once NFD labels the node, whose handler must resolve to exactly <code>kata-snp</code> (the apply scripts assert it). Two annotations do the rest: <code>…hypervisor.default_memory</code> sizes the c-VM at 2048&nbsp;MiB, and <code>…hypervisor.cc_init_data</code> carries the whole initdata document, gzip+base64. The memory limit must cover default_memory + 256Mi of QEMU overhead — a Gatekeeper floor denies labelled pods that come up short. Behind it all: <code>enablePeerPods: false</code> and the <code>osc-feature-gates</code> ConfigMap — CoCo’s actual on-switch.',
+    init:'<strong>The measured initdata.</strong> One TOML embeds two files. <code>aa.toml</code> points the Attestation Agent at the KBS; <code>cdh.toml</code> tells the Confidential Data Hub how to pull in-guest — registry credentials, image policy, and the registries.conf remap, each fetched as a <code>kbs:///</code> URI, because the cluster’s mirror config never reaches inside the c-VM. Deliberately absent: an agent <code>policy.rego</code> — a minimal allow-all is incomplete and the VM never starts. And <code>algorithm = "sha256"</code> because HOST_DATA is exactly 32 bytes: the hash of these bytes <em>is</em> the hardware’s claim about this config.',
+    trustee:'<strong>The verifier’s config.</strong> Three ConfigMaps, one <code>KbsConfig</code> CR to wire them. <code>attestation-policy</code> (key <code>default_cpu.rego</code> — the name is load-bearing) appraises evidence into AR4SI trust claims; the restrictive form affirms <code>configuration := 2</code> only when <code>input.init_data</code> equals the sha256 of the frozen initdata. <code>resource-policy</code> releases resources only on affirming claims. <code>rvps-reference-values</code> ships permissive (<code>[]</code>) and is regenerated per machine by <code>make gen-rvps</code> — Veritas reads the live firmware on the metal. And the SNP verifier’s <code>vcek_sources</code> is OfflineStore only: AMD is never contacted.',
+    shelf:'<strong>The resource shelf.</strong> Everything a guest can earn sits behind <code>kbs:///default/&lt;name&gt;/&lt;key&gt;</code>: <code>attestation-status/status</code> — the init gate’s <code>{"status":"success"}</code>; <code>credential/test</code> — mirror auth keyed by exact host:port; <code>security-policy/test</code> — the image policy, which must carry a <code>transports</code> block; <code>registry-configuration/test</code> — the in-guest mirror remap. On an affirming attestation the CDH serves them over loopback <code>127.0.0.1:8006</code>, the gate passes, and the pod starts. Anything less and the shelf stays shut — the pod fails closed.',
+    all:'<strong>One hash binds all three.</strong> The pod spec carries the config; the config’s sha256 becomes the hardware’s HOST_DATA; the policy demands that exact hash before the shelf opens. Hence the freeze rule: edit one byte of initdata and you must re-encode the annotation <em>and</em> re-run <code>make gen-rvps</code> together — or every request answers 403.'
+  };
+  cfgTabs.forEach(function(t){
+    t.addEventListener("click",function(){
+      cfgTabs.forEach(function(o){o.classList.remove("on");o.setAttribute("aria-selected","false")});
+      t.classList.add("on");t.setAttribute("aria-selected","true");
+      cfgFig.setAttribute("data-cfg",t.getAttribute("data-cfg"));
+      cfgCopy.innerHTML=CFG[t.getAttribute("data-cfg")];
+    });
+  });
+  cfgCopy.innerHTML=CFG.pod;
 
   /* ---- rung-0 gate terminal ---- */
   var GATE=[
