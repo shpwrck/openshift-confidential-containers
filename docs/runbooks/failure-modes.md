@@ -5,7 +5,8 @@ fast diagnostic → fix**. Read the "Top 7" first — those are the ones I'd bet
 
 > Primary signal for almost everything CoCo: **`oc describe pod` + `oc get events`**, not
 > container logs (CoCo pods often never reach Running). KBS rejections: `oc logs -n
-> trustee-operator-system -l app=kbs`.
+> trustee-operator-system -l app=kbs`. The full map of vantage points, log levels, and
+> locations (host / guest / Trustee / registry): [`debug-surface.md`](debug-surface.md).
 
 ---
 
