@@ -15,13 +15,16 @@ this scope, never fork per session.
 
 ### State and access
 - **Latitude project:** `proj_nPRbaj96G5koM` ("Test"), site **NYC**, hourly billing.
-- **Bastion** (persistent mirror/air-gap host): `coco-bastion`, plan `m4-metal-small`
-  ($1.11/h), Rocky 10. `terraform apply` launched 2026-07-22 from
+- **Bastion** (persistent mirror/air-gap host): `coco-bastion` = `sv_6B9VaL4lEa7vr`,
+  public **64.34.90.7**, VLAN `vlan_jmlR571Zz0WgY` vid **2162** (bastion 192.168.66.10),
+  plan `m4-metal-small` ($1.11/h), Rocky 10. Applied 2026-07-22 from
   `infra/latitude/bastion/` (state: local `terraform.tfstate` in that dir, on this
-  workstation). Cloud-init self-configures VLAN L3, dnsmasq, chrony, and the Quay
-  mirror-registry on first boot.
-- **SNP node** (disposable): NOT yet applied. Will be `m4-metal-medium` (EPYC 9124 Genoa,
-  $1.58/h) from `infra/latitude/` once the mirror push is under way.
+  workstation). Mirror-registry (Quay) up; `MIRROR_READY` confirmed; oc-mirror push in
+  progress (Phase A re-run after the #61 fix).
+- **SNP node** (disposable): `sv_BoQ45AJw3aMYA`, public **69.67.151.235**, plan
+  `m4-metal-medium` (EPYC 9124 Genoa, $1.58/h), Rocky 10, applied 2026-07-22 from
+  `infra/latitude/`. SEV-SNP BIOS NOT yet set (fresh provision = BIOS defaults; hands-on
+  IPMI step pending).
 - **SSH:** `rocky@<bastion-public-ip>` (`terraform output` in the bastion dir). The Latitude
   key `coco-rig` (`ssh_PVwea4BBRNB9O`) corresponds to the **local private key
   `~/.ssh/id_ed25519.wsl`** on this workstation — pass `-i`/`--private-key` explicitly.
@@ -77,6 +80,12 @@ Or the wrapper for 2–4: `make bringup-sno-airgapped ARGS="--apply-tf -e ..."` 
 
 ### Decisions
 - **From-zero rebuild (2026-07-22):** prior rig is gone; nothing to resume.
+- **First automation failure found + fixed live (2026-07-22):** `mirror_push` panicked
+  oc-mirror at startup — Ansible `environment: REGISTRY_AUTH_FILE: ""` exports the var
+  *empty* (cannot unset), and the current oc-mirror build (distribution v3) panics on any
+  set value. Issue #61, fix PR #62 (`env -u` prefix; draft until the push completes green).
+  Until #62 merges, `main`'s role is still broken — relaunch Phase A only from the fix
+  branch or after merge.
 - **Spend approved by the user 2026-07-22:** bastion `m4-metal-small` + node
   `m4-metal-medium` in NYC, hourly (~$2.69/h combined) — the SKU pair the repo's
   group_vars/cloud-init are already tuned for (Genoa `enp195s0f1`, no-bond0 NIC detect).
