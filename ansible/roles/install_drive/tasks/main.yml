@@ -72,12 +72,21 @@
   become: true
 
 # --- Poll clusterversion until Available=True / Progressing=False (fix #9) ---
+# argv form on purpose (#63): the jsonpath template contains a SPACE, and `cmd:` shlex-splits
+# an unquoted string — oc then gets `jsonpath={range` (unterminated template) and fails rc=1
+# with empty stdout on EVERY retry, reporting a healthy install as a poll failure. argv keeps
+# the template one argument. Proven on the rig 2026-07-22 (quoted form -> rc=0, conditions listed).
 - name: Poll clusterversion until Available=True and Progressing=False
   ansible.builtin.command:
-    cmd: >-
-      oc --kubeconfig {{ cluster_assets_dir }}/auth/kubeconfig
-      get clusterversion version
-      -o jsonpath={range .status.conditions[*]}{.type}={.status};{end}
+    argv:
+      - oc
+      - --kubeconfig
+      - "{{ cluster_assets_dir }}/auth/kubeconfig"
+      - get
+      - clusterversion
+      - version
+      - -o
+      - "jsonpath={range .status.conditions[*]}{.type}={.status};{end}"
   become: true
   environment:
     PATH: "{{ tool_path }}"
