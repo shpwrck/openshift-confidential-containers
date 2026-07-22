@@ -83,6 +83,25 @@ Or the wrapper for 2–4: `make bringup-sno-airgapped ARGS="--apply-tf -e ..."` 
 
 ## Decision log
 
+### Rig deltas vs the repo's committed state (2026-07-22, post-#65)
+The catalog delivered **trustee-operator v1.2.1**; the committed v1.1-era Trustee wiring does
+NOT work against it (issue #65 has the full analysis). The rig runs these deviations, all
+applied by hand and pending back-port into `gitops/`/`scripts/`:
+- KbsConfig: `kbsResourcePolicyConfigMapName` + `kbsAttestationPolicyConfigMapName` **removed**
+  (v1.2.1 migration sweeper deletes any referenced policy CM unconditionally → deadlock).
+  Built-in default policies active; rung-B measured policy must go in via the KBS API.
+- `kbs-config` CM: **1.2-format toml** (authored live, source of truth = the live CM):
+  `[admin] authorization_mode="DenyAll"`; unified `[storage_backend]` LocalFs at
+  `/opt/confidential-containers/storage` (the operator's secret-converter/emptyDir layout);
+  RVPS refs at `storage/local_json/reference_value`; `[attestation_token] insecure_key=true`
+  + `trusted_certs_paths=["/etc/kbs-config/trust.pem"]` (PEM shipped as a 2nd CM key —
+  RH build refuses an empty trust list); no `[policy_engine]`. The `.v1.1` backup CM must
+  EXIST for `kbs-config` to survive reconciles — do not delete it.
+- Node knobs (survive-reboot status checked by automation): kata
+  `create_container_timeout=600` + `debug_console_enabled=true` in
+  `/etc/kata-containers/{,kata-snp/}configuration.toml` (node-direct edits); kubelet
+  `runtimeRequestTimeout=20m` via KubeletConfig `coco-runtime-request-timeout` (durable).
+
 ### Decisions
 - **From-zero rebuild (2026-07-22):** prior rig is gone; nothing to resume.
 - **Automation failures found + fixed live (2026-07-22):**
