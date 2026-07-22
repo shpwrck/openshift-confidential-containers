@@ -1,5 +1,12 @@
 # Debug surface — every vantage point, log level, and location
 
+> **Proven on rig 2026-07-22** — disconnected SNO, EPYC 9124 (Genoa), OCP 4.20.18,
+> **OSC 1.13.0**, **Red Hat Trustee operator 1.2.1**, kata `create_container_timeout=600`,
+> kubelet `runtimeRequestTimeout=20m`. Every §3 branch below marked ✅ was deliberately
+> broken and its signature captured at all vantages (PR #60 thread has the evidence);
+> version-sensitive rows say so inline — the catalog silently upgraded both OSC
+> (1.12→1.13) and Trustee (1.1→1.2.1) on this rig, and several behaviors changed with it.
+
 A CoCo failure leaves evidence on **four machines**: the cluster/host (RHCOS node), the guest
 CVM, the Trustee pod, and the registry (Artifactory / bastion mirror). No single log shows the
 whole story — the host journal only ever gets the shim's terse CDH error string, and the guest
@@ -84,11 +91,26 @@ scripts/encode-initdata.sh decode <initdata.b64> | grep -E 'kbs:///'
 oc -n trustee-operator-system logs deploy/trustee-deployment | grep 'resource/default'
 ```
 
+**Branch 0 — the release 401s (Trustee 1.2.x). ✅ hit live on the rig.** Before reading the
+registry log, check the KBS log for `GET /kbs/v0/resource/... 401` right after a 200 attest,
+with `TokenVerifierError … Cannot verify token`. On RH Trustee 1.2.x with no persistent token
+signer, the builtin AS signs its EAR token with an **ephemeral key** (AS startup log: `No
+Token Signer key in config file`) and the verifier rejects it — attestation "clean", every
+resource withheld, in-guest just `ttrpc request error`. Fix: an **EC** (P-256) signer under
+`[attestation_service.attestation_token_broker] signer = {key_path, cert_path}` with the same
+cert in `[attestation_token] trusted_certs_paths` (`insecure_key = true` does NOT bypass this
+build's check; an RSA signer crashes the AS: `expecting an ec key`). Full write-up: issue #65.
+
 Then branch on the **registry log** (End C):
 
-1. **No requests from the guest at all** → the pull never started or went to the *upstream*
-   registry name (air-gap-drops it → silent hang until `DeadlineExceeded`). Causes, most likely
-   first:
+1. **No requests from the guest at all** ✅ → the pull never started or went to the *upstream*
+   registry name (air-gap-drops it → silent hang until `DeadlineExceeded`). Proven signature:
+   KBS shows all three resources 200 — with a **smaller-than-healthy
+   `registry-configuration` response** (the byte count in the KBS log line is a remap-present
+   tell: 935 B healthy vs 475 B stripped on the rig) — and CoreDNS at `Trace` shows the guest
+   **successfully resolving the upstream name** before the TCP connect blackholes. A good DNS
+   answer proves nothing about the registry path: the air-gap drop is at TCP. Causes, most
+   likely first:
    - `registry-configuration` never fetched (see above) — inline `[image.registry_config]` is
      **silently ignored** on OSC 1.12; only `registry_configuration_uri = "kbs:///…"` works.
    - The remap is missing the image actually being pulled — remember the **pause/sandbox image
@@ -96,10 +118,14 @@ Then branch on the **registry log** (End C):
      just the app image. If the *sandbox* pull fails the CVM dies before the app is attempted.
    - The registry hostname doesn't resolve **in-guest** (guest uses cluster CoreDNS, not the
      node's resolv.conf) — see the DNS probe in §6 and `dns.operator` in §7.
-2. **Requests, but 401/403** → the `credential` KBS resource is keyed to the wrong host (must
+2. **Requests, but 401/403** ✅ → the `credential` KBS resource is keyed to the wrong host (must
    be the Artifactory `host:port` exactly as it appears in the *remapped* ref, not the upstream
    name), or the dockerconfig entry has no inline base64 `auth` (credHelpers/identitytoken
-   don't work in-guest).
+   don't work in-guest). Proven fingerprint: the registry's `/v2/auth` line goes **anonymous**
+   (user field `- -` where a healthy pull shows the mirror user, and a smaller token response —
+   846 B vs 1003 B on the rig's quay), then `manifests/… 401`. Caution: a stale KBS pod can
+   serve the *old* credential for one round — restart KBS and re-run before trusting a
+   "still works" result.
 3. **Requests, TLS errors client-side** (registry log shows handshake resets or nothing after
    `/v2/`) → Artifactory CA missing from `extra_root_certificates`, or `insecure = true` set
    (makes image-rs speak plain HTTP to a TLS port → 400).
@@ -108,8 +134,13 @@ Then branch on the **registry log** (End C):
    - Timeout budget exhausted mid-unpack — raise both timeouts (§7) and retry; compare blob
      bytes/time in the registry log against the budget. Confirm the knobs are still in effect
      first (§7's verify command) — an MCO rollout silently reverts node-direct edits.
-   - QEMU OOM-killed — SNP pins **all** guest RAM at boot; `limits.memory` must be ≥ the
-     `default_memory` annotation + ~256 Mi. On the node: `dmesg | grep -i oom`.
+   - QEMU OOM-killed ✅ — SNP pins **all** guest RAM at boot; `limits.memory` must be ≥ the
+     `default_memory` annotation + ~256 Mi. On the node: `dmesg | grep -i oom`. Proven
+     signature: `oom-kill:constraint=CONSTRAINT_MEMCG … task=qemu-kvm` in the pod's
+     `kubepods-burstable` memcg within ~25 s of scheduling, while pod events still show only
+     `Scheduled`/`AddedInterface` — the host journal leads the events by minutes. (Rig note:
+     the Gatekeeper CoCo memory-floor mutation did NOT correct an undersized explicit limit —
+     don't assume admission saves you.)
    - Guest tmpfs exhausted mid-unpack — in-guest pull unpacks under `/run` inside the CVM, a
      tmpfs bounded by guest RAM: the registry log shows every blob 200 yet the pod dies;
      in-guest `df -h /run` is full / journal shows ENOSPC or a guest-side OOM → raise
@@ -192,6 +223,9 @@ from "TLS reset" while you wait for the registry-side log:
 ```bash
 NETNS=$(crictl inspectp "$SB" | jq -r '.info.runtimeSpec.linux.namespaces[] | select(.type=="network").path')
 nsenter --net="$NETNS" tcpdump -nn 'port 53 or port 443 or port 8080 or port 8443'
+# RHCOS-native alternative (tcpdump needs toolbox; ss is always present) — sample for
+# stuck SYNs to a blackholed registry; the burst windows are short, so loop it:
+while :; do nsenter --net="$NETNS" ss -tn state syn-sent | tail -n +2; sleep 2; done
 ```
 
 Early-boot console (stage 4 failures — the agent never comes up, so `kata-runtime exec` can't
@@ -225,9 +259,10 @@ deployment not reconciling) rather than a single pod failing.
 
 The OSC **monitor DaemonSet** (kata-monitor) is a live "how many CVMs exist, are the shims
 healthy" view needing no guest access:
-`oc -n openshift-sandboxed-containers-operator logs ds/openshift-sandboxed-containers-monitor --since=1h`,
-plus Prometheus metrics `kata_monitor_running_shim_count` / `kata_shim_*` during a pod attempt
-`# VERIFY DS name/metric names on OSC 1.12`.
+`oc -n openshift-sandboxed-containers-operator logs ds/openshift-sandboxed-containers-monitor --since=1h`
+(DS name verified live on OSC 1.13.0), plus Prometheus metrics
+`kata_monitor_running_shim_count` / `kata_shim_*` during a pod attempt
+`# VERIFY metric names`.
 
 ## 6. Guest vantage (inside the CVM)
 
@@ -277,10 +312,10 @@ you're chasing — and per the §9 rule it shows as **403**, not 401.
 | debug console | guest | interactive via `kata-runtime exec` | `debug_console_enabled = true` under `[agent.kata]` (already on, on the rig) |
 | AA / CDH / api-server-rest | guest | guest journal (info) | `RUST_LOG` is baked into the guest image's unit files — raising it means a **custom guest image + re-measure**; in practice read the guest journal instead `# VERIFY no initdata-level override exists in OSC 1.12` |
 | image-rs | guest (inside CDH's pull service) | its lines appear in the guest journal greps | follows CDH |
-| KBS / AS / RVPS (all-in-one) | Trustee pod | `oc -n trustee-operator-system logs deploy/trustee-deployment` (info) | `KbsConfig` env: `KbsEnvVars: {RUST_LOG: debug}` — capital K: it is the one CRD spec property that is *not* lower-camelCase (`oc explain kbsconfig.spec` shows it); same field already used for the proxy |
-| CRI-O | host | `journalctl -u crio` (info) | operator way: `KataConfig spec.logLevel: debug` — a privileged daemonset writes `/etc/crio/crio.conf.d/01-ctrcfg-logLevel` (`[crio.runtime] log_level`) then `systemctl reload crio`; **no MachineConfig, no reboot**, applies live (SNO included). Manual: `99-debug.conf` with the same `[crio.runtime]` table + `systemctl reload crio` — a key under bare `[crio]` is **silently ignored** |
+| KBS / AS / RVPS (all-in-one) | Trustee pod | `oc -n trustee-operator-system logs deploy/trustee-deployment` (info) | `KbsConfig` env: `KbsEnvVars: {RUST_LOG: debug}` — capital K: it is the one CRD spec property that is *not* lower-camelCase (**patched live on trustee-operator 1.2.1: accepted, pod restarts with debug active**); same field already used for the proxy |
+| CRI-O | host | `journalctl -u crio` (info) | operator way: `KataConfig spec.logLevel: debug` — **version-sensitive**: on OSC 1.12.0 a privileged daemonset writes the drop-in + `systemctl reload crio` (no reboot); on **OSC 1.13.0 (proven live)** it renders a **MachineConfig → drain + REBOOT** and writes a nested `[crio] [crio.runtime] log_level` drop-in. Check `oc get mcp` before assuming it's free. Manual: `99-debug.conf` with a `[crio.runtime]` table + `systemctl reload crio` — a key under bare `[crio]` is **silently ignored** |
 | kubelet | host | `journalctl -u kubelet` | KubeletConfig verbosity — rarely worth it; the timeout knob matters more (below) |
-| CoreDNS (in-guest name resolution) | cluster | `oc logs -n openshift-dns ds/dns-default -c dns` | `oc patch dns.operator/default --type=merge -p '{"spec":{"logLevel":"Trace"}}'` — `Trace` (`class all`) logs **every** query, great for "does the guest resolve Artifactory"; `Debug` logs only denials/errors, so a *successful* lookup never appears at Debug |
+| CoreDNS (in-guest name resolution) | cluster | `oc logs -n openshift-dns ds/dns-default -c dns` | `oc patch dns.operator/default --type=merge -p '{"spec":{"logLevel":"Trace"}}'` — `Trace` (`class all`) logs **every** query, great for "does the guest resolve Artifactory"; `Debug` logs only denials/errors, so a *successful* lookup never appears at Debug. **Proven live**: guest queries visible by pod IP, incl. the search-domain NXDOMAIN then the bare-name answer |
 | Trustee operator / OSC operator | cluster | §5 | deployment `--v` args if ever needed `# VERIFY` |
 | Artifactory | customer registry | §8 | customer-side; request log is on by default |
 
@@ -342,7 +377,13 @@ repo.
   proxy keys); neither inherits the cluster proxy. In a proxied customer env, an unset guest
   proxy looks like a registry hang.
 - **Gatekeeper** guards CoCo pod memory (`gitops/base/gatekeeper/`) — an admission denial means
-  the pod object never exists; it's in `oc get events`, not in any node log.
+  the pod object never exists; it's in `oc get events`, not in any node log. (Rig-proven
+  caveat: it did not correct an *undersized explicit* limit — verify, don't assume.)
+- **The air gap is not reboot-stable** (issue #66, hit live): the `inet airgap` nft table can
+  be silently flushed by another service after the oneshot unit already reported success —
+  unit status is NOT proof. After ANY reboot or nftables/OVN churn:
+  `nft list table inet airgap` must list the table AND `curl -m5 https://quay.io` from the
+  node must fail. A silently-open air gap invalidates every OfflineStore "proof" after it.
 - **Attestation smoke without a workload**: fetch the `attestation-status` resource path with
   the KBS client from a debug pod to separate "attestation broken" from "image pull broken"
   without burning a 10-minute pod timeout `# VERIFY client availability in the mirrored images`.
