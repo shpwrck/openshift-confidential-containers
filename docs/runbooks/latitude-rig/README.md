@@ -110,6 +110,14 @@ applied by hand and pending back-port into `gitops/`/`scripts/`:
   `create_container_timeout=600` + `debug_console_enabled=true` in
   `/etc/kata-containers/{,kata-snp/}configuration.toml` (node-direct edits); kubelet
   `runtimeRequestTimeout=20m` via KubeletConfig `coco-runtime-request-timeout` (durable).
+- **KataConfig `spec.logLevel: debug` is ACTIVE and on this OSC build it is MCO-plumbed**:
+  patching it rendered a new `rendered-master` MachineConfig → drain + reboot (22:05 UTC),
+  contrary to the OSC 1.12.0 source (daemonset + live crio reload). Leave it at `debug` —
+  reverting costs another reboot. Drop-in shape here: nested `[crio] [crio.runtime]`.
+- **⚠️ Air gap is NOT reboot-stable (#66):** post-reboot the `inet airgap` nft table was
+  silently wiped while `airgap-egress.service` read success; quay was reachable until a
+  manual `systemctl start airgap-egress`. After ANY reboot or service churn, verify:
+  `nft list table inet airgap` + `curl quay.io` must fail — unit status is not proof.
 
 ### Decisions
 - **From-zero rebuild (2026-07-22):** prior rig is gone; nothing to resume.
