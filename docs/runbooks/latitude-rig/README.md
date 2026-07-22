@@ -21,10 +21,15 @@ this scope, never fork per session.
   `infra/latitude/bastion/` (state: local `terraform.tfstate` in that dir, on this
   workstation). Mirror-registry (Quay) up; `MIRROR_READY` confirmed; oc-mirror push in
   progress (Phase A re-run after the #61 fix).
-- **SNP node** (disposable): `sv_BoQ45AJw3aMYA`, public **69.67.151.235**, plan
-  `m4-metal-medium` (EPYC 9124 Genoa, $1.58/h), Rocky 10, applied 2026-07-22 from
-  `infra/latitude/`. SEV-SNP BIOS NOT yet set (fresh provision = BIOS defaults; hands-on
-  IPMI step pending).
+- **SNP node** (disposable): `sv_BoQ45AJw3aMYA`, public **69.67.151.235**, VLAN
+  **192.168.66.11**, plan `m4-metal-medium` (EPYC 9124 Genoa, $1.58/h). SEV-SNP BIOS set
+  by hand 2026-07-22 (rung-0 gate: all 8 checks PASS, `/dev/sev` live). **SNO 4.20.18
+  INSTALLED** (agent-based, netboot from bastion): node Ready, clusterversion Available,
+  baseline gate PASS, mirror cluster-resources applied, boot endpoint closed
+  (`pxe-stop`), `99-airgap-egress` MachineConfig applied (node egress to public internet
+  dropped — verify after each reboot). Cluster access: on the bastion,
+  `KUBECONFIG=/opt/install/cluster-assets/auth/kubeconfig`; node ssh `core@192.168.66.11`
+  via bastion jump (same key).
 - **SSH:** `rocky@<bastion-public-ip>` (`terraform output` in the bastion dir). The Latitude
   key `coco-rig` (`ssh_PVwea4BBRNB9O`) corresponds to the **local private key
   `~/.ssh/id_ed25519.wsl`** on this workstation — pass `-i`/`--private-key` explicitly.
@@ -80,12 +85,18 @@ Or the wrapper for 2–4: `make bringup-sno-airgapped ARGS="--apply-tf -e ..."` 
 
 ### Decisions
 - **From-zero rebuild (2026-07-22):** prior rig is gone; nothing to resume.
-- **First automation failure found + fixed live (2026-07-22):** `mirror_push` panicked
-  oc-mirror at startup — Ansible `environment: REGISTRY_AUTH_FILE: ""` exports the var
-  *empty* (cannot unset), and the current oc-mirror build (distribution v3) panics on any
-  set value. Issue #61, fix PR #62 (`env -u` prefix; draft until the push completes green).
-  Until #62 merges, `main`'s role is still broken — relaunch Phase A only from the fix
-  branch or after merge.
+- **Automation failures found + fixed live (2026-07-22):**
+  1. `mirror_push` — `environment: REGISTRY_AUTH_FILE: ""` exports the var *empty*
+     (Ansible cannot unset); current oc-mirror (distribution v3) panics on any set value.
+     Issue #61 → PR #62 (`env -u` prefix). Live-proven: full push completed, mirror serves.
+  2. `install_drive` clusterversion poll — unquoted jsonpath (contains a space) is
+     shlex-split by `command.cmd`; every retry rc=1/empty, healthy install reported
+     failed=1. Issue #63 → PR #64 (argv form). Live-proven: quoted invocation rc=0.
+  Both PRs lint-green (ansible-lint production profile; repo CI does not path-match
+  ansible) and **await user merge** (merge action classifier-denied for the agent).
+  Until merged, `main`'s copies of both tasks are still broken — run those roles from the
+  fix branches or merge first. Side effect of #63: the `public_console` role never ran
+  (play died before it) — cluster console is bastion-only for now.
 - **Spend approved by the user 2026-07-22:** bastion `m4-metal-small` + node
   `m4-metal-medium` in NYC, hourly (~$2.69/h combined) — the SKU pair the repo's
   group_vars/cloud-init are already tuned for (Genoa `enp195s0f1`, no-bond0 NIC detect).
