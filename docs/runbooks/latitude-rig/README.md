@@ -83,6 +83,15 @@ Or the wrapper for 2–4: `make bringup-sno-airgapped ARGS="--apply-tf -e ..."` 
 
 ## Decision log
 
+### Proof state
+**rung-a PROVEN on this rig 2026-07-22 21:43 UTC** — `rung-a-secret 1/1 Running`,
+`runtimeClassName: kata-cc` (handler kata-snp): OfflineStore SNP attest (`attest 200`,
+`tee=Snp`, KDS nftables-blocked) → EAR token verified against the persistent EC signer →
+`credential`/`security-policy`/`registry-configuration` all released 200 → in-guest pull
+from `mirror.rig.local:8443` (`oci-client/0.15.0`, manifests+blobs 200). En route, the
+ephemeral-signer failure (#65 break 3) was reproduced live: attest 200 + resource 401 +
+in-guest `ttrpc request error` — the customer-symptom signature, now with a known fix.
+
 ### Rig deltas vs the repo's committed state (2026-07-22, post-#65)
 The catalog delivered **trustee-operator v1.2.1**; the committed v1.1-era Trustee wiring does
 NOT work against it (issue #65 has the full analysis). The rig runs these deviations, all
