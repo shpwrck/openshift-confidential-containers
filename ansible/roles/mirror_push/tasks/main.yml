@@ -39,18 +39,22 @@
     - OCMIRROR_FAILED
   when: not ocmirror_done.stat.exists or force_mirror_push | default(false)
 
-# The retry loop. `unset REGISTRY_AUTH_FILE` is via `environment:` (clears the inherited var).
+# The retry loop. REGISTRY_AUTH_FILE must be truly UNSET: Ansible `environment:` cannot unset
+# a variable — `REGISTRY_AUTH_FILE: ""` exports it EMPTY, and oc-mirror's embedded distribution
+# v3 registry maps any set REGISTRY_AUTH_FILE (even empty) to auth type "file" and panics
+# ("no access controller registered with name: file"). Hence the `env -u` prefix. Proven on
+# metal 2026-07-22: empty -> panic, unset -> clean run.
 # Each attempt resumes the cacheable workspace; retries: 8 covers the flaky-blob failure mode.
 - name: Run oc-mirror v2 push (with resume-on-retry)
   ansible.builtin.command:
     cmd: >-
+      env -u REGISTRY_AUTH_FILE
       oc-mirror --v2 -c {{ ansible_env.HOME }}/imageset-config.yaml
       --workspace file://{{ mirror_workspace }}
       docker://{{ mirror_endpoint }}
   become: true
   environment:
     PATH: "{{ tool_path }}"
-    REGISTRY_AUTH_FILE: ""
   register: ocmirror_run
   until: ocmirror_run.rc == 0
   retries: 8
