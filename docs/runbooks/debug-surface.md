@@ -360,9 +360,10 @@ guest debug is off (§7) — fall back to `journalctl -t kata` for whatever the 
 
 ### Toolbox, sos, must-gather
 
-**socat/tcpdump/strace are NOT on RHCOS** — run `toolbox` from the chroot to get them (air
-gap: mirror `registry.redhat.io/rhel9/support-tools` and pin `REGISTRY`/`IMAGE` in
-`/root/.toolboxrc`). From the same toolbox, `sos report --all-logs` produces the host bundle
+**socat/tcpdump/strace are NOT on RHCOS** — run `toolbox` from the chroot to get them. Air
+gap: `registry.redhat.io/rhel9/support-tools` must be IN YOUR MIRROR (this repo's imageset
+`additionalImages` carries it, digest-pinned) and `/root/.toolboxrc` must point `REGISTRY`/
+`IMAGE` at the mirror copy — otherwise the toolbox pull fails mid-incident. From the same toolbox, `sos report --all-logs` produces the host bundle
 Red Hat support asks for alongside must-gather.
 
 Must-gather — use the **OSC** image, not generic:
@@ -650,9 +651,9 @@ oc get kataconfig,kbsconfig,runtimeclass -A -o yaml               > "$OUT/crs.ya
 oc get pod "$POD" -n "$NS" \
   -o jsonpath='{.metadata.annotations.io\.katacontainers\.config\.hypervisor\.cc_init_data}' \
                                                                    > "$OUT/initdata.b64"
-scripts/encode-initdata.sh decode "$OUT/initdata.b64"             > "$OUT/initdata-decoded.toml"
-# (the repo script, not `base64 -d` - BSD/macOS base64 has no -d, so a raw pipe silently
-#  produces an empty file on a mac admin host)
+scripts/encode-initdata.sh decode - < "$OUT/initdata.b64"         > "$OUT/initdata-decoded.toml"
+# (the repo script handles the BSD-vs-GNU base64 flag split; `decode` takes the VALUE or
+#  `-` for stdin - a bare filename argument would be base64-decoded literally and fail)
 oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:<osc-version> \
   --dest-dir="$OUT/must-gather"   # disconnected: must be mirrored (see the §4 note)
 ```

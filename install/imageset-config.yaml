@@ -51,5 +51,10 @@ mirror:
     - name: registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
     # OSC must-gather - the debug-surface runbook's collection steps (its host-vantage and
     # log-collection-kit sections) depend on this being in the mirror (a disconnected cluster
-    # cannot pull it at incident time). VERIFY the tag matches the installed OSC z-stream.
-    - name: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:1.12.0
+    # cannot pull it at incident time). Digest resolved 2026-07-23 from tag :1.12.0; re-resolve
+    # when advancing the OSC z-stream.
+    - name: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:9bd8bee8af6f1adda5923877f807c62a8309e8c64e777f1edc5bdc2036c928f6
+    # RHEL support-tools - the debug-surface host-vantage toolbox steps (socat/tcpdump/strace,
+    # sos report) need it on a disconnected node; /root/.toolboxrc must point at the mirror
+    # copy. Digest resolved 2026-07-23 from tag :latest; re-resolve deliberately on refresh.
+    - name: registry.redhat.io/rhel9/support-tools@sha256:be51c60c95c29f8c6d954ca2ad7c02ad4708191e5ae69dbc2d0e7d9bc7355f7a
