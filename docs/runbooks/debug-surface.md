@@ -57,7 +57,7 @@ each stage names the log that proves it ran.
 
 | # | Stage | Component (where it runs) | Evidence that it ran / failed |
 |---|---|---|---|
-| 1 | Admission + schedule | apiserver, Gatekeeper (cluster) | `oc get events` — Gatekeeper denial = pod never created |
+| 1 | Admission + schedule | apiserver, Gatekeeper (cluster) | a Gatekeeper **deny** returns the error to the API caller (`oc apply` output, or the owning ReplicaSet's events) — the pod never exists, so there are NO pod events for it |
 | 2 | Sandbox create request | kubelet → CRI-O (host) | `journalctl -u crio` / `-u kubelet` on the node |
 | 3 | CVM launch (QEMU + SNP) | containerd-shim-kata-v2 → QEMU (host) | `journalctl -t kata`; `ps -ef \| grep qemu` shows `sev-snp-guest`; `dmesg` for OOM/`KVM`/RMP errors |
 | 4 | Guest boot + kata-agent up | kernel, kata-agent (guest) | console output (§4) is the only direct pre-agent witness; failure = `DeadlineExceeded` with stage 7 never appearing in the KBS log |
@@ -233,9 +233,10 @@ The pull succeeded; the failure is *after* stage 9. Four sub-causes:
   `default_memory` annotation + ~256 Mi. On the node: `dmesg | grep -i oom`. Observed
   signature: `oom-kill:constraint=CONSTRAINT_MEMCG … task=qemu-kvm` in the pod's
   `kubepods-burstable` memcg within ~25 s of scheduling, while pod events still show only
-  `Scheduled`/`AddedInterface` — the host journal leads the events by minutes. (Note: the
-  Gatekeeper CoCo memory-floor mutation did NOT correct an undersized explicit limit —
-  don't assume admission saves you.)
+  `Scheduled`/`AddedInterface` — the host journal leads the events by minutes. (Note: the Gatekeeper
+  memory floor only matches pods labeled `coco-resource-default: "true"`, and its mutation
+  only fills MISSING limits — an unlabeled pod or an explicit undersized value sails through;
+  don't assume admission saves you. See §9.)
 - **Guest tmpfs exhausted mid-unpack** — in-guest pull unpacks under `/run` inside the CVM, a
   tmpfs bounded by guest RAM: the registry log shows every blob 200 yet the pod dies;
   in-guest `df -h /run` is full / journal shows ENOSPC or a guest-side OOM → raise
@@ -255,7 +256,8 @@ The pull succeeded; the failure is *after* stage 9. Four sub-causes:
   inside?):
 
   ```bash
-  SB=$(crictl pods --name <pod> -s ready -q | head -1); crictl inspectp "$SB" \
+  SB=$(crictl pods --name <pod> -s ready -q | head -1); SB=${SB:-$(crictl pods --name <pod> -q | head -1)}
+  crictl inspectp "$SB" \
     | jq -r '.info.runtimeSpec.annotations["io.katacontainers.config.hypervisor.cc_init_data"] // "MISSING"' \
     | { read v; [ "$v" = MISSING ] && echo MISSING || echo "$v" | base64 -d | gunzip | grep -c aa.toml; }
   ```
@@ -320,9 +322,11 @@ dmesg | grep -i oom                       # QEMU OOM kill (the DeadlineExceeded-
 
 ```bash
 crictl pods; crictl ps -a                  # CRI view incl. dead sandboxes
-SB=$(crictl pods --name <pod> -s ready -q | head -1)   # the CURRENT sandbox only - kubelet retries
-                                           # leave dead ones behind; without -s ready + head -1,
-                                           # a multi-line $SB breaks every inspectp below
+SB=$(crictl pods --name <pod> -s ready -q | head -1)   # the CURRENT sandbox - kubelet retries leave
+SB=${SB:-$(crictl pods --name <pod> -q | head -1)}      # dead ones behind; fall back to the newest
+                                           # ANY-state sandbox when RunPodSandbox failed before
+                                           # ready (stage 4/5) - else $SB is empty and every
+                                           # inspectp below fails
 crictl inspectp "$SB" | jq '.status.state,
   (.info.runtimeSpec.annotations["io.katacontainers.config.hypervisor.cc_init_data"] // "MISSING" | .[:60])'
                                            # CRI-O's recorded state/error + proof the initdata
@@ -369,10 +373,11 @@ Red Hat support asks for alongside must-gather.
 Must-gather — use the **OSC** image, not generic:
 
 ```bash
-# match the tag to your installed OSC version. DISCONNECTED: this image must already be in
-# your mirror (imageset additionalImages carries it) - reference it through the mirror, or
-# the collection step fails with an image pull error exactly when you need it.
-oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:<osc-version>
+# DISCONNECTED: invoke by the DIGEST the imageset mirrored (IDMS rewrites digest refs to the
+# mirror; a floating tag is NOT rewritten and would try registry.redhat.io mid-incident).
+# The digest below matches this repo's imageset pin - substitute yours if it differs, and
+# keep it in step with the installed OSC z-stream.
+oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:9bd8bee8af6f1adda5923877f807c62a8309e8c64e777f1edc5bdc2036c928f6
 ```
 
 ## 5. Operator / control-plane vantage
@@ -605,9 +610,17 @@ inside the air gap — looks like branch 1, so confirm the remap targets a **loc
 - **Two independent proxies** — Trustee pod (`KbsEnvVars`) and CVM (`aa.toml`/`cdh.toml`
   proxy keys); neither inherits the cluster proxy. In a proxied customer env, an unset guest
   proxy looks like a registry hang.
-- **Gatekeeper** guards CoCo pod memory (`gitops/base/gatekeeper/`) — an admission denial means
-  the pod object never exists; it's in `oc get events`, not in any node log. (✅ caveat:
-  it did not correct an *undersized explicit* limit — verify, don't assume.)
+- **Gatekeeper** memory-floor policy (`gitops/base/gatekeeper/`) — three qualifications that
+  decide whether it protects you at all:
+  - It matches **only pods labeled `coco-resource-default: "true"`** (Gatekeeper cannot match
+    on `runtimeClassName`, so the label is the selector) — an unlabeled `kata-cc` pod bypasses
+    BOTH the mutation and the validation entirely (✅ observed: an unlabeled pod with an
+    undersized limit sailed through to the host OOM path).
+  - The Assign only **fills a missing** limit (`pathTests: MustNotExist`) — it never corrects
+    an explicit undersized value; that's the validating constraint's job, on labeled pods.
+  - `enforcementAction: deny` returns the denial **to the API caller** — `oc apply` output for
+    direct submissions, the owning ReplicaSet's events for controller-created pods. The pod
+    never exists, so there are no pod events to find it in.
 - **The air gap is not reboot-stable** (issue #66): the `inet airgap` nft table can
   be silently flushed by another service after the oneshot unit already reported success —
   unit status is NOT proof. After ANY reboot or nftables/OVN churn:
@@ -646,7 +659,8 @@ oc -n trustee-operator-system logs deploy/trustee-operator-controller-manager \
                                                                    > "$OUT/trustee-operator.log" 2>&1
 oc -n openshift-sandboxed-containers-operator logs deploy/controller-manager \
                                                                    > "$OUT/osc-operator.log" 2>&1   # VERIFY deploy name (§5)
-oc adm node-logs "$NODE" -u crio -u kubelet                       > "$OUT/node-crio-kubelet.log" 2>&1
+oc adm node-logs "$NODE" -u crio                                  > "$OUT/node-crio.log" 2>&1
+oc adm node-logs "$NODE" -u kubelet                               > "$OUT/node-kubelet.log" 2>&1  # ONE unit per call (§4)
 oc get kataconfig,kbsconfig,runtimeclass -A -o yaml               > "$OUT/crs.yaml"
 oc get pod "$POD" -n "$NS" \
   -o jsonpath='{.metadata.annotations.io\.katacontainers\.config\.hypervisor\.cc_init_data}' \
@@ -654,8 +668,8 @@ oc get pod "$POD" -n "$NS" \
 scripts/encode-initdata.sh decode - < "$OUT/initdata.b64"         > "$OUT/initdata-decoded.toml"
 # (the repo script handles the BSD-vs-GNU base64 flag split; `decode` takes the VALUE or
 #  `-` for stdin - a bare filename argument would be base64-decoded literally and fail)
-oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:<osc-version> \
-  --dest-dir="$OUT/must-gather"   # disconnected: must be mirrored (see the §4 note)
+oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:9bd8bee8af6f1adda5923877f807c62a8309e8c64e777f1edc5bdc2036c928f6 \
+  --dest-dir="$OUT/must-gather"   # by DIGEST so IDMS routes it via the mirror (§4 note)
 ```
 
 If a line fails, don't stop: every file is independently useful, and §§4–5 name the fallback
