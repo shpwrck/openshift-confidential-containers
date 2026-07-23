@@ -1,15 +1,21 @@
 ---
 leave-behind: v1
 state-scope: latitude-rig
-status: current
+status: destroyed
 ---
 
 # Latitude rig — live infrastructure state (leave-behind)
 
-The disposable CoCo test rig on Latitude.sh, rebuilt **from zero** starting 2026-07-22 (the
-previous engagement's bastion/node no longer exist). This artifact records what is live, how
-to reach it, and how to re-drive it; update it in place as the rig evolves — one artifact for
-this scope, never fork per session.
+The disposable CoCo test rig on Latitude.sh, rebuilt **from zero** starting 2026-07-22 and
+**DESTROYED the same day on user order** (node `sv_BoQ45AJw3aMYA` + bastion
+`sv_6B9VaL4lEa7vr` both `terraform destroy`ed 2026-07-22 ~23:00 UTC; total live ~7 h,
+≈$15–20). Everything below is the historical record + re-run recipe for the NEXT rig cycle.
+What the cycle proved and left behind: rung-a end-to-end (happy + air-gap VCEK-swap denial
+PASS), the live-proven debug guide (PR #60, left OPEN unmerged on user order), merged fixes
+#62/#64/#67 (incl. the OSC 1.12.x / Trustee 1.1.x pins — the NEXT mirror pull runs under
+those bounds), and issues #65/#66 closed by #67. Note for the next cycle: the destroyed
+bastion took the mirror cache — the ~15 min (datacenter-bandwidth) oc-mirror pull re-runs
+under the new pins, and the VCEK OfflineStore must be re-collected for the new node's chip.
 
 ## Operability
 
