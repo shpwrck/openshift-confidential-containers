@@ -460,20 +460,25 @@ you're chasing — and per the §9 rule it shows as **403**, not 401.
 
 ### The knob index
 
-| Component | Where it runs | Log location (default level) | Knob (details below) |
-|---|---|---|---|
-| kata runtime + shim | host | `journalctl -t kata` (info) | `enable_debug` — see [kata debug](#kata-debug-enable_debug) |
-| kata full debug (runtime/hypervisor/agent) | host+guest | shim journal grows agent+QEMU output | `enable_debug` ×3 — see [kata debug](#kata-debug-enable_debug) |
-| guest kernel + kata-agent verbosity | guest | shim journal / console.sock | `kernel_params = "agent.log=debug"` — **measured**, see warning |
-| debug console | guest | interactive via `kata-runtime exec` | `debug_console_enabled = true` under `[agent.kata]` |
-| AA / CDH / api-server-rest | guest | guest journal (info) | effectively fixed — see [guest components](#guest-components-aacdhimage-rs) |
-| image-rs | guest (inside CDH's pull service) | its lines appear in the guest journal greps | follows CDH |
-| KBS / AS / RVPS (all-in-one) | Trustee pod | `oc -n trustee-operator-system logs deploy/trustee-deployment` (info) | `KbsEnvVars: {RUST_LOG: debug}` — see [KBS](#kbs-kbsenvvars) |
-| CRI-O | host | `journalctl -u crio` (info) | `KataConfig spec.logLevel` — **version-sensitive**, see [CRI-O](#cri-o-kataconfig-specloglevel) |
-| kubelet | host | `journalctl -u kubelet` | KubeletConfig verbosity — rarely worth it; the timeout knob matters more (below) |
-| CoreDNS (in-guest name resolution) | cluster | `oc logs -n openshift-dns ds/dns-default -c dns` | `logLevel: Trace` — see [CoreDNS](#coredns-loglevel-trace) |
-| Trustee operator / OSC operator | cluster | §5 | deployment `--v` args if ever needed `# VERIFY` |
-| Artifactory | customer registry | §8 | customer-side; request log is on by default |
+Two mechanisms: **file rows** edit the kata toml **on the node** (find the exact file via §4
+discovery — for the SNP handler it is `/etc/kata-containers/kata-snp/configuration.toml`;
+new pods pick the change up, no service restart); **command rows** run on the **admin host**.
+⚠ = measured, see warning above. Each row links to its details.
+
+| Component | Read the logs at (default level) | Set it — file to edit or command to run |
+|---|---|---|
+| kata runtime + shim | `journalctl -t kata` (info) | file: `configuration.toml` → `[runtime]` `enable_debug = true` — [details](#kata-debug-enable_debug) |
+| kata full debug (runtime/hypervisor/agent) | shim journal grows agent+QEMU output | file: same toml → `enable_debug = true` under `[runtime]` + `[hypervisor.qemu]` (safe) + `[agent.kata]` (⚠) — [details](#kata-debug-enable_debug) |
+| guest kernel + kata-agent verbosity | shim journal / console.sock | file: same toml → `[hypervisor.qemu]` `kernel_params = "agent.log=debug"` ⚠ |
+| debug console (prereq for §6 exec) | interactive via `kata-runtime exec` | file: same toml → `[agent.kata]` `debug_console_enabled = true` |
+| AA / CDH / api-server-rest | guest journal (info) | not settable in place — needs a custom guest image + re-measure; read the journal instead — [details](#guest-components-aacdhimage-rs) |
+| image-rs | its lines appear in the guest journal greps | follows CDH (same limitation) |
+| KBS / AS / RVPS (all-in-one) | `oc -n trustee-operator-system logs deploy/trustee-deployment` (info) | command: `oc -n trustee-operator-system patch kbsconfig kbsconfig --type=merge -p '{"spec":{"KbsEnvVars":{"RUST_LOG":"debug"}}}'` — [details](#kbs-kbsenvvars) |
+| CRI-O | `journalctl -u crio` (info) | command: `oc patch kataconfig cluster-kataconfig --type=merge -p '{"spec":{"logLevel":"debug"}}'` — **may REBOOT the node on OSC ≥1.13**, [details](#cri-o-kataconfig-specloglevel) |
+| kubelet | `journalctl -u kubelet` | command: KubeletConfig CR verbosity — rarely worth it; the timeout knob matters more (below) |
+| CoreDNS (in-guest name resolution) | `oc logs -n openshift-dns ds/dns-default -c dns` | command: `oc patch dns.operator/default --type=merge -p '{"spec":{"logLevel":"Trace"}}'` — [details](#coredns-loglevel-trace) |
+| Trustee operator / OSC operator | §5 | command: edit the deployment's `--v` args if ever needed `# VERIFY` |
+| Artifactory | §8 | customer-side; request log is on by default |
 
 ### Knob details
 
