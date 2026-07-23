@@ -95,7 +95,7 @@ go there only after the two ends have bracketed the failure to stages 4–6 or 9
 
 ```bash
 # End A — cluster symptom (always start here; CoCo pods usually die before logs exist)
-oc describe pod <p> | grep -A30 Events:
+oc describe pod <p> -n <ns> | grep -A30 Events:
 oc get events -n <ns> --sort-by=.lastTimestamp | tail -20
 
 # End B — Trustee (attestation + release, with HTTP codes)
@@ -255,7 +255,7 @@ The pull succeeded; the failure is *after* stage 9. Four sub-causes:
   inside?):
 
   ```bash
-  SB=$(crictl pods --name <pod> -q); crictl inspectp "$SB" \
+  SB=$(crictl pods --name <pod> -s ready -q | head -1); crictl inspectp "$SB" \
     | jq -r '.info.runtimeSpec.annotations["io.katacontainers.config.hypervisor.cc_init_data"] // "MISSING"' \
     | { read v; [ "$v" = MISSING ] && echo MISSING || echo "$v" | base64 -d | gunzip | grep -c aa.toml; }
   ```
@@ -274,7 +274,8 @@ oc debug node/<node>      # interactive TTY (required for kata-runtime exec late
 chroot /host
 # or, fallback when the apiserver is down: ssh core@<node-ip> from the bastion/admin host
 # no TTY needed for journals (automation / scarce access):
-oc adm node-logs <node> -u crio -u kubelet --since='-1h' > node.log   # VERIFY --since format on this oc
+oc adm node-logs <node> -u crio --since='-1h'    > node-crio.log      # VERIFY --since format on this oc
+oc adm node-logs <node> -u kubelet --since='-1h' > node-kubelet.log   # ONE unit per call - a second -u overrides the first
 oc adm node-logs <node> --grep=kata                                    # VERIFY --grep availability
 # if node-logs balks (flag missing / empty output): fall back to the interactive door above
 # (oc debug node -> chroot /host -> journalctl), or ssh core@<node-ip> and journalctl there
@@ -285,7 +286,9 @@ oc adm node-logs <node> --grep=kata                                    # VERIFY 
 Paths vary by OSC build; do not guess.
 
 ```bash
-oc get runtimeclass kata-cc -o jsonpath='{.handler}{"\n"}'      # (admin host) want kata-qemu-snp / kata-snp
+oc get runtimeclass kata-cc -o jsonpath='{.handler}{"\n"}'      # (admin host) this repo's gate requires EXACTLY kata-snp
+#   (some builds surface kata-qemu-snp instead - the rung scripts and install-guide DoD reject it;
+#    reconcile the handler, don't loosen the gate)
 # — everything below runs ON THE NODE —
 crio config 2>/dev/null | grep -B2 -A10 'runtimes.kata'         # runtime_path + runtime_config_path per handler
 find /etc/kata-containers /usr/share/kata-containers /usr/share/defaults/kata-containers \
@@ -317,7 +320,9 @@ dmesg | grep -i oom                       # QEMU OOM kill (the DeadlineExceeded-
 
 ```bash
 crictl pods; crictl ps -a                  # CRI view incl. dead sandboxes
-SB=$(crictl pods --name <pod> -q)          # deterministic sandbox id (replaces the ps race for live pods)
+SB=$(crictl pods --name <pod> -s ready -q | head -1)   # the CURRENT sandbox only - kubelet retries
+                                           # leave dead ones behind; without -s ready + head -1,
+                                           # a multi-line $SB breaks every inspectp below
 crictl inspectp "$SB" | jq '.status.state,
   (.info.runtimeSpec.annotations["io.katacontainers.config.hypervisor.cc_init_data"] // "MISSING" | .[:60])'
                                            # CRI-O's recorded state/error + proof the initdata
@@ -363,7 +368,9 @@ Red Hat support asks for alongside must-gather.
 Must-gather — use the **OSC** image, not generic:
 
 ```bash
-# match the tag to your installed OSC version:
+# match the tag to your installed OSC version. DISCONNECTED: this image must already be in
+# your mirror (imageset additionalImages carries it) - reference it through the mirror, or
+# the collection step fails with an image pull error exactly when you need it.
 oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:<osc-version>
 ```
 
@@ -642,9 +649,12 @@ oc adm node-logs "$NODE" -u crio -u kubelet                       > "$OUT/node-c
 oc get kataconfig,kbsconfig,runtimeclass -A -o yaml               > "$OUT/crs.yaml"
 oc get pod "$POD" -n "$NS" \
   -o jsonpath='{.metadata.annotations.io\.katacontainers\.config\.hypervisor\.cc_init_data}' \
-  | base64 -d | gunzip                                            > "$OUT/initdata-decoded.toml"
+                                                                   > "$OUT/initdata.b64"
+scripts/encode-initdata.sh decode "$OUT/initdata.b64"             > "$OUT/initdata-decoded.toml"
+# (the repo script, not `base64 -d` - BSD/macOS base64 has no -d, so a raw pipe silently
+#  produces an empty file on a mac admin host)
 oc adm must-gather --image=registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:<osc-version> \
-  --dest-dir="$OUT/must-gather"
+  --dest-dir="$OUT/must-gather"   # disconnected: must be mirrored (see the §4 note)
 ```
 
 If a line fails, don't stop: every file is independently useful, and §§4–5 name the fallback
