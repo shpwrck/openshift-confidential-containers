@@ -58,6 +58,7 @@ Two cross-cutting sections close the guide: a [**Definition of done**](#definiti
 | Open this | When… |
 |---|---|
 | [`runbooks/failure-modes.md`](runbooks/failure-modes.md) | a step failed — symptom → cause → fast diagnostic → fix, ordered by phase (start at its "Top 7"). |
+| [`runbooks/debug-surface.md`](runbooks/debug-surface.md) | you need the **full debug toolbox** — every vantage point (host / guest CVM / Trustee / registry), log locations, and how to raise each component's log level. |
 | [`runbooks/multi-socket-vcek.md`](runbooks/multi-socket-vcek.md) | your SNP box is **dual-socket (2P)** — single-socket nodes don't need it. |
 | [`notes/latitude-snp-bringup.md`](notes/latitude-snp-bringup.md) | you want the Phase-4 BIOS recipe click-by-click. |
 | [`runbooks/install-execution-plan.md`](runbooks/install-execution-plan.md) | you need the signed/encrypted-rung proof state + stop-gates as an execution plan. |

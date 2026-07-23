@@ -99,3 +99,5 @@ oc logs pod/rung-a-secret -c attestation-gate                   # want "attestat
 ```
 Deeper in-guest debugging (catch the CVM, `kata-runtime exec`): `docs/runbooks/rung-kbs-guest-debug.md`.
 Full symptom→cause→fix by phase: `docs/runbooks/failure-modes.md`.
+The complete debug toolbox (all vantage points, log levels + locations, and the
+"Trustee clean but pod never ran" triage): `docs/runbooks/debug-surface.md`.
