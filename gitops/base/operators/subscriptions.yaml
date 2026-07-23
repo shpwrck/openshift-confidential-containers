@@ -50,7 +50,9 @@ spec:
   source: cs-redhat-operator-index-v4-20 # VERIFY: mirrored CatalogSource name (oc-mirror).
   sourceNamespace: openshift-marketplace
   installPlanApproval: Automatic
-  # startingCSV: sandboxed-containers-operator.v1.12.0 # FILL/VERIFY exact CSV from the mirror.
+  # PIN (#65): proven CSV. Safe with Automatic because the imageset min/maxVersion bounds the
+  # mirror at 1.12.x — the catalog cannot offer an upgrade past the pin.
+  startingCSV: sandboxed-containers-operator.v1.12.1
 ---
 # 4) Red Hat build of Trustee (trustee-operator 1.1).
 apiVersion: operators.coreos.com/v1alpha1
@@ -64,4 +66,6 @@ spec:
   source: cs-redhat-operator-index-v4-20 # VERIFY: mirrored CatalogSource name (oc-mirror).
   sourceNamespace: openshift-marketplace
   installPlanApproval: Automatic
-  # startingCSV: trustee-operator.v1.1.0 # FILL/VERIFY exact CSV from the mirror.
+  # PIN (#65): proven CSV; imageset bounds the mirror at 1.1.x. Trustee >=1.2 needs the #65
+  # migration (1.2 kbs-config format, no policy-CM refs, persistent EC token signer).
+  startingCSV: trustee-operator.v1.1.0

@@ -45,3 +45,24 @@ spec:
             ExecStop=/usr/sbin/nft delete table inet airgap
             [Install]
             WantedBy=multi-user.target
+        # Reassert watchdog (#66): the table can be silently FLUSHED by another actor's
+        # `nft flush ruleset` (nftables.service/OVN churn) AFTER the oneshot succeeded —
+        # proven live 2026-07-22: unit read success while quay was reachable. Unit status
+        # is not table presence; this timer re-applies whenever the table is missing.
+        - name: airgap-egress-reassert.service
+          contents: |
+            [Unit]
+            Description=Re-apply air-gap egress table if it was flushed (#66)
+            [Service]
+            Type=oneshot
+            ExecStart=/bin/sh -c '/usr/sbin/nft list table inet airgap >/dev/null 2>&1 || /usr/sbin/nft -f /etc/nftables/airgap-egress.nft'
+        - name: airgap-egress-reassert.timer
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Periodic air-gap egress reassert (#66)
+            [Timer]
+            OnBootSec=90s
+            OnUnitActiveSec=120s
+            [Install]
+            WantedBy=timers.target

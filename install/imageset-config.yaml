@@ -23,12 +23,22 @@ mirror:
     - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.20
       packages:
         # OSC 1.12. Install order (per design doc): NFD -> cert-manager -> OSC -> Trustee.
+        # VERSION PINS (#65): the floating channels delivered OSC 1.13.0 + Trustee 1.2.1 on
+        # 2026-07-22 and broke the proven 1.12/1.1 wiring (policy-CM migration deadlock +
+        # kbs-config format change + ephemeral-signer 401s — full analysis in issue #65).
+        # min/maxVersion bound what the MIRROR contains, so a disconnected Subscription
+        # physically cannot float past the proven minors. Bump BOTH pins deliberately, with
+        # the #65 migration notes in hand, when moving to OSC 1.13+/Trustee 1.2+.
         - name: sandboxed-containers-operator
           channels:
             - name: stable   # VERIFY channel: `oc-mirror list operators --package sandboxed-containers-operator`
+              minVersion: '1.12.0'
+              maxVersion: '1.12.9'   # any 1.12 z-stream; excludes 1.13+
         - name: trustee-operator
           channels:
             - name: stable   # VERIFY channel for Trustee 1.1 (may be e.g. trustee-1.1 / stable)
+              minVersion: '1.1.0'
+              maxVersion: '1.1.9'    # any 1.1 z-stream; excludes 1.2+
         - name: nfd
           channels:
             - name: stable   # VERIFY: NFD channel must match OCP 4.20 (e.g. stable / 4.20)
