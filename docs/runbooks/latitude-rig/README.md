@@ -6,9 +6,10 @@ status: current
 
 # Latitude rig — live infrastructure state (leave-behind)
 
-The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-28 is IN PROGRESS**: the bastion was
-re-applied from zero at ~18:0x UTC and the node has **not** been applied yet. The previous cycle
-(2026-07-22) was destroyed the same day; its record is preserved in *Decision log → History*.
+The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-28 is IN PROGRESS**: bastion and node
+are both applied and Phase A is complete; the rig is **stopped at the hands-on SEV-SNP BIOS step**,
+which the rung-0 gate confirms is required on this unit. The previous cycle (2026-07-22) was
+destroyed the same day; its record is preserved in *Decision log → History*.
 
 This cycle is a true from-zero rebuild: the destroyed bastion took the mirror cache, so the
 oc-mirror push re-runs under the OSC 1.12.x / Trustee 1.1.x pins from PR #67, and the VCEK
@@ -26,8 +27,15 @@ OfflineStore must be re-collected for the new node's chip.
   (5 resources: server, VLAN, VLAN assignment, firewall, user_data). Note the API reissued the
   **same server id and public IP as the destroyed 2026-07-22 bastion** — do not read that as the
   old host surviving; it is a fresh provision with a fresh disk and no mirror cache.
-- **SNP node** (disposable): **NOT YET APPLIED** this cycle. `infra/latitude/terraform.tfvars` is
-  filled for `m4-metal-medium` (EPYC 9124 Genoa) in NYC.
+- **SNP node** (disposable): `coco-snp-rig` = **`sv_ZWr75ZP9v0A91`**, public **185.209.179.93**,
+  plan `m4-metal-medium` (EPYC 9124 Genoa), **rocky-10**, kernel 6.12, applied 2026-07-28 (14m10s).
+  VLAN assignment `vnasg_mMGO022xP0Aln`. IPMI credentials are minted on demand into the
+  **gitignored** `infra/latitude/IPMI-ACCESS.md` (never committed; token expires ~12h) via
+  `POST /servers/<id>/remote_access`.
+  **Rung-0 state: NOT live — SEV-SNP BIOS is OFF on this unit** (`ccp … SEV: memory encryption
+  not enabled by BIOS`, `sev_snp=N`, no `/dev/sev`; kernel/CONFIG/module checks all PASS).
+  Awaiting the hands-on BIOS step. Note this settles the "does BIOS persist per unit?" question
+  the only way that is safe: **by measuring, not assuming** — this draw came up reset.
 - **SSH:** `rocky@64.34.90.7`. The Latitude key `coco-rig` (`ssh_PVwea4BBRNB9O`) corresponds to
   the local private key **`~/.ssh/id_ed25519`** — verified 2026-07-28 by comparing the registered
   public key material against `~/.ssh/id_ed25519.pub` via `GET /ssh_keys`. (A `~/.ssh/id_ed25519.wsl`
@@ -163,5 +171,10 @@ IPMI/KVM — recipe printed by the playbook pause and in `docs/notes/latitude-sn
 gotcha is **SEV-SNP Support = Enabled, not Auto** (Auto silently leaves it off and produces the
 misleading "IOMMU SNP feature not enabled" message — do not chase IOMMU). After bring-up, rungs
 and negative tests run from the Makefile (`verify-snp-host`, `apply-*`, `negative-test`,
-`repro-loop`). Current position in the sequence: **bastion applied, awaiting cloud-init; Phase A
-not yet run; node not yet applied.**
+`repro-loop`). Current position in the sequence: **bastion applied + Phase A COMPLETE (52 ok / 27 changed /
+0 failed; mirror healthy, `OCMIRROR_DONE` set, cluster-resources emitted); node applied and
+SSH-reachable; STOPPED at the hands-on SEV-SNP BIOS step, which rung-0 confirms is required on
+this unit.** Next after BIOS: re-run `host-snp-check.sh` (must be all PASS), then Phase B+C in a
+real TTY, then `--tags pxe-stop`. Remember #74 — apply
+`/opt/mirror/ocm-workspace/working-dir/cluster-resources/` by hand before
+`make install-coco-operators`, or it stalls the full 1800s on a missing CatalogSource.
