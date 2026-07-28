@@ -11,6 +11,9 @@ while IFS= read -r f; do bash -n "$f"; done < <(find scripts -type f -name '*.sh
 echo "== endpoint parameterization gate (#34) =="
 bash ./scripts/check-endpoint-parameterization.sh
 
+echo "== coco workload-label gate (#68) =="
+bash ./scripts/check-coco-workload-labels.sh
+
 overlays=$(find gitops/overlays -maxdepth 1 -mindepth 1 -type d 2>/dev/null || true)
 [ -n "${overlays}" ] || { echo "no overlays yet"; exit 0; }
 

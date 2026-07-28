@@ -12,11 +12,19 @@
 # Memory model (load-bearing): SNP pins ALL guest RAM at launch, so the pod memory limit MUST be
 # >= default_memory annotation + ~256Mi QEMU overhead, or the host OOM-kills QEMU in seconds and the
 # pod shows DeadlineExceeded (NOT an obvious OOM). Keep limit in sync with default_memory below.
+# The `coco-resource-default: "true"` label below is what makes the cluster ENFORCE that rule for
+# you (Gatekeeper); without it the rule is advisory and you find out via the OOM killer.
 apiVersion: v1
 kind: Pod
 metadata:
   name: rung-a-secret
   namespace: default                 # FILL: your confidential workload namespace.
+  labels:
+    # KEEP THIS LABEL on every CoCo pod you author (#68). It is the selector the Gatekeeper
+    # memory guard matches on — Gatekeeper cannot match on runtimeClassName, so an unlabeled
+    # kata-cc pod silently bypasses both the memory-default mutation and the deny-constraint,
+    # and an undersized limit gets the CVM OOM-killed by the host instead of rejected.
+    coco-resource-default: "true"
   annotations:
     io.katacontainers.config.hypervisor.default_memory: "2048"   # MiB CVM RAM. FILL per workload.
     # FILL: paste the output of `scripts/encode-initdata.sh encode initdata.artifactory.filled.toml`

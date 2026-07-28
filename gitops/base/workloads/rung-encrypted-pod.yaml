@@ -9,6 +9,10 @@ kind: Pod
 metadata:
   name: rung-encrypted
   namespace: default
+  labels:
+    # Gatekeeper CoCo memory-guard selector (#68) — see gitops/base/workloads/rung-a-secret-pod.yaml.
+    # Required on every kata-cc pod or the memory floor does not apply to it.
+    coco-resource-default: "true"
   annotations:
     io.katacontainers.config.hypervisor.default_memory: "2048"
     # io.katacontainers.config.hypervisor.cc_init_data: <rendered by scripts/apply-rung-encrypted.sh>
