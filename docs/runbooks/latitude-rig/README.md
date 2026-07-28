@@ -32,10 +32,13 @@ OfflineStore must be re-collected for the new node's chip.
   VLAN assignment `vnasg_mMGO022xP0Aln`. IPMI credentials are minted on demand into the
   **gitignored** `infra/latitude/IPMI-ACCESS.md` (never committed; token expires ~12h) via
   `POST /servers/<id>/remote_access`.
-  **Rung-0 state: NOT live — SEV-SNP BIOS is OFF on this unit** (`ccp … SEV: memory encryption
-  not enabled by BIOS`, `sev_snp=N`, no `/dev/sev`; kernel/CONFIG/module checks all PASS).
-  Awaiting the hands-on BIOS step. Note this settles the "does BIOS persist per unit?" question
-  the only way that is safe: **by measuring, not assuming** — this draw came up reset.
+  **Rung-0: PASS — SEV-SNP host LIVE (2026-07-28, all 8 checks)**. BIOS set by hand via IPMI, then
+  proven over SSH: `SEV-SNP: RMP table physical range [0x77300000-0x978fffff]`,
+  `ccp … SEV-SNP API:1.55 build:36`, `kvm_amd: SEV enabled (ASIDs 100 - 1006)` (confirms the ASID
+  Space Limit of 100 took), `kvm_amd: SEV-SNP enabled`, `/dev/sev` present. Before the change the
+  same script reported `SEV: memory encryption not enabled by BIOS` / `sev_snp=N` — so this draw
+  came up **reset**, settling the "does BIOS persist per unit?" question the only safe way: **by
+  measuring, not assuming**. Exact menu paths + screens: `docs/notes/latitude-bios/README.md`.
 - **SSH:** `rocky@64.34.90.7`. The Latitude key `coco-rig` (`ssh_PVwea4BBRNB9O`) corresponds to
   the local private key **`~/.ssh/id_ed25519`** — verified 2026-07-28 by comparing the registered
   public key material against `~/.ssh/id_ed25519.pub` via `GET /ssh_keys`. (A `~/.ssh/id_ed25519.wsl`
