@@ -1,23 +1,27 @@
 ---
 leave-behind: v1
 state-scope: latitude-rig
-status: current
+status: destroyed
 ---
 
 # Latitude rig — live infrastructure state (leave-behind)
 
-The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-29 is LIVE: air-gapped SNO 4.20.18 on
-a SEV-SNP host, brought up fully HANDS-OFF — zero human intervention.** clusterversion
-Available=True/Progressing=False, `sno-coco-node` Ready, **34/34 ClusterOperators Available, 0
-degraded**, SEV-SNP live on RHCOS, boot endpoint closed. No BIOS step was needed: this draw
-(`sv_BoQ45AJw3aMYA`) **retained** its SEV-SNP settings from the 2026-07-22 cycle, whereas the
-2026-07-28 draw came up reset — so BIOS persistence per physical unit is real but NOT dependable.
-**Always measure with rung-0; never assume in either direction.**
+The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-29 reached the FULL CoCo stack, then
+was DESTROYED on user order** (node `sv_BoQ45AJw3aMYA` + bastion `sv_6B9VaL4lEa7vr`; verified 0
+servers and 0 virtual networks remain, both tfstates empty, billing stopped).
 
-Netboot 12:55:07Z -> live env 12:59:03Z -> bootstrap API 13:05:05Z -> disk reboot 13:07:15Z ->
-production API 13:13:17Z -> **34/34 at 13:46:26Z**. Next: the CoCo operator stack (the mirror
-cluster-resources are now applied automatically, so `install-coco-operators` no longer stalls),
-`collect-vcek` **before** `deploy-trustee` (#75), then the rungs.
+Peak state, brought up **fully hands-off — zero human intervention**: air-gapped SNO 4.20.18,
+34/34 ClusterOperators Available, SEV-SNP live on RHCOS, then Phase 4 (NFD / cert-manager /
+OSC 1.12.1 / **trustee-operator v1.1.0** — the #67 pins held, so none of the #65 v1.2.1 breakage
+recurred), VCEK OfflineStore collected, Trustee KBS up, and **rung-a GREEN**.
+
+No BIOS step was needed: this draw (`sv_BoQ45AJw3aMYA`) **retained** its SEV-SNP settings from the
+2026-07-22 cycle, whereas the 2026-07-28 draw came up reset. BIOS persistence per physical unit is
+real but NOT dependable — **always measure with rung-0, never assume in either direction**.
+
+Also run this cycle: a certificate-chain experiment for the customer's stuck workload. Findings and
+the three harness traps that invalidated its live matrix are in
+`docs/notes/extra-root-certificates-chain.md`; the source-level answer is settled there.
 
 ## Operability
 
