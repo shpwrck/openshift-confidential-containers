@@ -160,6 +160,13 @@ EOF
 		# plain (non-CoCo) workload. With no CVM there is no attestation-agent / CDH, so the attestation
 		# gate cannot fetch the KBS resource and the secret is withheld (fail-closed).
 		grep -v 'runtimeClassName:' "$out" > "$out.noconf" && mv "$out.noconf" "$out"
+		# ...and drop the CoCo memory-guard label with it (#68). This pod is deliberately NOT a
+		# confidential workload, so it must not claim the CVM memory contract that label asserts.
+		# Strategic-merge null DELETES the key (leaving `labels: {}`), whereas grepping the line out
+		# would leave a dangling `labels:` mapping that parses as null.
+		oc patch --local -f "$out" --type=strategic \
+			-p '{"metadata":{"labels":{"coco-resource-default":null}}}' -o yaml > "$out.nolabel" &&
+			mv "$out.nolabel" "$out"
 	fi
 }
 

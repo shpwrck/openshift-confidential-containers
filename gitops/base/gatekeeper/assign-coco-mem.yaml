@@ -7,6 +7,11 @@
 #  - Gatekeeper `match` cannot select on spec.runtimeClassName (no arbitrary field-value match),
 #    so CoCo pods are targeted by a LABEL (coco-resource-default: "true") — apply it via the
 #    workload's pod template, or scope by a confidential namespace via match.namespaces instead.
+#    WHO SETS IT (#68): gitops/base/workloads/*.yaml and docs/templates/customer-artifactory/,
+#    inherited by the rung scripts that render from those bases via `oc patch --local`.
+#    scripts/check-coco-workload-labels.sh (in `make lint`) fails the build if a shipped CoCo
+#    manifest drops it. Between this policy landing and #68 NOTHING set the label, so both halves
+#    of the guard matched zero pods and were inert — keep the label and the gate together.
 #  - Assign sets a STATIC value; it cannot compute limit = <default_memory annotation> + 256Mi
 #    (no arithmetic / no cross-field reference). So this is a sane FLOOR for the default 2048Mi
 #    CVM (2048+256=2304Mi). Per-pod correctness for larger CVMs needs a paired VALIDATING

@@ -236,7 +236,8 @@ The pull succeeded; the failure is *after* stage 9. Four sub-causes:
   `Scheduled`/`AddedInterface` — the host journal leads the events by minutes. (Note: the Gatekeeper
   memory floor only matches pods labeled `coco-resource-default: "true"`, and its mutation
   only fills MISSING limits — an unlabeled pod or an explicit undersized value sails through;
-  don't assume admission saves you. See §9.)
+  don't assume admission saves you. The repo's own workloads now carry that label and a lint gate
+  keeps them carrying it (#68), but a **hand-authored** pod is still on you. See §9.)
 - **Guest tmpfs exhausted mid-unpack** — in-guest pull unpacks under `/run` inside the CVM, a
   tmpfs bounded by guest RAM: the registry log shows every blob 200 yet the pod dies;
   in-guest `df -h /run` is full / journal shows ENOSPC or a guest-side OOM → raise
@@ -615,7 +616,11 @@ inside the air gap — looks like branch 1, so confirm the remap targets a **loc
   - It matches **only pods labeled `coco-resource-default: "true"`** (Gatekeeper cannot match
     on `runtimeClassName`, so the label is the selector) — an unlabeled `kata-cc` pod bypasses
     BOTH the mutation and the validation entirely (✅ observed: an unlabeled pod with an
-    undersized limit sailed through to the host OOM path).
+    undersized limit sailed through to the host OOM path). Until #68 **nothing in the repo set
+    that label**, so the guard was inert everywhere; `gitops/base/workloads/` and the rung
+    scripts now set it, and `scripts/check-coco-workload-labels.sh` (wired into `make lint`)
+    fails the build if a shipped CoCo manifest loses it. **A pod you write yourself still needs
+    the label** — that obligation is the design, not an oversight.
   - The Assign only **fills a missing** limit (`pathTests: MustNotExist`) — it never corrects
     an explicit undersized value; that's the validating constraint's job, on labeled pods.
   - `enforcementAction: deny` returns the denial **to the API caller** — `oc apply` output for

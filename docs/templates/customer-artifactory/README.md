@@ -87,6 +87,11 @@ rung-a smoke pod for you.
       lives in an internal resolver).
 - [ ] Timeouts raised: kata `create_container_timeout=600`, kubelet `runtimeRequestTimeout=20m`.
 - [ ] Pod memory limit ≥ `default_memory` + ~256Mi (else QEMU OOM → `DeadlineExceeded`).
+- [ ] **Every CoCo pod carries `metadata.labels.coco-resource-default: "true"`** (#68). This is the
+      selector the Gatekeeper memory guard matches on — Gatekeeper cannot match on
+      `runtimeClassName`. Without it the guard does not apply to your pod at all, and the memory
+      rule on the line above degrades from *enforced at admission* to *discovered via the host OOM
+      killer*. It is part of the workload contract, not boilerplate.
 - [ ] NFD labeled the node `amd.feature.node.kubernetes.io/snp=true` and `kata-cc` handler = `kata-snp`.
 
 ## Verify
