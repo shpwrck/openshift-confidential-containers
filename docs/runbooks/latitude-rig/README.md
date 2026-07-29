@@ -6,10 +6,12 @@ status: current
 
 # Latitude rig — live infrastructure state (leave-behind)
 
-The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-28 is IN PROGRESS**: bastion and node
-are both applied and Phase A is complete; the rig is **stopped at the hands-on SEV-SNP BIOS step**,
-which the rung-0 gate confirms is required on this unit. The previous cycle (2026-07-22) was
-destroyed the same day; its record is preserved in *Decision log → History*.
+The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-28: air-gapped SNO 4.20.18 is LIVE on
+a SEV-SNP host.** clusterversion Available=True/Progressing=False, `sno-coco-node` Ready
+(control-plane,master,worker), **34/34 ClusterOperators Available, none Degraded**, rung-0 re-proven
+on RHCOS after the netboot, boot endpoint closed. Next: Phase 3.5 cluster-resources (#74) then the
+CoCo operator stack. The previous cycle (2026-07-22) was destroyed the same day; its record is
+preserved in *Decision log → History*.
 
 This cycle is a true from-zero rebuild: the destroyed bastion took the mirror cache, so the
 oc-mirror push re-runs under the OSC 1.12.x / Trustee 1.1.x pins from PR #67, and the VCEK
@@ -174,10 +176,21 @@ IPMI/KVM — recipe printed by the playbook pause and in `docs/notes/latitude-sn
 gotcha is **SEV-SNP Support = Enabled, not Auto** (Auto silently leaves it off and produces the
 misleading "IOMMU SNP feature not enabled" message — do not chase IOMMU). After bring-up, rungs
 and negative tests run from the Makefile (`verify-snp-host`, `apply-*`, `negative-test`,
-`repro-loop`). Current position in the sequence: **bastion applied + Phase A COMPLETE (52 ok / 27 changed /
-0 failed; mirror healthy, `OCMIRROR_DONE` set, cluster-resources emitted); node applied and
-SSH-reachable; STOPPED at the hands-on SEV-SNP BIOS step, which rung-0 confirms is required on
-this unit.** Next after BIOS: re-run `host-snp-check.sh` (must be all PASS), then Phase B+C in a
-real TTY, then `--tags pxe-stop`. Remember #74 — apply
-`/opt/mirror/ocm-workspace/working-dir/cluster-resources/` by hand before
-`make install-coco-operators`, or it stalls the full 1800s on a missing CatalogSource.
+`repro-loop`). Current position: **bring-up COMPLETE through the SNO install.** Bastion prepped, node
+installed, rung-0 re-proven on RHCOS, boot endpoint closed (`--tags pxe-stop`, verified http=000).
+Cluster access from the bastion: `sudo env KUBECONFIG=/opt/install/cluster-assets/auth/kubeconfig
+oc get co`. Next: apply `/opt/mirror/ocm-workspace/working-dir/cluster-resources/` **by hand**
+(#74 — nothing in the automation does it, and `make install-coco-operators` otherwise stalls the
+full 1800s on a missing CatalogSource), then the CoCo operator stack, `collect-vcek` **before**
+`deploy-trustee` (#75), and the rungs.
+
+**Two live-found blockers this cycle, both now fixed and both worth knowing about:**
+- **#78 — the public NIC must be DECLARED.** `discover.yml` only captured the `internal`-role MAC,
+  so the `external` NIC was absent from `networkConfig`, therefore unmanaged, therefore DHCP'd a
+  public resolver (8.8.8.8) that outranked the static `dns-resolver`. An undeclared interface is
+  not an inert one.
+- **#79 — dnsmasq lost a race and stayed dead for 5h while Phase A reported success.** It bound
+  `eno2.2164` before the VLAN child existed, exited `2/INVALIDARGUMENT`, and never retried. A live
+  drop-in (`/etc/systemd/system/dnsmasq.service.d/10-wait-for-vlan.conf`) now adds
+  `Restart=on-failure`. **After any bastion reboot, verify resolution rather than unit state:**
+  `getent hosts mirror.rig.local` — `systemctl is-active` is not proof it answers on the VLAN.
