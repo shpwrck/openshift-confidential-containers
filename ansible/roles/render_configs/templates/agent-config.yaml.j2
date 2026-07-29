@@ -31,6 +31,26 @@ hosts:
             enabled: false
           ipv6:
             enabled: false
+{% if m.external_if is defined and m.external_if %}
+        {{ '#' }} PUBLIC NIC — held DOWN on purpose (#78). Leaving it undeclared does NOT leave it
+        {{ '#' }} alone: an interface absent from networkConfig is unmanaged in the agent live
+        {{ '#' }} environment, so NetworkManager DHCPs it, the provider's lease supplies a public
+        {{ '#' }} resolver (8.8.8.8), and that outranks the static dns-resolver below. The node then
+        {{ '#' }} cannot resolve {{ mirror_dns_name }}, the release image is unreachable, and the
+        {{ '#' }} install stalls at "Cannot access Rendezvous Host" with every port refused.
+        - name: {{ m.external_if }}
+          type: ethernet
+          state: down
+          ipv4:
+            enabled: false
+            dhcp: false
+            auto-dns: false
+          ipv6:
+            enabled: false
+            dhcp: false
+            autoconf: false
+            auto-dns: false
+{% endif %}
         - name: {{ m.parent_if }}.{{ vlan_vid }}
           type: vlan
           state: up

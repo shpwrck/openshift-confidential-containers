@@ -148,6 +148,14 @@ machines:
     vlan_ip: "{{ node_vlan_ip }}"
     # Genoa m4-metal-medium VLAN parent (internal/PXE NIC). VERIFY on metal; overridable.
     parent_if: "{{ node_parent_if | default('enp195s0f1') }}"
+    # PUBLIC (external-role) NIC. It carries NO cluster traffic, but it MUST still be declared
+    # (#78): an interface absent from networkConfig is unmanaged in the agent live environment,
+    # so NetworkManager DHCPs it, the provider hands out a public resolver (8.8.8.8), and that
+    # beats the static dns-resolver — mirror.rig.local then never resolves and the air-gapped
+    # install dies at "Cannot access Rendezvous Host". Declared here so it can be held DOWN.
+    external_if: "{{ node_external_if | default('enp195s0f0') }}"
+    # external_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
+    external_mac: "{{ node_external_mac | default('') }}"
     root_device: "{{ node_root_device | default('/dev/nvme0n1') }}"
     # parent_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
     parent_mac: "{{ node_parent_mac | default('') }}"

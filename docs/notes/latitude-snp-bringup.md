@@ -18,7 +18,12 @@ Two pages:
 - `SEV-ES ASID Space Limit` → **100** (was 1)
 - `SEV Control` → Enabled (already was)
 
-**Main → North Bridge Configuration:**
+**Advanced → NB Configuration:**  ⚠️ path corrected 2026-07-28 — this is under **Advanced**, not
+`Main`, and the menu entry reads `NB Configuration` (the page title renders "North Bridge
+Configuration"). Verified live on the node's Supermicro **H13SST-G** / BIOS 3.0 / AMI 2.22.1285.
+See `docs/notes/latitude-bios/README.md` for the captured screens, the exact factory values, and
+the wrong-machine tell (the `m4-metal-small` BASTION is an AM5 board with **no** SEV/SNP settings
+at all — if you cannot find them, check which server your IPMI session is on).
 - ⭐ `SEV-SNP Support` → **Enabled** ← **THE actual fix.** On `Auto` it stays OFF.
 - `IOMMU` → Enabled (Auto already = Enabled; not the blocker despite the error wording)
 

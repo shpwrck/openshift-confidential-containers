@@ -40,7 +40,13 @@
       register: lat_servers
       when: item.server_id is not match('REPLACE_.*')
 
-    - name: Extract the internal-role (PXE) interface MAC per machine
+    - name: Extract the internal-role (PXE) and external-role (public) interface MACs per machine
+      # The EXTERNAL mac matters as much as the internal one (#78): the public NIC must be
+      # declared in agent-config so it can be held down, otherwise it is unmanaged, DHCPs, and
+      # its provider-supplied resolver (8.8.8.8) outranks the static dns-resolver — which breaks
+      # mirror.rig.local resolution and stalls the whole air-gapped install. `| first` on an
+      # empty list yields '' rather than failing, so a plan that exposes no external NIC simply
+      # renders no stanza (the template guards on a non-empty value).
       ansible.builtin.set_fact:
         discovered_machines: >-
           {{ discovered_machines + [
@@ -53,6 +59,11 @@
                    (item.1.json.data.attributes.specs.nics | default([]))
                    | selectattr('role', 'defined') | selectattr('role', 'equalto', 'internal')
                    | map(attribute='mac_address') | list | first, true
+                 ),
+                 'external_mac': (
+                   (item.1.json.data.attributes.interfaces | default([]))
+                   | selectattr('role', 'equalto', 'external')
+                   | map(attribute='mac_address') | select('string') | list | first | default('')
                  )
                })
              ] }}
@@ -95,6 +106,8 @@
               server_id: "{{ m.server_id }}"
               vlan_ip: "{{ m.vlan_ip }}"
               parent_if: "{{ m.parent_if }}"
+              external_if: "{{ m.external_if | default('') }}"
               root_device: "{{ m.root_device }}"
               parent_mac: "{{ m.parent_mac }}"
+              external_mac: "{{ m.external_mac | default('') }}"
           {% endfor %}

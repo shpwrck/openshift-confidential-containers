@@ -21,6 +21,46 @@
   gather_facts: true
   vars_files:
     - ../group_vars/all.yml
+  # Gate the whole phase on the bastion's first-boot mirror bootstrap (#71). `terraform apply`
+  # returns as soon as Latitude reports the server `on`, but cloud-init still has to dnf-install
+  # packages, pull the ~GB mirror-registry tarball and install quay. mirror_tools consumes
+  # {{ mirror_ca_path }} and {{ mirror_password_path }}, which cloud-init writes at the very END
+  # of that chain, one line before it stamps MIRROR_READY. Prior cycles never hit this because
+  # they reused an already-bootstrapped bastion; it bites every from-zero rebuild.
+  # These are pre_tasks, not a role, so they run BEFORE bastion_egress — which otherwise fights
+  # cloud-init for the dnf lock and rewrites the default route while the tarball is still in flight.
+  pre_tasks:
+    - name: Wait for the bastion to accept SSH (fresh cloud-init boot)
+      ansible.builtin.wait_for_connection:
+        timeout: "{{ bastion_ssh_wait_timeout | default(900) }}"
+      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+
+    - name: Wait for the first-boot mirror bootstrap to settle
+      ansible.builtin.shell: |
+        set -o pipefail
+        if [ -f {{ mirror_root }}/MIRROR_FAILED ]; then echo FAILED
+        elif [ -f {{ mirror_root }}/MIRROR_READY ]; then echo READY
+        else echo PENDING; fi
+      args:
+        executable: /bin/bash
+      register: mirror_bootstrap_state
+      changed_when: false
+      retries: "{{ mirror_bootstrap_retries | default(160) }}"
+      delay: "{{ mirror_bootstrap_delay | default(15) }}"
+      until: mirror_bootstrap_state.stdout != 'PENDING'
+      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+
+    - name: Fail closed if the mirror bootstrap did not succeed
+      ansible.builtin.assert:
+        that: mirror_bootstrap_state.stdout == 'READY'
+        fail_msg: >-
+          Bastion mirror bootstrap did not complete: {{ mirror_root }}/MIRROR_FAILED is present
+          (or the marker never appeared within
+          {{ (mirror_bootstrap_retries | default(160) | int) * (mirror_bootstrap_delay | default(15) | int) }}s).
+          cloud-init does NOT re-run on its own — inspect /var/log/mirror-bootstrap.log on the
+          bastion, then re-run /usr/local/bin/bootstrap-mirror.sh before retrying this phase.
+        success_msg: "mirror bootstrap READY — safe to prep the bastion"
+      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
   roles:
     - role: bastion_egress   # fix #1 — drop v6 default, clamp MTU 1400 + SYN MSS 1360. FIRST.
       tags: [egress, bastion-prep]
@@ -63,8 +103,29 @@
 
           Re-provisioning resets BIOS to defaults — re-apply this recipe every time.
 
-          Press ENTER once the BIOS is set and saved to continue to discover + install.
-          (Ctrl-C then 'A' to abort.)
+          Type SNP-SET (then ENTER) once the BIOS is set and saved, to continue to
+          discover + install. (Ctrl-C then 'A' to abort.)
+      register: bios_ack
+      when: not (skip_bios_pause | default(false) | bool)
+
+    # The pause above is NOT a gate on its own (#72): ansible.builtin.pause WARNS AND FALLS
+    # THROUGH when stdin is not a TTY, so under nohup / CI / `make bringup-sno-airgapped | tee`
+    # — i.e. the "hands-off" path this repo advertises — the one hands-on hardware step was
+    # silently skipped and the node netbooted with SEV-SNP off. Nothing downstream noticed: no
+    # task in Phase B/C re-checks /dev/sev, so the result was a healthy-looking cluster that
+    # simply was not confidential, with the first evidence a rung-0 failure hours later.
+    # A typed token, not ENTER, so a stray newline on a half-attached stdin cannot satisfy it.
+    - name: Fail closed if the SEV-SNP BIOS gate was not acknowledged
+      ansible.builtin.assert:
+        that: (bios_ack.user_input | default('') | trim) == 'SNP-SET'
+        fail_msg: >-
+          SEV-SNP BIOS gate NOT acknowledged — refusing to netboot. This is what a
+          non-interactive run looks like (ansible.builtin.pause cannot prompt without a TTY);
+          re-run this phase from a real terminal. If the BIOS is already set and rung-0 has
+          been verified green on this node, pass -e skip_bios_pause=true to proceed
+          deliberately. Never skip it merely to get past this message: the install will
+          succeed and the cluster will not be confidential.
+        success_msg: "SEV-SNP BIOS acknowledged — proceeding to discover + install"
       when: not (skip_bios_pause | default(false) | bool)
 
 # =====================================================================================
