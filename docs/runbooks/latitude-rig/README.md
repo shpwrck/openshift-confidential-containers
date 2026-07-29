@@ -1,24 +1,23 @@
 ---
 leave-behind: v1
 state-scope: latitude-rig
-status: destroyed
+status: current
 ---
 
 # Latitude rig — live infrastructure state (leave-behind)
 
-The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-28 reached air-gapped SNO 4.20.18 on a
-live SEV-SNP host, then was DESTROYED the same day on user order** (node `sv_ZWr75ZP9v0A91` +
-bastion `sv_6B9VaL4lEa7vr`, both `terraform destroy`ed 2026-07-29 ~02:5x UTC; verified 0 servers and
-0 virtual networks remain in the project, both tfstates empty, billing stopped). Peak state proven:
-clusterversion Available=True/Progressing=False, `sno-coco-node` Ready
-(control-plane,master,worker), **34/34 ClusterOperators Available, none Degraded**, rung-0 re-proven
-on RHCOS after the netboot, boot endpoint closed. **The bastion took the mirror cache with it — the
-next cycle re-runs the full oc-mirror push.** Everything below is the historical record + re-run
-recipe for the NEXT cycle. The 2026-07-22 cycle's record is preserved in *Decision log → History*.
+The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-29 is LIVE: air-gapped SNO 4.20.18 on
+a SEV-SNP host, brought up fully HANDS-OFF — zero human intervention.** clusterversion
+Available=True/Progressing=False, `sno-coco-node` Ready, **34/34 ClusterOperators Available, 0
+degraded**, SEV-SNP live on RHCOS, boot endpoint closed. No BIOS step was needed: this draw
+(`sv_BoQ45AJw3aMYA`) **retained** its SEV-SNP settings from the 2026-07-22 cycle, whereas the
+2026-07-28 draw came up reset — so BIOS persistence per physical unit is real but NOT dependable.
+**Always measure with rung-0; never assume in either direction.**
 
-This cycle is a true from-zero rebuild: the destroyed bastion took the mirror cache, so the
-oc-mirror push re-runs under the OSC 1.12.x / Trustee 1.1.x pins from PR #67, and the VCEK
-OfflineStore must be re-collected for the new node's chip.
+Netboot 12:55:07Z -> live env 12:59:03Z -> bootstrap API 13:05:05Z -> disk reboot 13:07:15Z ->
+production API 13:13:17Z -> **34/34 at 13:46:26Z**. Next: the CoCo operator stack (the mirror
+cluster-resources are now applied automatically, so `install-coco-operators` no longer stalls),
+`collect-vcek` **before** `deploy-trustee` (#75), then the rungs.
 
 ## Operability
 
