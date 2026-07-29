@@ -1,17 +1,20 @@
 ---
 leave-behind: v1
 state-scope: latitude-rig
-status: current
+status: destroyed
 ---
 
 # Latitude rig — live infrastructure state (leave-behind)
 
-The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-28: air-gapped SNO 4.20.18 is LIVE on
-a SEV-SNP host.** clusterversion Available=True/Progressing=False, `sno-coco-node` Ready
+The disposable CoCo test rig on Latitude.sh. **Cycle 2026-07-28 reached air-gapped SNO 4.20.18 on a
+live SEV-SNP host, then was DESTROYED the same day on user order** (node `sv_ZWr75ZP9v0A91` +
+bastion `sv_6B9VaL4lEa7vr`, both `terraform destroy`ed 2026-07-29 ~02:5x UTC; verified 0 servers and
+0 virtual networks remain in the project, both tfstates empty, billing stopped). Peak state proven:
+clusterversion Available=True/Progressing=False, `sno-coco-node` Ready
 (control-plane,master,worker), **34/34 ClusterOperators Available, none Degraded**, rung-0 re-proven
-on RHCOS after the netboot, boot endpoint closed. Next: Phase 3.5 cluster-resources (#74) then the
-CoCo operator stack. The previous cycle (2026-07-22) was destroyed the same day; its record is
-preserved in *Decision log → History*.
+on RHCOS after the netboot, boot endpoint closed. **The bastion took the mirror cache with it — the
+next cycle re-runs the full oc-mirror push.** Everything below is the historical record + re-run
+recipe for the NEXT cycle. The 2026-07-22 cycle's record is preserved in *Decision log → History*.
 
 This cycle is a true from-zero rebuild: the destroyed bastion took the mirror cache, so the
 oc-mirror push re-runs under the OSC 1.12.x / Trustee 1.1.x pins from PR #67, and the VCEK
