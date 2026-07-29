@@ -95,16 +95,24 @@
 # operator, so a from-zero run aborted HERE — after the BIOS gate and the full mirror push. The
 # key that should go into the node is the one this run is already authenticating with, so derive
 # it from the controller's own private key rather than making the operator scp it by hand.
+# NOTE: do NOT derive this from `ansible_ssh_private_key_file`. The inventory defaults that var
+# to `omit`, which renders as the literal string "<<Omit>>" rather than an empty value, and
+# `--private-key` on the command line does not populate it either — so a lookup built from it
+# tries to read "<<Omit>>.pub" and the play dies. Use an explicit, overridable source path and
+# check that it actually exists on the CONTROLLER before copying.
+- name: Look for a controller-side public key to stage (#73)
+  ansible.builtin.stat:
+    path: "{{ node_ssh_pubkey_src }}"
+  delegate_to: localhost
+  become: false
+  register: render_pubkey_src
+
 - name: Stage the node SSH public key on the bastion if it is missing (#73)
   ansible.builtin.copy:
-    content: "{{ lookup('file', (ansible_ssh_private_key_file | default(ansible_private_key_file)) ~ '.pub') }}\n"
+    src: "{{ node_ssh_pubkey_src }}"
     dest: "{{ node_ssh_pubkey_path }}"
     mode: "0644"
-  when:
-    - (ansible_ssh_private_key_file | default(ansible_private_key_file, true)) is truthy
-    - not (node_ssh_pubkey_staged | default(false) | bool)
-  failed_when: false
-  register: render_pubkey_staged
+  when: render_pubkey_src.stat.exists
 
 - name: Confirm the node SSH public key is present before slurping it
   ansible.builtin.stat:

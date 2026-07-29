@@ -73,6 +73,12 @@ pull_secret_remote_path: "{{ ansible_env.HOME }}/pull-secret.json"
 # SSH public key embedded in install-config sshKey (for core@ node debugging). Already on
 # the bastion per the proven script (~/coco-rig.pub).
 node_ssh_pubkey_path: "{{ ansible_env.HOME }}/coco-rig.pub"
+# CONTROLLER-side source for the above (#73). Nothing used to create the bastion copy, so a
+# from-zero run aborted in render_configs AFTER the BIOS gate and the full mirror push. Staged
+# automatically from here when present; override with -e node_ssh_pubkey_src=<path>.
+# Deliberately NOT derived from ansible_ssh_private_key_file: the inventory defaults that to
+# `omit`, which renders as the literal "<<Omit>>", and --private-key does not populate it.
+node_ssh_pubkey_src: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
 
 # ---- Tool download source (mirror.openshift.com clients) -------------------
 ocp_clients_base: "https://mirror.openshift.com/pub/openshift-v4/amd64/clients"
