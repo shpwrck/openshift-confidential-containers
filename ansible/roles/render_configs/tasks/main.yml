@@ -91,6 +91,44 @@
   become: true
   register: render_mirror_ca
 
+# Nothing used to create this file (#73): terraform, cloud-init, and every role left it to the
+# operator, so a from-zero run aborted HERE — after the BIOS gate and the full mirror push. The
+# key that should go into the node is the one this run is already authenticating with, so derive
+# it from the controller's own private key rather than making the operator scp it by hand.
+# NOTE: do NOT derive this from `ansible_ssh_private_key_file`. The inventory defaults that var
+# to `omit`, which renders as the literal string "<<Omit>>" rather than an empty value, and
+# `--private-key` on the command line does not populate it either — so a lookup built from it
+# tries to read "<<Omit>>.pub" and the play dies. Use an explicit, overridable source path and
+# check that it actually exists on the CONTROLLER before copying.
+- name: Look for a controller-side public key to stage (#73)
+  ansible.builtin.stat:
+    path: "{{ node_ssh_pubkey_src }}"
+  delegate_to: localhost
+  become: false
+  register: render_pubkey_src
+
+- name: Stage the node SSH public key on the bastion if it is missing (#73)
+  ansible.builtin.copy:
+    src: "{{ node_ssh_pubkey_src }}"
+    dest: "{{ node_ssh_pubkey_path }}"
+    mode: "0644"
+  when: render_pubkey_src.stat.exists
+
+- name: Confirm the node SSH public key is present before slurping it
+  ansible.builtin.stat:
+    path: "{{ node_ssh_pubkey_path }}"
+  register: render_pubkey_stat
+
+- name: Fail with the actual remedy if the node SSH public key is still missing
+  ansible.builtin.assert:
+    that: render_pubkey_stat.stat.exists
+    fail_msg: >-
+      {{ node_ssh_pubkey_path }} is missing on the bastion and could not be derived from the
+      controller's --private-key (#73). This is the key baked into the install config, so the
+      install cannot proceed without it. Stage it explicitly:
+      scp -i <key> <key>.pub {{ ansible_user | default('rocky') }}@<bastion>:{{ node_ssh_pubkey_path | basename }}
+    success_msg: "node SSH public key present at {{ node_ssh_pubkey_path }}"
+
 - name: Read the node SSH public key
   ansible.builtin.slurp:
     src: "{{ node_ssh_pubkey_path }}"
