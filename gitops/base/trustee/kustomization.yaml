@@ -6,6 +6,12 @@ kind: Kustomization
 resources:
   - issuers.yaml
   - kbs-configmaps.yaml
-  - kbsconfig.yaml
+# kbsconfig.template.yaml is intentionally NOT listed (#75): it is a TEMPLATE, not an appliable
+# manifest — it declares `secretName: vcek-snp-0` and a literal `<HWID-LOWERCASE-128-HEX>`
+# mountPath that only scripts/apply-trustee.sh can fill in (the real secret name and the
+# lowercase 128-hex HWID are hardware-derived). Applying it verbatim yields a KBS stuck in
+# ContainerCreating on "secret vcek-snp-0 not found", which reads as an attestation failure and
+# wastes a long time. Use `make deploy-trustee` (apply-trustee.sh) instead.
+#
 # secret-stubs.example.yaml is intentionally NOT listed: it documents the out-of-band Secrets
 # (kbs-auth-public-key, attestation-cert, regcred, vcek-certs, sample). Never commit real keys.

@@ -14,6 +14,9 @@ bash ./scripts/check-endpoint-parameterization.sh
 echo "== coco workload-label gate (#68) =="
 bash ./scripts/check-coco-workload-labels.sh
 
+echo "== coco memory-floor rego tests (#70) =="
+bash ./scripts/test-coco-mem-rego.sh
+
 overlays=$(find gitops/overlays -maxdepth 1 -mindepth 1 -type d 2>/dev/null || true)
 [ -n "${overlays}" ] || { echo "no overlays yet"; exit 0; }
 

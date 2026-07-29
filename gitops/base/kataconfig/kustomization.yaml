@@ -5,3 +5,11 @@ kind: Kustomization
 resources:
   - feature-gates.yaml   # osc-feature-gates ConfigMap — enables CoCo; apply BEFORE the KataConfig CR.
   - kataconfig.yaml
+
+# ArgoCD sync-wave (#75): this tree mixes operator Subscriptions with CRs of the CRDs those
+# operators install, so an unordered apply races and fails "no matches for kind". Waves order
+# the ARGOCD path (the customer env). The rig's `oc apply -k` has no such ordering — use
+# scripts/apply-sno.sh, which stages the applies explicitly.
+# wave 2: KataConfig — needs the OSC CRDs from wave 0; REBOOTS the node
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "2"
