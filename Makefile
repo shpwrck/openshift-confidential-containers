@@ -185,8 +185,18 @@ lint: ## kustomize build + kubeconform + conftest over all overlays
 
 ## --- Apply (rig) ---------------------------------------------------------
 .PHONY: apply-overlay
-apply-overlay: ## oc apply -k the selected OVERLAY (default: sno-workers)
-	oc apply -k gitops/overlays/$(OVERLAY)
+apply-overlay: ## oc apply -k the selected OVERLAY (sno-workers delegates to the staged installer)
+	@# A flat `oc apply -k` cannot work for sno-workers on a fresh cluster (#75): the overlay mixes
+	@# operator Subscriptions with CRs of the CRDs those operators install, so it races and fails
+	@# "no matches for kind" x5. ArgoCD honours the sync-wave annotations; plain oc does not. Send
+	@# the operator there instead of letting the advertised target fail.
+	@if [ "$(OVERLAY)" = "sno-workers" ]; then \
+		echo "sno-workers must be applied in stages (CRDs before CRs) — delegating to scripts/apply-sno.sh."; \
+		echo "  (ArgoCD can apply the overlay directly; it honours the sync-wave annotations.)"; \
+		CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/apply-sno.sh; \
+	else \
+		oc apply -k gitops/overlays/$(OVERLAY); \
+	fi
 
 .PHONY: install-coco-operators
 install-coco-operators: ## Phase 4: operators (NFD->cert-manager->OSC->Trustee) + KataConfig (reboots node)

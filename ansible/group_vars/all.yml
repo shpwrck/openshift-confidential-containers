@@ -69,10 +69,10 @@ local_bin: "/usr/local/bin"
 
 # Where the RH pull-secret already lives on the bastion (scp'd in Phase 0). Used to build
 # the merged /root/.docker/config.json. NEVER committed; lives only on the bastion.
-pull_secret_remote_path: "{{ ansible_env.HOME }}/pull-secret.json"
+pull_secret_remote_path: "{{ ansible_facts['env']['HOME'] }}/pull-secret.json"
 # SSH public key embedded in install-config sshKey (for core@ node debugging). Already on
 # the bastion per the proven script (~/coco-rig.pub).
-node_ssh_pubkey_path: "{{ ansible_env.HOME }}/coco-rig.pub"
+node_ssh_pubkey_path: "{{ ansible_facts['env']['HOME'] }}/coco-rig.pub"
 # CONTROLLER-side source for the above (#73). Nothing used to create the bastion copy, so a
 # from-zero run aborted in render_configs AFTER the BIOS gate and the full mirror push. Staged
 # automatically from here when present; override with -e node_ssh_pubkey_src=<path>.

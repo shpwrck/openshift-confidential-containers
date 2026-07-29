@@ -144,4 +144,8 @@ log "Stage 5: final validation"
 wait_until "SNO baseline final" sno_baseline_ok || { cat /tmp/apply-sno-baseline.log >&2; exit 1; }
 wait_until "kata-cc runtime class final" runtimeclass_present
 echo "SNO CoCo worker-side install OK"
-echo "Next: make deploy-trustee && make run-rung-kbs"
+# collect-vcek MUST precede deploy-trustee (#75): apply-trustee.sh loads the VCEK bundle first
+# and dies without it, so the old hint ("make deploy-trustee && make run-rung-kbs") failed every
+# time it was followed literally.
+echo "Next: make collect-vcek NODE=<node>    # MUST come first — Trustee needs the VCEK bundle"
+echo "Then: make deploy-trustee && make run-rung-kbs"

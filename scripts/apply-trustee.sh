@@ -165,7 +165,7 @@ render_kbsconfig() {
 				printf "%s", extra_block
 			}
 		}
-	' "$REPO_ROOT/gitops/base/trustee/kbsconfig.yaml" > "$out"
+	' "$REPO_ROOT/gitops/base/trustee/kbsconfig.template.yaml" > "$out"
 }
 
 wait_until() {

@@ -6,3 +6,11 @@ kind: Kustomization
 resources:
   - nodefeaturediscovery.yaml
   - amd-snp-rule.yaml
+
+# ArgoCD sync-wave (#75): this tree mixes operator Subscriptions with CRs of the CRDs those
+# operators install, so an unordered apply races and fails "no matches for kind". Waves order
+# the ARGOCD path (the customer env). The rig's `oc apply -k` has no such ordering — use
+# scripts/apply-sno.sh, which stages the applies explicitly.
+# wave 1: NFD instance + TEE NodeFeatureRule — needs the NFD CRDs from wave 0
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "1"
