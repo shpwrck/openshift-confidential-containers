@@ -1,0 +1,29 @@
+# {{ ansible_managed }}
+# systemd drop-in for dnsmasq — issue #79.
+#
+# WHY: cloud-init binds dnsmasq to the VLAN child (written as `interface=` in
+# /etc/dnsmasq.d/rig-iface.conf by setup-rig-vlan.sh). dnsmasq treats an `interface=` it cannot
+# find as a FATAL argument error — it logs "unknown interface <dev>", exits 2/INVALIDARGUMENT,
+# and with no Restart= it stays dead forever.
+#
+# On the rig (2026-07-28) the bastion rebooted and dnsmasq lost the race against the VLAN child
+# coming up. It never retried. `systemctl is-enabled` still reported "enabled", which reads as
+# healthy at a glance, while every air-gapped lookup of the mirror silently failed for hours —
+# the node netbooted, could not resolve the mirror, and the agent installer parked forever with
+# "Cannot access Rendezvous Host".
+#
+# This is a REBOOT hazard, not a first-install one: Phase A brings dnsmasq up correctly (its
+# handler restart succeeds because the VLAN exists by then), and the NEXT reboot is what kills
+# it. Customer bastions reboot.
+[Unit]
+# Do not even attempt to start until the network (and therefore the VLAN child) is up.
+After=network-online.target
+Wants=network-online.target
+# Never stop retrying: an unbounded start-limit window means a slow VLAN cannot permanently
+# wedge name resolution for the entire air gap.
+StartLimitIntervalSec=0
+
+[Service]
+# ...and if it still loses the race, recover instead of latching dead.
+Restart=on-failure
+RestartSec={{ dnsmasq_restart_sec | default('10s') }}

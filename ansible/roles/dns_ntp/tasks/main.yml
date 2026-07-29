@@ -36,6 +36,32 @@
   become: true
   notify: Restart chronyd
 
+- name: Ensure the dnsmasq systemd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/dnsmasq.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Make dnsmasq survive the VLAN race across reboots (#79)
+  ansible.builtin.template:
+    src: dnsmasq-vlan-race.conf.j2
+    dest: /etc/systemd/system/dnsmasq.service.d/10-wait-for-vlan.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart dnsmasq
+
+# `ansible_facts.services` is NOT populated unless service_facts has actually run (the audit
+# caught this: the firewalld task below could never fire, so it silently no-opped every run).
+# Collect them explicitly rather than gating on a fact nobody gathered.
+- name: Collect service facts (needed for the firewalld gate below)
+  ansible.builtin.service_facts:
+  become: true
+
 - name: Open dnsmasq + chrony in firewalld (if active)
   ansible.builtin.command: "{{ item }}"
   become: true
@@ -45,5 +71,39 @@
   loop:
     - firewall-cmd --permanent --add-service=dns --add-service=ntp
     - firewall-cmd --reload
-  when: ansible_facts.services['firewalld.service'] is defined
-        and ansible_facts.services['firewalld.service'].state == 'running'
+  when: (ansible_facts.services['firewalld.service'] | default({})).state | default('') == 'running'
+
+# Flush now so the verification below tests the RUNNING daemon, not the pre-change one.
+- name: Apply pending dnsmasq/chrony restarts before verifying
+  ansible.builtin.meta: flush_handlers
+
+# The whole air gap depends on this one daemon answering. `systemctl is-active` is NOT proof:
+# dnsmasq can be active-but-wrong, and the failure mode is silent (the node simply cannot resolve
+# the mirror and the install parks). Assert on a REAL query against the address the NODE will
+# use, so a broken resolver fails Phase A loudly instead of surfacing an hour later as a
+# mysterious "Cannot access Rendezvous Host" (#79 -> #78 symptom chain).
+- name: Verify the mirror name actually resolves via the bastion VLAN address (#79)
+  ansible.builtin.command:
+    argv:
+      - getent
+      - ahostsv4
+      - "{{ mirror_dns_name }}"
+  become: true
+  register: dnsntp_resolve
+  changed_when: false
+  retries: "{{ dnsmasq_verify_retries | default(12) }}"
+  delay: "{{ dnsmasq_verify_delay | default(5) }}"
+  until: dnsntp_resolve.rc == 0 and bastion_vlan_ip in dnsntp_resolve.stdout
+  failed_when: false
+
+- name: Fail closed if the bastion cannot resolve the mirror name
+  ansible.builtin.assert:
+    that: dnsntp_resolve.rc == 0 and bastion_vlan_ip in dnsntp_resolve.stdout
+    fail_msg: >-
+      {{ mirror_dns_name }} does not resolve to {{ bastion_vlan_ip }} on the bastion, so the
+      air-gapped node will NOT be able to reach the mirror and the agent install will park at
+      "Cannot access Rendezvous Host" with every port refused (#79 -> #78). Check
+      `systemctl status dnsmasq` and `journalctl -u dnsmasq`: an "unknown interface" error means
+      it started before the VLAN child existed. Got rc={{ dnsntp_resolve.rc }},
+      stdout={{ dnsntp_resolve.stdout | default('') | trim }}
+    success_msg: "{{ mirror_dns_name }} resolves to {{ bastion_vlan_ip }} — air-gap name resolution proven"
