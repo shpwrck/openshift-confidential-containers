@@ -23,7 +23,7 @@ shapes, run at different times, and see different inputs:
 
 | Slot (ConfigMap / key) | Evaluated by | Input | Must emit |
 | --- | --- | --- | --- |
-| `attestation-policy` / `default_cpu.rego` | coco-as Ear token broker, at `/attest` | Flat verifier claims (`input.measurement`, `input.init_data`, `input.policy_debug_allowed`, …) + RVPS as `data.reference.<name>` | `trust_claims` (AR4SI tier numbers) |
+| `attestation-policy` / `default_cpu.rego` | coco-as Ear token broker, at `/attest` | Verifier claims nested under the TEE name (`input.snp.measurement`, `input.snp.policy_debug_allowed`, …); only `init_data`/`report_data` are hoisted to top level (`input.init_data`). RVPS via the `query_reference_value("<name>")` rego extension | `trust_claims` (AR4SI tier numbers) |
 | `resource-policy` / `policy.rego` | KBS policy engine, at resource GET | The EAR **token** claims (`input.submods[...]["ear.trustworthiness-vector"]`) | `allow` |
 
 The Ear broker queries the trust-claim rules; the submods policy defines none of
@@ -33,15 +33,30 @@ passed` — evidence and the VCEK OfflineStore were fine; only the policy slot w
 wrong.
 
 Second gap this template closes: with the Ear broker, RVPS reference values only
-matter if the attestation policy explicitly reads `data.reference.<name>`. The
-base (permissive) policy doesn't, so populating `rvps-reference-values` alone
-gates nothing.
+matter if the attestation policy explicitly calls `query_reference_value("<name>")`
+(a rego extension the broker registers, backed by RVPS; returns Null when the
+value is absent — fail-closed). The base (permissive) policy doesn't call it, so
+populating `rvps-reference-values` alone gates nothing.
+
+### Symptom: token issued but everything at the fail-closed default
+
+If the EAR debug log shows the appraisal Contraindicated with the vector stuck at
+exactly the defaults (`executables 33, configuration 36, hardware 97`) even for
+good evidence, the conditional rules never fired — almost always wrong claim
+paths. The broker (`transform_claims` in trustee's `ear_token/broker.rs`) nests
+verifier claims under the TEE name: use `input.snp.measurement`, NOT
+`input.measurement` (flat paths are silently undefined in rego, so the rule body
+just never matches). Only `init_data` and `report_data` sit at the top level. The
+same all-defaults signature also appears when the claim paths are right but RVPS
+has no `snp_launch_measurement` entry — check for the broker's "No reference value
+found for the given id" warning to tell the two apart.
 
 ## Files
 
 - `attestation-policy.rvps.yaml` — appraisal policy: affirms `executables` (tier 3)
-  only when `input.measurement in data.reference.snp_launch_measurement`; defaults
-  fail closed (33/97/36). Also refuses debug-enabled guest policies.
+  only when `input.snp.measurement in query_reference_value("snp_launch_measurement")`
+  (same rule as trustee's upstream `ear_default_policy_cpu.rego` SNP section);
+  defaults fail closed (33/97/36). Also refuses debug-enabled guest policies.
 - `resource-policy.ear-gate.yaml` — the customer's submods policy, in its correct
   slot: releases resources only when hardware/executables/configuration are all in
   the affirming range [2, 31].
