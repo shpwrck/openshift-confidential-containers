@@ -1,0 +1,64 @@
+# Attestation policy (EAR appraisal) — RVPS-gated launch measurement.
+#
+# This is the coco-as side of the RVPS accept/reject gate. The Ear token broker
+# evaluates default_cpu.rego and queries the trust-claim rules; RVPS reference
+# values are exposed to this policy as `data.reference.<name>` (populated from the
+# rvps-reference-values ConfigMap, i.e. `make gen-rvps` / Veritas output). RVPS has
+# NO effect unless this policy references data.reference — the base permissive
+# policy never does, so swapping in this one is what turns RVPS on.
+#
+# Same mount caveats as the base (gitops/base/trustee/kbs-configmaps.yaml):
+#  - the data key MUST be `default_cpu.rego` (operator subPath-mounts that exact key)
+#  - restart the KBS deployment after applying (subPath mounts do not live-update)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: attestation-policy
+  namespace: trustee-operator-system
+data:
+  default_cpu.rego: |
+    package policy
+
+    import rego.v1
+
+    # AR4SI (RATS EAR) trustworthiness tiers: 2..31 = affirming, 32..95 = warning,
+    # 96+ = contraindicated. Defaults are the NON-affirming tier, so every gated
+    # claim fails closed: an empty/absent RVPS entry leaves executables at 33 and
+    # the resource policy withholds. SNP-specific claim names (input.measurement,
+    # input.policy_*) — this file is the cpu/SNP policy only.
+    default executables := 33
+    default hardware := 97
+    default configuration := 36
+    default file_system := 2
+    default instance_identity := 2
+    default runtime_opaque := 2
+    default storage_opaque := 2
+    default sourced_data := 2
+
+    # THE RVPS GATE: affirm executables only when the SNP launch measurement in the
+    # evidence matches one of the Veritas-generated reference values.
+    executables := 3 if {
+      input.measurement in data.reference.snp_launch_measurement
+    }
+
+    # The SNP report signature + VCEK chain are verified by coco-as BEFORE this
+    # policy runs; here we only refuse debug-enabled guest policies.
+    hardware := 2 if {
+      input.policy_debug_allowed == false
+    }
+
+    configuration := 2 if {
+      input.policy_debug_allowed == false
+      input.policy_migrate_ma == false
+    }
+
+    trust_claims := {
+      "executables": executables,
+      "hardware": hardware,
+      "configuration": configuration,
+      "file-system": file_system,
+      "instance-identity": instance_identity,
+      "runtime-opaque": runtime_opaque,
+      "storage-opaque": storage_opaque,
+      "sourced-data": sourced_data,
+    }

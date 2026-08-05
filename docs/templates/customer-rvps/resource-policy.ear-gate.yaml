@@ -1,0 +1,51 @@
+# Resource policy (KBS) — release resources only to affirming EAR tokens.
+#
+# This is the KBS side of the RVPS accept/reject gate, and it is the correct home
+# for the submods/allow rego (the policy that was mistakenly applied as
+# default_cpu.rego — see README.md). It evaluates the EAR attestation TOKEN
+# (input.submods[...]["ear.trustworthiness-vector"]) at resource-GET time, not the
+# raw evidence: a warning-tier vector (e.g. RVPS measurement mismatch) still gets a
+# token from /attest, but every resource fetch is then denied here (403).
+# Restart the KBS deployment after applying.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resource-policy
+  namespace: trustee-operator-system
+data:
+  policy.rego: |
+    package policy
+
+    import rego.v1
+
+    default allow := false
+
+    allow if {
+      count(input.submods) > 0
+      not executable_failing
+      not configuration_failing
+      not hardware_failing
+    }
+
+    executable_failing if {
+      some _, submod in input.submods
+      executables := submod["ear.trustworthiness-vector"]["executables"]
+      not in_affirming_range(executables)
+    }
+
+    configuration_failing if {
+      some _, submod in input.submods
+      configuration := submod["ear.trustworthiness-vector"]["configuration"]
+      not in_affirming_range(configuration)
+    }
+
+    hardware_failing if {
+      some _, submod in input.submods
+      hardware := submod["ear.trustworthiness-vector"]["hardware"]
+      not in_affirming_range(hardware)
+    }
+
+    in_affirming_range(val) if {
+      val >= 2
+      val <= 31
+    }
