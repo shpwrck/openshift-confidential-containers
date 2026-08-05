@@ -118,3 +118,56 @@ oc -n trustee-operator-system rollout restart deployment/trustee-deployment
 
 Restore the gitops base policies afterwards (or use `make negative-test
 WHICH=rung-rvps`, which applies and reverts automatically).
+
+## Testing without trusted reference values (TOFU)
+
+The accept/reject *mechanism* can be proven even when the Veritas-derived values
+are wrong or unavailable, by seeding RVPS with the measurement lifted from the
+evidence itself (trust-on-first-use). This proves the full plumbing — RVPS →
+appraisal policy → EAR vector → resource release/denial — but says nothing about
+provenance; production still needs Veritas-derived values.
+
+1. Take the live measurement from the AS DEBUG claims line of any attest
+   (`"measurement":"…"` — 96 lowercase hex chars).
+2. Seed it into the `rvps-reference-values` ConfigMap. For trustee v0.17/v0.18
+   (`file_path`-style LocalJson storage) `reference-values.json` is a JSON array
+   of reference-value objects:
+
+   ```json
+   [
+     {
+       "version": "0.1.0",
+       "name": "snp_launch_measurement",
+       "expiration": "2027-01-01T00:00:00Z",
+       "value": ["<measurement-hex-from-evidence>"]
+     }
+   ]
+   ```
+
+   `value` MUST be an array; `expiration` MUST be future, format exactly
+   `%Y-%m-%dT%H:%M:%SZ`.
+3. Restart the KBS deployment, redeploy the workload → **accept** (vector shows
+   `executables 3`, secret released).
+4. Flip one hex digit of the stored value, restart KBS, redeploy → **reject**
+   (`executables 33`, token still issued, resource GET 403, pod fails closed).
+   Restore to flip back. Entirely operator-side — no guest changes.
+
+### Version trap: trustee ≥ v0.19 silently ignores `file_path`
+
+From trustee v0.19 the RVPS LocalJson storage moved to a key-value backend
+configured by `file_dir_path` (default
+`/opt/confidential-containers/storage/local_json`, namespace file
+`reference_value`, values base64url-encoded). The old
+`[attestation_service.rvps_config.storage] file_path = …` key is accepted but
+IGNORED (no deny_unknown_fields), so the mounted ConfigMap is never read and
+every query warns `No reference value found` no matter what you seed. Detect it:
+
+```sh
+oc -n trustee-operator-system exec deploy/trustee-deployment -- \
+  ls /opt/confidential-containers/storage/local_json/ 2>/dev/null
+```
+
+If `reference_value` exists there, the build is ≥ v0.19: point the storage
+config at the mount with `file_dir_path` and provide the file in the new format
+(key-to-base64url map named after the namespace), or align the trustee version
+with the v0.17/18-style config.
