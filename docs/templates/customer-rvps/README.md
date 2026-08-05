@@ -51,6 +51,35 @@ same all-defaults signature also appears when the claim paths are right but RVPS
 has no `snp_launch_measurement` entry — check for the broker's "No reference value
 found for the given id" warning to tell the two apart.
 
+### Symptom: only `executables` stuck at 33 (hardware/configuration affirmed)
+
+Claim paths are right; the RVPS lookup itself didn't match. In order:
+
+1. **Is the entry there?** Look in the KBS log, just before the "Unsigned EAR
+   Token" line, for `No reference value found for the given id:
+   snp_launch_measurement` (WARN). If present, RVPS has no such entry: the
+   `rvps-reference-values` ConfigMap is still the base `[]`, the Veritas output
+   was never merged, or KBS was not restarted after merging (subPath mounts do
+   not live-update — restart the deployment).
+2. **Does the name and shape match?** Dump it:
+   `oc -n trustee-operator-system get cm rvps-reference-values -o jsonpath='{.data.reference-values\.json}' | jq .`
+   The entry must be named exactly `snp_launch_measurement` and its value must be
+   a JSON **array** of measurement strings — rego's `in` never matches against a
+   bare string. Also check the entry's `expiration` is in the future (expired
+   reference values are dropped).
+3. **Does the value match the evidence?** The expected measurement is in the AS
+   DEBUG claims line of the failing attest (`"measurement":"..."` — 96 lowercase
+   hex chars, SHA-384). If the stored array holds a different digest, Veritas was
+   run against different bits than the node is booting (different OCP version,
+   podvm image, or kernel cmdline) — re-run `make gen-rvps` on the target
+   hardware with the versions actually deployed. If it holds the same digest in a
+   different encoding (base64 / uppercase), normalize to lowercase hex.
+
+A wrong-or-absent reference value with hardware/configuration affirmed is also
+exactly what a correct REJECT looks like — the appraisal goes to Warning and the
+resource policy withholds. Distinguish a broken happy path from a working reject
+by whether the stored measurement was supposed to match.
+
 ## Files
 
 - `attestation-policy.rvps.yaml` — appraisal policy: affirms `executables` (tier 3)
