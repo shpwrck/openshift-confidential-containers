@@ -100,9 +100,12 @@ GitOps, OpenShift, Trustee, or workload tooling.
 | MA02 | Workload trust bundle | Workload team | Image digest, SBOM/provenance, signature evidence, encryption key reference when used, initdata source/digest, restrictive Kata Agent policy, dependency list |
 | MA03 | Platform deployment set | Platform + workload teams | Namespace, service account, `runtimeClassName: kata-cc`, resource requests/limits, immutable image, initdata annotation, placement, storage/network configuration |
 
-### HA06 resource-release contract template
+### Suggested form for HA06 resource-release contract
 
-Keep secret values out of this record. It describes **authorization**, not the protected value.
+The following YAML is a **suggested customer-defined form** for recording HA06. It is not a Red Hat,
+Kubernetes, Confidential Containers, or Trustee standard schema, and Trustee does not consume it
+directly. Adapt it to the customer's existing access-approval process. Keep secret values out of this
+record: it describes **authorization**, not the protected value.
 
 ```yaml
 release_id: TBD
