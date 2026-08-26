@@ -267,7 +267,7 @@ sequenceDiagram
     Guest-->>User: Protected operation becomes ready
   else mismatch, stale collateral, or denied request
     Trustee-->>Guest: Withhold resource
-    Guest-->>User: Workload fails closed; evidence remains for triage
+    Guest-->>User: Workload fails closed and evidence remains for triage
   end
 ```
 
