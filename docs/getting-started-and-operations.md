@@ -34,20 +34,29 @@ so they do not obscure the operating flow.
 ## 1. Roles and decision rights
 
 These are organizational roles, not necessarily separate teams. A small organization may combine
-roles, but it must preserve the decision rights in the table. In particular, platform access must not
-silently grant authority to release every protected resource.
+roles, but it must preserve the decision rights in the tables. The categories describe whether the
+role approves business/governance outcomes or performs technical delivery and operations; they do
+not describe the background of the person assigned to the role. In particular, platform access must
+not silently grant authority to release every protected resource.
+
+### Non-technical roles: business and governance decisions
 
 | Role | Accountable for | Decisions only this role may approve | Required handoff |
 |---|---|---|---|
 | Service owner | End-to-end service, funding, SLO, production acceptance, and retirement | Start or stop the service; accept operational risk; declare production readiness | Approved charter, owners, SLO, and final acceptance record |
 | Data or risk owner | Classification and permitted use of protected data | Which workload identity may receive which resource, for how long, and under which conditions | Signed resource-release contract and revocation instruction |
+| Change authority | Maintenance approval and organizational change control | Production window, go/no-go, and accepted rollback conditions | Approved implementation and rollback record |
+
+### Technical roles: delivery and operations
+
+| Role | Accountable for | Decisions only this role may approve | Required handoff |
+|---|---|---|---|
 | Security and attestation team | Trustee, attestation appraisal, resource authorization, reference values, endorsement collateral, and security evidence | AS policy, KBS resource policy, RVPS values, Trustee administrative trust, and emergency denial | Versioned Trustee baseline and policy decision record |
 | OpenShift platform team | Workload and Trustee clusters, Operators, NFD, `KataConfig`, node placement, capacity, and product support evidence | Cluster/runtime configuration, eligible nodes, maintenance sequence, and platform rollback | Healthy platform baseline, runtime evidence, and change record |
 | Hardware and datacenter team | Supported servers, CPU, BIOS, firmware, BMC, replacement, and maintenance | Hardware baseline and when a node may return after hardware or firmware change | Hardware inventory, readiness result, and maintenance record |
 | Workload and supply-chain team | Application, image build, SBOM, signature, optional encryption, initdata, Kata Agent policy, and workload manifests | Which immutable application artifact is proposed for release | Workload trust bundle and deployment manifest set |
 | Network, PKI, time, and registry team | Guest and cluster DNS, NTP, routes, firewall, proxy, TLS, registry, mirror, and certificate lifecycle | Network exposure, trust-chain issuance, registry publication, and expiry handling | Flow matrix, CA bundle, certificate inventory, and reachability proof |
 | SRE and service desk | Monitoring, synthetic tests, triage, incident evidence, backup coordination, and on-call handoff | Operational severity, escalation, and recovery execution within approved runbooks | Operations package, health evidence, incident timeline, and restore result |
-| Change authority | Maintenance approval and organizational change control | Production window, go/no-go, and accepted rollback conditions | Approved implementation and rollback record |
 | Red Hat support | Supported-product guidance and product diagnosis under subscription | Product support determination | Case guidance, official documentation, errata, and support response |
 
 ### Non-negotiable separation of duties
