@@ -16,10 +16,10 @@ target air-gapped multi-node cluster.
 
 ## Visual overview
 
-New to the solution? Start with the
-[`beginner's guide and operations handbook`](docs/getting-started-and-operations.md). It explains the
-terms, trust boundary, component ownership, customer responsibilities, platform lifecycle, and
-acceptance evidence before any implementation steps.
+Start with the
+[`organizational operating playbook`](docs/getting-started-and-operations.md). It defines the customer
+roles, tangible artifacts, approval gates, and end-to-end workflows for net-new installation,
+workload releases, routine operations, and upgrades on the 1.12 baseline.
 
 See [`docs/architecture.md`](docs/architecture.md) for the repository-specific component diagrams,
 attestation sequence, and step-by-step flow from bastion preparation through negative tests and
