@@ -31,24 +31,7 @@ so they do not obscure the operating flow.
 > architecture and protocols. Repository runbooks record this project's tested implementation. An
 > upstream capability or a repository example does not expand Red Hat product support.
 
-## 1. How to use this playbook
-
-Before work starts, the service owner must assign a customer team, named primary contact, and backup
-to every role.
-
-For every workflow:
-
-1. Open one work or change record and name its accountable owner.
-2. Link the required input artifacts from the artifact register.
-3. Perform the work in order. Parallel work is allowed only when the handoff dependencies remain
-   explicit.
-4. Attach the output artifacts to the work record. Do not attach plaintext protected data, private
-   keys, Trustee administrator credentials, or unredacted support bundles.
-5. Obtain the named gate approval before the next team proceeds.
-6. Close the record only after the allow test, deny test, monitoring, and rollback evidence are
-   retained.
-
-## 2. Roles and decision rights
+## 1. Roles and decision rights
 
 These are organizational roles, not necessarily separate teams. A small organization may combine
 roles, but it must preserve the decision rights in the table. In particular, platform access must not
@@ -75,7 +58,7 @@ silently grant authority to release every protected resource.
 - The same change may not be considered accepted merely because its implementer reports success.
   The named gate approver must review retained allow and deny evidence.
 
-## 3. Artifact register
+## 2. Artifact register
 
 Artifact IDs are used throughout the workflow charts and tables. A document may be implemented as a
 ticket, Git revision, signed report, dashboard, or controlled record. The contents and owner matter
@@ -122,7 +105,7 @@ approvers:
   security_owner: TBD
 ```
 
-## 4. Workflow one: establish a net-new service
+## 3. Workflow one: establish a net-new service
 
 ### Organizational flow
 
@@ -186,7 +169,7 @@ Do not install the Operators until every row has evidence and an owner.
 | Time and certificates | Internal NTP, certificate chain/SAN, expiry inventory, renewal owner, alert threshold | PKI + network teams |
 | Protected material | KMS/HSM/secret backend, recovery ownership, key/reference naming, rotation and revocation process | Data + attestation teams |
 
-## 5. Workflow two: onboard or change a workload and operate it
+## 4. Workflow two: onboard or change a workload and operate it
 
 The regular release workflow is used for a new workload, a new application image, changed initdata,
 changed Kata Agent policy, changed resource access, or changed reference values. A simple application
@@ -262,7 +245,7 @@ collateral lifetimes, risk, and change rate.
 | Quarterly or material change | Platform + attestation + SRE | Restore Trustee and required state into an isolated replacement environment, then run allow and deny tests | Updated A12 with measured RTO/RPO and A10 results |
 | Before/after hardware or firmware work | Hardware + attestation | Capture the baseline, predict TCB/certificate impact, refresh collateral/reference inputs, quarantine until testing passes | A13 plus pre/post evidence and node return approval |
 
-## 6. Workflow three: upgrade or security-sensitive platform change
+## 5. Workflow three: upgrade or security-sensitive platform change
 
 This workflow applies to OCP z-stream work, an OSC 1.12 update, a Trustee 1.1 update, RHCOS/Kata
 change, guest asset change, BIOS/firmware/CPU work, certificate or key rotation, and attestation-policy
@@ -338,7 +321,7 @@ and the matching
 [Trustee update procedure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/update-trustee-overview_metal-trustee)
 rather than relying only on this organizational workflow.
 
-## 7. Acceptance, rollback, and incident rules
+## 6. Acceptance, rollback, and incident rules
 
 ### Minimum acceptance record
 
@@ -386,7 +369,7 @@ pod UID/name/namespace, Operator and CR status, failure stage, matching componen
 a known-good comparison, and version-matched OSC/Trustee must-gather material. Redact all protected
 values, private keys, and administrator credentials.
 
-## 8. Backup, recovery, and retirement
+## 7. Backup, recovery, and retirement
 
 ### Recovery order
 
@@ -419,7 +402,7 @@ Use Red Hat's
 [1.12 uninstall procedure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/uninstall-overview_metal-cc),
 which requires removing confidential workloads before `KataConfig` and Operator resources.
 
-## 9. Minimal technical reference
+## 8. Minimal technical reference
 
 ### What each major component accomplishes
 
@@ -458,7 +441,7 @@ controls, availability engineering, or data governance. A running pod is not pro
 attestation-gated release occurred. Acceptance must request a real non-production resource and retain
 both the release and denial decisions.
 
-## 10. Source library
+## 9. Source library
 
 ### Red Hat product documentation for the 1.12 baseline
 
@@ -513,7 +496,7 @@ Use upstream references for concepts and implementation detail, not as substitut
 - [Multi-socket AMD VCEK runbook](runbooks/multi-socket-vcek.md)
 - [Guest-side KBS debugging](runbooks/rung-kbs-guest-debug.md)
 
-## 11. Customer workshop output
+## 10. Customer workshop output
 
 Use a working session to fill the playbook rather than merely review slides. The workshop is complete
 only when it produces:
