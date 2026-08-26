@@ -33,8 +33,8 @@ so they do not obscure the operating flow.
 
 ## 1. How to use this playbook
 
-Before work starts, the service owner must replace every `TBD` below with a customer team, named
-primary contact, backup, and system of record.
+Before work starts, the service owner must assign a customer team, named primary contact, and backup
+to every role.
 
 For every workflow:
 
@@ -47,17 +47,6 @@ For every workflow:
 5. Obtain the named gate approval before the next team proceeds.
 6. Close the record only after the allow test, deny test, monitoring, and rollback evidence are
    retained.
-
-### The four systems of record
-
-The customer may use different tools, but these four record types must have an authoritative home.
-
-| Record type | What belongs there | Customer system |
-|---|---|---|
-| Governance and change record | Business approval, risk acceptance, support snapshot, named owners, gates, maintenance window, rollback decision | TBD |
-| Version-controlled desired state | Non-secret manifests, policies, initdata source, build definitions, image digests, configuration revisions | TBD |
-| Protected-material system | Secret values, private keys, recovery credentials, signing keys, encrypted backups | TBD |
-| Evidence and operations record | Test results, logs, hashes, approvals, dashboards, alerts, restore results, incident evidence | TBD |
 
 ## 2. Roles and decision rights
 
@@ -92,23 +81,23 @@ Artifact IDs are used throughout the workflow charts and tables. A document may 
 ticket, Git revision, signed report, dashboard, or controlled record. The contents and owner matter
 more than the file format.
 
-| ID | Tangible artifact | Accountable owner | Minimum contents | Authoritative home |
-|---|---|---|---|---|
-| A01 | Service charter and protected-data flow | Service owner + data owner | Business outcome, data classification, plaintext entry/use/exit, threat statement, exclusions, SLO, RTO, RPO | Governance record |
-| A02 | Supported bill of materials snapshot | Platform architect | OCP z-stream, OSC 1.12 CSV/image, Trustee 1.1 CSV/image, RHCOS, TEE/CPU, guest assets, registry references, dated matrix and release-note links | Change record + Git |
-| A03 | Architecture and trust-boundary decision | Security architect | Workload and Trustee environments, administrator boundaries, network flows, registry path, TEE, failure domains, disconnected dependencies | Governance record + diagram source |
-| A04 | Responsibility and escalation register | Service owner | Named primary and backup for every role, on-call route, Red Hat entitlement/case contacts, approval authorities | Service record |
-| A05 | Infrastructure readiness evidence pack | Platform team | Hardware/BIOS/firmware checks, node inventory, DNS/NTP/TLS/route tests, mirror inventory, capacity, guest-path test plan | Evidence record |
-| A06 | Trustee baseline bundle | Attestation team | `TrusteeConfig`, Restricted profile, TLS/admin trust, AS policy, KBS policy, RVPS revision, resource metadata, VCEK cache inventory, backup references | Git + protected-material system + evidence record |
-| A07 | Resource-release contract | Data owner | Resource URI/ID, approved workload/image identity, guest/reference constraints, policy revisions, validity period, revocation owner, approvals | Governance record + Git policy metadata |
-| A08 | Workload trust bundle | Workload team | Image digest, SBOM/provenance, signature evidence, encryption key reference when used, initdata source/digest, restrictive Kata Agent policy, dependency list | Git + artifact registry |
-| A09 | Platform deployment set | Platform + workload teams | Namespace, service account, `runtimeClassName: kata-cc`, resource requests/limits, immutable image, initdata annotation, placement, storage/network configuration | Git |
-| A10 | Acceptance evidence record | Independent gate approver | Correlated timestamps, pod UID, node, BOM, policy/reference revisions, positive release result, negative denial results, application result, exceptions | Evidence record |
-| A11 | Operations and support package | SRE | SLO/dashboard, alerts, synthetic tests, failure routing, on-call contacts, version-matched must-gather references, redaction rules | Operations record + Git runbooks |
-| A12 | Backup and recovery record | Attestation + platform teams | Inventory of recoverable state, encrypted backup locations, restore order, RTO/RPO, last restore result, post-restore allow/deny evidence | Protected-material system + evidence record |
-| A13 | Change and upgrade impact record | Change owner | Before/after BOM, affected measurements/policies/certificates, dependencies, lab result, production plan, rollback trigger, approvals | Change record |
-| A14 | Incident evidence packet | Incident lead | Timeline, affected workload/resource IDs, recent changes, pod/CR status, component logs, policy/reference revisions, containment and recovery decisions | Incident record |
-| A15 | Retirement and data-disposition record | Service + data owners | Workload/resource inventory, revocations, retained evidence, deleted material, removed endpoints, final verification | Governance record |
+| ID | Tangible artifact | Accountable owner | Minimum contents |
+|---|---|---|---|
+| A01 | Service charter and protected-data flow | Service owner + data owner | Business outcome, data classification, plaintext entry/use/exit, threat statement, exclusions, SLO, RTO, RPO |
+| A02 | Supported bill of materials snapshot | Platform architect | OCP z-stream, OSC 1.12 CSV/image, Trustee 1.1 CSV/image, RHCOS, TEE/CPU, guest assets, registry references, dated matrix and release-note links |
+| A03 | Architecture and trust-boundary decision | Security architect | Workload and Trustee environments, administrator boundaries, network flows, registry path, TEE, failure domains, disconnected dependencies |
+| A04 | Responsibility and escalation register | Service owner | Named primary and backup for every role, on-call route, Red Hat entitlement/case contacts, approval authorities |
+| A05 | Infrastructure readiness evidence pack | Platform team | Hardware/BIOS/firmware checks, node inventory, DNS/NTP/TLS/route tests, mirror inventory, capacity, guest-path test plan |
+| A06 | Trustee baseline bundle | Attestation team | `TrusteeConfig`, Restricted profile, TLS/admin trust, AS policy, KBS policy, RVPS revision, resource metadata, VCEK cache inventory, backup references |
+| A07 | Resource-release contract | Data owner | Resource URI/ID, approved workload/image identity, guest/reference constraints, policy revisions, validity period, revocation owner, approvals |
+| A08 | Workload trust bundle | Workload team | Image digest, SBOM/provenance, signature evidence, encryption key reference when used, initdata source/digest, restrictive Kata Agent policy, dependency list |
+| A09 | Platform deployment set | Platform + workload teams | Namespace, service account, `runtimeClassName: kata-cc`, resource requests/limits, immutable image, initdata annotation, placement, storage/network configuration |
+| A10 | Acceptance evidence record | Independent gate approver | Correlated timestamps, pod UID, node, BOM, policy/reference revisions, positive release result, negative denial results, application result, exceptions |
+| A11 | Operations and support package | SRE | SLO/dashboard, alerts, synthetic tests, failure routing, on-call contacts, version-matched must-gather references, redaction rules |
+| A12 | Backup and recovery record | Attestation + platform teams | Inventory of recoverable state, encrypted backup locations, restore order, RTO/RPO, last restore result, post-restore allow/deny evidence |
+| A13 | Change and upgrade impact record | Change owner | Before/after BOM, affected measurements/policies/certificates, dependencies, lab result, production plan, rollback trigger, approvals |
+| A14 | Incident evidence packet | Incident lead | Timeline, affected workload/resource IDs, recent changes, pod/CR status, component logs, policy/reference revisions, containment and recovery decisions |
+| A15 | Retirement and data-disposition record | Service + data owners | Workload/resource inventory, revocations, retained evidence, deleted material, removed endpoints, final verification |
 
 ### A07 resource-release contract template
 
@@ -533,11 +522,10 @@ only when it produces:
 2. A02 with the dated 1.12 support snapshot and exact BOM.
 3. A03 showing the workload cluster, trusted Trustee cluster, guest network paths, and administrators.
 4. A04 with a primary and backup for every role and gate.
-5. The customer systems of record for governance, Git desired state, protected material, and evidence.
-6. One completed A07 for the reference workload.
-7. Named owners and dates for every missing A05 readiness item.
-8. Agreed allow, deny, restore, rollback, and monitoring acceptance tests.
-9. A decision on what is required for production acceptance and who signs A10.
+5. One completed A07 for the reference workload.
+6. Named owners and dates for every missing A05 readiness item.
+7. Agreed allow, deny, restore, rollback, and monitoring acceptance tests.
+8. A decision on what is required for production acceptance and who signs A10.
 
 If any critical artifact or gate has no owner, the output is a documented blocker rather than an
 implicit platform-team responsibility.
