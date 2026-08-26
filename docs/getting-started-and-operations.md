@@ -114,8 +114,8 @@ flowchart TD
   F["5 Attestation team builds and protects Trustee"]
   G["6 Platform team enables kata-cc on eligible workers"]
   H["7 Workload and security teams onboard a reference workload"]
-  I{"Allow and deny gates pass"}
-  J["8 Service owner accepts production handoff to SRE"]
+  I{"8 Security and service owners accept allow and deny evidence"}
+  J["9 Service owner accepts production handoff to SRE"]
   L["Readiness gaps are assigned to the owning team"]
   M["Test evidence is retained and corrections are assigned"]
 
@@ -135,19 +135,19 @@ flowchart TD
   J -->|"HA08 operations package and HA09 recovery record"| K["Service operating"]
 ```
 
-### Execution and handoff table
+### Net-new workflow, responsibilities, and repeatable actions
 
-| Step | Accountable / responsible | Work performed | Required output and what it accomplishes | Exit gate |
-|---:|---|---|---|---|
-| 1 | Service owner accountable; data owner responsible for classification | Define the business use case, protected-data journey, administrator threat, exclusions, SLO, and recovery objectives | **HA01** makes the requested protection and remaining risk explicit | Service and data owners sign HA01 |
-| 2 | Platform architect accountable; Red Hat consulted | Check the live 1.12 matrix and release notes; record exact OCP, OSC, Trustee, RHCOS, TEE, guest, and image versions | **HA02** prevents unsupported or mixed-version implementation | Platform and security approve the dated BOM |
-| 3 | Security architect accountable; every service team responsible for its section | Draw workload/Trustee separation and flows; assign owners and backups; define failure domains and approval boundaries | **HA03/HA04** remove architectural and ownership ambiguity | Security and service owners approve design and contacts |
-| 4 | Platform team accountable; hardware/network/PKI/registry teams responsible | Prove TEE host readiness, node capacity, internal DNS/NTP, certificates, routes, registry/mirror, and disconnected content availability | **HA05** proves dependencies before Operator installation | Platform and security jointly accept readiness |
-| 5 | Attestation team accountable; platform and PKI responsible for cluster/service support | Install Trustee on the trusted cluster using Red Hat 1.12 procedures; configure Restricted profile, TLS/admin trust, endorsements, reference values, policies, resources, monitoring, and backup | **MA01/HA06/HA09** create a controlled release authority with recoverable state | Known-good evidence is accepted and known-bad evidence is denied |
-| 6 | Platform team accountable and responsible | Install NFD and OSC Operator; configure eligible nodes; create `KataConfig`; complete node changes/reboots; verify `kata-cc` | **MA03 platform baseline** creates the supported confidential runtime on named workers | Operators, CRs, pools, nodes, labels, and runtime class are healthy |
-| 7 | Workload team accountable for artifact; security accountable for release control | Build/sign the reference image; create measured initdata and restrictive Kata policy; deploy an immutable manifest; request a non-production protected resource | **MA02/MA03** bind a specific workload and guest configuration to the proposed release | Inputs match HA06 and no secret value is present in Git or initdata |
-| 8 | Security test owner responsible; service owner accountable | Run one allow path and relevant deny paths, correlate guest, Trustee, registry, platform, and application evidence | **HA07** demonstrates fail-closed behavior instead of only successful startup | Independent approver signs HA07 with no unexplained exception |
-| 9 | SRE responsible; service owner accountable | Activate dashboards, alerts, synthetic transactions, support collection, contacts, backups, and restore exercise | **HA08/HA09** turn the build into an operable, recoverable service | On-call operator performs a forced-failure triage and restore drill |
+| Step | Accountable / responsible | Work performed | Repeatable action | Required output and what it accomplishes | Exit gate |
+|---:|---|---|---|---|---|
+| 1 | Service owner accountable; data owner responsible for classification | Define the business use case, protected-data journey, administrator threat, exclusions, SLO, and recovery objectives | [Approve intent](runbooks/repeatable-workflow-actions.md#w1-1) | **HA01** makes the requested protection and remaining risk explicit | Service and data owners sign HA01 |
+| 2 | Platform architect accountable; Red Hat consulted | Check the live 1.12 matrix and release notes; record exact OCP, OSC, Trustee, RHCOS, TEE, guest, and image versions | [Freeze the BOM](runbooks/repeatable-workflow-actions.md#w1-2) | **HA02** prevents unsupported or mixed-version implementation | Platform and security approve the dated BOM |
+| 3 | Security architect accountable; every service team responsible for its section | Draw workload/Trustee separation and flows; assign owners and backups; define failure domains and approval boundaries | [Approve design and owners](runbooks/repeatable-workflow-actions.md#w1-3) | **HA03/HA04** remove architectural and ownership ambiguity | Security and service owners approve design and contacts |
+| 4 | Platform team accountable; hardware/network/PKI/registry teams responsible | Prove TEE host readiness, node capacity, internal DNS/NTP, certificates, routes, registry/mirror, and disconnected content availability | [Prove readiness](runbooks/repeatable-workflow-actions.md#w1-4) | **HA05** proves dependencies before Operator installation | Platform and security jointly accept readiness |
+| 5 | Attestation team accountable; platform and PKI responsible for cluster/service support | Install Trustee on the trusted cluster using Red Hat 1.12 procedures; configure Restricted profile, TLS/admin trust, endorsements, reference values, policies, resources, monitoring, and backup | [Establish Trustee](runbooks/repeatable-workflow-actions.md#w1-5) | **MA01/HA06/HA09** create a controlled release authority with recoverable state | Known-good evidence is accepted and known-bad evidence is denied |
+| 6 | Platform team accountable and responsible | Install NFD and OSC Operator; configure eligible nodes; create `KataConfig`; complete node changes/reboots; verify `kata-cc` | [Enable the runtime](runbooks/repeatable-workflow-actions.md#w1-6) | **MA03 platform baseline** creates the supported confidential runtime on named workers | Operators, CRs, pools, nodes, labels, and runtime class are healthy |
+| 7 | Workload team accountable for artifact; security accountable for release control | Build/sign the reference image; create measured initdata and restrictive Kata policy; deploy an immutable manifest; request a non-production protected resource | [Build the reference workload](runbooks/repeatable-workflow-actions.md#w1-7) | **MA02/MA03** bind a specific workload and guest configuration to the proposed release | Inputs match HA06 and no secret value is present in Git or initdata |
+| 8 | Security test owner responsible; service owner accountable | Run one allow path and relevant deny paths, correlate guest, Trustee, registry, platform, and application evidence | [Prove release and denial](runbooks/repeatable-workflow-actions.md#w1-8) | **HA07** demonstrates fail-closed behavior instead of only successful startup | Independent approver signs HA07 with no unexplained exception |
+| 9 | SRE responsible; service owner accountable | Activate dashboards, alerts, synthetic transactions, support collection, contacts, backups, and restore exercise | [Activate operations](runbooks/repeatable-workflow-actions.md#w1-9) | **HA08/HA09** turn the build into an operable, recoverable service | On-call operator performs a forced-failure triage and restore drill |
 
 ### Net-new readiness checklist for HA05
 
@@ -197,18 +197,18 @@ flowchart TD
   H -->|"Approved digests and revisions"| I
 ```
 
-### Release workflow and responsibilities
+### Release workflow, responsibilities, and repeatable actions
 
-| Step | Accountable / responsible | Required work | Output and handoff gate |
-|---:|---|---|---|
-| 1. Intake | Workload owner accountable | Name data, namespace, image, resource URI, runtime needs, expected release conditions, and requested date | Release record links current HA02 and identifies which artifacts will change |
-| 2. Build | Workload/supply-chain team responsible | Build, scan, produce SBOM/provenance, digest-pin, sign, optionally encrypt, and publish the image; generate initdata and restrictive Kata policy | MA02 is reproducible, immutable, reviewable, and contains no plaintext protected material |
-| 3. Authorize | Data owner accountable; security responsible | Map the approved workload identity and guest/reference state to the resource and expiry/review date | HA06 signed by data and security owners |
-| 4. Configure trust | Attestation team accountable | Version AS policy, KBS policy, RVPS values, endorsement inputs, verification keys, and resource metadata; preserve rollback revision | MA01 revision reviewed by a second security operator and applied first outside production |
-| 5. Deploy | Platform team responsible; workload owner accountable for manifest | Deploy MA03 with `kata-cc`, immutable image, correct initdata, PodVM resources, placement, network, and storage | Pod schedules only to eligible workers and starts with expected revisions |
-| 6. Prove | Security test owner accountable; SRE responsible for capture | Run an allowed retrieval and applicable denials such as wrong image identity, wrong initdata/reference, forbidden resource, missing key, or unavailable collateral | HA07 correlates the KBS/AS decision, guest receipt/denial, platform events, and application result |
-| 7. Promote | Service owner accountable; change authority approves window when required | Promote the exact tested digests and policy revisions; do not rebuild between test and production | Production record names the immutable inputs and rollback point |
-| 8. Observe | SRE accountable | Confirm startup, attestation decisions, resource release, registry access, capacity, latency, and application health | Release closes only after the defined observation window and no unexplained denial |
+| Step | Accountable / responsible | Required work | Repeatable action | Output and handoff gate |
+|---:|---|---|---|---|
+| 1. Intake | Workload owner accountable | Name data, namespace, image, resource URI, runtime needs, expected release conditions, and requested date | [Open and complete intake](runbooks/repeatable-workflow-actions.md#w2-1) | Release record links current HA02 and identifies which artifacts will change |
+| 2. Build | Workload/supply-chain team responsible | Build, scan, produce SBOM/provenance, digest-pin, sign, optionally encrypt, and publish the image; generate initdata and restrictive Kata policy | [Build the matched workload bundle](runbooks/repeatable-workflow-actions.md#w2-2) | MA02 is reproducible, immutable, reviewable, and contains no plaintext protected material |
+| 3. Authorize | Data owner accountable; security responsible | Map the approved workload identity and guest/reference state to the resource and expiry/review date | [Authorize the release](runbooks/repeatable-workflow-actions.md#w2-3) | HA06 signed by data and security owners |
+| 4. Configure trust | Attestation team accountable | Version AS policy, KBS policy, RVPS values, endorsement inputs, verification keys, and resource metadata; preserve rollback revision | [Configure versioned trust](runbooks/repeatable-workflow-actions.md#w2-4) | MA01 revision reviewed by a second security operator and applied first outside production |
+| 5. Deploy | Platform team responsible; workload owner accountable for manifest | Deploy MA03 with `kata-cc`, immutable image, correct initdata, PodVM resources, placement, network, and storage | [Render and deploy MA03](runbooks/repeatable-workflow-actions.md#w2-5) | Pod schedules only to eligible workers and starts with expected revisions |
+| 6. Prove | Security test owner accountable; SRE responsible for capture | Run an allowed retrieval and applicable denials such as wrong image identity, wrong initdata/reference, forbidden resource, missing key, or unavailable collateral | [Prove the release gates](runbooks/repeatable-workflow-actions.md#w2-6) | HA07 correlates the KBS/AS decision, guest receipt/denial, platform events, and application result |
+| 7. Promote | Service owner accountable; change authority approves window when required | Promote the exact tested digests and policy revisions; do not rebuild between test and production | [Promote exact revisions](runbooks/repeatable-workflow-actions.md#w2-7) | Production record names the immutable inputs and rollback point |
+| 8. Observe | SRE accountable | Confirm startup, attestation decisions, resource release, registry access, capacity, latency, and application health | [Observe and close](runbooks/repeatable-workflow-actions.md#w2-8) | Release closes only after the defined observation window and no unexplained denial |
 
 ### Definition of done for a workload release
 
@@ -279,19 +279,19 @@ flowchart TD
   L -->|"Correct cause and restart with a new approval"| A
 ```
 
-### Upgrade execution and decision rights
+### Upgrade execution, decision rights, and repeatable actions
 
-| Step | Accountable / responsible | Required output | Gate |
-|---:|---|---|---|
-| 1. Scope | Change owner accountable; platform responsible for BOM | HA10 names reason, before/after HA02, affected environments, maintenance window, dependencies, and rollback triggers | Service owner accepts scope; Red Hat support position is attached when relevant |
-| 2. Impact | Security accountable for trust impact; each component owner responsible | Impact matrix identifies guest measurements, RVPS values, AS/KBS policy, image signatures/keys, TLS/admin trust, VCEK/collateral, node reboots, and capacity effects | Every affected artifact has a named owner and preparation action |
-| 3. Protect | Attestation + platform teams accountable | Verified backup/restore point for desired state, policies, references, resource sources, credentials, certificates, and cluster configuration | Restore is demonstrated or the service owner explicitly rejects the change |
-| 4. Rehearse | Change owner accountable; all affected teams responsible | Full lab record using the production sequence, mirrored content, restrictive network conditions, and representative workload | Technical implementers sign completion; independent tester receives immutable revisions |
-| 5. Re-establish trust | Attestation accountable; hardware/workload/platform provide inputs | Versioned replacement references, policies, collateral, trust chains, and image evidence | Second-person policy review and retained old revision for rollback |
-| 6. Prove | Security test owner accountable; SRE captures evidence | Platform health, allow/deny HA07, application behavior, monitoring, backup, and rollback result | All predefined gates pass without weakening policy |
-| 7. Authorize | Change authority accountable | Approved production sequence, communication, stop conditions, rollback authority, and observation window | Formal go decision |
-| 8. Execute | Platform accountable for cluster/runtime sequence; attestation accountable for Trustee/trust sequence | Timestamped implementation log and live health evidence | Stop immediately at a defined no-go condition |
-| 9. Accept | Service owner accountable; security and SRE responsible for evidence review | Updated HA02/MA01/HA07/HA08/HA09/HA10 with old revision retirement decision | Close only after the observation window and an accepted allow/deny result |
+| Step | Accountable / responsible | Required output | Repeatable action | Gate |
+|---:|---|---|---|---|
+| 1. Scope | Change owner accountable; platform responsible for BOM | HA10 names reason, before/after HA02, affected environments, maintenance window, dependencies, and rollback triggers | [Scope and snapshot](runbooks/repeatable-workflow-actions.md#w3-1) | Service owner accepts scope; Red Hat support position is attached when relevant |
+| 2. Impact | Security accountable for trust impact; each component owner responsible | Impact matrix identifies guest measurements, RVPS values, AS/KBS policy, image signatures/keys, TLS/admin trust, VCEK/collateral, node reboots, and capacity effects | [Assess impact](runbooks/repeatable-workflow-actions.md#w3-2) | Every affected artifact has a named owner and preparation action |
+| 3. Protect | Attestation + platform teams accountable | Verified backup/restore point for desired state, policies, references, resource sources, credentials, certificates, and cluster configuration | [Back up and prove restore](runbooks/repeatable-workflow-actions.md#w3-3) | Restore is demonstrated or the service owner explicitly rejects the change |
+| 4. Rehearse | Change owner accountable; all affected teams responsible | Full lab record using the production sequence, mirrored content, restrictive network conditions, and representative workload | [Rehearse the exact sequence](runbooks/repeatable-workflow-actions.md#w3-4) | Technical implementers sign completion; independent tester receives immutable revisions |
+| 5. Re-establish trust | Attestation accountable; hardware/workload/platform provide inputs | Versioned replacement references, policies, collateral, trust chains, and image evidence | [Regenerate affected trust inputs](runbooks/repeatable-workflow-actions.md#w3-5) | Second-person policy review and retained old revision for rollback |
+| 6. Prove | Security test owner accountable; SRE captures evidence | Platform health, allow/deny HA07, application behavior, monitoring, backup, and rollback result | [Prove every gate](runbooks/repeatable-workflow-actions.md#w3-6) | All predefined gates pass without weakening policy |
+| 7. Authorize | Change authority accountable | Approved production sequence, communication, stop conditions, rollback authority, and observation window | [Record go or no-go](runbooks/repeatable-workflow-actions.md#w3-7) | Formal go decision |
+| 8. Execute | Platform accountable for cluster/runtime sequence; attestation accountable for Trustee/trust sequence | Timestamped implementation log and live health evidence | [Execute staged change](runbooks/repeatable-workflow-actions.md#w3-8) | Stop immediately at a defined no-go condition |
+| 9. Accept | Service owner accountable; security and SRE responsible for evidence review | Updated HA02/MA01/HA07/HA08/HA09/HA10 with old revision retirement decision | [Accept and retire](runbooks/repeatable-workflow-actions.md#w3-9) | Close only after the observation window and an accepted allow/deny result |
 
 ### Required impact questions by change type
 
@@ -784,9 +784,11 @@ Use upstream references for concepts and implementation detail, not as substitut
 - [Design rationale and security gates](design/engagement-design.md)
 - [Disconnected SEV-SNP installation guide](install-guide.md)
 - [Install execution plan](runbooks/install-execution-plan.md)
+- [Repeatable actions for every workflow step](runbooks/repeatable-workflow-actions.md)
 - [Debug surface by component and vantage point](runbooks/debug-surface.md)
 - [Failure-mode playbook](runbooks/failure-modes.md)
 - [Guest-side KBS debugging](runbooks/rung-kbs-guest-debug.md)
+- [Workflow action implementation map and gap analysis](research/workflow-automation-map.md)
 
 ## 11. Customer workshop output
 
