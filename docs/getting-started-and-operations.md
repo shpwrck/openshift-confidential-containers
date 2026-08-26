@@ -69,9 +69,12 @@ not silently grant authority to release every protected resource.
 
 ## 2. Artifact register
 
-Artifact IDs are used throughout the workflow charts and tables. A document may be implemented as a
-ticket, Git revision, signed report, dashboard, or controlled record. The contents and owner matter
-more than the file format.
+Artifact IDs are used throughout the workflow charts and tables. The classification is based on the
+artifact's primary purpose. A human artifact exists for review, judgment, approval, or accountability
+and may include attached command output or logs. A machine artifact is applied, verified, or consumed
+directly by build, GitOps, OpenShift, Trustee, or workload tooling.
+
+### Human artifacts: decisions, approvals, and evidence
 
 | ID | Tangible artifact | Accountable owner | Minimum contents |
 |---|---|---|---|
@@ -80,16 +83,21 @@ more than the file format.
 | A03 | Architecture and trust-boundary decision | Security architect | Workload and Trustee environments, administrator boundaries, network flows, registry path, TEE, failure domains, disconnected dependencies |
 | A04 | Responsibility and escalation register | Service owner | Named primary and backup for every role, on-call route, Red Hat entitlement/case contacts, approval authorities |
 | A05 | Infrastructure readiness evidence pack | Platform team | Hardware/BIOS/firmware checks, node inventory, DNS/NTP/TLS/route tests, mirror inventory, capacity, guest-path test plan |
-| A06 | Trustee baseline bundle | Attestation team | `TrusteeConfig`, Restricted profile, TLS/admin trust, AS policy, KBS policy, RVPS revision, resource metadata, VCEK cache inventory, backup references |
 | A07 | Resource-release contract | Data owner | Resource URI/ID, approved workload/image identity, guest/reference constraints, policy revisions, validity period, revocation owner, approvals |
-| A08 | Workload trust bundle | Workload team | Image digest, SBOM/provenance, signature evidence, encryption key reference when used, initdata source/digest, restrictive Kata Agent policy, dependency list |
-| A09 | Platform deployment set | Platform + workload teams | Namespace, service account, `runtimeClassName: kata-cc`, resource requests/limits, immutable image, initdata annotation, placement, storage/network configuration |
 | A10 | Acceptance evidence record | Independent gate approver | Correlated timestamps, pod UID, node, BOM, policy/reference revisions, positive release result, negative denial results, application result, exceptions |
 | A11 | Operations and support package | SRE | SLO/dashboard, alerts, synthetic tests, failure routing, on-call contacts, version-matched must-gather references, redaction rules |
 | A12 | Backup and recovery record | Attestation + platform teams | Inventory of recoverable state, encrypted backup locations, restore order, RTO/RPO, last restore result, post-restore allow/deny evidence |
 | A13 | Change and upgrade impact record | Change owner | Before/after BOM, affected measurements/policies/certificates, dependencies, lab result, production plan, rollback trigger, approvals |
 | A14 | Incident evidence packet | Incident lead | Timeline, affected workload/resource IDs, recent changes, pod/CR status, component logs, policy/reference revisions, containment and recovery decisions |
 | A15 | Retirement and data-disposition record | Service + data owners | Workload/resource inventory, revocations, retained evidence, deleted material, removed endpoints, final verification |
+
+### Machine artifacts: configuration and executable inputs
+
+| ID | Tangible artifact | Accountable owner | Minimum contents |
+|---|---|---|---|
+| A06 | Trustee baseline bundle | Attestation team | `TrusteeConfig`, Restricted profile, TLS/admin trust references, AS policy, KBS policy, RVPS revision, resource metadata, VCEK cache inventory, backup references |
+| A08 | Workload trust bundle | Workload team | Image digest, SBOM/provenance, signature evidence, encryption key reference when used, initdata source/digest, restrictive Kata Agent policy, dependency list |
+| A09 | Platform deployment set | Platform + workload teams | Namespace, service account, `runtimeClassName: kata-cc`, resource requests/limits, immutable image, initdata annotation, placement, storage/network configuration |
 
 ### A07 resource-release contract template
 
