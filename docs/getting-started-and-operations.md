@@ -79,52 +79,26 @@ GitOps, OpenShift, Trustee, or workload tooling.
 
 | ID | Tangible artifact | Accountable owner | Minimum contents |
 |---|---|---|---|
-| HA01 | Service charter and protected-data flow | Service owner + data owner | Business outcome, data classification, plaintext entry/use/exit, threat statement, exclusions, SLO, RTO, RPO |
-| HA02 | Supported bill of materials snapshot | Platform architect | OCP z-stream, OSC 1.12 CSV/image, Trustee 1.1 CSV/image, RHCOS, TEE/CPU, guest assets, registry references, dated matrix and release-note links |
-| HA03 | Architecture and trust-boundary decision | Security architect | Workload and Trustee environments, administrator boundaries, network flows, registry path, TEE, failure domains, disconnected dependencies |
-| HA04 | Responsibility and escalation register | Service owner | Named primary and backup for every role, on-call route, Red Hat entitlement/case contacts, approval authorities |
-| HA05 | Infrastructure readiness evidence pack | Platform team | Hardware/BIOS/firmware checks, node inventory, DNS/NTP/TLS/route tests, mirror inventory, capacity, guest-path test plan |
-| HA06 | Resource-release contract | Data owner | Resource URI/ID, approved workload/image identity, guest/reference constraints, policy revisions, validity period, revocation owner, approvals |
-| HA07 | Acceptance evidence record | Independent gate approver | Correlated timestamps, pod UID, node, BOM, policy/reference revisions, positive release result, negative denial results, application result, exceptions |
-| HA08 | Operations and support package | SRE | SLO/dashboard, alerts, synthetic tests, failure routing, on-call contacts, version-matched must-gather references, redaction rules |
-| HA09 | Backup and recovery record | Attestation + platform teams | Inventory of recoverable state, encrypted backup locations, restore order, RTO/RPO, last restore result, post-restore allow/deny evidence |
-| HA10 | Change and upgrade impact record | Change owner | Before/after BOM, affected measurements/policies/certificates, dependencies, lab result, production plan, rollback trigger, approvals |
-| HA11 | Incident evidence packet | Incident lead | Timeline, affected workload/resource IDs, recent changes, pod/CR status, component logs, policy/reference revisions, containment and recovery decisions |
-| HA12 | Retirement and data-disposition record | Service + data owners | Workload/resource inventory, revocations, retained evidence, deleted material, removed endpoints, final verification |
+| HA01 | [Service charter and protected-data flow](#ha01) | Service owner + data owner | Business outcome, data classification, plaintext entry/use/exit, threat statement, exclusions, SLO, RTO, RPO |
+| HA02 | [Supported bill of materials snapshot](#ha02) | Platform architect | OCP z-stream, OSC 1.12 CSV/image, Trustee 1.1 CSV/image, RHCOS, TEE/CPU, guest assets, registry references, dated matrix and release-note links |
+| HA03 | [Architecture and trust-boundary decision](#ha03) | Security architect | Workload and Trustee environments, administrator boundaries, network flows, registry path, TEE, failure domains, disconnected dependencies |
+| HA04 | [Responsibility and escalation register](#ha04) | Service owner | Named primary and backup for every role, on-call route, Red Hat entitlement/case contacts, approval authorities |
+| HA05 | [Infrastructure readiness evidence pack](#ha05) | Platform team | Hardware/BIOS/firmware checks, node inventory, DNS/NTP/TLS/route tests, mirror inventory, capacity, guest-path test plan |
+| HA06 | [Resource-release contract](#ha06) | Data owner | Resource URI/ID, approved workload/image identity, guest/reference constraints, policy revisions, validity period, revocation owner, approvals |
+| HA07 | [Acceptance evidence record](#ha07) | Independent gate approver | Correlated timestamps, pod UID, node, BOM, policy/reference revisions, positive release result, negative denial results, application result, exceptions |
+| HA08 | [Operations and support package](#ha08) | SRE | SLO/dashboard, alerts, synthetic tests, failure routing, on-call contacts, version-matched must-gather references, redaction rules |
+| HA09 | [Backup and recovery record](#ha09) | Attestation + platform teams | Inventory of recoverable state, encrypted backup locations, restore order, RTO/RPO, last restore result, post-restore allow/deny evidence |
+| HA10 | [Change and upgrade impact record](#ha10) | Change owner | Before/after BOM, affected measurements/policies/certificates, dependencies, lab result, production plan, rollback trigger, approvals |
+| HA11 | [Incident evidence packet](#ha11) | Incident lead | Timeline, affected workload/resource IDs, recent changes, pod/CR status, component logs, policy/reference revisions, containment and recovery decisions |
+| HA12 | [Retirement and data-disposition record](#ha12) | Service + data owners | Workload/resource inventory, revocations, retained evidence, deleted material, removed endpoints, final verification |
 
 ### Machine artifacts: configuration and executable inputs
 
 | ID | Tangible artifact | Accountable owner | Minimum contents |
 |---|---|---|---|
-| MA01 | Trustee baseline bundle | Attestation team | `TrusteeConfig`, Restricted profile, TLS/admin trust references, AS policy, KBS policy, RVPS revision, resource metadata, VCEK cache inventory, backup references |
-| MA02 | Workload trust bundle | Workload team | Image digest, SBOM/provenance, signature evidence, encryption key reference when used, initdata source/digest, restrictive Kata Agent policy, dependency list |
-| MA03 | Platform deployment set | Platform + workload teams | Namespace, service account, `runtimeClassName: kata-cc`, resource requests/limits, immutable image, initdata annotation, placement, storage/network configuration |
-
-### Suggested form for HA06 resource-release contract
-
-The following YAML is a **suggested customer-defined form** for recording HA06. It is not a Red Hat,
-Kubernetes, Confidential Containers, or Trustee standard schema, and Trustee does not consume it
-directly. Adapt it to the customer's existing access-approval process. Keep secret values out of this
-record: it describes **authorization**, not the protected value.
-
-```yaml
-release_id: TBD
-data_owner: TBD
-resource_uri: TBD
-workload_owner: TBD
-workload_image_digest: sha256:TBD
-runtime_class: kata-cc
-initdata_digest: sha256:TBD
-guest_reference_set: TBD
-attestation_policy_revision: TBD
-resource_policy_revision: TBD
-valid_from: TBD
-expires_or_review_by: TBD
-revocation_owner: TBD
-approvers:
-  data_owner: TBD
-  security_owner: TBD
-```
+| MA01 | [Trustee baseline bundle](#ma01) | Attestation team | Restricted `TrusteeConfig` and generated-state snapshot, or an approved advanced-configuration equivalent; TLS/admin trust references, AS policy, KBS policy, RVPS revision, resource metadata, VCEK cache inventory, backup references |
+| MA02 | [Workload trust bundle](#ma02) | Workload team | Image digest, SBOM/provenance, signature evidence, encryption key reference when used, initdata source/digest, restrictive Kata Agent policy, dependency list |
+| MA03 | [Platform deployment set](#ma03) | Platform + workload teams | Namespace, service account, `runtimeClassName: kata-cc`, resource requests/limits, immutable image, initdata annotation, placement, storage/network configuration |
 
 ## 3. Workflow one: establish a net-new service
 
@@ -462,7 +436,304 @@ controls, availability engineering, or data governance. A running pod is not pro
 attestation-gated release occurred. Acceptance must request a real non-production resource and retain
 both the release and denial decisions.
 
-## 9. Source library
+## 9. Artifact appendix
+
+The human-artifact descriptions below are **suggested customer governance structures**, not Red Hat,
+Kubernetes, Confidential Containers, or Trustee standard schemas. Adapt them to existing customer
+approval and evidence processes. The machine-artifact entries identify product procedures, upstream
+specifications, and repository examples; for custom resources, the installed 1.12 CRD and matching
+Red Hat 1.12 documentation remain authoritative. No artifact should expose plaintext protected data,
+private keys, or administrator credentials.
+
+<a id="ha01"></a>
+### HA01 — Service charter and protected-data flow
+
+- **Purpose:** establish why the service exists, which data needs protection while in use, who is
+  outside the intended trust boundary, and what success and failure mean.
+- **Accountable owner:** service owner with data-owner approval.
+- **Inputs:** business use case, data classification, regulatory obligations, application data flow,
+  administrator threat statement, SLO, RTO, and RPO.
+- **Required detail:** plaintext entry/use/exit/storage/logging points; trusted and untrusted actors;
+  exclusions such as availability, application bugs, and side channels; accepted residual risks.
+- **Complete when:** the service and data owners approve the use case, boundaries, exclusions, and
+  recovery objectives.
+- **Handoff:** constrains HA03 architecture and every HA06 resource-release decision.
+- **References:** [upstream trust model](https://confidentialcontainers.org/docs/architecture/trust-model/trust-model/)
+  and [customer scoping questions](design/customer-scoping.md).
+
+<a id="ha02"></a>
+### HA02 — Supported bill of materials snapshot
+
+- **Purpose:** freeze the exact supported and tested product/hardware combination used by a build or
+  change.
+- **Accountable owner:** platform architect.
+- **Inputs:** installed cluster inventory, target versions, image registry metadata, live 1.12 support
+  matrix, release notes, and applicable Red Hat case guidance.
+- **Required detail:** OCP z-stream, RHCOS, OSC CSV and image digest, Trustee CSV and image digest,
+  guest assets, TEE/CPU/firmware baseline, registry references, and date checked.
+- **Complete when:** all components are exact rather than floating, the 1.12 matrix is attached, and
+  platform/security approve any stated support exception.
+- **Handoff:** every HA07 acceptance record and HA10 change record names the HA02 revision tested.
+- **References:** [1.12 compatibility](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/cc-discover_metal-cc#cc-compatibility_metal-cc)
+  and [1.12 release notes](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/release_notes/index).
+
+<a id="ha03"></a>
+### HA03 — Architecture and trust-boundary decision
+
+- **Purpose:** show where each component runs, who administers it, which paths cross the protected
+  boundary, and which failures or compromises the design tolerates.
+- **Accountable owner:** security architect.
+- **Inputs:** HA01, HA02, customer topology, network zones, registry/mirror design, PKI, identity,
+  storage, and disconnected requirements.
+- **Required detail:** separate workload and Trustee environments, administrative boundaries, guest
+  flows to Trustee and registry, DNS/NTP/TLS/proxy paths, failure domains, capacity, and recovery.
+- **Complete when:** security, platform, network, hardware, workload, and service owners agree that
+  every component and flow has an owner and stated trust posture.
+- **Handoff:** drives HA05 readiness checks, MA01 Trustee configuration, and MA03 placement/networking.
+- **References:** [CoCo design overview](https://confidentialcontainers.org/docs/architecture/design-overview/)
+  and [Red Hat Trustee topology](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/index).
+
+<a id="ha04"></a>
+### HA04 — Responsibility and escalation register
+
+- **Purpose:** assign a primary, backup, decision right, on-call route, and escalation path for every
+  role and gate in this playbook.
+- **Accountable owner:** service owner.
+- **Inputs:** customer organization chart, support entitlements, incident process, and the roles in
+  Section 1.
+- **Required detail:** named people or teams, primary/backup contact, approval authority, service hours,
+  incident route, Red Hat case contacts, and temporary delegation process.
+- **Complete when:** no critical component, artifact, test, rotation, recovery task, or gate is ownerless.
+- **Handoff:** accompanies every net-new, release, change, incident, and recovery record.
+- **References:** [upstream personas](https://confidentialcontainers.org/docs/architecture/trust-model/cloud-native-personas/)
+  and [Red Hat support scope](https://access.redhat.com/support/offerings/production/soc).
+
+<a id="ha05"></a>
+### HA05 — Infrastructure readiness evidence pack
+
+- **Purpose:** prove that prerequisites work before Operator or production workload changes begin.
+- **Accountable owner:** OpenShift platform team; hardware, network, PKI, registry, and attestation
+  teams contribute evidence.
+- **Inputs:** HA02, HA03, hardware inventory, mirror bill of materials, certificates, capacity model,
+  and readiness test plan.
+- **Required detail:** SEV-SNP/BIOS/firmware result for every eligible worker; node and capacity
+  inventory; DNS/NTP/TLS/route/proxy results; internal content inventory; guest-path test plan.
+- **Complete when:** every prerequisite is passing or an explicit owner, due date, and go/no-go effect
+  is recorded for the gap.
+- **Handoff:** readiness approval permits MA01 and MA03 installation work to begin.
+- **References:** [Red Hat 1.12 installation prerequisites](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/install-cc-overview_metal-cc),
+  [host verification script](../scripts/verify-snp-host.sh), and
+  [baseline validation script](../scripts/validate-sno-baseline.sh).
+
+<a id="ha06"></a>
+### HA06 — Resource-release contract
+
+- **Purpose:** record the data owner's human authorization for a specific protected resource to be
+  released to a defined workload identity under stated attestation conditions.
+- **Accountable owner:** data owner; security/attestation translates the approved intent into MA01.
+- **Inputs:** HA01 data scope, HA03 boundary, MA02 image/initdata identities, requested resource URI,
+  proposed reference set, policy revisions, validity period, and revocation owner.
+- **Required detail:** approval ID, resource identifier, workload owner and immutable identity,
+  enforceable guest/reference constraints, review/expiry, revocation route, data-owner approval, and
+  security approval. An image digest is a valid condition only when the technical path verifies it.
+- **Complete when:** each approved condition maps to an enforceable MA01 or MA02 control and the deny
+  test is defined. HA06 contains authorization metadata, never the protected value.
+- **Handoff:** attestation implements MA01; HA07 later proves that the approved and denied cases behave
+  as intended.
+- **References:** [Trustee policies](https://confidentialcontainers.org/docs/attestation/policies/)
+  and [Trustee protected resources](https://confidentialcontainers.org/docs/attestation/resources/).
+
+<a id="ha07"></a>
+### HA07 — Acceptance evidence record
+
+- **Purpose:** demonstrate that one exact artifact set allows the intended operation and fails closed
+  for relevant negative cases.
+- **Accountable owner:** independent gate approver; security and SRE capture evidence.
+- **Inputs:** HA02, HA06, MA01, MA02, MA03, test cases, synchronized timestamps, and expected results.
+- **Required detail:** pod UID/node, immutable digests/revisions, correlated platform/guest/registry/
+  Trustee/application evidence, positive result, each negative result, exceptions, and cleanup.
+- **Complete when:** the approver can trace the request through the KBS/AS decision to guest and
+  application outcome, and no unexplained allow or denial remains.
+- **Handoff:** permits production promotion, upgrade closure, restoration, or node return to service.
+- **References:** [Red Hat observability](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/observe_metal-cc)
+  and [test rung script](../scripts/test-rung.sh).
+
+<a id="ha08"></a>
+### HA08 — Operations and support package
+
+- **Purpose:** give on-call staff the health views, alerts, synthetic checks, triage routes, and safe
+  support-collection procedure needed to operate the service.
+- **Accountable owner:** SRE and service desk.
+- **Inputs:** SLO, HA04 contacts, HA07 signals, topology, component log/metric locations, certificate
+  lifetimes, and version-matched must-gather references.
+- **Required detail:** dashboards, actionable alert thresholds, allowed/denied synthetic probes,
+  symptom-to-owner routing, evidence/redaction rules, escalation, and maintenance checks.
+- **Complete when:** an operator unfamiliar with the build detects and routes a forced failure without
+  exposing protected material.
+- **Handoff:** used continuously and updated after releases, upgrades, incidents, and recovery tests.
+- **References:** [Red Hat troubleshooting](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/troubleshoot_metal-cc),
+  [debug surface](runbooks/debug-surface.md), and [failure-mode playbook](runbooks/failure-modes.md).
+
+<a id="ha09"></a>
+### HA09 — Backup and recovery record
+
+- **Purpose:** prove that the decision system and protected-resource sources can be restored within
+  approved recovery objectives.
+- **Accountable owner:** attestation and platform teams; service owner approves RTO/RPO.
+- **Inputs:** authoritative configuration inventory, protected-value inventory, certificates/keys,
+  HA01 recovery objectives, topology dependencies, and recovery access.
+- **Required detail:** what is backed up, exclusions, encrypted locations, ownership, restore order,
+  dependency sequence, RTO/RPO measurement, last exercise result, and post-restore HA07.
+- **Complete when:** an isolated restore produces the intended allow and deny outcomes, not merely
+  healthy Kubernetes objects.
+- **Handoff:** prerequisite for production acceptance and every HA10 upgrade approval.
+- **References:** [Red Hat Trustee 1.12 guide](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/index)
+  and the recovery order in Section 7 of this playbook.
+
+<a id="ha10"></a>
+### HA10 — Change and upgrade impact record
+
+- **Purpose:** join the before/after BOM, trust-impact analysis, implementation sequence, test plan,
+  stop conditions, and matched rollback set for a security-sensitive change.
+- **Accountable owner:** named change owner.
+- **Inputs:** current and target HA02, affected HA06 contracts, MA01/MA02/MA03 revisions, release notes,
+  maintenance capacity, HA09 restore point, and lab results.
+- **Required detail:** scope, dependencies, measurement/reference/certificate impact, owners, lab
+  evidence, production steps, observation window, rollback trigger/authority, and approvals.
+- **Complete when:** all affected artifacts have owners, lab allow/deny and rollback tests pass, and
+  change authority records go/no-go criteria.
+- **Handoff:** authorizes production execution and is closed only with updated HA02, HA07, HA08, and HA09.
+- **References:** [OSC 1.12 update procedure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/update-osc-cc-overview_metal-cc)
+  and [Trustee update procedure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/update-trustee-overview_metal-trustee).
+
+<a id="ha11"></a>
+### HA11 — Incident evidence packet
+
+- **Purpose:** preserve the minimum correlated, redacted evidence needed for internal response and a
+  productive Red Hat support case.
+- **Accountable owner:** incident lead.
+- **Inputs:** HA02, HA04, HA07 baseline, recent HA10 changes, alert timeline, failing pod identity,
+  component status/logs, and comparison with a known-good workload.
+- **Required detail:** timestamps/timezone, affected scope and resource IDs, failure stage, CR/Operator
+  status, relevant logs, policy/reference revisions, containment, revocations, and recovery decisions.
+- **Complete when:** the timeline can distinguish scheduling, VM launch, guest, registry, evidence,
+  appraisal, resource authorization, and application failure without including credentials or secrets.
+- **Handoff:** internal responders use it for containment; Red Hat receives the supported-product subset.
+- **References:** [Red Hat 1.12 troubleshooting](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/troubleshoot_metal-cc)
+  and [guest-side KBS debugging](runbooks/rung-kbs-guest-debug.md).
+
+<a id="ha12"></a>
+### HA12 — Retirement and data-disposition record
+
+- **Purpose:** prove that consumers, authorizations, protected material, runtime resources, endpoints,
+  and operational dependencies were removed or retained under explicit instruction.
+- **Accountable owner:** service owner with data-owner approval.
+- **Inputs:** workload/resource inventory, HA06 contracts, retention requirements, shared-material
+  analysis, uninstall plan, and final verification plan.
+- **Required detail:** stopped onboarding, migrated/removed workloads, revoked access, rotations,
+  retained audit evidence, deleted values/keys/certificates, removed cluster/network/monitoring objects,
+  and approvers.
+- **Complete when:** no confidential workload or resource consumer remains, endpoints and credentials
+  are closed, data disposition is verified, and both owners sign.
+- **Handoff:** closes the service lifecycle and supplies audit evidence.
+- **References:** [Red Hat 1.12 uninstall procedure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/uninstall-overview_metal-cc).
+
+<a id="ma01"></a>
+### MA01 — Trustee baseline bundle
+
+- **Purpose:** provide the versioned machine configuration that deploys Trustee and enforces evidence
+  appraisal and protected-resource release.
+- **Accountable owner:** security and attestation team.
+- **Inputs:** HA02, HA03, approved HA06 contracts, PKI/admin trust references, endorsement/VCEK inputs,
+  reference values, protected-resource metadata, and backup design.
+- **Machine resources:** a Restricted `TrusteeConfig` plus the observed resources it generates. If the
+  advanced `KbsConfig` path is required, include the approved exception, installed CRD, complete
+  `KbsConfig`, every referenced object, and evidence that equivalent restrictive controls are enforced.
+  In both cases retain KBS/AS configuration, complete AS and KBS policies, RVPS values, certificate/
+  cache mounts, services/routes, installed CSV/CRD identity, content hashes, and secret/resource
+  references. Secret values remain outside version control.
+- **Complete when:** schemas validate against the installed Trustee 1.1 Operator CRDs; the desired
+  source and observed generated state are retained; Trustee is healthy; a known-good request succeeds;
+  a known-bad request fails; and rollback is retained. An empty reference set or an allow-all policy is
+  test scaffolding, never a production MA01.
+- **Product and upstream specifications:** [Red Hat Trustee 1.12 connected guide](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/index),
+  [disconnected configuration](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers_in_a_disconnected_environment/configure-trustee-overview_metal-trustee-disconnected),
+  point-in-time upstream [`TrusteeConfig` CRD](https://github.com/confidential-containers/trustee-operator/blob/v0.19.0/config/crd/bases/confidentialcontainers.org_trusteeconfigs.yaml)
+  and [`KbsConfig` CRD](https://github.com/confidential-containers/trustee-operator/blob/v0.19.0/config/crd/bases/confidentialcontainers.org_kbsconfigs.yaml),
+  [Trustee policies](https://confidentialcontainers.org/docs/attestation/policies/),
+  [reference values](https://confidentialcontainers.org/docs/attestation/reference-values/), and
+  [protected resources](https://confidentialcontainers.org/docs/attestation/resources/). The upstream
+  CRDs are comparison aids; the CRDs installed by Red Hat Trustee 1.1 are authoritative.
+- **Repository examples:** [advanced `KbsConfig`](../gitops/base/trustee/kbsconfig.yaml),
+  [policy and RVPS ConfigMaps](../gitops/base/trustee/kbs-configmaps.yaml),
+  [secret stubs](../gitops/base/trustee/secret-stubs.example.yaml), and
+  [multi-socket VCEK runbook](runbooks/multi-socket-vcek.md). The local base uses the advanced path and
+  permissive evaluation scaffolding; it is not a production Restricted profile. These rig examples do
+  not replace the Red Hat 1.12 product schema or the required allow/deny evidence.
+
+<a id="ma02"></a>
+### MA02 — Workload trust bundle
+
+- **Purpose:** identify and protect the exact application and guest launch configuration proposed for
+  an HA06 authorization decision.
+- **Accountable owner:** workload and supply-chain team; security approves policy-relevant content.
+- **Inputs:** final application source/build, dependency inventory, target registry, HA06 requirements,
+  Trustee endpoint/CA, image verification and encryption design, and final workload manifest.
+- **Machine resources:** digest-pinned OCI image identity; SBOM and provenance bound to that digest;
+  signature evidence and verification-key reference; encryption key ID/reference when used; initdata
+  source, encoded value, and digest; image-security policy; dependency list; and either the complete
+  applied restrictive Kata Agent policy and digest or the exact vendor guest-asset/default-policy
+  identity and extracted policy digest.
+- **Complete when:** the build is reproducible; every trust artifact names the same immutable image;
+  configured signature checks pass; initdata source, annotation, and attestation claim match; the exact
+  applied Kata policy is identifiable; required operations succeed; and tampered, unsigned, wrong-key,
+  disallowed guest-operation, and mismatched-initdata cases fail as designed.
+- **Specifications:** [OCI descriptor and digest rules 1.1.1](https://github.com/opencontainers/image-spec/blob/v1.1.1/descriptor.md),
+  [OCI manifest rules 1.1.1](https://github.com/opencontainers/image-spec/blob/v1.1.1/manifest.md),
+  [OCI image encryption specification](https://github.com/containers/ocicrypt/blob/main/docs/encodings.md),
+  [CoCo initdata](https://confidentialcontainers.org/docs/features/initdata/),
+  [signed images](https://confidentialcontainers.org/docs/features/signed-images/),
+  [encrypted images](https://confidentialcontainers.org/docs/features/encrypted-images/), and
+  [Kata Agent policy](https://github.com/kata-containers/kata-containers/blob/main/docs/how-to/how-to-use-the-kata-agent-policy.md).
+- **Repository examples:** [initdata source](../gitops/base/workloads/initdata.example.toml),
+  [initdata encoder](../scripts/encode-initdata.sh),
+  [signed-image build](../scripts/build-rung-images.sh), and
+  [signature verification](../scripts/verify-rung-signed-signature.sh). The example initdata omits a
+  custom policy and relies on the guest's built-in policy; production evidence must identify and test
+  that exact default, or supply and test a complete replacement. The example build also needs an
+  approved SBOM and provenance artifact before it satisfies MA02.
+
+<a id="ma03"></a>
+### MA03 — Platform deployment set
+
+- **Purpose:** provide the versioned OpenShift resources that enable the supported confidential runtime
+  and deploy an immutable workload to eligible workers.
+- **Accountable owner:** OpenShift platform team for cluster resources; workload team for its Pod spec.
+- **Inputs:** HA02, HA03 placement/network decisions, HA05 readiness, MA02 identities, namespace/service
+  account, PodVM capacity, storage, and workload network requirements.
+- **Machine resources:** OSC feature-gate configuration, NFD and TEE discovery rules, `KataConfig`, a
+  dedicated `Namespace` and `ServiceAccount`, RBAC and network/storage policy objects, explicit
+  placement and capacity controls, and Pod/workload specs using `runtimeClassName: kata-cc`, an
+  immutable image, initdata, and PodVM-sized resources. Capture the live, product-created
+  `RuntimeClass/kata-cc` as observed reconciliation evidence; do not hand-author it.
+- **Complete when:** resources validate against the installed APIs, eligible nodes are labeled,
+  Operator/`KataConfig`/machine config pools are healthy, the generated `kata-cc` runtime matches the
+  intended scheduling boundary, and the representative Pod uses the dedicated identity and schedules
+  only to eligible workers with the approved resource, network, and storage controls.
+- **Product and API specifications:** [Red Hat 1.12 installation](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/install-cc-overview_metal-cc),
+  [Red Hat 1.12 configuration](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/configure-cc-overview_metal-cc),
+  [OSC 1.12.1 `KataConfig` CRD](https://github.com/openshift/sandboxed-containers-operator/blob/v1.12.1/config/crd/bases/kataconfiguration.openshift.io_kataconfigs.yaml),
+  [Kubernetes Pod v1 API](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/),
+  [RuntimeClass v1 API](https://kubernetes.io/docs/reference/kubernetes-api/node/runtime-class-v1/), and
+  [Node Feature Discovery API](https://kubernetes-sigs.github.io/node-feature-discovery/master/reference/generated-nfd-api-reference.html).
+- **Repository examples:** [`KataConfig`](../gitops/base/kataconfig/kataconfig.yaml),
+  [OSC feature gates](../gitops/base/kataconfig/feature-gates.yaml),
+  [AMD SEV-SNP node rule](../gitops/base/nfd/amd-snp-rule.yaml), and
+  [digest-ready signed workload](../gitops/base/workloads/rung-signed-pod.yaml). The rung workload is a
+  partial test example: it does not provide the required dedicated namespace, service account, or
+  production placement controls.
+
+## 10. Source library
 
 ### Red Hat product documentation for the 1.12 baseline
 
@@ -507,6 +778,7 @@ Use upstream references for concepts and implementation detail, not as substitut
 ### Repository implementation and research material
 
 - [Primary-source research and versioned source catalog](research/confidential-containers-reference-material.md)
+- [MA01-MA03 field-level specification and source map](research/artifact-spec-links.md)
 - [Repository architecture and tested topology](architecture.md)
 - [Customer scoping questions](design/customer-scoping.md)
 - [Design rationale and security gates](design/engagement-design.md)
@@ -517,7 +789,7 @@ Use upstream references for concepts and implementation detail, not as substitut
 - [Multi-socket AMD VCEK runbook](runbooks/multi-socket-vcek.md)
 - [Guest-side KBS debugging](runbooks/rung-kbs-guest-debug.md)
 
-## 10. Customer workshop output
+## 11. Customer workshop output
 
 Use a working session to fill the playbook rather than merely review slides. The workshop is complete
 only when it produces:
