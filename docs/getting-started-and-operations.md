@@ -174,16 +174,16 @@ deployment must not bypass it when the change affects attested identity or prote
 
 ```mermaid
 flowchart TD
-  A["Workload owner opens release request"]
-  B["Workload team builds immutable image and workload trust bundle"]
-  C["Data and security owners approve the resource-release contract"]
-  D["Attestation team versions policy, references, and resource metadata"]
-  E["Platform team deploys the immutable manifest to non-production"]
-  F["Security and SRE run allow and deny tests"]
-  G{"Release gates pass"}
-  H["Service owner promotes the approved revisions"]
-  I["SRE observes synthetic and workload health"]
-  J["Release is held and evidence is routed to the owning team"]
+  A["1 Intake: workload owner opens release request"]
+  B["2 Build: workload team creates the immutable image and MA02"]
+  C["3 Authorize: data and security owners approve HA06"]
+  D["4 Configure trust: attestation team versions MA01"]
+  E["5 Deploy: platform team applies MA03 outside production"]
+  F["6 Prove: security and SRE produce HA07 allow and deny evidence"]
+  G{"Step 6 release gates pass"}
+  H["7 Promote: service owner promotes the approved revisions"]
+  I["8 Observe: SRE verifies synthetic and workload health"]
+  J["Hold: route evidence to the owner and correct the failed input"]
 
   A -->|"Release record"| B
   B -->|"MA02 workload trust bundle"| C
@@ -251,18 +251,18 @@ migration project and is outside this workflow.
 
 ```mermaid
 flowchart TD
-  A["Change owner opens upgrade record and freezes before and after BOM"]
-  B["Platform, hardware, workload, and attestation teams assess impact"]
-  C["Attestation and platform teams create verified restore points"]
-  D["Change owner executes the complete change in the lab"]
-  E["Owners regenerate affected references, policies, collateral, or trust"]
-  F["Security and SRE run platform, allow, deny, and rollback tests"]
-  G{"Lab gates pass"}
-  H["Change authority approves production window and rollback triggers"]
-  I["Platform and attestation teams execute production sequence"]
-  J{"Production gates pass"}
-  K["Service owner closes HA10 and updates HA02, MA01, HA07, HA08, and HA09"]
-  L["Stop rollout, quarantine affected scope, and execute rollback or recovery"]
+  A["1 Scope: open HA10 and freeze the before and after BOM"]
+  B["2 Impact: component owners assess platform and trust effects"]
+  C["3 Protect: attestation and platform teams verify restore points"]
+  D["4 Rehearse: change owner executes the complete change in the lab"]
+  E["5 Re-establish trust: owners version affected trust inputs"]
+  F["6 Prove: security and SRE run health, allow, deny, and rollback tests"]
+  G{"Step 6 lab gates pass"}
+  H["7 Authorize: change authority approves the window and stop conditions"]
+  I["8 Execute: platform and attestation teams run the production sequence"]
+  J{"Step 8 production gates pass"}
+  K["9 Accept: service owner closes HA10 and all dependent artifacts"]
+  L["Stop: quarantine the affected scope and execute rollback or recovery"]
 
   A -->|"HA10 change scope"| B
   B -->|"Impact matrix"| C
