@@ -9,7 +9,7 @@ target air-gapped multi-node cluster.
 | Layer | Choice |
 |-------|--------|
 | TEE | **AMD SEV-SNP** first; Intel TDX added later as an additive overlay (⚠️ see air-gap caveat) |
-| Path | **Bare-metal Kata host** (the worker's RHCOS kernel IS the SNP host) — not peer-pods |
+| Path | **Bare-metal Kata host** (the worker's RHCOS kernel is the SNP host) |
 | Platform | Customer baseline: OSC **1.12** + Red Hat build of Trustee **1.1**; tested rig pin: OCP 4.20.18. Use the **1.12** docs only and re-check its live OCP z-stream matrix before customer use. |
 | Attestation (air-gap) | Trustee-side **OfflineStore** VCEK cache (`kbsLocalCertCacheSpec`) — see [design doc](docs/design/engagement-design.md) |
 | GitOps | Kustomize substrate; `oc apply -k` + Makefile on the rig; ArgoCD (mirrored) in the production env |

@@ -35,8 +35,8 @@ tested, disconnected AMD SEV-SNP implementation.
 > and [OpenShift Operator life-cycle policy](https://access.redhat.com/support/policy/updates/openshift_operators).
 
 > **Source and support boundary.** Red Hat documentation is the source of truth for Red Hat product
-> support and product procedures. Upstream Confidential Containers, Trustee, Kata Containers, and
-> Cloud API Adaptor documentation explain the design and emerging features, but upstream behavior
+> support and product procedures. Upstream Confidential Containers, Trustee, and Kata Containers
+> documentation explain the design and emerging features, but upstream behavior
 > is not by itself a statement of Red Hat support. Repository runbooks describe what this project
 > tested; they do not widen the product support boundary.
 
@@ -81,7 +81,7 @@ VM that can contain one or more containers; upstream CoCo explains the additiona
 - **Trustee independently decides whether it is safe to release protected material.**
 - **The workload runs with the material only after the configured checks pass.**
 
-> **What this accomplishes:** a cluster, host, hypervisor, or cloud administrator can still stop or
+> **What this accomplishes:** a cluster, host, or hypervisor administrator can still stop or
 > delay the workload, but the design reduces their ability to read protected guest memory or obtain
 > attestation-gated secrets. The exact guarantee is inherited from the selected TEE and the policy
 > actually enforced.
@@ -126,8 +126,7 @@ explicitly leaves several risks outside the boundary.
 | Initdata | Measured, per-pod startup configuration | It carries non-secret configuration such as Trustee URLs, CA certificates, and Kata Agent policy without rebuilding the guest image; it provides integrity, not confidentiality |
 | `KataConfig` | Cluster custom resource that installs/configures the Kata runtime | Creating or deleting it can change and reboot eligible nodes |
 | `TrusteeConfig` | Custom resource that configures Red Hat build of Trustee | It declares the trusted-side service and generated resources |
-| Runtime class | The pod field that selects a runtime | `kata-cc` is the bare-metal confidential runtime; `kata-remote` is used for peer pods |
-| Peer pod | A pod whose CVM is created remotely through a cloud/hypervisor API | It adds cloud credentials, PodVM images, networking, quotas, and cost ownership |
+| Runtime class | The pod field that selects a runtime | `kata-cc` selects the bare-metal confidential runtime used by this platform |
 | VCEK | AMD certificate used to validate SEV-SNP evidence | Disconnected and multi-socket environments need a deliberate certificate lifecycle |
 
 Red Hat's own definitions are in the
@@ -135,31 +134,21 @@ Red Hat's own definitions are in the
 The upstream [attestation overview](https://confidentialcontainers.org/docs/attestation/)
 maps KBS, AS, RVPS, AA, and CDH.
 
-## 3. Pick the deployment path before designing the platform
+## 3. Confirm the bare-metal deployment scope before designing the platform
 
-There are two broad runtime shapes. They share the workload idea but create and operate the pod VM
-in different places.
+This guide covers confidential VMs created locally on TEE-capable RHCOS workers. Workloads select
+the `kata-cc` runtime class. The hardware/datacenter and OpenShift platform teams therefore own the
+TEE-capable servers, BIOS and firmware process, node lifecycle, and local VM capacity.
 
-| Question | Bare-metal confidential containers | Peer pods |
-|---|---|---|
-| Where is the CVM created? | Locally on a TEE-capable RHCOS worker | Remotely through a supported cloud or hypervisor API |
-| Runtime class | `kata-cc` | `kata-remote` |
-| Why choose it? | Direct control of hardware and local VM launch | Avoid nested-virtualization limits on virtual workers; use cloud CVM offerings |
-| Extra infrastructure | TEE-capable metal, BIOS/firmware process, node capacity | Cloud API credentials, PodVM image, instance types, quotas, networking, cleanup controller, billing controls |
-| Primary infrastructure owner | Hardware/datacenter plus OpenShift platform teams | Cloud/platform team plus OpenShift platform team |
-| Failure/cost concern | Node reboot and local VM capacity | Orphaned cloud resources, API/quota failures, tunnel/network failures, and per-PodVM cost |
-
-Always select the platform from the current
+Confirm the customer platform against the current
 [Red Hat 1.12 feature-availability matrix](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/cc-discover_metal-cc#cc-compatibility_metal-cc),
-then open the matching platform guide from the
+then use the bare-metal procedures from the
 [OpenShift sandboxed containers 1.12 documentation landing page](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12).
-Upstream explains why peer pods exist in the
-[CoCo design overview](https://confidentialcontainers.org/docs/architecture/design-overview/#clouds-and-nesting)
-and the [Cloud API Adaptor architecture](https://github.com/confidential-containers/cloud-api-adaptor/blob/main/docs/architecture.md).
 
 > **Repository scope:** this repository implements the **bare-metal**, AMD SEV-SNP, disconnected
 > path. Its Latitude.sh SNO rig is a proof environment, not the target production topology. Do not
-> apply its provider-specific or SNO-specific choices to a peer-pods deployment.
+> apply its provider-specific or SNO-specific choices to the target production environment without
+> validating them.
 
 ## 4. Understand the trust boundary before the component diagram
 
@@ -179,7 +168,7 @@ and who is trusted to approve release.
 
 - The OpenShift control plane and scheduler.
 - The worker host OS, kubelet, CRI-O, Kata shim, and local hypervisor.
-- A cloud or infrastructure administrator.
+- An infrastructure administrator.
 - Host-side storage and networking unless protected by an additional control.
 
 The host still controls whether the CVM runs and what external devices, packets, and availability it
@@ -304,7 +293,6 @@ lose independent control over the rules that release its data.
 | OpenShift platform team | Maintain workload and Trustee clusters; install Operators; configure NFD, `KataConfig`, runtime classes, placement, capacity, updates, metrics, and must-gather access | Healthy Operators/CRs, node labels, runtime classes, capacity plan, update and rollback records |
 | Attestation / security platform team | Operate Trustee; protect admin credentials and TLS keys; manage AS and resource policies, RVPS values, protected resources, certificate collateral, backup and audit | Approved `TrusteeConfig`, policies, reference values, resource inventory, rotation and restore evidence |
 | Hardware / datacenter team | Supply supported TEE hardware; configure BIOS; own BMC, firmware, CPU replacement, maintenance, and vendor certificate access | Hardware inventory, BIOS baseline, firmware/TCB record, pre/post-maintenance attestation test |
-| Cloud platform team (peer pods only) | Own supported CVM types, API credentials, PodVM images, quotas, networks, cleanup, tags, and spend controls | Cloud configuration, least-privilege identity, quota/cost alerts, orphan-resource check |
 | Network, PKI, and registry team | Provide DNS, NTP, routes, firewall rules, proxies, registry/mirror, CA chains, certificates, and network monitoring | Flow matrix, certificate inventory, mirrored-content report, reachability and expiry alerts |
 | SRE / service desk | Monitor end-to-end service; triage events across OpenShift, Trustee, registry, host, and guest; manage incidents | Dashboards, alerts, runbooks, evidence bundles, incident timeline and postmortem |
 | Red Hat | Publish product bits, compatibility/support documentation, and product support under the customer's subscription | Official docs, release notes, errata, support case guidance |
@@ -393,8 +381,8 @@ an assertion that someone looked at the topic.
 | 1. Define the protected-data journey | Data + workload owners | Identifies plaintext entry, use, exit, storage, logs, and deletion | Data-flow diagram and classification |
 | 2. Write the threat statement | Security architect | States which admins/providers are outside the trust boundary and which risks remain | Approved threat model and residual-risk list |
 | 3. Verify current product support | Platform architect | Prevents building on an unsupported OCP/OSC/Trustee/TEE/platform combination | Dated link or capture of matrix and release notes |
-| 4. Choose bare metal or peer pods | Platform + infrastructure | Fixes where CVMs run and which team owns the infrastructure | Architecture decision record |
-| 5. Select hardware/instance type and firmware baseline | Hardware/cloud team | Ensures the required TEE can launch and be attested | Model, CPU, sockets, BIOS, firmware, CVM size, quota |
+| 4. Confirm the bare-metal topology | Platform + infrastructure | Fixes which RHCOS workers host CVMs and which teams own them | Architecture decision record |
+| 5. Select hardware and firmware baseline | Hardware team | Ensures the required TEE can launch and be attested | Model, CPU, sockets, BIOS, firmware, and CVM size |
 | 6. Define the trusted Trustee environment | Security + platform | Keeps verifier, keys, and policies outside the untrusted workload failure domain | Cluster/topology and admin-boundary diagram |
 | 7. Assign every owner and backup | Service owner | Eliminates gaps during incidents and rotations | Completed responsibility table and contacts |
 | 8. Design network, DNS, NTP, TLS, proxy, and registry flows | Network/PKI/registry | Lets guests reach Trustee and registries without hidden public dependencies | Approved source/destination/port matrix and CA inventory |
@@ -417,7 +405,7 @@ order and outcome gates below.
 | Order | Activity | Primary owner | What it accomplishes | Do not advance until... |
 |---:|---|---|---|---|
 | 1 | Record exact versions and support state | Platform | Freezes a reviewable baseline | The matrix and release notes match the intended topology |
-| 2 | Configure and verify TEE hardware | Hardware/cloud | Makes confidential VM launch possible | Vendor-specific host/CVM checks pass on every eligible target |
+| 2 | Configure and verify TEE hardware | Hardware | Makes confidential VM launch possible | Vendor-specific host/CVM checks pass on every eligible target |
 | 3 | Establish workload and trusted clusters | Platform | Creates the separate orchestration and verification environments | Both clusters meet ordinary production health and access standards |
 | 4 | Establish DNS, time, TLS, routes, registry, and proxy paths | Network/PKI/registry | Provides identity and reachability for guest pull and attestation | Tests run from the relevant network zones, including inside a CVM when available |
 | 5 | Install and configure Red Hat build of Trustee with the production `Restricted` profile | Attestation + platform | Creates the trusted verifier and protected-resource endpoint | Operator, `TrusteeConfig`, generated workloads, service, route, TLS, and token verification are healthy |
@@ -439,11 +427,7 @@ order and outcome gates below.
 - [Deploying confidential containers on bare-metal servers](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/index)
 - [Deploying Red Hat build of Trustee for bare-metal workloads](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/index)
 - [Deploying Red Hat build of Trustee for disconnected bare-metal workloads](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers_in_a_disconnected_environment/index)
-- [Deploying confidential containers on Microsoft Azure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_microsoft_azure/index)
-- [Deploying Red Hat build of Trustee for Microsoft Azure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_microsoft_azure/index)
-- [Deploying confidential containers on Azure Red Hat OpenShift](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_microsoft_azure_red_hat_openshift/index)
 - [Deploying confidential containers on IBM Z and LinuxONE bare metal](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_ibm_z_and_ibm_linuxone_bare-metal_servers/index)
-- [Deploying confidential containers on IBM Z and LinuxONE with peer pods](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_ibm_z_and_ibm_linuxone_with_peer_pods/index)
 
 ### Disconnected-environment overlay
 
@@ -595,7 +579,6 @@ firmware cadence, risk rating, and automation.
 | Continuous | Alert on Trustee endpoint errors/latency and pod restarts | SRE/attestation | Detects resource-release and appraisal failures before broad rollout |
 | Continuous | Alert on confidential pod startup failures and abnormal latency | SRE/workload | Detects capacity, runtime, image-pull, policy, or attestation regressions |
 | Continuous | Monitor registry, DNS, NTP, route, and TLS health from relevant zones | Network/registry | Detects dependencies that generic cluster health misses |
-| Continuous | Monitor cloud PodVM inventory, quota, and cost (peer pods) | Cloud team | Finds orphaned resources, API exhaustion, and unexpected spend |
 | Daily | Review failed/denied attestations by reason, workload, and change window | Attestation/SRE | Separates expected denials and attacks from configuration drift |
 | Daily | Review Operator/CR status, degraded pools, node readiness, and capacity | Platform | Finds partial rollout and loss of TEE capacity |
 | Weekly | Run a synthetic positive resource-release probe | SRE/security | Proves the end-to-end allow path, not just component liveness |
@@ -603,7 +586,7 @@ firmware cadence, risk rating, and automation.
 | Weekly | Check certificate, token, key, and collateral expiry horizon | PKI/attestation | Prevents avoidable expiry outages |
 | Monthly | Reconcile resources, policies, reference values, signing roots, and owners | Data/attestation | Removes orphaned access and catches configuration drift |
 | Monthly | Reconcile supported versions, errata, CVEs, and upstream/product caveats | Platform/security | Identifies required updates without confusing upstream availability with support |
-| Monthly | Review PodVM sizing, queue/start latency, node capacity, and peer-pod cost | Platform/cloud/workload | Keeps performance and spend within service objectives |
+| Monthly | Review PodVM sizing, queue/start latency, and node capacity | Platform/workload | Keeps performance and capacity within service objectives |
 | Per backup policy | Back up authoritative configuration and protected sources | Platform/attestation/secret team | Makes Trustee and platform rebuild possible |
 | Quarterly or material change | Exercise restore and complete positive/negative tests | All service owners | Proves the backup restores security behavior, not only Kubernetes objects |
 | Before firmware/hardware change | Capture baseline and stage replacement collateral/references | Hardware/attestation | Prevents an unexplained fleet-wide attestation outage |
@@ -621,8 +604,7 @@ At minimum, operators need views for:
 - Trustee Operator/CSV, `TrusteeConfig`, KBS/AS/RVPS workloads, route/service/TLS, decision errors,
   policy/reference revision, and protected-resource backend health;
 - registry requests from the guest path, image/signature availability, DNS/NTP, proxy, and CA expiry;
-- hardware/firmware inventory and endorsement-collateral age; and
-- peer-pod cloud APIs, instances, cleanup, quota, tunnels, and spend when applicable.
+- hardware/firmware inventory and endorsement-collateral age.
 
 Use the **product-specific** OSC and Trustee must-gather images that match the installed release.
 Red Hat's product guides note that generic must-gather does not include all Kata/guest or Trustee
@@ -732,7 +714,7 @@ between them. A confidential pod often fails before normal application logs exis
 | Symptom | First owner | First questions | Next evidence |
 |---|---|---|---|
 | Pod never schedules | Platform | Runtime class present? Eligible labeled node? Capacity/taints? | Scheduler events, runtime classes, node labels/resources |
-| Scheduled but CVM never starts | Platform + hardware/cloud | Kata/runtime healthy? TEE launch available? Cloud API/quota? | `KataConfig`, node/runtime logs, cloud events, hardware state |
+| Scheduled but CVM never starts | Platform + hardware | Kata/runtime healthy? TEE launch available? | `KataConfig`, node/runtime logs, and hardware state |
 | CVM starts but registry sees nothing | Platform + network | Guest DNS/route/proxy/CA configured in measured initdata? | Guest/host network trace, initdata source/hash, image-rs logs |
 | Registry returns 401/403 | Registry + workload | Guest auth present? Correct host/path? Signature endpoint available? | Registry access log, auth config, image reference |
 | TLS failure | PKI/network | Correct endpoint name, route type, trust chain, time? | Presented chain, SAN, guest CA/config, clock |
@@ -773,11 +755,9 @@ Retirement is both a dependency teardown and a data-destruction activity.
 5. Remove `KataConfig` and the OSC Operator in Red Hat's documented order.
 6. Remove Trustee only after no workload depends on it and required resources/policy records are
    backed up or destroyed according to owner instruction.
-7. Delete peer-pod cloud resources, images, identities, routes, and quotas; check the provider
-   inventory for orphans and residual spend.
-8. Remove mirror content, collateral, keys, certificates, DNS, firewall, and monitoring entries only
+7. Remove mirror content, collateral, keys, certificates, DNS, firewall, and monitoring entries only
    after their consumers are gone.
-9. Verify nodes/pools recover, runtime resources are absent, endpoints are closed, credentials are
+8. Verify nodes/pools recover, runtime resources are absent, endpoints are closed, credentials are
    revoked, and data-disposition evidence is complete.
 
 Red Hat's bare-metal
@@ -801,11 +781,7 @@ identical resources.
 - [Bare-metal confidential containers: uninstall](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/uninstall-overview_metal-cc)
 - [Red Hat build of Trustee for bare-metal workloads](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/index)
 - [Red Hat build of Trustee for disconnected bare-metal workloads](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers_in_a_disconnected_environment/index)
-- [Confidential containers on Microsoft Azure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_microsoft_azure/index)
-- [Red Hat build of Trustee for Microsoft Azure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_microsoft_azure/index)
-- [Confidential containers on Azure Red Hat OpenShift](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_microsoft_azure_red_hat_openshift/index)
 - [Confidential containers on IBM Z and LinuxONE bare metal](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_ibm_z_and_ibm_linuxone_bare-metal_servers/index)
-- [Confidential containers on IBM Z and LinuxONE with peer pods](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_ibm_z_and_ibm_linuxone_with_peer_pods/index)
 
 ### Upstream Confidential Containers and Trustee
 
@@ -830,8 +806,6 @@ identical resources.
 - [Trustee source and component documentation](https://github.com/confidential-containers/trustee)
 - [KBS attestation protocol specification](https://github.com/confidential-containers/trustee/blob/main/kbs/docs/kbs_attestation_protocol.md)
 - [Guest components source](https://github.com/confidential-containers/guest-components)
-- [Cloud API Adaptor source](https://github.com/confidential-containers/cloud-api-adaptor)
-- [Cloud API Adaptor architecture](https://github.com/confidential-containers/cloud-api-adaptor/blob/main/docs/architecture.md)
 - [Kata Containers architecture](https://github.com/kata-containers/kata-containers/tree/main/docs/design/architecture)
 
 ### This repository's implementation material
@@ -855,7 +829,7 @@ Use this sequence to turn the handbook into an actionable customer plan.
 1. **Outcome (15 min):** Which data and administrator/provider threat are we addressing?
 2. **Boundary (20 min):** Who is trusted, what remains untrusted, and what is explicitly out of scope?
 3. **Support gate (15 min):** Which OCP/OSC/Trustee/platform/TEE combination is required today?
-4. **Topology (20 min):** Bare metal or peer pods; where do workload and Trustee clusters live?
+4. **Topology (20 min):** Which bare-metal workers host confidential workloads, and where does the Trustee cluster live?
 5. **Ownership (30 min):** Put team names and backups against every row in Section 6.
 6. **Flows (30 min):** Draw guest-to-Trustee, guest-to-registry, collateral, DNS/NTP, PKI, and admin paths.
 7. **Identity (30 min):** Agree on guest/image identity, reference values, and the three policy owners.
