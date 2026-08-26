@@ -156,7 +156,7 @@ Do not install the Operators until every row has evidence and an owner.
 | Readiness area | Evidence to attach | Owner |
 |---|---|---|
 | Product support | Dated compatibility matrix, release notes, BOM, and Red Hat support position for the 1.12 constraint | Platform architect |
-| Hardware | Model/serial, CPU/socket inventory, BIOS/UEFI settings, firmware/TCB, SEV-SNP readiness result for every eligible worker | Hardware team |
+| Hardware | Model/serial, CPU inventory, BIOS/UEFI settings, firmware/TCB, SEV-SNP readiness result for every eligible worker | Hardware team |
 | Capacity | Per-PodVM CPU/memory/storage model, node reservations, failure capacity, maintenance capacity | Platform + workload teams |
 | Trustee environment | Separate trusted cluster, administrator boundary, HA/SLO decision, backup destination, recovery access | Attestation + platform teams |
 | Guest network path | DNS, route, proxy, TLS CA, registry, and Trustee reachability plan from inside a CVM | Network/PKI/registry teams |
@@ -429,7 +429,7 @@ which requires removing confidential workloads before `KataConfig` and Operator 
 | KBS resource policy | Rules that determine whether an accepted identity may receive a resource |
 | RVPS | Service holding reference values used in appraisal |
 | Initdata | Integrity-protected launch configuration such as Trustee URL, CA, and Kata Agent policy; it is not confidential |
-| VCEK | AMD certificate used to validate SEV-SNP evidence; disconnected and multi-socket environments need an explicit lifecycle |
+| VCEK | AMD certificate used to validate SEV-SNP evidence; every eligible host uses the same collection and refresh lifecycle regardless of socket count |
 
 Confidential Containers does not replace application security, supply-chain security, TLS, storage
 controls, availability engineering, or data governance. A running pod is not proof that the intended
@@ -667,7 +667,7 @@ private keys, or administrator credentials.
 - **Repository examples:** [advanced `KbsConfig`](../gitops/base/trustee/kbsconfig.yaml),
   [policy and RVPS ConfigMaps](../gitops/base/trustee/kbs-configmaps.yaml),
   [secret stubs](../gitops/base/trustee/secret-stubs.example.yaml), and
-  [multi-socket VCEK runbook](runbooks/multi-socket-vcek.md). The local base uses the advanced path and
+  [VCEK collection script](../scripts/collect-vcek.sh). The local base uses the advanced path and
   permissive evaluation scaffolding; it is not a production Restricted profile. These rig examples do
   not replace the Red Hat 1.12 product schema or the required allow/deny evidence.
 
@@ -786,7 +786,6 @@ Use upstream references for concepts and implementation detail, not as substitut
 - [Install execution plan](runbooks/install-execution-plan.md)
 - [Debug surface by component and vantage point](runbooks/debug-surface.md)
 - [Failure-mode playbook](runbooks/failure-modes.md)
-- [Multi-socket AMD VCEK runbook](runbooks/multi-socket-vcek.md)
 - [Guest-side KBS debugging](runbooks/rung-kbs-guest-debug.md)
 
 ## 11. Customer workshop output

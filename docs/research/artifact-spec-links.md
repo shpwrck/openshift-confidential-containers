@@ -46,9 +46,10 @@ be revalidated against the binaries in the frozen bill of materials.
    versions.
 5. **Some local implementation assertions are intentionally unverified.** In particular,
    [`render-measurement-policy.sh`](../../scripts/render-measurement-policy.sh) says its initdata hash
-   mapping must be confirmed against real attestation evidence, and the VCEK tooling contains
-   multi-socket handling beyond the one-node workflow in the Red Hat guide. Preserve these as test or
-   support-case gates rather than turning comments into product requirements.
+   mapping must be confirmed against real attestation evidence. Preserve that as a test or support-case
+   gate rather than turning a script comment into a product requirement. AMD multi-socket hosts use the
+   same VCEK collection workflow as single-socket hosts; no socket-specific collection or placement
+   testing is required.
 
 ## MA01 — Trustee baseline bundle
 
@@ -66,7 +67,7 @@ resource values only in the approved secret/backup system.
 | KBS resource policy | Complete applied policy, ConfigMap name/key, SHA-256, exact resource paths governed, token claims required, default-deny behavior, approver, effective/expiry time, allow/deny evidence IDs | [Red Hat generated resource policy and customization][rh-trustee-config]; upstream [policy semantics][coco-policies], [resource URI model][coco-resources], and point-in-time [resource policy sample][up-resource-policy] | `resource-policy/policy.rego` in [`kbs-configmaps.yaml`](../../gitops/base/trustee/kbs-configmaps.yaml) |
 | RVPS/reference values | Exact `reference-values.json`, ConfigMap name/key, SHA-256, revision, platform/measurement names, algorithm/value, source/provenance, validity, approver, and the AS policy revision that consumes them | [Red Hat RVPS generation procedure][rh-trustee-config]; upstream [reference-value concepts][coco-reference-values] and point-in-time [RVPS sample][up-rvps-sample] | `rvps-reference-values` in [`kbs-configmaps.yaml`](../../gitops/base/trustee/kbs-configmaps.yaml); [`gen-rvps-veritas.sh`](../../scripts/gen-rvps-veritas.sh) |
 | Protected resource catalog | KBS URI (`kbs:///<repository>/<type>/<tag>`), backing Secret name/key, data owner, purpose, classification, consumer policy revision, key/version identifier, created/rotated/expires timestamps, backup reference; no plaintext or reusable key bytes | [Red Hat `kbsSecretResources` and signature-resource procedures][rh-trustee-config]; upstream [resource identifiers][coco-resources] and [KBS protocol paths][trustee-kbs-protocol] | [`secret-stubs.example.yaml`](../../gitops/base/trustee/secret-stubs.example.yaml); [`seed-trustee-secrets.sh`](../../scripts/seed-trustee-secrets.sh) |
-| AMD VCEK offline cache | Covered node, socket/chip/HWID, processor generation, firmware/TCB parameters, source URL, DER SHA-256, certificate issuer/serial/validity, collection tool/version/time, Secret name/key, mount path, validation result, and refresh trigger | [Red Hat 1.12 disconnected VCEK procedure][rh-trustee-config]; upstream point-in-time [offline VCEK cache layout and invalidation events][trustee-vcek-cache]; [AMD SEV-SNP ABI specification][amd-snp-abi] | [`collect-vcek.sh`](../../scripts/collect-vcek.sh), [`seed-trustee-secrets.sh`](../../scripts/seed-trustee-secrets.sh), and `kbsLocalCertCacheSpec` in [`kbsconfig.yaml`](../../gitops/base/trustee/kbsconfig.yaml) |
+| AMD VCEK offline cache | Covered node and host HWID, processor generation, firmware/TCB parameters, source URL, DER SHA-256, certificate issuer/serial/validity, collection tool/version/time, Secret name/key, mount path, validation result, and refresh trigger | [Red Hat 1.12 disconnected VCEK procedure][rh-trustee-config]; upstream point-in-time [offline VCEK cache layout and invalidation events][trustee-vcek-cache]; [AMD SEV-SNP ABI specification][amd-snp-abi] | [`collect-vcek.sh`](../../scripts/collect-vcek.sh), [`seed-trustee-secrets.sh`](../../scripts/seed-trustee-secrets.sh), and `kbsLocalCertCacheSpec` in [`kbsconfig.yaml`](../../gitops/base/trustee/kbsconfig.yaml) |
 | Backup references | Backup-set ID, encrypted location, captured CR/ConfigMap/Secret/backend inventory, excluded/generated items, encryption-key custodian, restore order, RPO/RTO, last restore test and post-restore allow/deny evidence; keep the backup itself out of Git | Kubernetes [ConfigMap][k8s-configmap] and [Secret][k8s-secret] schemas define the objects, but the reviewed Red Hat Trustee chapter does not supply an end-to-end DR schema | Link to the separately approved HA09 backup/recovery record; do not invent a fake in-repo secret backup |
 
 ### MA01 acceptance rules
@@ -75,9 +76,8 @@ resource values only in the approved secret/backup system.
   test is not a production baseline.
 - `Restricted` is a `TrusteeConfig` profile value, not a label to attach to an arbitrary set of
   hand-built ConfigMaps.
-- The Red Hat guide's VCEK procedure and the local multi-socket procedure differ in granularity.
-  For multi-socket hosts, require live negative/positive evidence for every launch location and seek
-  Red Hat confirmation before claiming the local per-chip cache scheme is the supported contract.
+- Use the same VCEK collection and validation workflow for every supported AMD host regardless of
+  socket count. Continue to refresh the host entry after a hardware or firmware/TCB change.
 - An empty RVPS array and `default allow := true` are evaluation scaffolding, not production MA01.
 
 ## MA02 — workload trust bundle

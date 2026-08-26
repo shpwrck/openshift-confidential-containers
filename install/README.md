@@ -72,13 +72,11 @@ VCEK_BUNDLE=./vcek-bundle
 MIRROR_REGISTRY=mirror.rig.local:8443
 ```
 
-For multi-socket or multi-node hardware, carry every required VCEK into
+For multi-node hardware, carry the VCEK collected from every eligible AMD host into
 `VCEK_BUNDLE/<lowercase-hwid>/vcek.der` before running `make deploy-trustee`. The script renders
-one short secret/mount pair per bundle entry (`vcek-snp-0`, `vcek-snp-1`, ...). Do not rely on a
-`snphost --socket` flag: the coco-tools snphost used here has no socket selector. `make
-collect-vcek` builds a socket-to-CPU map with `lscpu -p=CPU,SOCKET`, runs the coco-tools container
-once per socket with `podman --cpuset-cpus=<socket-cpus>`, records the resulting HWIDs, and fails
-if a multi-socket node reports more sockets than the carried bundle covers.
+one short secret/mount pair per bundle entry. `make collect-vcek NODE=<node-name>` runs once per
+host. Multi-socket hosts use exactly the same host-level workflow as single-socket hosts; no CPU
+pinning, per-socket enumeration, or additional certificate collection is required.
 
 `make run-rung-kbs` generates environment-bound initdata at runtime, configures the `rig.local`
 DNS forwarder to the bastion, applies the digest-pinned rung-kbs pod, and waits until the

@@ -59,7 +59,6 @@ Two cross-cutting sections close the guide: a [**Definition of done**](#definiti
 |---|---|
 | [`runbooks/failure-modes.md`](runbooks/failure-modes.md) | a step failed — symptom → cause → fast diagnostic → fix, ordered by phase (start at its "Top 7"). |
 | [`runbooks/debug-surface.md`](runbooks/debug-surface.md) | you need the **full debug toolbox** — every vantage point (host / guest CVM / Trustee / registry), log locations, and how to raise each component's log level. |
-| [`runbooks/multi-socket-vcek.md`](runbooks/multi-socket-vcek.md) | your SNP box is **dual-socket (2P)** — single-socket nodes don't need it. |
 | [`notes/latitude-snp-bringup.md`](notes/latitude-snp-bringup.md) | you want the Phase-4 BIOS recipe click-by-click. |
 | [`runbooks/install-execution-plan.md`](runbooks/install-execution-plan.md) | you need the signed/encrypted-rung proof state + stop-gates as an execution plan. |
 | [`design/engagement-design.md`](design/engagement-design.md) | you want to know **why** a decision was made, not just how. |
@@ -263,7 +262,7 @@ These are deliberately **not portable** between machines or firmware states:
 | Artifact | Why it is hardware-bound | Regenerate when |
 |----------|--------------------------|-----------------|
 | BIOS/firmware SNP settings | Firmware decides whether the CPU exposes SNP host capability. | Every re-provision, firmware reset, or hardware change. |
-| VCEK certificates | A VCEK is tied to a chip HWID and TCB version. | New socket, firmware/TCB change, provider swaps the physical server. |
+| VCEK certificates | A VCEK is tied to the host HWID and TCB version. | CPU/system-board replacement, firmware/TCB change, or provider replacement of the physical server. |
 | RVPS reference values | They describe expected measurements for a concrete launch/config. | initdata, workload, runtime, firmware, or TEE-relevant config changes. |
 | initdata annotation bytes | SNP measures the guest launch data. | KBS URL, registry config, policy/resource URI, or initdata content changes. |
 | TLS identity / Trustee URL | The CVM must talk to the verifier it was configured and measured to use. | Different cluster, route, certificate, or trust domain. |
@@ -862,25 +861,18 @@ KBS crash-loops (looks like an attestation bug) if these are missing. Create the
 oc apply -k gitops/overlays/sno-trustee     # = gitops/base/trustee
 ```
 
-### 7.3 Collect per-socket VCEK certs into the OfflineStore
+### 7.3 Collect the host VCEK certificate into the OfflineStore
 
 ```bash
 scripts/collect-vcek.sh <node-name> trustee-operator-system
 ```
 
-This collects the **master** socket's VCEK, keyed by **lowercase** HWID: fetched via `snphost show
+This collects the host VCEK, keyed by **lowercase** HWID: fetched via `snphost show
 vcek-url` → downloaded on an **internet-connected** host (the rig node is egress-blocked) → carried
 in. Generation-agnostic (dodges the upstream Trustee `Milan`-hardcode bug). Secrets are named
-`vcek-snp-<hwid-prefix>-<hash>` (hwid-derived, stable, collision-free — a changed chip set never
-renumbers them and two sockets never share a name).
-
-> **Single-socket nodes are fully covered by the command above.** On a **dual-socket (2P)** box,
-> host-side tools can only yield the **master** socket's VCEK (the master PSP answers all host-side
-> chip-id queries; snphost has no socket selector). Each **other** socket has a distinct VCEK that
-> must be fetched from an **SNP report generated on that socket** (`snpguest report` in a CVM there,
-> then `scripts/collect-vcek.sh --from-report <report.bin>`). Full procedure:
-> [`docs/runbooks/multi-socket-vcek.md`](runbooks/multi-socket-vcek.md). Without every socket's
-> VCEK, CVMs scheduled on a missing socket **fail attestation**.
+`vcek-snp-<hwid-prefix>-<hash>` (HWID-derived, stable, and collision-free). Run this once for each
+eligible AMD host. Multi-socket hosts use this same host-level procedure; no socket-specific
+collection, NUMA placement, or additional validation step is required.
 
 > **Landmine:** an UPPER-case HWID silently misses the cache and falls through to the
 > (unreachable) KDS → attestation fails for the wrong reason. The secret name must be short

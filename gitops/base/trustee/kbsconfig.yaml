@@ -40,15 +40,16 @@ spec:
   # All of the above Secrets are created out-of-band; see secret-stubs.example.yaml.
 
   # --- Air-gap VCEK OfflineStore (design §4) --------------------------------------------
-  # Mounts per-chip VCEK .der into the KBS pod at the kds-store path the SNP verifier reads
+  # Mounts host VCEK .der into the KBS pod at the kds-store path the SNP verifier reads
   # offline (no KDS). Authoritative layout (confidential-containers/trustee
   # attestation-service/docs/amd-offline-certificate-cache.md):
   #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-LOWERCASE>/vcek.der
   # CRD schema is a LIST of {secretName, mountPath} (NOT a bare secretName — verified via
-  # `oc explain kbsconfig.spec.kbsLocalCertCacheSpec`). One entry per chip/HWID; the
+  # `oc explain kbsconfig.spec.kbsLocalCertCacheSpec`). One entry per collected host/HWID; the
   # secret's data key (vcek.der) becomes the file in mountPath. HWIDs are environment-bound, so
   # scripts/apply-trustee.sh renders one entry per vcek-bundle/<hwid>/vcek.der. Wrong-case HWID
-  # or a missing socket/chip entry => attestation fails (air-gap negative test).
+  # or a missing host entry => attestation fails (air-gap negative test). Socket count does not
+  # change the collection or cache layout.
   # GOTCHA: the operator uses secretName as the Pod VOLUME name, which is capped at 63 chars.
   # The SNP HWID is 128 hex chars, so the secret must NOT be named after the HWID (that fails
   # deployment validation: "volumes[].name ... must be no more than 63 characters"). Use a short

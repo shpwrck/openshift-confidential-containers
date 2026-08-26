@@ -13,7 +13,7 @@ but they must be confirmed for the target environment to finalize the apply-to-p
       Risk to validate: not all AMD CBS settings are Redfish-exposed on every vendor; fallback
       = vendor tooling (Dell SCP / Supermicro SUM). The manual sequence is in
       [../notes/latitude-snp-bringup.md](../notes/latitude-snp-bringup.md).
-- [ ] Socket count per node and node count → total VCEK certs to collect (one per socket).
+- [ ] Eligible AMD node count → total host VCEK certificates to collect (one standard collection per node; socket count does not change the procedure).
 - [ ] BIOS access to confirm: SEV-SNP Support **Enabled**, Memory Interleaving **Enabled**
       (disabled → PSP `Error: 0x3 INVALID_CONFIG`), SMEE **Enabled**.
 
