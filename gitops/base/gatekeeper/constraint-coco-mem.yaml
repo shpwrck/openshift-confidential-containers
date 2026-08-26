@@ -24,10 +24,26 @@ spec:
       rego: |
         package cococontainermemory
 
-        # This Constraint matches ONLY labeled CoCo pods (see the Constraint match block), so every
-        # branch here is FAIL-CLOSED: anything we cannot positively verify is a violation, never a
-        # silent pass. (Hardened after a security review flagged missing-annotation and
-        # unrecognized-unit bypasses.)
+        # Every violation rule is gated on is_coco_pod (#70). Gatekeeper's `match` block cannot key
+        # on spec.runtimeClassName, but REGO CAN — so the validating half no longer depends on the
+        # coco-resource-default label being present, and an unlabeled kata-cc pod can no longer
+        # dodge the memory floor (the label remains the only handle the Assign MUTATION has).
+        #
+        # Within a CoCo pod every branch stays FAIL-CLOSED: anything we cannot positively verify is
+        # a violation, never a silent pass. (Hardened after a security review flagged
+        # missing-annotation and unrecognized-unit bypasses.)
+        #
+        # is_coco_pod is what keeps a label-less Constraint safe to evaluate cluster-wide: an
+        # ordinary pod has no CoCo runtimeClass and no label, so it matches nothing here and is
+        # untouched. WITHOUT this gate a Constraint lacking a labelSelector would reject every pod
+        # in scope for want of a default_memory annotation.
+        is_coco_pod {
+          rc := input.review.object.spec.runtimeClassName
+          startswith(rc, "kata")
+        }
+        is_coco_pod {
+          input.review.object.metadata.labels["coco-resource-default"] == "true"
+        }
 
         overhead_mi := input.parameters.overheadMi { is_number(input.parameters.overheadMi) }
         overhead_mi := 256 { not is_number(input.parameters.overheadMi) }
@@ -37,6 +53,7 @@ spec:
         # FAIL-CLOSED #1: a CoCo pod with no (or non-numeric) default_memory annotation cannot be
         # sized safely — reject rather than skip.
         violation[{"msg": msg}] {
+          is_coco_pod
           not valid_annot
           msg := "CoCo pod is missing a numeric io.katacontainers.config.hypervisor.default_memory annotation (cannot size the CVM safely)"
         }
@@ -46,6 +63,7 @@ spec:
 
         # container memory limit present, parseable, and below the required floor
         violation[{"msg": msg}] {
+          is_coco_pod
           valid_annot
           c := input.review.object.spec.containers[_]
           limit := c.resources.limits.memory
@@ -56,6 +74,7 @@ spec:
 
         # FAIL-CLOSED #2: container missing a memory limit entirely
         violation[{"msg": msg}] {
+          is_coco_pod
           valid_annot
           c := input.review.object.spec.containers[_]
           not c.resources.limits.memory
@@ -65,6 +84,7 @@ spec:
         # FAIL-CLOSED #3: limit present but in a unit this policy cannot parse (Mi/Gi only) —
         # reject rather than let an unverifiable value through.
         violation[{"msg": msg}] {
+          is_coco_pod
           valid_annot
           c := input.review.object.spec.containers[_]
           limit := c.resources.limits.memory
@@ -88,5 +108,37 @@ spec:
     labelSelector:
       matchLabels:
         coco-resource-default: "true"
+  parameters:
+    overheadMi: 256
+---
+# Second constraint, SAME template, deliberately WITHOUT a labelSelector (#70).
+#
+# The constraint above only sees pods carrying coco-resource-default, which is the label the Assign
+# MUTATION needs. A hand-authored kata-cc pod that omits it bypasses the memory floor entirely and
+# is discovered via the host OOM killer instead of admission. The template's rego is now gated on
+# is_coco_pod (runtimeClassName starting "kata", OR the label), so it can safely be evaluated
+# against every pod: an ordinary pod matches nothing and is untouched.
+#
+# SHIPPED AS dryrun ON PURPOSE. Dropping a labelSelector widens evaluation to every pod creation in
+# scope, so a rego mistake would become a cluster-wide admission outage. The rego is unit-tested
+# with opa (9 cases, including "ordinary pod with no annotation -> 0 violations"), but it has NOT
+# yet been soaked against a live Gatekeeper. dryrun logs violations without blocking anything, so
+# the blast radius while soaking is zero and the deny constraint above keeps its existing coverage.
+#
+# TO PROMOTE (after a soak that shows only genuine violations):
+#   1. oc get constraint cococontainermemory coco-container-memory-floor-unlabeled -o yaml
+#      -> confirm status.violations lists ONLY real undersized CoCo pods, no ordinary workloads.
+#   2. flip enforcementAction: dryrun -> deny here.
+#   3. then delete the labeled constraint above — this one supersedes it (its match is a superset).
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: CoCoContainerMemory
+metadata:
+  name: coco-container-memory-floor-unlabeled
+spec:
+  enforcementAction: dryrun
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
   parameters:
     overheadMi: 256

@@ -109,6 +109,44 @@
     fail_msg: "Cluster did not reach Available=True/Progressing=False. Last conditions: {{ cv_poll.stdout | default('(no oc output)') }}"
     success_msg: "SNO cluster is up: clusterversion Available=True, Progressing=False."
 
+# oc-mirror EMITS these (IDMS/ITMS + the mirrored CatalogSource) but nothing ever applied them
+# (#74): mirror.sh only prints them and mirror_push only `ls`es them. Without them the cluster has
+# no mirrored catalog, so `make install-coco-operators` spins its full 1800s timeout and then
+# reports "CatalogSource ... not READY (state=missing)", and operand pulls target unreachable
+# public registries. Apply them here, once the cluster is actually up.
+- name: Find the oc-mirror cluster-resources directory (#74)
+  ansible.builtin.find:
+    paths: "{{ mirror_workspace }}/working-dir/cluster-resources"
+    patterns: "*.yaml"
+    file_type: file
+  become: true
+  register: mirror_cluster_resources
+  failed_when: false
+
+- name: Apply the oc-mirror cluster-resources (IDMS/ITMS + CatalogSource)
+  ansible.builtin.command:
+    argv:
+      - oc
+      - apply
+      - -f
+      - "{{ mirror_workspace }}/working-dir/cluster-resources/"
+  become: true
+  environment:
+    KUBECONFIG: "{{ cluster_assets_dir }}/auth/kubeconfig"
+    PATH: "{{ tool_path }}"
+  register: mirror_res_apply
+  changed_when: "'created' in mirror_res_apply.stdout or 'configured' in mirror_res_apply.stdout"
+  when: (mirror_cluster_resources.files | default([]) | length) > 0
+
+- name: Report the cluster-resources apply
+  ansible.builtin.debug:
+    msg: >-
+      {{ (mirror_cluster_resources.files | default([]) | length) }} cluster-resource file(s) applied
+      from {{ mirror_workspace }}/working-dir/cluster-resources —
+      {{ 'IDMS/ITMS + CatalogSource are in place for the operator install.'
+         if (mirror_cluster_resources.files | default([]) | length) > 0
+         else 'NONE FOUND: install-coco-operators will stall on a missing CatalogSource (#74) — check the oc-mirror workspace path.' }}
+
 - name: Print kubeconfig + console hints
   ansible.builtin.debug:
     msg:

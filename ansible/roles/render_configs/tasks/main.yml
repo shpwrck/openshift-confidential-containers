@@ -91,6 +91,68 @@
   become: true
   register: render_mirror_ca
 
+# Nothing used to create this file (#73): terraform, cloud-init, and every role left it to the
+# operator, so a from-zero run aborted HERE — after the BIOS gate and the full mirror push. The
+# key that should go into the node is the one this run is already authenticating with, so derive
+# it from the controller's own private key rather than making the operator scp it by hand.
+# NOTE: do NOT derive this from `ansible_ssh_private_key_file`. The inventory defaults that var
+# to `omit`, which renders as the literal string "<<Omit>>" rather than an empty value, and
+# `--private-key` on the command line does not populate it either — so a lookup built from it
+# tries to read "<<Omit>>.pub" and the play dies. Use an explicit, overridable source path and
+# check that it actually exists on the CONTROLLER before copying.
+# The public NIC is only held down when we have BOTH its name and its DISCOVERED mac (#80) — the
+# mac is what makes the name authoritative. If discover.yml found no external-role mac, rendering
+# the stanza anyway would name a possibly-nonexistent device; SKIPPING it silently is worse still,
+# because that is exactly #78 (unmanaged NIC DHCPs a public resolver, mirror stops resolving, the
+# install parks with every port refused and no clue why). So: fail loudly and make the operator
+# decide, with an explicit override for plans that genuinely have no second NIC.
+- name: Fail closed if the public NIC cannot be pinned to a discovered MAC (#80)
+  ansible.builtin.assert:
+    that: >-
+      (item.external_mac | default('')) is truthy
+      or (allow_unmanaged_public_nic | default(false) | bool)
+    fail_msg: >-
+      No external-role MAC was discovered for {{ item.name }}, so its public NIC cannot be pinned
+      and held down. Leaving it unmanaged reintroduces #78: NetworkManager will DHCP it in the
+      agent live environment, the provider's resolver will outrank the static dns-resolver,
+      {{ mirror_dns_name }} will stop resolving, and the install will park at "Cannot access
+      Rendezvous Host". Re-run `--tags discover` (it reads role=external from the Latitude API),
+      pass -e node_external_mac=<mac>, or set -e allow_unmanaged_public_nic=true if this plan
+      genuinely has only one NIC.
+    success_msg: "{{ item.name }}: public NIC {{ item.external_if | default('?') }} pinned to {{ item.external_mac | default('') }}"
+  loop: "{{ machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Look for a controller-side public key to stage (#73)
+  ansible.builtin.stat:
+    path: "{{ node_ssh_pubkey_src }}"
+  delegate_to: localhost
+  become: false
+  register: render_pubkey_src
+
+- name: Stage the node SSH public key on the bastion if it is missing (#73)
+  ansible.builtin.copy:
+    src: "{{ node_ssh_pubkey_src }}"
+    dest: "{{ node_ssh_pubkey_path }}"
+    mode: "0644"
+  when: render_pubkey_src.stat.exists
+
+- name: Confirm the node SSH public key is present before slurping it
+  ansible.builtin.stat:
+    path: "{{ node_ssh_pubkey_path }}"
+  register: render_pubkey_stat
+
+- name: Fail with the actual remedy if the node SSH public key is still missing
+  ansible.builtin.assert:
+    that: render_pubkey_stat.stat.exists
+    fail_msg: >-
+      {{ node_ssh_pubkey_path }} is missing on the bastion and could not be derived from the
+      controller's --private-key (#73). This is the key baked into the install config, so the
+      install cannot proceed without it. Stage it explicitly:
+      scp -i <key> <key>.pub {{ ansible_user | default('rocky') }}@<bastion>:{{ node_ssh_pubkey_path | basename }}
+    success_msg: "node SSH public key present at {{ node_ssh_pubkey_path }}"
+
 - name: Read the node SSH public key
   ansible.builtin.slurp:
     src: "{{ node_ssh_pubkey_path }}"

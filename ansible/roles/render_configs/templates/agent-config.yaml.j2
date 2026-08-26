@@ -22,6 +22,16 @@ hosts:
     interfaces:
       - name: {{ m.parent_if }}
         macAddress: {{ m.parent_mac }}
+{% if m.external_if is defined and m.external_if and m.external_mac is defined and m.external_mac %}
+      {{ '#' }} Bind the PUBLIC NIC's name to its DISCOVERED mac (#80). This list is the
+      {{ '#' }} name<->MAC mapping the installer applies, so declaring it here makes
+      {{ '#' }} `{{ m.external_if }}` authoritative for {{ m.external_mac }} instead of an assumed
+      {{ '#' }} name that merely happens to match this SKU's PCI enumeration. Without it, the
+      {{ '#' }} networkConfig stanza below could name a device that does not exist, the public NIC
+      {{ '#' }} would go unmanaged again, and #78 would silently return.
+      - name: {{ m.external_if }}
+        macAddress: {{ m.external_mac }}
+{% endif %}
     networkConfig:
       interfaces:
         - name: {{ m.parent_if }}
@@ -31,6 +41,26 @@ hosts:
             enabled: false
           ipv6:
             enabled: false
+{% if m.external_if is defined and m.external_if and m.external_mac is defined and m.external_mac %}
+        {{ '#' }} PUBLIC NIC — held DOWN on purpose (#78). Leaving it undeclared does NOT leave it
+        {{ '#' }} alone: an interface absent from networkConfig is unmanaged in the agent live
+        {{ '#' }} environment, so NetworkManager DHCPs it, the provider's lease supplies a public
+        {{ '#' }} resolver (8.8.8.8), and that outranks the static dns-resolver below. The node then
+        {{ '#' }} cannot resolve {{ mirror_dns_name }}, the release image is unreachable, and the
+        {{ '#' }} install stalls at "Cannot access Rendezvous Host" with every port refused.
+        - name: {{ m.external_if }}
+          type: ethernet
+          state: down
+          ipv4:
+            enabled: false
+            dhcp: false
+            auto-dns: false
+          ipv6:
+            enabled: false
+            dhcp: false
+            autoconf: false
+            auto-dns: false
+{% endif %}
         - name: {{ m.parent_if }}.{{ vlan_vid }}
           type: vlan
           state: up

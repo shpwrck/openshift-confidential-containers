@@ -69,10 +69,16 @@ local_bin: "/usr/local/bin"
 
 # Where the RH pull-secret already lives on the bastion (scp'd in Phase 0). Used to build
 # the merged /root/.docker/config.json. NEVER committed; lives only on the bastion.
-pull_secret_remote_path: "{{ ansible_env.HOME }}/pull-secret.json"
+pull_secret_remote_path: "{{ ansible_facts['env']['HOME'] }}/pull-secret.json"
 # SSH public key embedded in install-config sshKey (for core@ node debugging). Already on
 # the bastion per the proven script (~/coco-rig.pub).
-node_ssh_pubkey_path: "{{ ansible_env.HOME }}/coco-rig.pub"
+node_ssh_pubkey_path: "{{ ansible_facts['env']['HOME'] }}/coco-rig.pub"
+# CONTROLLER-side source for the above (#73). Nothing used to create the bastion copy, so a
+# from-zero run aborted in render_configs AFTER the BIOS gate and the full mirror push. Staged
+# automatically from here when present; override with -e node_ssh_pubkey_src=<path>.
+# Deliberately NOT derived from ansible_ssh_private_key_file: the inventory defaults that to
+# `omit`, which renders as the literal "<<Omit>>", and --private-key does not populate it.
+node_ssh_pubkey_src: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
 
 # ---- Tool download source (mirror.openshift.com clients) -------------------
 ocp_clients_base: "https://mirror.openshift.com/pub/openshift-v4/amd64/clients"
@@ -148,6 +154,14 @@ machines:
     vlan_ip: "{{ node_vlan_ip }}"
     # Genoa m4-metal-medium VLAN parent (internal/PXE NIC). VERIFY on metal; overridable.
     parent_if: "{{ node_parent_if | default('enp195s0f1') }}"
+    # PUBLIC (external-role) NIC. It carries NO cluster traffic, but it MUST still be declared
+    # (#78): an interface absent from networkConfig is unmanaged in the agent live environment,
+    # so NetworkManager DHCPs it, the provider hands out a public resolver (8.8.8.8), and that
+    # beats the static dns-resolver — mirror.rig.local then never resolves and the air-gapped
+    # install dies at "Cannot access Rendezvous Host". Declared here so it can be held DOWN.
+    external_if: "{{ node_external_if | default('enp195s0f0') }}"
+    # external_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
+    external_mac: "{{ node_external_mac | default('') }}"
     root_device: "{{ node_root_device | default('/dev/nvme0n1') }}"
     # parent_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
     parent_mac: "{{ node_parent_mac | default('') }}"

@@ -4,6 +4,9 @@
     name: dnsmasq
     state: restarted
     enabled: true
+    # Required for the 10-wait-for-vlan.conf drop-in (#79) to take effect — without a reload
+    # systemd keeps the old unit definition and the Restart=on-failure never applies.
+    daemon_reload: true
   become: true
 
 - name: Restart chronyd
