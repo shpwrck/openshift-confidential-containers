@@ -1070,7 +1070,7 @@
         </tr>
         <tr>
           <td>KbsConfig</td>
-          <td><code>gitops/base/trustee/kbsconfig.yaml</code></td>
+          <td><code>gitops/base/trustee/kbsconfig.template.yaml</code></td>
           <td>The wiring CR: names all three ConfigMaps, lists every shelf Secret
             (<code>kbsSecretResources</code> — dotless keys only: <code>regcred</code>, never
             <code>.dockerconfigjson</code>), and mounts the VCEK OfflineStore via
@@ -1195,7 +1195,7 @@
     <div class="world hw">
       <h4>Hardware-bound — regenerated on customer metal</h4>
       <ul>
-        <li>VCEK certificates (per-socket)</li>
+        <li>VCEK certificates (per eligible AMD host)</li>
         <li>RVPS reference values (Veritas, on-target)</li>
         <li>TLS identity + Trustee URL</li>
         <li>The exact initdata bytes the TEE measures</li>

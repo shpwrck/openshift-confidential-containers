@@ -280,7 +280,7 @@ diff-overlay: ## Server-side diff of the selected OVERLAY
 
 ## --- Air-gap data pipelines ----------------------------------------------
 .PHONY: collect-vcek
-collect-vcek: ## Collect per-socket VCEK certs into the OfflineStore secret (auto-detects single-node clusters)
+collect-vcek: ## Collect the selected host's VCEK cert into the OfflineStore (auto-detects single-node clusters)
 	@node="$(NODE)"; \
 	if [ -z "$$node" ]; then \
 		nodes="$$(oc get nodes --request-timeout=10s -o name 2>/dev/null | sed 's#^node/##')"; \

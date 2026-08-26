@@ -9,14 +9,21 @@ target air-gapped multi-node cluster.
 | Layer | Choice |
 |-------|--------|
 | TEE | **AMD SEV-SNP** first; Intel TDX added later as an additive overlay (⚠️ see air-gap caveat) |
-| Path | **Bare-metal Kata host** (the worker's RHCOS kernel IS the SNP host) — not peer-pods |
-| Platform | OpenShift, OSC **1.12**, Red Hat build of Trustee **1.1**, OCP ≥ 4.19.28 / 4.20.18 |
+| Path | **Bare-metal Kata host** (the worker's RHCOS kernel is the SNP host) |
+| Platform | Customer baseline: OSC **1.12** + Red Hat build of Trustee **1.1**; tested rig pin: OCP 4.20.18. Use the **1.12** docs only and re-check its live OCP z-stream matrix before customer use. |
 | Attestation (air-gap) | Trustee-side **OfflineStore** VCEK cache (`kbsLocalCertCacheSpec`) — see [design doc](docs/design/engagement-design.md) |
 | GitOps | Kustomize substrate; `oc apply -k` + Makefile on the rig; ArgoCD (mirrored) in the production env |
 
 ## Visual overview
 
-See [`docs/architecture.md`](docs/architecture.md) for component diagrams, the attestation sequence, and the step-by-step flow from bastion preparation through negative tests and production promotion.
+Start with the
+[`organizational operating playbook`](docs/getting-started-and-operations.md). It defines the customer
+roles, tangible artifacts, approval gates, and end-to-end workflows for net-new installation,
+workload releases, routine operations, and upgrades on the 1.12 baseline.
+
+See [`docs/architecture.md`](docs/architecture.md) for the repository-specific component diagrams,
+attestation sequence, and step-by-step flow from bastion preparation through negative tests and
+production promotion.
 
 ## Environments
 
@@ -58,10 +65,12 @@ for the build → KBS-resource → apply → negative sequence, and
 ## Layout
 
 ```
+docs/getting-started-and-operations.md  beginner-first product, ownership, and lifecycle guide
 docs/install-guide.md  fully MANUAL, provider-neutral bring-up (no Terraform/Ansible)
 docs/runbooks/         phase checklists for the automated path + failure modes
 docs/design/           design notes + pre-deployment scoping list
 docs/notes/            hardware bring-up + air-gap guest-pull reference notes
+docs/research/         dated primary-source research behind the customer guide
 infra/                 Terraform (node, bastion, VLAN, firewall, netboot)
 ansible/               bastion config + OpenShift install automation (`make bringup-sno-airgapped`)
 gitops/                Kustomize base/ + overlays {sno,customer} × {workers,trustee}
@@ -71,6 +80,9 @@ Makefile               rig driver (verify gates, apply rungs)
 
 ## Start here
 
+- **Learn and plan customer operations:** read
+  [`docs/getting-started-and-operations.md`](docs/getting-started-and-operations.md). Complete its
+  ownership and Day 0 decisions before selecting an install path.
 - **By hand (any provider):** follow [`docs/install-guide.md`](docs/install-guide.md) — the
   full manual procedure, no Terraform/Ansible.
 - **Automated (Latitude.sh):** use the Terraform + Ansible + `Makefile` path:

@@ -59,7 +59,6 @@ Two cross-cutting sections close the guide: a [**Definition of done**](#definiti
 |---|---|
 | [`runbooks/failure-modes.md`](runbooks/failure-modes.md) | a step failed — symptom → cause → fast diagnostic → fix, ordered by phase (start at its "Top 7"). |
 | [`runbooks/debug-surface.md`](runbooks/debug-surface.md) | you need the **full debug toolbox** — every vantage point (host / guest CVM / Trustee / registry), log locations, and how to raise each component's log level. |
-| [`runbooks/multi-socket-vcek.md`](runbooks/multi-socket-vcek.md) | your SNP box is **dual-socket (2P)** — single-socket nodes don't need it. |
 | [`notes/latitude-snp-bringup.md`](notes/latitude-snp-bringup.md) | you want the Phase-4 BIOS recipe click-by-click. |
 | [`runbooks/install-execution-plan.md`](runbooks/install-execution-plan.md) | you need the signed/encrypted-rung proof state + stop-gates as an execution plan. |
 | [`design/engagement-design.md`](design/engagement-design.md) | you want to know **why** a decision was made, not just how. |
@@ -251,7 +250,7 @@ Each file below has one consumer and one job.
 | [`gitops/base/gatekeeper/`](../gitops/base/gatekeeper/) | OPA Gatekeeper. | Installs mutation/constraint policy for CoCo pod memory settings. | SNP pins guest RAM at launch; the policy helps prevent undersized pods from being killed by the host. |
 | [`gitops/base/trustee/kbs-configmaps.yaml`](../gitops/base/trustee/kbs-configmaps.yaml) | Trustee operator/KBS. | KBS config, resource policy, attestation policy, and RVPS reference values. | Policy and reference values decide whether secrets are released. |
 | [`gitops/base/trustee/secret-stubs.example.yaml`](../gitops/base/trustee/secret-stubs.example.yaml) | You create real Secrets from it. | Documents required secret names and shapes. | Missing secrets look like attestation failures because KBS crash-loops or cannot serve resources. |
-| [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml) | Trustee operator. | Wires ConfigMaps, Secrets, service mode, and OfflineStore VCEK cache into KBS. | This is where air-gapped SNP verification becomes real: no cached VCEK, no attestation. |
+| [`gitops/base/trustee/kbsconfig.template.yaml`](../gitops/base/trustee/kbsconfig.template.yaml) | Trustee operator. | Wires ConfigMaps, Secrets, service mode, and OfflineStore VCEK cache into KBS. | This is where air-gapped SNP verification becomes real: no cached VCEK, no attestation. |
 | [`gitops/base/workloads/initdata.example.toml`](../gitops/base/workloads/initdata.example.toml) | Encoded into pod annotations. | Guest-side AA/CDH config: KBS URL, resources, policies, registry config. | The bytes are measured; any environment change can require regenerated RVPS values. |
 | [`gitops/base/workloads/rung-a-secret-pod.yaml`](../gitops/base/workloads/rung-a-secret-pod.yaml) | Kubernetes/Kata. | First proof workload: request a KBS secret before starting. | Verifies the complete pod → CVM → Trustee → secret path. |
 | [`gitops/base/airgap-egress/`](../gitops/base/airgap-egress/) | MachineConfig (node-level, reboot-persistent oneshot). | **Required** post-install host egress lockdown — opt-in *timing* (apply after the cluster is healthy so a drop policy can't wedge bootstrap), **not** an optional outcome. Flip `role: master`→`worker` on a multi-node cluster. | Keeps the installed RHCOS node honest after the raw-OS nft rule is wiped by install; **without it the air-gap negative test can falsely pass by reaching the public KDS.** |
@@ -263,7 +262,7 @@ These are deliberately **not portable** between machines or firmware states:
 | Artifact | Why it is hardware-bound | Regenerate when |
 |----------|--------------------------|-----------------|
 | BIOS/firmware SNP settings | Firmware decides whether the CPU exposes SNP host capability. | Every re-provision, firmware reset, or hardware change. |
-| VCEK certificates | A VCEK is tied to a chip HWID and TCB version. | New socket, firmware/TCB change, provider swaps the physical server. |
+| VCEK certificates | A VCEK is tied to the host HWID and TCB version. | CPU/system-board replacement, firmware/TCB change, or provider replacement of the physical server. |
 | RVPS reference values | They describe expected measurements for a concrete launch/config. | initdata, workload, runtime, firmware, or TEE-relevant config changes. |
 | initdata annotation bytes | SNP measures the guest launch data. | KBS URL, registry config, policy/resource URI, or initdata content changes. |
 | TLS identity / Trustee URL | The CVM must talk to the verifier it was configured and measured to use. | Different cluster, route, certificate, or trust domain. |
@@ -846,7 +845,7 @@ guest asks Trustee for resources, and Trustee decides whether the evidence is go
 | RVPS | `rvps-reference-values` ConfigMap. | Stores expected measurements. |
 | Resource policy | `resource-policy` ConfigMap. | Decides which resource URIs can be released. |
 | Attestation policy | `attestation-policy` ConfigMap. | OPA/Rego policy for evidence decisions. |
-| OfflineStore | `kbsLocalCertCacheSpec` in `kbsconfig.yaml`. | Mounts VCEK certificates so verification works without live AMD KDS. |
+| OfflineStore | `kbsLocalCertCacheSpec` in `kbsconfig.template.yaml`. | Mounts VCEK certificates so verification works without live AMD KDS. |
 
 ### 7.1 Create the out-of-band Trustee secrets FIRST
 
@@ -862,30 +861,23 @@ KBS crash-loops (looks like an attestation bug) if these are missing. Create the
 oc apply -k gitops/overlays/sno-trustee     # = gitops/base/trustee
 ```
 
-### 7.3 Collect per-socket VCEK certs into the OfflineStore
+### 7.3 Collect the host VCEK certificate into the OfflineStore
 
 ```bash
 scripts/collect-vcek.sh <node-name> trustee-operator-system
 ```
 
-This collects the **master** socket's VCEK, keyed by **lowercase** HWID: fetched via `snphost show
+This collects the host VCEK, keyed by **lowercase** HWID: fetched via `snphost show
 vcek-url` → downloaded on an **internet-connected** host (the rig node is egress-blocked) → carried
 in. Generation-agnostic (dodges the upstream Trustee `Milan`-hardcode bug). Secrets are named
-`vcek-snp-<hwid-prefix>-<hash>` (hwid-derived, stable, collision-free — a changed chip set never
-renumbers them and two sockets never share a name).
-
-> **Single-socket nodes are fully covered by the command above.** On a **dual-socket (2P)** box,
-> host-side tools can only yield the **master** socket's VCEK (the master PSP answers all host-side
-> chip-id queries; snphost has no socket selector). Each **other** socket has a distinct VCEK that
-> must be fetched from an **SNP report generated on that socket** (`snpguest report` in a CVM there,
-> then `scripts/collect-vcek.sh --from-report <report.bin>`). Full procedure:
-> [`docs/runbooks/multi-socket-vcek.md`](runbooks/multi-socket-vcek.md). Without every socket's
-> VCEK, CVMs scheduled on a missing socket **fail attestation**.
+`vcek-snp-<hwid-prefix>-<hash>` (HWID-derived, stable, and collision-free). Run this once for each
+eligible AMD host. Multi-socket hosts use this same host-level procedure; no socket-specific
+collection, NUMA placement, or additional validation step is required.
 
 > **Landmine:** an UPPER-case HWID silently misses the cache and falls through to the
 > (unreachable) KDS → attestation fails for the wrong reason. The secret name must be short
 > (≤ 63 chars, it becomes a pod volume name); the full 128-hex lowercase HWID goes only in the
-> `kbsLocalCertCacheSpec` `mountPath` (see [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml)).
+> `kbsLocalCertCacheSpec` `mountPath` (see [`gitops/base/trustee/kbsconfig.template.yaml`](../gitops/base/trustee/kbsconfig.template.yaml)).
 
 ### 7.4 Freeze initdata (do this BEFORE generating RVPS)
 
@@ -959,7 +951,7 @@ directory and copies `rvps-reference-values.yaml` to `OUT`.
 
 Mount the VCEK secrets via `KbsConfig.spec.kbsLocalCertCacheSpec` at
 `…/kds-store/vcek/<hwid-lowercase>/vcek.der`, and merge the RVPS output into the
-`rvps-reference-values` ConfigMap referenced by `kbsconfig.yaml`. **Ensure `vcek_sources`
+`rvps-reference-values` ConfigMap referenced by `kbsconfig.template.yaml`. **Ensure `vcek_sources`
 omits `{type=KDS}`** — leaving KDS in lets attestation "work" by reaching an internet that
 won't exist in production.
 

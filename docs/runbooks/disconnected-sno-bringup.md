@@ -273,14 +273,16 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
       secrets per [`gitops/base/trustee/secret-stubs.example.yaml`](../../gitops/base/trustee/secret-stubs.example.yaml).
 - [ ] **Collect VCEK certs into the OfflineStore** (hardware-bound):
       `make collect-vcek NODE=<node-name>` → [`scripts/collect-vcek.sh`](../../scripts/collect-vcek.sh).
-      One secret **per socket**, keyed by **lowercase HWID** (`snphost show vcek-url` → download
+      One standard collection per eligible AMD host, keyed by **lowercase HWID**
+      (`snphost show vcek-url` → download
       `.der` on a connected host → carry in). Generation-agnostic (dodges Trustee bug #591
       'Milan' hardcode). **Landmine:** an upper-case HWID silently falls through to a (here
-      unreachable) KDS instead of the cache → attestation fails. Re-runnable for TCB refresh.
+      unreachable) KDS instead of the cache → attestation fails. Multi-socket hosts require no
+      additional collection or placement step. Re-runnable for TCB refresh.
 - [ ] **Generate RVPS reference values with Veritas** (hardware-bound):
       `make gen-rvps` → [`scripts/gen-rvps-veritas.sh`](../../scripts/gen-rvps-veritas.sh)
       (`coco-tools` pinned by digest, `veritas --tee snp --ocp-version <OCP_VERSION>`, one run
-      per distinct socket/hardware config). On disconnected rigs, set `DEBUG_IMAGE` to a cached
+      per distinct hardware/firmware configuration). On disconnected rigs, set `DEBUG_IMAGE` to a cached
       image for `oc debug node`; if Veritas's internal `oc adm release info` still reaches public
       `quay.io`, pass a temporary `VERITAS_OC_WRAPPER` that rewrites the release and
       `rhel-coreos-extensions` refs to the mirror. **Also:** Veritas's release-payload
@@ -292,7 +294,7 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
       `KbsConfig.spec.kbsLocalCertCacheSpec` (path
       `…/kds-store/vcek/<hwid>/vcek.der`) and merge the RVPS output into the
       `rvps-reference-values` ConfigMap referenced by
-      [`gitops/base/trustee/kbsconfig.yaml`](../../gitops/base/trustee/kbsconfig.yaml). `# VERIFY`
+      [`gitops/base/trustee/kbsconfig.template.yaml`](../../gitops/base/trustee/kbsconfig.template.yaml). `# VERIFY`
       the CRD field names (`oc explain kbsconfig.spec` @ trustee-operator v1.1).
 
 > STOP-gate: KBS pod restarts cleanly with the VCEK OfflineStore mounted and the RVPS
@@ -327,7 +329,7 @@ before checking the boxes below.
         releases, tampered withheld (403).
 - [ ] **Rung C (rung-signed) — signed image.**
       - **Happy path:** signed image pulls (mirror pull secret served as `regcred`, per
-        `kbsconfig.yaml` `kbsSecretResources`).
+        `kbsconfig.template.yaml` `kbsSecretResources`).
       - **Negative test:** unsigned/tampered image → `image_security_policy` **rejects** the pull.
       - **Implementation note:** the signed policy must account for the app image and every
         infrastructure image pulled inside the CVM, including release/pause images.

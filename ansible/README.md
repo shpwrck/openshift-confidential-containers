@@ -114,9 +114,10 @@ customer multi-node cluster:
   *node's* air-gap egress lockdown (default-deny output except the bastion VLAN IP) is host-side
   nftables (runbook Phase 1) / the `gitops/base/airgap-egress` MachineConfig post-install — add a
   per-node egress role if you want Ansible to own it pre-OpenShift.
-- **Per-socket VCEK collection**: hardware-bound attestation data (VCEK certs keyed by lowercase
-  HWID, RVPS reference values) is collected per socket by `scripts/collect-vcek.sh` /
-  `scripts/gen-rvps-veritas.sh` (runbook Phase 5). Wrap these in a role when automating attestation.
+- **Per-node VCEK collection**: hardware-bound attestation data (VCEK certs keyed by lowercase
+  host HWID, RVPS reference values) is collected for each eligible node by `scripts/collect-vcek.sh` /
+  `scripts/gen-rvps-veritas.sh` (runbook Phase 5). Socket count does not change the workflow. Wrap
+  these in a role when automating attestation.
 
 ## Linting
 

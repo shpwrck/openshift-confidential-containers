@@ -4,7 +4,8 @@
 # hardware config (CPU family + firmware). See docs/design/engagement-design.md §4.
 #
 # Runs the coco-tools `veritas` generator over your initdata and emits an RVPS reference-values
-# YAML to merge into the `rvps-reference-values` ConfigMap (gitops/base/trustee/kbsconfig.yaml).
+# YAML to merge into the `rvps-reference-values` ConfigMap
+# referenced by gitops/base/trustee/kbsconfig.template.yaml.
 #
 # Where it runs: by default `podman` on THIS host (point it at the node, or copy initdata to the
 # node and run there). Set NODE=<name> to run it on the cluster node via `oc debug node` instead

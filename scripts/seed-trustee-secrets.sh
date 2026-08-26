@@ -291,9 +291,8 @@ oc -n "$NS" create secret generic sample \
 	--dry-run=client -o yaml | apply_secret
 # Stable, collision-free VCEK secret name — readable hwid prefix + hash of the FULL hwid. MUST match
 # collect-vcek.sh and apply-trustee.sh render_kbsconfig. A positional index renumbers/remaps KbsConfig
-# entries when the chip set changes; this hwid-derived name binds the secret to its chip, and hashing
-# the full CHIP_ID keeps two sockets distinct even if their CHIP_IDs share a leading prefix. The full
-# hwid stays in the mountPath.
+# entries when the hardware set changes; this HWID-derived name binds the secret to its source host.
+# The full HWID stays in the mountPath.
 vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256_stdin | cut -c1-16)"; }
 for i in "${!vcek_hwids[@]}"; do
 	vcek_name="$(vcek_secret_name "${vcek_hwids[$i]}")"
