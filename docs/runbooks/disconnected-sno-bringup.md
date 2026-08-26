@@ -294,7 +294,7 @@ The operator ships nothing for these; VCEK automation is a **production sign-off
       `KbsConfig.spec.kbsLocalCertCacheSpec` (path
       `…/kds-store/vcek/<hwid>/vcek.der`) and merge the RVPS output into the
       `rvps-reference-values` ConfigMap referenced by
-      [`gitops/base/trustee/kbsconfig.yaml`](../../gitops/base/trustee/kbsconfig.yaml). `# VERIFY`
+      [`gitops/base/trustee/kbsconfig.template.yaml`](../../gitops/base/trustee/kbsconfig.template.yaml). `# VERIFY`
       the CRD field names (`oc explain kbsconfig.spec` @ trustee-operator v1.1).
 
 > STOP-gate: KBS pod restarts cleanly with the VCEK OfflineStore mounted and the RVPS
@@ -329,7 +329,7 @@ before checking the boxes below.
         releases, tampered withheld (403).
 - [ ] **Rung C (rung-signed) — signed image.**
       - **Happy path:** signed image pulls (mirror pull secret served as `regcred`, per
-        `kbsconfig.yaml` `kbsSecretResources`).
+        `kbsconfig.template.yaml` `kbsSecretResources`).
       - **Negative test:** unsigned/tampered image → `image_security_policy` **rejects** the pull.
       - **Implementation note:** the signed policy must account for the app image and every
         infrastructure image pulled inside the CVM, including release/pause images.

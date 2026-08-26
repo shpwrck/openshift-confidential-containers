@@ -250,7 +250,7 @@ Each file below has one consumer and one job.
 | [`gitops/base/gatekeeper/`](../gitops/base/gatekeeper/) | OPA Gatekeeper. | Installs mutation/constraint policy for CoCo pod memory settings. | SNP pins guest RAM at launch; the policy helps prevent undersized pods from being killed by the host. |
 | [`gitops/base/trustee/kbs-configmaps.yaml`](../gitops/base/trustee/kbs-configmaps.yaml) | Trustee operator/KBS. | KBS config, resource policy, attestation policy, and RVPS reference values. | Policy and reference values decide whether secrets are released. |
 | [`gitops/base/trustee/secret-stubs.example.yaml`](../gitops/base/trustee/secret-stubs.example.yaml) | You create real Secrets from it. | Documents required secret names and shapes. | Missing secrets look like attestation failures because KBS crash-loops or cannot serve resources. |
-| [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml) | Trustee operator. | Wires ConfigMaps, Secrets, service mode, and OfflineStore VCEK cache into KBS. | This is where air-gapped SNP verification becomes real: no cached VCEK, no attestation. |
+| [`gitops/base/trustee/kbsconfig.template.yaml`](../gitops/base/trustee/kbsconfig.template.yaml) | Trustee operator. | Wires ConfigMaps, Secrets, service mode, and OfflineStore VCEK cache into KBS. | This is where air-gapped SNP verification becomes real: no cached VCEK, no attestation. |
 | [`gitops/base/workloads/initdata.example.toml`](../gitops/base/workloads/initdata.example.toml) | Encoded into pod annotations. | Guest-side AA/CDH config: KBS URL, resources, policies, registry config. | The bytes are measured; any environment change can require regenerated RVPS values. |
 | [`gitops/base/workloads/rung-a-secret-pod.yaml`](../gitops/base/workloads/rung-a-secret-pod.yaml) | Kubernetes/Kata. | First proof workload: request a KBS secret before starting. | Verifies the complete pod → CVM → Trustee → secret path. |
 | [`gitops/base/airgap-egress/`](../gitops/base/airgap-egress/) | MachineConfig (node-level, reboot-persistent oneshot). | **Required** post-install host egress lockdown — opt-in *timing* (apply after the cluster is healthy so a drop policy can't wedge bootstrap), **not** an optional outcome. Flip `role: master`→`worker` on a multi-node cluster. | Keeps the installed RHCOS node honest after the raw-OS nft rule is wiped by install; **without it the air-gap negative test can falsely pass by reaching the public KDS.** |
@@ -845,7 +845,7 @@ guest asks Trustee for resources, and Trustee decides whether the evidence is go
 | RVPS | `rvps-reference-values` ConfigMap. | Stores expected measurements. |
 | Resource policy | `resource-policy` ConfigMap. | Decides which resource URIs can be released. |
 | Attestation policy | `attestation-policy` ConfigMap. | OPA/Rego policy for evidence decisions. |
-| OfflineStore | `kbsLocalCertCacheSpec` in `kbsconfig.yaml`. | Mounts VCEK certificates so verification works without live AMD KDS. |
+| OfflineStore | `kbsLocalCertCacheSpec` in `kbsconfig.template.yaml`. | Mounts VCEK certificates so verification works without live AMD KDS. |
 
 ### 7.1 Create the out-of-band Trustee secrets FIRST
 
@@ -877,7 +877,7 @@ collection, NUMA placement, or additional validation step is required.
 > **Landmine:** an UPPER-case HWID silently misses the cache and falls through to the
 > (unreachable) KDS → attestation fails for the wrong reason. The secret name must be short
 > (≤ 63 chars, it becomes a pod volume name); the full 128-hex lowercase HWID goes only in the
-> `kbsLocalCertCacheSpec` `mountPath` (see [`gitops/base/trustee/kbsconfig.yaml`](../gitops/base/trustee/kbsconfig.yaml)).
+> `kbsLocalCertCacheSpec` `mountPath` (see [`gitops/base/trustee/kbsconfig.template.yaml`](../gitops/base/trustee/kbsconfig.template.yaml)).
 
 ### 7.4 Freeze initdata (do this BEFORE generating RVPS)
 
@@ -951,7 +951,7 @@ directory and copies `rvps-reference-values.yaml` to `OUT`.
 
 Mount the VCEK secrets via `KbsConfig.spec.kbsLocalCertCacheSpec` at
 `…/kds-store/vcek/<hwid-lowercase>/vcek.der`, and merge the RVPS output into the
-`rvps-reference-values` ConfigMap referenced by `kbsconfig.yaml`. **Ensure `vcek_sources`
+`rvps-reference-values` ConfigMap referenced by `kbsconfig.template.yaml`. **Ensure `vcek_sources`
 omits `{type=KDS}`** — leaving KDS in lets attestation "work" by reaching an internet that
 won't exist in production.
 

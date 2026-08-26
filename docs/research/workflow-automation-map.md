@@ -181,7 +181,7 @@ supported commands and the approved backup systems.
 1. [`scripts/apply-sno.sh`](../../scripts/apply-sno.sh) installs OSC, Trustee and other Operators in
    one current cluster. The playbook requires Trustee on a separate trusted cluster. Split the
    contexts and installation jobs before production use.
-2. The local Trustee base uses direct [`KbsConfig`](../../gitops/base/trustee/kbsconfig.yaml),
+2. The local Trustee base uses direct [`KbsConfig`](../../gitops/base/trustee/kbsconfig.template.yaml),
    permissive AS/KBS policies, and empty default RVPS. It is not the Restricted `TrusteeConfig`
    baseline required by the playbook and described by Red Hat for production.
 3. [`scripts/apply-rung-kbs.sh`](../../scripts/apply-rung-kbs.sh),

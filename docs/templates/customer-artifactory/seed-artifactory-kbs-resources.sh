@@ -88,5 +88,5 @@ oc -n "$NS" create secret generic registry-configuration \
 
 echo "Seeded credential, security-policy, registry-configuration in $NS (Artifactory: $ARTIFACTORY)"
 echo "NOTE: these Secret names must be listed in KbsConfig.spec.kbsSecretResources (they already are"
-echo "      in gitops/base/trustee/kbsconfig.yaml). Create them BEFORE deploying Trustee, or KBS"
+echo "      in gitops/base/trustee/kbsconfig.template.yaml). Create them BEFORE deploying Trustee, or KBS"
 echo "      crash-loops in a way that looks like an attestation failure."

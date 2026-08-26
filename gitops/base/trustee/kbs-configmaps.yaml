@@ -6,7 +6,7 @@
 #
 # AIR-GAP / SEV-SNP OfflineStore: the SNP verifier must read VCEK from a local cache (no KDS).
 # In trustee v1.1 coco-as this is wired by mounting host VCEK .der via
-# KbsConfig.spec.kbsLocalCertCacheSpec (kbsconfig.yaml) at
+# KbsConfig.spec.kbsLocalCertCacheSpec (kbsconfig.template.yaml) at
 #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-lowercase>/vcek.der
 # rather than a kbs-config.toml verifier stanza. See docs/runbooks for the VCEK collection step.
 apiVersion: v1

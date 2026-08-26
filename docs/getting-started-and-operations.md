@@ -664,7 +664,7 @@ private keys, or administrator credentials.
   [reference values](https://confidentialcontainers.org/docs/attestation/reference-values/), and
   [protected resources](https://confidentialcontainers.org/docs/attestation/resources/). The upstream
   CRDs are comparison aids; the CRDs installed by Red Hat Trustee 1.1 are authoritative.
-- **Repository examples:** [advanced `KbsConfig`](../gitops/base/trustee/kbsconfig.yaml),
+- **Repository examples:** [advanced `KbsConfig`](../gitops/base/trustee/kbsconfig.template.yaml),
   [policy and RVPS ConfigMaps](../gitops/base/trustee/kbs-configmaps.yaml),
   [secret stubs](../gitops/base/trustee/secret-stubs.example.yaml), and
   [VCEK collection script](../scripts/collect-vcek.sh). The local base uses the advanced path and
