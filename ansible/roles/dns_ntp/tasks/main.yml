@@ -20,21 +20,8 @@
   become: true
   notify: Restart dnsmasq
 
-- name: Ensure chrony is installed
-  ansible.builtin.package:
-    name: chrony
-    state: present
-  become: true
-
-- name: Lay the chrony rig allow + local stratum (idempotent re-assert of cloud-init)
-  ansible.builtin.template:
-    src: chrony-rig.conf.j2
-    dest: /etc/chrony.d/rig.conf
-    owner: root
-    group: root
-    mode: "0644"
-  become: true
-  notify: Restart chronyd
+- name: Configure and validate private rig NTP
+  ansible.builtin.include_tasks: chrony.yml
 
 - name: Ensure the dnsmasq systemd drop-in directory exists
   ansible.builtin.file:

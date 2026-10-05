@@ -62,7 +62,7 @@ destination.chmod(0o644)
         bootstrap = bootstrap.replace('/usr/local/bin/check-mirror-prerequisites.sh', str(self.bin / 'prerequisites'))
         (self.bin / 'bootstrap').write_text(bootstrap)
         (self.bin / 'bootstrap').chmod(0o755)
-        for name, step in (('vlan', 'vlan'), ('prerequisites', 'prerequisites'),
+        for name, step in (('vlan', 'vlan'), ('ntp', 'ntp'), ('prerequisites', 'prerequisites'),
                            ('systemctl', 'services'), ('firewall-cmd', 'firewall')):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
@@ -78,6 +78,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
         command = document['runcmd'][0][2]
         command = command.replace('${mirror_root}', str(self.mirror))
         command = command.replace('/usr/local/bin/setup-rig-vlan.sh', str(self.bin / 'vlan'))
+        command = command.replace('/usr/local/bin/setup-rig-ntp.sh', str(self.bin / 'ntp'))
         command = command.replace('/usr/local/bin/bootstrap-mirror.sh', str(self.bin / 'bootstrap'))
         command = command.replace('/var/log/mirror-bootstrap.log', str(self.base / 'bootstrap.log'))
         self.env.update(FIXTURE_STATE=str(self.base), FIXTURE_FAIL_STEP=failure)
@@ -116,7 +117,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
         self.assertIn('prerequisites', (self.base / 'startup-calls').read_text())
 
     def test_failed_network_setup_stops_before_registry_bootstrap(self):
-        for failure in ('vlan', 'services', 'firewall'):
+        for failure in ('vlan', 'ntp', 'services', 'firewall'):
             with self.subTest(step=failure):
                 shutil.rmtree(self.mirror)
                 (self.base / 'startup-calls').unlink(missing_ok=True)
@@ -130,7 +131,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
         result = self.run_startup('')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = (self.base / 'startup-calls').read_text().splitlines()
-        self.assertEqual(calls, ['vlan', 'services', 'services', 'firewall', 'firewall', 'prerequisites'])
+        self.assertEqual(calls, ['vlan', 'ntp', 'services', 'services', 'services', 'firewall', 'firewall', 'prerequisites'])
         self.assertFalse(self.failed.exists())
         self.assertTrue((self.mirror / 'MIRROR_READY').exists())
 

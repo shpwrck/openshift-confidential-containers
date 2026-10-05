@@ -1,0 +1,52 @@
+---
+- name: Ensure chrony is installed
+  ansible.builtin.package:
+    name: chrony
+    state: present
+  become: true
+
+- name: Ensure the managed chrony configuration directory exists
+  ansible.builtin.file:
+    path: /etc/chrony.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Lay the chrony rig allow + local stratum (idempotent re-assert of cloud-init)
+  ansible.builtin.template:
+    src: chrony-rig.conf.j2
+    dest: /etc/chrony.d/rig.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart chronyd
+
+# Rocky's main configuration does not automatically load /etc/chrony.d.
+# Without this include chronyd can be synchronized but never serve UDP 123.
+- name: Include the managed rig configuration in the daemon configuration
+  ansible.builtin.lineinfile:
+    path: /etc/chrony.conf
+    regexp: '^\s*include\s+/etc/chrony[.]d/rig[.]conf\s*$'
+    line: include /etc/chrony.d/rig.conf
+    validate: chronyd -p -f %s
+  become: true
+  notify: Restart chronyd
+
+- name: Parse the complete chrony configuration before restarting
+  ansible.builtin.command:
+    argv: [chronyd, -p, -f, /etc/chrony.conf]
+  become: true
+  changed_when: false
+  register: dns_ntp_chrony_config
+
+- name: Require the private rig NTP policy in the effective configuration
+  ansible.builtin.assert:
+    that:
+      - "('allow ' ~ vlan_cidr) in dns_ntp_chrony_config.stdout_lines"
+      - "'local stratum 10' in dns_ntp_chrony_config.stdout_lines"
+    fail_msg: >-
+      Chrony did not load the managed private rig policy. Inspect /etc/chrony.conf and
+      /etc/chrony.d/rig.conf before relying on the bastion as the node's NTP server.

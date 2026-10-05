@@ -112,6 +112,20 @@ write_files:
       allow ${vlan_subnet}
       local stratum 10
 
+  - path: /usr/local/bin/setup-rig-ntp.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # Rocky does not load chrony.d automatically. Keep the image's upstream
+      # time sources and include only the managed private rig policy.
+      if ! grep -Eq '^[[:space:]]*include[[:space:]]+/etc/chrony[.]d/rig[.]conf[[:space:]]*$' /etc/chrony.conf; then
+        printf '\ninclude /etc/chrony.d/rig.conf\n' >> /etc/chrony.conf
+      fi
+      EFFECTIVE_CONFIG="$(chronyd -p -f /etc/chrony.conf)"
+      grep -Fxq 'allow ${vlan_subnet}' <<< "$EFFECTIVE_CONFIG"
+      grep -Fxq 'local stratum 10' <<< "$EFFECTIVE_CONFIG"
+
   # --- DNS: resolve the mirror name to the bastion's PRIVATE IP over the VLAN --------------
   # RHCOS can't use /etc/hosts at install time; the agent-config points dns-resolver here.
   # The interface= binding is written by setup-rig-vlan.sh (rig-iface.conf) from the detected NIC.
@@ -207,7 +221,10 @@ runcmd:
       mkdir -p "$MIRROR_ROOT"
       trap 'date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_FAILED"' ERR
       /usr/local/bin/setup-rig-vlan.sh
+      /usr/local/bin/setup-rig-ntp.sh
       systemctl enable --now chronyd dnsmasq
+      # enable --now leaves an already-running chronyd on its old configuration.
+      systemctl restart chronyd
       if systemctl is-active --quiet firewalld; then
         firewall-cmd --permanent --add-service=dns --add-service=ntp --add-port=8443/tcp
         firewall-cmd --reload
