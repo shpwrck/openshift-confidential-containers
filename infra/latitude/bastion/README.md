@@ -30,6 +30,15 @@ specify **RHEL 8 or 9**, Podman 3.4.2 or later, OpenSSL, DNS and SSH connectivit
 does not inherit Red Hat host support. This bastion choice does not change the disposable
 SNP node's initial operating system.
 
+`bastion_ssh_user` defaults to `rocky`. If using a different image, set it to that
+image's existing default username and use the same value in Ansible. Cloud-init
+keeps that user's password locked while inheriting the provider's remaining user
+settings and SSH key configuration. This avoids the Latitude Rocky image's attempt
+to unlock an empty password. The override passed schema and user-normalization
+checks with cloud-init 24.4; a fresh provision with the override remains to be tested.
+`MIRROR_READY` records registry bootstrap success; check `cloud-init status --long`
+separately for errors in other modules.
+
 Cloud-init explicitly installs `hostname`, `openssh-clients` and `openssh-server` alongside
 the registry dependencies. Before generating credentials or downloading the archive,
 bootstrap checks the required commands and that `hostname -f` succeeds. Fix the bastion's
@@ -55,6 +64,11 @@ Follow the [current quickstart](../../../docs/current-quickstart.md) and
 prerequisites, external Terraform state and variable files, plan review and provisioning.
 Keep the bastion and node states separate. Set the versioned registry inputs above in the
 external bastion variable file; do not place credentials or Terraform state in this checkout.
+
+`firewall_name` defaults to `coco-node-inbound-hardening`, preserving existing rigs.
+For parallel rigs in the same Latitude project, set a distinct name in each external
+variable file (for example, `coco-mia2-node-inbound`). The pinned provider locates a
+new firewall by project and name, so duplicate names can select the wrong resource.
 
 Inspect bootstrap through SSH with sufficient privileges: `sudo tail -f /var/log/mirror-bootstrap.log`. The root-owned `<mirror_root>/MIRROR_READY` marker records bootstrap completion; `MIRROR_FAILED` records failure. Check the protected log before retrying. The preparation play also verifies DNS and the serving registry path.
 

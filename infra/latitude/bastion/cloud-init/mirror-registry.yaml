@@ -22,6 +22,13 @@
 # templated into Terraform state / the Latitude user-data store). Retrieve after boot with:
 #   sudo cat ${mirror_root}/mirror-admin-password
 
+# Override only password locking for the image's existing default user. Latitude's
+# Rocky image sets lock_passwd: false, which can fail when its password is empty.
+# The user mapping inherits provider defaults and keeps cloud SSH key installation.
+user:
+  name: ${jsonencode(bastion_ssh_user)}
+  lock_passwd: true
+
 packages:
   - podman
   - curl

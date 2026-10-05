@@ -31,6 +31,16 @@ variable "operating_system" {
   description = "Bastion OS: Rocky 9 is the compatible lab baseline using NetworkManager and Podman; live validation is required. Red Hat supports mirror-registry on RHEL 8/9, not Rocky. Verify the OS is offered for the selected Latitude plan."
 }
 
+variable "bastion_ssh_user" {
+  type        = string
+  default     = "rocky"
+  description = "Existing image default username; must match the Ansible bastion_ssh_user. Used to keep password login locked while retaining the provider's default-user configuration and SSH keys."
+  validation {
+    condition     = length(trimspace(var.bastion_ssh_user)) > 0
+    error_message = "Set bastion_ssh_user to the image's existing default username."
+  }
+}
+
 variable "billing" {
   type        = string
   default     = "hourly"
@@ -48,6 +58,16 @@ variable "tags" {
 }
 
 # --- Firewall: INBOUND hardening for the node -------------------------------------------
+variable "firewall_name" {
+  type        = string
+  default     = "coco-node-inbound-hardening"
+  description = "Inbound firewall name. Set a unique name for each parallel rig in the same Latitude project."
+  validation {
+    condition     = length(trimspace(var.firewall_name)) > 0
+    error_message = "Provide a nonempty firewall_name."
+  }
+}
+
 # No default — fail closed. Set your admin source CIDR explicitly (the rig may use a wide
 # range, but that must be a conscious choice, not a shipped 0.0.0.0/0). NB: this firewall
 # hardens INBOUND to the node only; the air-gap EGRESS lockdown is host-nftables (runbook),

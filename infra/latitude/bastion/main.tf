@@ -70,6 +70,7 @@ resource "latitudesh_user_data" "bastion" {
   description = "coco-bastion-mirror-registry"
   # Latitude's user_data API expects base64-encoded content; the provider passes it through.
   content = base64encode(templatefile("${path.module}/cloud-init/mirror-registry.yaml", {
+    bastion_ssh_user       = var.bastion_ssh_user
     init_user              = var.mirror_init_user
     mirror_root            = var.mirror_root
     mirror_registry_url    = var.mirror_registry_url
@@ -98,7 +99,7 @@ resource "latitudesh_user_data" "bastion" {
 # The node attaches this via firewall_assignment (opt-in: var.enforce_latitude_firewall).
 resource "latitudesh_firewall" "node_inbound" {
   project = var.project
-  name    = "coco-node-inbound-hardening"
+  name    = var.firewall_name
 
   rules {
     from     = var.admin_cidr

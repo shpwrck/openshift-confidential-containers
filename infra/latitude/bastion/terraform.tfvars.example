@@ -1,7 +1,8 @@
-# Copy to terraform.tfvars (gitignored) and fill. Persistent air-gap bastion.
+# Copy to an external file such as $COCO_STATE_DIR/bastion.tfvars and fill.
+# Set COCO_BASTION_TFVARS to that file's absolute path. Persistent air-gap bastion.
 project = "proj_XXXXXXXXXXXXXXX" # FILL: your Latitude project ID — SAME project as the SNP node
-site    = "NYC"                # MUST match the node's site (virtual networks are site-scoped)
-plan    = ""                   # FILL: cheapest metal SKU w/ disk for the mirror — `lsh plans list`
+site    = "NYC"                  # MUST match the node's site (virtual networks are site-scoped)
+plan    = ""                     # FILL: cheapest metal SKU w/ disk for the mirror — `lsh plans list`
 
 hostname = "coco-bastion"
 # operating_system defaults to rocky-9 (compatible lab baseline; live validation required).
@@ -9,6 +10,8 @@ hostname = "coco-bastion"
 # The cloud-init uses NetworkManager + dnf.
 # Do NOT set ubuntu here — a verbatim copy would boot the wrong OS and the Rocky cloud-init fails.
 # operating_system = "rocky-9"
+# Existing image default username; match the Ansible bastion_ssh_user if overriding.
+# bastion_ssh_user = "rocky"
 billing = "hourly" # "monthly" if the bastion will run for the whole project
 
 ssh_key_ids = ["ssh_XXXXXXXXXXXXX"] # FILL: your Latitude SSH key ID — same key as the node
@@ -17,6 +20,9 @@ ssh_key_ids = ["ssh_XXXXXXXXXXXXX"] # FILL: your Latitude SSH key ID — same ke
 # Your admin source CIDR for inbound SSH/API to the node. A wide range is acceptable for the
 # throwaway rig, but set it as a conscious choice (not a shipped 0.0.0.0/0).
 # admin_cidr = "203.0.113.4/32" # FILL: your workstation/VPN egress IP (or "0.0.0.0/0" knowingly)
+
+# Default preserves existing rigs. Parallel rigs in the same project must use distinct names.
+# firewall_name = "coco-mia2-node-inbound"
 
 # Private VLAN L3 (the real air gap). Defaults are fine for the rig; node_vlan_ip + registry
 # name must be mirrored into the SNP node's agent-config / host resolution (see runbook).
