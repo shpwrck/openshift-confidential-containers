@@ -106,6 +106,23 @@ class Connection(LocalConnection):
             task['become'] = False
         return tasks
 
+    def test_firmware_acknowledgement_still_fails_closed_without_exact_token(self):
+        phase = next(play for play in yaml.safe_load((ROOT / 'ansible/playbooks/site.yml').read_text())
+                     if 'bios' in play.get('tags', []))
+        gate = copy.deepcopy(next(task for task in phase['tasks']
+                                  if 'ansible.builtin.assert' in task))
+        sentinel = self.base / 'installation-started'
+        for variables, expected in (({}, 2), ({'bios_ack': {'user_input': ''}}, 2),
+                                    ({'bios_ack': {'user_input': 'yes'}}, 2),
+                                    ({'bios_ack': {'user_input': 'SNP-SET'}}, 0),
+                                    ({'skip_bios_pause': True}, 0)):
+            with self.subTest(variables=variables):
+                sentinel.unlink(missing_ok=True)
+                self.run_play({'vars': variables, 'tasks': [gate, {
+                    'ansible.builtin.copy': {'dest': str(sentinel), 'content': 'started',
+                                            'mode': '0600'}}]}, expected=expected)
+                self.assertEqual(sentinel.exists(), expected == 0)
+
     def test_bootstrap_marker_wait_uses_privilege_for_protected_directory(self):
         phase = next(play for play in yaml.safe_load((ROOT / 'ansible/playbooks/site.yml').read_text())
                      if play.get('name', '').startswith('Phase A'))
@@ -228,6 +245,31 @@ print('success')
                     self.assertEqual(calls, [['--add-port=8080/tcp', '--permanent'], ['--reload']])
                 else:
                     self.assertFalse(calls_file.exists())
+
+    def test_pxe_refuses_an_unreadable_staging_parent_before_configuring_nginx(self):
+        tasks = yaml.safe_load((ROOT / 'ansible/roles/pxe_serve/tasks/main.yml').read_text())[1]['block']
+        probe = copy.deepcopy(next(task for task in tasks
+                                   if task['name'] == 'Check that the nginx worker can read the staged initrd'))
+        gate = copy.deepcopy(next(task for task in tasks
+                                  if task['name'] == 'Require a readable public staging path before configuring nginx'))
+        # Run the same kernel-backed read check as this fixture user. The live
+        # task uses root's runuser to execute it as nginx; CI does not create users.
+        probe['ansible.builtin.command']['argv'] = probe['ansible.builtin.command']['argv'][4:]
+        probe['become'] = False
+        webroot = self.base / 'public'
+        token_dir = webroot / 'fixture-token'
+        token_dir.mkdir(parents=True)
+        (token_dir / 'agent.x86_64-initrd.img').write_bytes(b'fixture initrd')
+        sentinel = self.base / 'nginx-configuration-started'
+        self.addCleanup(webroot.chmod, 0o755)
+        for mode, expected in ((0o755, 0), (0o000, 2)):
+            with self.subTest(parent_mode=oct(mode)):
+                sentinel.unlink(missing_ok=True)
+                webroot.chmod(mode)
+                self.run_play({'vars': {'boot_artifacts_webroot': str(webroot), 'pxe_url_prefix': 'fixture-token'},
+                               'tasks': [probe, gate, {'ansible.builtin.copy': {
+                                   'dest': str(sentinel), 'content': 'started', 'mode': '0600'}}]}, expected=expected)
+                self.assertEqual(sentinel.exists(), expected == 0)
 
     def test_public_boot_probe_blocks_provider_step_without_range_response(self):
         tasks = yaml.safe_load((ROOT / 'ansible/roles/pxe_serve/tasks/main.yml').read_text())[1]['block']

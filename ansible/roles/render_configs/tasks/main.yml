@@ -18,7 +18,7 @@
     fail_msg: >-
       machine '{{ item.name }}' has no parent_mac — run playbooks/discover.yml first (MACs are
       per physical unit and must NEVER be hardcoded).
-  loop: "{{ machines }}"
+  loop: "{{ discovery_machines | default(machines) }}"
   loop_control:
     label: "{{ item.name }}"
 
@@ -105,22 +105,22 @@
 # the stanza anyway would name a possibly-nonexistent device; SKIPPING it silently is worse still,
 # because that is exactly #78 (unmanaged NIC DHCPs a public resolver, mirror stops resolving, the
 # install parks with every port refused and no clue why). So: fail loudly and make the operator
-# decide, with an explicit override for plans that genuinely have no second NIC.
+# configure the verified MAC. Plans with no public NIC use an empty external_if.
 - name: Fail closed if the public NIC cannot be pinned to a discovered MAC (#80)
   ansible.builtin.assert:
     that: >-
-      (item.external_mac | default('')) is truthy
-      or (allow_unmanaged_public_nic | default(false) | bool)
+      not (item.external_if | default(''))
+      or (item.external_mac | default('')) is truthy
     fail_msg: >-
       No external-role MAC was discovered for {{ item.name }}, so its public NIC cannot be pinned
       and held down. Leaving it unmanaged reintroduces #78: NetworkManager will DHCP it in the
       agent live environment, the provider's resolver will outrank the static dns-resolver,
       {{ mirror_dns_name }} will stop resolving, and the install will park at "Cannot access
       Rendezvous Host". Re-run `--tags discover` (it reads role=external from the Latitude API),
-      pass -e node_external_mac=<mac>, or set -e allow_unmanaged_public_nic=true if this plan
-      genuinely has only one NIC.
+      or pass -e node_external_mac=<verified-current-mac>. Only configure an empty
+      external_if when hardware inspection confirms there is no public NIC.
     success_msg: "{{ item.name }}: public NIC {{ item.external_if | default('?') }} pinned to {{ item.external_mac | default('') }}"
-  loop: "{{ machines }}"
+  loop: "{{ discovery_machines | default(machines) }}"
   loop_control:
     label: "{{ item.name }}"
 

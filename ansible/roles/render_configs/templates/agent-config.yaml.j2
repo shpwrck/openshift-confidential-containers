@@ -14,7 +14,7 @@ additionalNTPSources:
   - {{ ntp }}
 {% endfor %}
 hosts:
-{% for m in machines %}
+{% for m in discovery_machines | default(machines) %}
   - hostname: {{ m.name }}
     role: {{ m.role }}
     rootDeviceHints:

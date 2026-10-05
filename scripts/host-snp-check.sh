@@ -48,10 +48,24 @@ if grep -Ei '(^|[^[:alnum:]_])(ccp|psp|sev)([^[:alnum:]_]|$)' <<< "$HOST_DMESG" 
     grep -Ei 'error:[[:space:]]*0x0*3([^[:xdigit:]]|$)' >/dev/null; then
   PSP_INVALID_CONFIG=1
 fi
+# Require the kernel's positive physical allocation record, not any mention of
+# RMP: a missing reservation error also contains the words "RMP table".
+RMP_RANGE_PATTERN='SEV-SNP:[[:space:]]+RMP table physical (address|range)[[:space:]]+\[?0x[[:xdigit:]]+[[:space:]]*-[[:space:]]*0x[[:xdigit:]]+\]?[[:space:]]*$'
+RMP_FAILURE=0
+if grep -Ei 'SEV-SNP:.*(Memory for the RMP table has not been reserved|RMP configuration not valid|Memory reserved for the RMP table does not cover|Failed to map RMP table)' <<< "$HOST_DMESG" >/dev/null; then
+  RMP_FAILURE=1
+fi
+PSP_INIT_FAILED=0
+if grep -Ei '(^|[^[:alnum:]_])(ccp|psp|sev)([^[:alnum:]_]|$)' <<< "$HOST_DMESG" |
+    grep -Ei '(INIT(_EX)?[[:space:]]+failed|failed[[:space:]]+to[[:space:]]+INIT(_EX)?)' >/dev/null; then
+  PSP_INIT_FAILED=1
+fi
 report "kernel log readable" test "$DMESG_READABLE" -eq 1
 report "PSP reports SEV-SNP API" grep -qi 'SEV-SNP API' <<< "$SEV_DMESG"
-report "RMP table reported" grep -qi 'RMP table' <<< "$SEV_DMESG"
+report "RMP physical allocation range reported" grep -Eqi "$RMP_RANGE_PATTERN" <<< "$SEV_DMESG"
+report "no RMP reservation/mapping failure" test "$RMP_FAILURE" -eq 0
 report "no CCP/PSP/SEV INVALID_CONFIG error (0x3)" test "$PSP_INVALID_CONFIG" -eq 0
+report "no CCP/PSP/SEV initialization failure" test "$PSP_INIT_FAILED" -eq 0
 
 echo
 if [ "$fail" -eq 0 ]; then
@@ -74,6 +88,11 @@ elif [ "$DMESG_READABLE" -eq 0 ] || [ "$PARAM_READABLE" -eq 0 ]; then
 elif [ "$PSP_INVALID_CONFIG" -eq 1 ]; then
   echo "  -> PSP INVALID_CONFIG (0x3): inspect the exact CCP/PSP/SEV error and platform firmware configuration."
   echo "     Memory interleaving was a cause on a historical rig; this error alone does not identify the cause."
+elif [ "$PSP_INIT_FAILED" -eq 1 ]; then
+  echo "  -> PSP INITIALIZATION FAILED: retain the exact firmware status and kernel error."
+  echo "     A device node or positive API/range message does not override this failure."
+elif [ "$RMP_FAILURE" -eq 1 ]; then
+  echo "  -> RMP RESERVATION/MAPPING FAILED: inspect this board's firmware allocation and the exact kernel error."
 elif [ "$SNP_PARAM" != Y ]; then
   echo "  -> SNP NOT ENABLED in the running kvm_amd module. Inspect kernel command-line/module options,"
   echo "     initialization logs, and this board's BIOS settings before making firmware changes."

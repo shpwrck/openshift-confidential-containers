@@ -80,7 +80,8 @@ cluster_assets_dir: "/opt/install/cluster-assets"      # the installer CONSUMES 
 # Provider request evidence is retained when generated cluster assets are replaced.
 install_request_dir: "{{ cluster_assets_dir | dirname }}/provider-requests"
 boot_artifacts_dir: "/opt/install/cluster-assets/boot-artifacts"
-boot_artifacts_webroot: "/opt/install/boot-artifacts"  # nginx webroot for the tokenized serve
+# Keep published copies outside the private /opt/install source and assets tree.
+boot_artifacts_webroot: "/var/www/coco-boot-artifacts"
 # secure_path omits /usr/local/bin, so every sudo invocation of the OpenShift tools must
 # pass this PATH explicitly (hard-won fix #6).
 tool_path: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"

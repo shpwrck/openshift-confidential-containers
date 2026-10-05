@@ -1,6 +1,6 @@
 # Capability status and next experiments
 
-Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 / Trustee 1.2. The selected OCP payload is 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. No new Latitude hardware result has been recorded for this release set.
+Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 / Trustee 1.2. The selected OCP payload is 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. The Latitude bastion and mirror are prepared, and host signature verification passed. The delivered AMD node has not passed SNP host prerequisites; no guest rung is validated for this release set.
 
 ## What changed enough to retest
 
@@ -10,7 +10,7 @@ Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 
 
 **Encrypted images:** [OpenShift CRI-O PR 82](https://github.com/openshift/cri-o/pull/82) merged into `release-5.0` on October 5, 2026, at 08:20 UTC (merge commit `694532bb98d6a89cf999cd2969ccda8d4db561d1`). This is progress on the host-side encrypted-layer pull blocker. It does not establish inclusion in OCP 4.20.39 or supported encrypted-image operation with OSC 1.13. The [5.0.0-rc.0 release record](https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/5.0.0-rc.0/release.txt) predates that merge. The experiment needs a payload containing the change, its actual RHCOS/CRI-O build identity, compatible OSC operands and the allow/deny/recovery result. The default release inventory remains on the supported CPU matrix.
 
-Signed-image verification is not presented as a newly introduced OSC 1.13 capability. The unresolved local question is whether the selected registry serves signatures in a format the shipped guest image verifier can retrieve. A host-side `cosign verify` pass is necessary preparation, not the guest proof. The historical minimal mirror-registry problem must be tested with the actual selected registry.
+Signed-image verification is not presented as a newly introduced OSC 1.13 capability. The unresolved local question is whether the selected registry serves signatures in a format the shipped guest image verifier can retrieve. A host-side `cosign verify` pass is necessary preparation, not the guest proof. On October 5, mirror-registry 2.0.12 accepted the signed control and host verification rejected the same-content unsigned control for a signature-specific reason. Guest enforcement remains pending. The historical minimal mirror-registry problem must be tested with the actual selected registry.
 
 ## Keep the measurements distinct
 

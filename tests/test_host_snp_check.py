@@ -1,8 +1,10 @@
 """Run the raw-host gate against fixtures without loading modules or touching firmware."""
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -10,9 +12,11 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/host-snp-check.sh'
 GOOD_LOG = '''ccp 0000:44:00.1: SEV-SNP API:1.55 build:24
-SEV-SNP: RMP table physical address [0x0000000100000000 - 0x0000000101000000]
+SEV-SNP: RMP table physical range [0x0000000100000000 - 0x0000000101000000]
 kvm_amd: SEV-SNP enabled (ASIDs 1 - 99)
 '''
+MISSING_RMP = 'SEV-SNP: Memory for the RMP table has not been reserved by BIOS\n'
+INIT_FAILED = 'ccp 0000:44:00.1: SEV: INIT failed 0x13, rc -5\n'
 
 
 class HostSnpCheckTests(unittest.TestCase):
@@ -133,6 +137,121 @@ cat "$FIXTURE_METADATA"
             with self.subTest(absent=absent):
                 self.log.write_text('\n'.join(line for line in GOOD_LOG.splitlines() if absent not in line))
                 self.assertIn('-> INCOMPLETE HOST EVIDENCE:', self.run_gate(1))
+
+    def test_live_missing_rmp_and_init_error_cannot_count_as_positive_evidence(self):
+        self.log.write_text(MISSING_RMP + 'AMD-Vi: Extended features: PPR PC SNP\n'
+                            + 'ccp 0000:44:00.1: sev enabled\n' + INIT_FAILED
+                            + 'kvm_amd: SEV disabled (ASIDs 100 - 509)\n')
+        self.parameter.write_text('N\n')
+        output = self.run_gate(1)
+        self.assertIn('FAIL  RMP physical allocation range reported', output)
+        self.assertIn('FAIL  no CCP/PSP/SEV initialization failure', output)
+        self.assertIn('-> PSP INITIALIZATION FAILED:', output)
+
+    def test_missing_rmp_error_alone_fails_even_with_positive_api_and_enabled_parameter(self):
+        self.log.write_text('\n'.join(line for line in GOOD_LOG.splitlines()
+                                      if 'RMP table' not in line) + '\n' + MISSING_RMP)
+        output = self.run_gate(1)
+        self.assertIn('FAIL  RMP physical allocation range reported', output)
+        self.assertIn('-> RMP RESERVATION/MAPPING FAILED:', output)
+
+    def test_rmp_failure_overrides_an_earlier_positive_range(self):
+        for error in (MISSING_RMP, 'SEV-SNP: RMP configuration not valid: base=0x2000, end=0x1000\n',
+                      'SEV-SNP: Memory reserved for the RMP table does not cover full system RAM\n',
+                      'SEV-SNP: Failed to map RMP table\n'):
+            with self.subTest(error=error):
+                self.log.write_text(GOOD_LOG + error)
+                self.assertIn('FAIL  no RMP reservation/mapping failure', self.run_gate(1))
+
+    def test_psp_init_failure_overrides_otherwise_positive_host_evidence(self):
+        for error in (INIT_FAILED, 'ccp 0000:44:00.1: SEV: failed to INIT error 0x13, rc -5\n',
+                      'ccp 0000:44:00.1: SEV-SNP: failed to INIT rc -5, error 0x13\n'):
+            with self.subTest(error=error):
+                self.log.write_text(GOOD_LOG + error)
+                self.assertIn('-> PSP INITIALIZATION FAILED:', self.run_gate(1))
+
+    def test_positive_range_formats_pass_but_vague_phrases_do_not(self):
+        for message in ('SEV-SNP: RMP table physical range [0x100000 - 0x200000]',
+                        'SEV-SNP: RMP table physical address [0x100000 - 0x200000]',
+                        'SEV-SNP: RMP table physical address 0x100000 - 0x200000'):
+            with self.subTest(message=message):
+                self.log.write_text(GOOD_LOG.replace(GOOD_LOG.splitlines()[1], message))
+                self.run_gate(0)
+        self.log.write_text(GOOD_LOG.replace(GOOD_LOG.splitlines()[1],
+                                            'SEV-SNP: RMP table physical range unavailable'))
+        self.assertIn('FAIL  RMP physical allocation range reported', self.run_gate(1))
+
+
+class ClusterSnpCheckTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='coco-cluster-snp-')
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.log = self.base / 'dmesg.txt'
+        self.log.write_text(GOOD_LOG)
+        self.calls = self.base / 'calls.jsonl'
+        oc = self.base / 'oc'
+        oc.write_text(f'#!{sys.executable}\n' + '''import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ['FIXTURE_CALLS'], 'a') as stream:
+    stream.write(json.dumps(args) + '\\n')
+assert args[:2] == ['--context=fixture-worker', '--request-timeout=30s'], args
+assert args[2:-1] == ['debug', 'node/fixture-node', '--quiet', '--', 'chroot', '/host', 'bash', '-c'], args
+command = args[-1]
+if command == 'dmesg':
+    print(pathlib.Path(os.environ['FIXTURE_LOG']).read_text())
+    sys.exit(int(os.environ.get('FIXTURE_LOG_EXIT', '0')))
+if command.startswith('cat /sys/module/kvm_amd/parameters/sev_snp'):
+    print(os.environ.get('FIXTURE_PARAMETER', 'Y'))
+elif command.startswith('lscpu '):
+    print('AMD EPYC fixture')
+elif command == 'test -e /dev/sev':
+    sys.exit(0)
+else:
+    raise AssertionError(command)
+''')
+        oc.chmod(0o755)
+
+    def run_gate(self, expected, **settings):
+        environment = dict(os.environ, PATH=str(self.base) + os.pathsep + os.environ['PATH'],
+                           WORKER_CONTEXT='fixture-worker', OC_REQUEST_TIMEOUT='30s',
+                           FIXTURE_LOG=str(self.log), FIXTURE_CALLS=str(self.calls), **settings)
+        result = subprocess.run(['bash', str(ROOT / 'scripts/verify-snp-host.sh'), 'fixture-node'],
+                                env=environment, text=True, capture_output=True, timeout=10)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, expected, output)
+        self.assertNotIn('AssertionError', output)
+        return output
+
+    def test_positive_host_uses_selected_context_and_node(self):
+        self.assertIn('host checks passed', self.run_gate(0))
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        self.assertEqual(len(calls), 4)
+        self.assertTrue(all('node/fixture-node' in call for call in calls))
+
+    def test_missing_rmp_error_cannot_replace_positive_allocation_evidence(self):
+        self.log.write_text('\n'.join(line for line in GOOD_LOG.splitlines()
+                                      if 'RMP table' not in line) + '\n' + MISSING_RMP)
+        output = self.run_gate(1)
+        self.assertIn('FAIL  RMP physical allocation range reported', output)
+        self.assertIn('FAIL  no RMP reservation/mapping failure', output)
+
+    def test_real_failure_lines_block_with_device_present(self):
+        self.log.write_text(MISSING_RMP + INIT_FAILED + 'ccp 0000:44:00.1: sev enabled\n')
+        output = self.run_gate(1, FIXTURE_PARAMETER='N')
+        self.assertIn('FAIL  RMP physical allocation range reported', output)
+        self.assertIn('FAIL  no CCP/PSP/SEV initialization failure', output)
+
+    def test_init_failure_cannot_hide_behind_positive_api_and_range(self):
+        self.log.write_text(GOOD_LOG + INIT_FAILED)
+        self.assertIn('FAIL  no CCP/PSP/SEV initialization failure', self.run_gate(1))
+
+    def test_rmp_error_cannot_hide_behind_an_earlier_positive_range(self):
+        self.log.write_text(GOOD_LOG + 'SEV-SNP: Failed to map RMP table\n')
+        self.assertIn('FAIL  no RMP reservation/mapping failure', self.run_gate(1))
+
+    def test_log_command_failure_is_not_swallowed(self):
+        self.assertIn('FAIL  kernel log readable', self.run_gate(1, FIXTURE_LOG_EXIT='1'))
 
 
 if __name__ == '__main__':

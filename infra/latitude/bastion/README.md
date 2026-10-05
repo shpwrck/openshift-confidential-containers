@@ -10,14 +10,17 @@ once, so the disposable SNP node (`../`) can be cycled underneath it freely:
 
 ## Why separate from the node module
 
-Mirroring is the **~1–2 h bottleneck** and it is **cacheable**. This module keeps the mirror
+Mirroring time depends on the selected inventory and network, and its workspace is **cacheable**. This module keeps the mirror
 workspace on the bastion's own disk (`mirror_root`, default `/opt/mirror`), so:
 
 > **Apply the bastion once → re-provision the SNP node as many times as you like → pay the
-> mirror cost once.** `terraform destroy` in `../` removes only the node; the mirror survives.
+> mirror cost once.** Destroying the node with its external state preserves the mirror;
+> use the [external-state teardown procedure](../../../docs/latitude-validation.md#close-the-endpoint-and-tear-down).
 
-Different state, different lifecycle. **Apply this module first** — the node module reads its
-outputs (`virtual_network_id`, `firewall_id`) via `terraform_remote_state`.
+Different state, different lifecycle. **Apply this module before enabling `air_gap=true`** —
+the node module then reads its outputs (`virtual_network_id`, `firewall_id`) via
+`terraform_remote_state`. A standalone node with `air_gap=false` can be screened for
+hardware compatibility first; the accepted node and bastion must be in the same site.
 
 ## Registry and host prerequisites
 
@@ -35,8 +38,7 @@ hostname in DNS or `/etc/hosts` if that check fails: mirror-registry evaluates i
 
 The public **2.0.12 AMD64 archive** was downloaded and matched Red Hat's published checksum
 on 2026-10-05. Its root-level executable and bundled images match this bootstrap's extraction
-layout; install flags were checked with `--help`. A serving registry installation remains
-part of live validation. Use these explicit inputs:
+layout; install flags were checked with `--help`. The October 5 run installed it, verified TLS/DNS, completed mirroring and passed an unchanged preparation rerun. Guest pulls remain a later checkpoint. Use these explicit inputs:
 
 ```hcl
 mirror_registry_url    = "https://mirror.openshift.com/pub/cgw/mirror-registry/2.0.12/mirror-registry-amd64.tar.gz"
@@ -54,17 +56,9 @@ prerequisites, external Terraform state and variable files, plan review and prov
 Keep the bastion and node states separate. Set the versioned registry inputs above in the
 external bastion variable file; do not place credentials or Terraform state in this checkout.
 
-Watch the bootstrap: `ssh rocky@<bastion-ip>` then `tail -f /var/log/mirror-bootstrap.log`.
-Ready when `<mirror_root>/MIRROR_READY` exists (a `MIRROR_FAILED` marker is written instead on a
-failed bootstrap; `install.log` is 0600). Then grab the two things the install kit needs:
+Inspect bootstrap through SSH with sufficient privileges: `sudo tail -f /var/log/mirror-bootstrap.log`. The root-owned `<mirror_root>/MIRROR_READY` marker records bootstrap completion; `MIRROR_FAILED` records failure. Check the protected log before retrying. The preparation play also verifies DNS and the serving registry path.
 
-```bash
-ssh rocky@<bastion-ip> 'sudo cat /opt/mirror/mirror-admin-password'   # registry admin pw (generated on-box)
-ssh rocky@<bastion-ip> 'sudo cat /opt/mirror/ca/rootCA.pem'           # -> install-config additionalTrustBundle
-```
-
-The admin **password is generated on the bastion** (0600 root-only) — it is deliberately never
-in Terraform state, the Latitude user-data store, or this repo.
+The generated registry password lives at `/opt/mirror/mirror-admin-password` with mode 0600. The public CA is `/opt/mirror/ca/rootCA.pem`. Ansible reads these files and builds the required authentication and trust configuration; do not copy the password into terminal output, Terraform inputs, user-data or the checkout.
 
 ## Two firewalls, two layers — don't confuse them
 

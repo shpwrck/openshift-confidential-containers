@@ -1,35 +1,36 @@
 ---
-# discover.yml — hard-won fix #4: node MAC auto-discovery.
-#
-# MACs are PER PHYSICAL UNIT — a re-provision from the provider pool gives a DIFFERENT machine
-# with DIFFERENT MACs. NEVER hardcode them. This play queries the Latitude API for each machine's
-# server, finds the interface whose `role` == "internal" (the PXE / VLAN-parent NIC; `external`
-# is the public NIC), and rewrites group_vars/discovered.yml with the discovered parent_mac per
-# machine, which render_configs then consumes.
-#
-# Fallback (if the API does not expose interface MACs for this plan): SSH the BOOTED node and run
-#   ip -br link        # then map the internal/VLAN-parent NIC to its MAC by hand
-# and pass -e node_parent_mac=<mac> (single-node) instead of running this play.
-
+# MACs belong to a physical unit. Discover again after reprovisioning. The cache
+# holds only name/server_id/MAC bindings, outside the checkout in COCO_STATE_DIR.
+# Current disk, network and interface-name inputs are never replaced by a cache.
 - name: Discover node interface MACs from the Latitude API
   hosts: localhost
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
-  vars:
-    discovered_machines: []
   tasks:
+    - name: Validate requested identities and invalidate previous MAC discovery
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/discover-node-macs.py"
+          - begin
+        stdin: "{{ {'machines': machines} | to_json }}"
+      register: discovery_begin
+      changed_when: discovery_begin.rc == 0 and (discovery_begin.stdout | from_json).changed
+
     - name: Assert the Latitude token is present
       ansible.builtin.assert:
         that:
           - latitude_token is defined
           - latitude_token | length > 0
         fail_msg: "Set LATITUDESH_AUTH_TOKEN (or LATITUDE_API_TOKEN) in the environment before running discover.yml."
+      no_log: true
 
     - name: Query the Latitude API for each server
       ansible.builtin.uri:
         url: "{{ latitude_api_base }}/servers/{{ item.server_id }}"
         method: GET
+        follow_redirects: none
         headers:
           Authorization: "Bearer {{ latitude_token }}"
           Accept: "application/vnd.api+json"
@@ -38,76 +39,26 @@
       loop_control:
         label: "{{ item.name }} ({{ item.server_id }})"
       register: lat_servers
-      when: item.server_id is not match('REPLACE_.*')
+      no_log: true
 
-    - name: Extract the internal-role (PXE) and external-role (public) interface MACs per machine
-      # The EXTERNAL mac matters as much as the internal one (#78): the public NIC must be
-      # declared in agent-config so it can be held down, otherwise it is unmanaged, DHCPs, and
-      # its provider-supplied resolver (8.8.8.8) outranks the static dns-resolver — which breaks
-      # mirror.rig.local resolution and stalls the whole air-gapped install. `| first` on an
-      # empty list yields '' rather than failing, so a plan that exposes no external NIC simply
-      # renders no stanza (the template guards on a non-empty value).
-      ansible.builtin.set_fact:
-        discovered_machines: >-
-          {{ discovered_machines + [
-               item.0 | combine({
-                 'parent_mac': (
-                   (item.1.json.data.attributes.interfaces | default([]))
-                   | selectattr('role', 'equalto', 'internal') | map(attribute='mac_address')
-                   | list | first
-                 ) | default(
-                   (item.1.json.data.attributes.specs.nics | default([]))
-                   | selectattr('role', 'defined') | selectattr('role', 'equalto', 'internal')
-                   | map(attribute='mac_address') | list | first, true
-                 ),
-                 'external_mac': (
-                   (item.1.json.data.attributes.interfaces | default([]))
-                   | selectattr('role', 'equalto', 'external')
-                   | map(attribute='mac_address') | select('string') | list | first | default('')
-                 )
-               })
-             ] }}
-      loop: "{{ machines | zip(lat_servers.results) | list }}"
-      loop_control:
-        label: "{{ item.0.name }}"
-      when: item.1.json is defined
+    - name: Validate exact server identities and persist only current MAC bindings
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/discover-node-macs.py"
+          - capture
+        stdin: "{{ {'machines': machines, 'servers': lat_servers.results | map(attribute='json') | list} | to_json }}"
+      register: discovery_validation
+      changed_when: discovery_validation.rc == 0 and (discovery_validation.stdout | from_json).changed
+      failed_when: false
+      # The URI result is protected, including provider response contents.
+      no_log: true
 
-    - name: Show the discovered MACs (verify role==internal == the PXE NIC, not external/public)
-      ansible.builtin.debug:
-        msg: "{{ item.name }}: parent_mac={{ item.parent_mac | default('NOT FOUND') }} parent_if={{ item.parent_if }}"
-      loop: "{{ discovered_machines }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Fail if any machine has no discovered MAC
+    - name: Require validated internal and configured public NIC identities
       ansible.builtin.assert:
-        that:
-          - item.parent_mac is defined
-          - item.parent_mac | length > 0
-        fail_msg: >-
-          No internal-role MAC found for {{ item.name }}. The API may not expose interface MACs
-          for this plan — fall back to `ip -br link` on the booted node and pass -e node_parent_mac=<mac>.
-      loop: "{{ discovered_machines }}"
-      loop_control:
-        label: "{{ item.name }}"
+        that: discovery_validation.rc == 0
+        fail_msg: "{{ discovery_validation.stderr }}"
 
-    - name: Persist discovered MACs to group_vars/discovered.yml (consumed by render_configs)
-      ansible.builtin.copy:
-        dest: "{{ playbook_dir }}/../group_vars/discovered.yml"
-        mode: "0644"
-        content: |
-          ---
-          # AUTO-GENERATED by playbooks/discover.yml — do not edit by hand. MACs are per physical
-          # unit; re-run discover after any re-provision. Overrides the `machines` list in all.yml.
-          machines:
-          {% for m in discovered_machines %}
-            - name: "{{ m.name }}"
-              role: {{ m.role }}
-              server_id: "{{ m.server_id }}"
-              vlan_ip: "{{ m.vlan_ip }}"
-              parent_if: "{{ m.parent_if }}"
-              external_if: "{{ m.external_if | default('') }}"
-              root_device: "{{ m.root_device }}"
-              parent_mac: "{{ m.parent_mac }}"
-              external_mac: "{{ m.external_mac | default('') }}"
-          {% endfor %}
+    - name: Show validated MAC bindings saved outside the checkout
+      ansible.builtin.debug:
+        var: (discovery_validation.stdout | from_json).bindings

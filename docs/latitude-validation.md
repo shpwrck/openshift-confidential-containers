@@ -2,9 +2,19 @@
 
 ## Status and scope
 
-**Pending hardware validation.** The current checkout has local regression tests for tools, mirrors, PXE assets, provider request handling and proof logic. The offline implementation tests made no live provider, SSH or cluster changes. Subsequent authenticated preflight has verified registry access, selected artifact identities, project access and plan availability, and registered a dedicated SSH public key. The bastion is deployed and transferring images; the AMD node is provisioning under the approved $150 total cap. No new OpenShift or SNP proof has completed. The previous rig was torn down; its July results are historical evidence, not results for OCP 4.20.39 / OSC 1.13 / Trustee 1.2.
+**Hardware validation in progress; SNP gate not passed.** [Dated preflight evidence](validation/latitude-preflight-2026-10-05.json) records the completed preparation checks and their limits. Sequential hardware candidates are authorized under the approved $150 total cap. Authenticated artifact resolution, actual image mirroring, registry TLS and DNS checks completed. An unchanged preparation rerun passed with zero changes and skipped transfer. Signed-image host verification accepted the signed control and rejected the same-content unsigned control for a signature-specific reason; guest enforcement remains untested.
+
+Installer artifacts were generated successfully. PXE publication initially failed because nginx could not traverse the private installer directory. Moving the public copies to `/var/www/coco-boot-artifacts` passed the nginx read check, public HTTP 206 Range check and root-path 404 check. A repeat run reused the artifacts. Cleanup removed the webroots and boot configuration, closed port 8080 and made the tokenized endpoint unreachable. These checks used SELinux Permissive and did not boot the node.
+
+The delivered node is EPYC 7313P / H12SSW-NTR / BIOS 2.3 / BMC 01.00.41, rather than the EPYC 9124 advertised for the selected plan. Saved SMEE, IOMMU, ASID and SNP settings exposed `/dev/sev`, but the host check still fails: BIOS did not reserve RMP memory and SNP remains disabled. A read-only sweep of all seven BIOS tabs, all 15 Advanced submenu roots and the documented nested menus exposed no RMP coverage control with the saved configuration. Disabled controls were not unlocked; the inspection ended with Discard Changes and Exit, without changes or flashing. The exact board's published BIOS 3.6/BMC 01.08.06 bundle addresses newer firmware needs, but has not been validated as a fix for this failure. Latitude's public console-access docs do not establish a customer flashing policy; a provider update or approved procedure/replacement is the next step. The support draft remains unsent. See [firmware preflight](amd-firmware-preflight.md) for scope, security fixes and update limits. No new OpenShift installation or guest proof has completed. The previous rig's July results remain historical evidence.
 
 The complete run targets a disposable AMD SEV-SNP CPU environment. Intel and GPU work are outside this effort. This page plans fresh infrastructure and installation; the existing customer cluster follows a separate upgrade rehearsal.
+
+The rejected Dallas node has been destroyed, with deletion confirmed through the provider API.
+The next candidate in Miami delivered EPYC 9124 / H13SST-G / BIOS 1.6 and already boots in UEFI
+mode. Its BIOS exposes RMP coverage; configuration and the post-reboot host check are in progress.
+The Dallas bastion is retained temporarily. A usable candidate in another site needs a bastion
+and VLAN in that same site; its firmware security level remains a separate acceptance question.
 
 ## Inputs required before provisioning
 
@@ -23,7 +33,11 @@ firmware access or the final infrastructure price. Confirm those before creating
 
 ## Plan and provision in stages
 
-The current run has completed the bastion apply and started the node apply with external state. The complete installation and later hardware checkpoints remain to be exercised.
+Qualify the actual node before building a new mirror bastion. The node module supports a standalone
+provider OS with `air_gap=false`; it does not need a bastion for firmware checks. Set the external
+node inputs to the intended project/site/plan, `operating_system="rocky-10"`, `air_gap=false`,
+`create_ssh_key=false` and the verified existing `ssh_key_ids`. Keep the provider credential in
+`LATITUDESH_AUTH_TOKEN`.
 
 ```bash
 export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"
@@ -33,6 +47,37 @@ umask 077
 mkdir -p "$COCO_STATE_DIR"
 
 # After filling and reviewing the external input files and resolving the BOM:
+python3 scripts/verify-release.py --require-resolved
+export COCO_NODE_STATE_DIR="$COCO_STATE_DIR/terraform/node"
+mkdir -p "$COCO_NODE_STATE_DIR"
+chmod 700 "$COCO_NODE_STATE_DIR"
+export TF_DATA_DIR="$COCO_NODE_STATE_DIR/data"
+terraform -chdir=infra/latitude init -input=false
+terraform -chdir=infra/latitude plan \
+  -state="$COCO_NODE_STATE_DIR/terraform.tfstate" -var-file="$COCO_NODE_TFVARS" \
+  -out="$COCO_NODE_STATE_DIR/candidate.tfplan"
+terraform -chdir=infra/latitude show "$COCO_NODE_STATE_DIR/candidate.tfplan"
+# After reviewing the candidate plan:
+terraform -chdir=infra/latitude apply \
+  -state="$COCO_NODE_STATE_DIR/terraform.tfstate" "$COCO_NODE_STATE_DIR/candidate.tfplan"
+terraform -chdir=infra/latitude output -state="$COCO_NODE_STATE_DIR/terraform.tfstate"
+```
+
+`TF_DATA_DIR` moves provider metadata, **not local state**. Every direct plan, apply, output and
+destroy must select the same external state; applying a saved plan also needs `-state`.
+If any state appears in the checkout, stop and reconcile its resource IDs and lineage before
+continuing. Do not create a second state to manage the same server.
+
+Match the returned server ID to SSH and the console, then complete [AMD firmware preflight](amd-firmware-preflight.md).
+For a rejected candidate, retain its evidence and review a destroy plan using that same state and
+input file. Apply the saved destroy plan with `-state`, and confirm the exact server is absent
+from the provider before trying another allocation. Track cumulative cost, including deleted
+candidates and any temporary overlap, against the total budget.
+
+For an accepted candidate, retain its existing node state and unchanged server identity. Select
+a bastion in the **same site**, then plan its infrastructure:
+
+```bash
 bash ansible/up.sh --mode prepare --plan-tf
 ```
 
@@ -40,17 +85,22 @@ The modules select Latitude provider 4.6.0 with committed lock files and `allow_
 
 Inspect the plan for the intended project, site, machine, VLAN, firewall and billing. A plan is not an apply. The wrapper's `--plan-tf` runs no Ansible tasks. Terraform init may download providers and planning may read provider state, but neither should provision resources.
 
-Start with the bastion because the node plan consumes its VLAN/firewall outputs. Once the bastion plan is acceptable:
+Provision the bastion before enabling the node's VLAN dependency. Once the bastion plan is acceptable:
 
 ```bash
 bash ansible/up.sh --mode prepare --apply-tf -e "@$COCO_STATE_DIR/rig.yml"
-# The existing bastion state now permits the node's remote-state dependency to resolve.
+# Set air_gap=true in the SAME node input file, retaining its existing server inputs/state.
+# The bastion state now permits the node's VLAN/firewall dependency to resolve.
 bash ansible/up.sh --mode fresh-install --plan-tf
 ```
 
+The node plan should preserve the accepted server and add only the intended VLAN and optional
+firewall assignments. Investigate a replacement or reinstall instead of applying it. Keep the
+provider OS input unchanged; Ansible's journaled installation step requests the later netboot.
+
 If preparation stops because its new-host inputs are incomplete, preserve the external Terraform state, correct the inputs, and rerun preparation. Do not create a second state directory for the same project resources. Pull-secret staging accepts `pull_secret_src` from the external Ansible file. Check the bastion's `MIRROR_READY`/`MIRROR_FAILED` result and its protected bootstrap logs before retrying a failed bootstrap.
 
-After reviewing the node plan and completing the required firmware verification:
+After reviewing the node plan and completing [AMD firmware preflight](amd-firmware-preflight.md) for the actual delivered board, UEFI boot path, firmware security fixes and raw-host SNP result:
 
 ```bash
 bash ansible/up.sh --mode fresh-install --apply-tf -e "@$COCO_STATE_DIR/rig.yml"

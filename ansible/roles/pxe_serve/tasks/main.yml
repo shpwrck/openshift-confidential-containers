@@ -8,46 +8,26 @@
 - name: Pxe_serve STOP mode (tear the endpoint down)
   when: pxe_mode == 'stop'
   block:
-    - name: Remove the nginx boot-artifacts conf
-      ansible.builtin.file:
-        path: /etc/nginx/conf.d/boot-artifacts.conf
-        state: absent
-      become: true
-      register: pxe_conf_removed
-
-    - name: Remove the boot-artifacts webroot
-      ansible.builtin.file:
-        path: "{{ boot_artifacts_webroot }}"
-        state: absent
-      become: true
-
-    - name: Validate nginx config after removal
-      ansible.builtin.command: nginx -t
-      become: true
-      register: pxe_nginx_t_stop
-      changed_when: false
-      failed_when: false
-
-    - name: Reload nginx if its config is still valid, else stop it
-      ansible.builtin.systemd:
-        name: nginx
-        state: "{{ 'reloaded' if pxe_nginx_t_stop.rc == 0 else 'stopped' }}"
-      become: true
-
-    - name: Confirm the endpoint is closed
-      ansible.builtin.debug:
-        msg: "Boot-artifact endpoint closed — the secret-bearing initrd is no longer served."
+    - name: Close the published boot endpoint
+      ansible.builtin.include_tasks: stop_publication.yml
 
 # ---- SERVE mode ----
 - name: Pxe_serve SERVE mode
   when: pxe_mode != 'stop'
   block:
+    - name: Reset publication mutation tracking for this invocation
+      ansible.builtin.set_fact:
+        pxe_publication_started: false
+
     - name: Guard against the placeholder token (issue 33 — secret-bearing initrd path)
       ansible.builtin.assert:
         that:
           - boot_artifacts_token != 'REPLACE_WITH_openssl_rand_hex_16'
           - boot_artifacts_token is match('^[0-9a-fA-F]{32,}$')
         fail_msg: "boot_artifacts_token is the placeholder — set a real openssl rand -hex 16 token."
+
+    - name: Validate publication paths and remove unused legacy copies
+      ansible.builtin.include_tasks: cleanup_publication.yml
 
     - name: Verify or regenerate boot artifacts for these inputs
       ansible.builtin.include_tasks: prepare.yml
@@ -81,19 +61,57 @@
         state: present
       become: true
 
+    - name: Ensure the default public staging parent is traversable
+      ansible.builtin.file:
+        path: /var/www
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+      when: boot_artifacts_webroot == '/var/www/coco-boot-artifacts'
+
+    - name: Track publication changes for failure cleanup
+      ansible.builtin.set_fact:
+        pxe_publication_started: true
+
     - name: Stage the boot artifacts into the tokenized webroot
       ansible.builtin.shell: >-
-        set -o pipefail;
-        rm -rf "{{ boot_artifacts_webroot }}";
-        mkdir -p "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}";
-        cp -rf "{{ boot_artifacts_dir }}/." "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}/";
-        chmod -R a+rX "{{ boot_artifacts_webroot }}"
+        set -euo pipefail;
+        rm -rf -- {{ boot_artifacts_webroot | quote }};
+        mkdir -p -- {{ (boot_artifacts_webroot ~ '/' ~ pxe_url_prefix) | quote }};
+        cp -rf -- {{ (boot_artifacts_dir ~ '/.') | quote }} {{ (boot_artifacts_webroot ~ '/' ~ pxe_url_prefix ~ '/') | quote }};
+        chmod -R a+rX -- {{ boot_artifacts_webroot | quote }}
       args:
         executable: /bin/bash
       become: true
       register: pxe_stage
       changed_when: true
       no_log: true
+
+    - name: Check that the nginx worker can read the staged initrd
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - -u
+          - nginx
+          - --
+          - test
+          - -r
+          - "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}/agent.x86_64-initrd.img"
+      become: true
+      register: pxe_nginx_read
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Require a readable public staging path before configuring nginx
+      ansible.builtin.assert:
+        that: pxe_nginx_read.rc == 0
+        fail_msg: >-
+          The nginx worker cannot read the staged initrd. Check the staging directory and every
+          parent directory's traversal permissions. Keep the public webroot outside the private
+          installer source/assets tree; do not relax permissions on private installer files.
 
     - name: Write the nginx server block (listing OFF; only the tokenized path resolves)
       ansible.builtin.template:
@@ -199,3 +217,14 @@
           Boot artifacts are ready for the selected fresh installation; the boot token is omitted from logs.
           The wrapper closes this endpoint after a successful install. For a staged/manual run,
           run the pxe-stop tag once boot artifacts are no longer needed.
+
+  rescue:
+    - name: Close a partially published endpoint after preparation or readiness failure
+      ansible.builtin.include_tasks: stop_publication.yml
+      when: pxe_publication_started | default(false) | bool
+
+    - name: Keep a failed PXE publication run failed after cleanup
+      ansible.builtin.fail:
+        msg: >-
+          PXE publication failed. Any publication started by this invocation was closed;
+          inspect the preceding failed task and fix its cause before retrying.

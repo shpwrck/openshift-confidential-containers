@@ -151,7 +151,10 @@
 - name: Find the oc-mirror cluster-resources directory (#74)
   ansible.builtin.find:
     paths: "{{ mirror_workspace }}/working-dir/cluster-resources"
-    patterns: "*.yaml"
+    patterns:
+      - "*.yaml"
+      - "*.yml"
+      - "*.json"
     file_type: file
   become: true
   register: mirror_cluster_resources
@@ -208,6 +211,8 @@
       - "{{ mirror_workspace }}/selected-release.json"
       - --input-json
       - "{{ mirror_workspace }}/generated-cluster-resources.json"
+      - --working-dir
+      - "{{ mirror_workspace }}/working-dir"
       - --mirror-endpoint
       - "{{ mirror_endpoint }}"
       - --output
@@ -220,7 +225,7 @@
   changed_when: false
   when: install_mode == 'fresh'
 
-- name: Apply verified mirror resources (IDMS/ITMS + normalized CatalogSource)
+- name: Apply verified mirror resources and release signatures
   ansible.builtin.command:
     argv:
       - oc

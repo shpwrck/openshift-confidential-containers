@@ -8,5 +8,11 @@ output "primary_ipv4" {
 }
 
 output "ssh_hint" {
-  value = "ssh root@${latitudesh_server.snp_rig.primary_ipv4}  # then: scp scripts/host-snp-check.sh and run it"
+  value = (
+    startswith(var.operating_system, "rocky-") ?
+    "ssh rocky@${latitudesh_server.snp_rig.primary_ipv4}  # then: scp scripts/host-snp-check.sh and run it" :
+    startswith(var.operating_system, "ubuntu_") ?
+    "ssh ubuntu@${latitudesh_server.snp_rig.primary_ipv4}  # then: scp scripts/host-snp-check.sh and run it" :
+    "Use the ${var.operating_system} image's documented SSH account for ${latitudesh_server.snp_rig.primary_ipv4}; then copy scripts/host-snp-check.sh and run it."
+  )
 }

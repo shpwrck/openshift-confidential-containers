@@ -126,7 +126,25 @@ shutil.copyfile(source, args[args.index('-o')+1])
         bom = json.loads((ROOT / 'install/release-manifest.json').read_text())
         endpoint = 'mirror.example:8443'
         repository = endpoint + '/' + bom['catalog']['ref'].split('@')[0].split('/', 1)[1]
-        source_image = repository + ':' + bom['catalog']['digest'].replace(':', '-', 1)
+        filtered_digest = 'c' * 64
+        source_image = repository + ':sha256-' + filtered_digest
+        catalog_name = repository.rsplit('/', 1)[1]
+        filtered = (workspace / 'working-dir/operator-catalogs' / catalog_name /
+                    bom['catalog']['digest'].split(':')[1] / 'filtered-catalogs/selected')
+        filtered.mkdir(parents=True)
+        (filtered / 'digest').write_text(filtered_digest)
+        for operator in bom['operators'].values():
+            fbc = [
+                {'schema': 'olm.package', 'name': operator['package'], 'defaultChannel': operator['channel']},
+                {'schema': 'olm.channel', 'name': operator['channel'], 'package': operator['package'],
+                 'entries': [{'name': operator['startingCSV']}]},
+                {'schema': 'olm.bundle', 'name': operator['startingCSV'], 'package': operator['package'],
+                 'image': operator['bundleImage'], 'properties': [{'type': 'olm.package', 'value': {
+                     'packageName': operator['package'], 'version': operator['version']}}]},
+            ]
+            config = filtered / 'catalog-config' / operator['package'] / 'catalog.json'
+            config.parent.mkdir(parents=True)
+            config.write_text('\n'.join(json.dumps(document) for document in fbc))
         (resources / 'idms.yaml').write_text(yaml.safe_dump({
             'apiVersion': 'config.openshift.io/v1', 'kind': 'ImageDigestMirrorSet',
             'metadata': {'name': 'fixture'}, 'spec': {'imageDigestMirrors': []}}))
@@ -134,11 +152,25 @@ shutil.copyfile(source, args[args.index('-o')+1])
             'apiVersion': 'operators.coreos.com/v1alpha1', 'kind': 'CatalogSource',
             'metadata': {'name': 'digest-generated-name', 'namespace': 'openshift-marketplace'},
             'spec': {'sourceType': 'grpc', 'image': source_image}}))
+        (resources / 'cluster-catalog.yml').write_text(yaml.safe_dump({
+            'apiVersion': 'olm.operatorframework.io/v1', 'kind': 'ClusterCatalog',
+            'metadata': {'name': 'generated-olmv1-catalog'},
+            'spec': {'source': {'type': 'Image', 'image': {'ref': source_image}}}}))
+        signatures = {
+            'apiVersion': 'v1', 'kind': 'ConfigMap', 'metadata': {
+                'name': 'mirrored-release-signatures', 'namespace': 'openshift-config-managed',
+                'labels': {'release.openshift.io/verification-signatures': ''}},
+            'binaryData': {bom['platform']['releaseImage'].split('@')[1].replace(':', '-') + '-1': 'YWJj'},
+        }
+        (resources / 'signature-configmap.json').write_text(json.dumps(signatures))
+        (resources / 'signature-configmap.yaml').write_text(yaml.safe_dump(signatures))
         write_executable(self.bin / 'oc', '''#!/usr/bin/env python3
 import json,os,sys
 with open(os.environ['FIXTURE_CALLS'],'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')
-print(json.dumps({'name':sys.argv[-1], 'digest':'sha256:'+'b'*64, 'contentDigest':'sha256:'+'b'*64,
- 'config':{'os':'linux','architecture':'amd64','config':{'Labels':{'operators.operatorframework.io.index.configs.v1':'/configs'}}}}))
+info={'name':sys.argv[-1], 'digest':'sha256:'+'b'*64, 'contentDigest':'sha256:'+'b'*64,
+ 'config':{'os':'linux','architecture':'amd64','config':{'Labels':{'operators.operatorframework.io.index.configs.v1':'/configs'}}}}
+if '@' not in sys.argv[-1]: info['listDigest']='sha256:'+'c'*64
+print(json.dumps(info))
 ''')
         self.env.update(WORKSPACE='file://' + str(workspace), ARTIFACTORY_REGISTRY=endpoint,
                         BIN_DIR=str(self.bin), RELEASE_MANIFEST=str(ROOT / 'install/release-manifest.json'),
@@ -149,6 +181,8 @@ print(json.dumps({'name':sys.argv[-1], 'digest':'sha256:'+'b'*64, 'contentDigest
         catalog = next(item for item in normalized['items'] if item['kind'] == 'CatalogSource')
         self.assertEqual(catalog['metadata']['name'], bom['catalog']['source'])
         self.assertEqual(catalog['spec']['image'], repository + '@sha256:' + 'b' * 64)
+        self.assertEqual(next(item for item in normalized['items'] if item['kind'] == 'ConfigMap'), signatures)
+        self.assertFalse(any(item['kind'] == 'ClusterCatalog' for item in normalized['items']))
         self.assertEqual(len(self.log.read_text().splitlines()), 2)
 
     def test_wrapper_verify_has_no_provisioning_and_uses_absolute_config(self):
@@ -177,6 +211,30 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:
         self.env['COCO_STATE_DIR'] = str(ROOT / 'state')
         out = self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify'], 1)
         self.assertIn('outside', out)
+
+    def test_wrapper_rejects_checkout_state_even_when_external_state_exists(self):
+        repo = self.base / 'wrapper-repo'
+        (repo / 'ansible').mkdir(parents=True)
+        (repo / 'scripts/lib').mkdir(parents=True)
+        module = repo / 'infra/latitude/bastion'
+        module.mkdir(parents=True)
+        shutil.copyfile(ROOT / 'ansible/up.sh', repo / 'ansible/up.sh')
+        (repo / 'scripts/lib/release.sh').write_text(
+            'load_release_defaults() { :; }\nrequire_resolved_release() { :; }\n')
+        checkout_state = module / 'terraform.tfstate'
+        external_state = Path(self.env['COCO_STATE_DIR']) / 'terraform/bastion/terraform.tfstate'
+        external_state.parent.mkdir(parents=True)
+        checkout_state.write_text('{"serial":2}')
+        external_state.write_text('{"serial":1}')
+        for tool in ('terraform', 'ansible-playbook'):
+            write_executable(self.bin / tool, '#!/bin/sh\necho unexpected >> "$FIXTURE_CALLS"\nexit 97\n')
+        for action in ('--plan-tf', '--apply-tf'):
+            with self.subTest(action=action):
+                out = self.run_cmd(['bash', str(repo / 'ansible/up.sh'), action], 2)
+                self.assertIn('reconcile', out)
+                self.assertFalse(self.log.exists())
+                self.assertEqual(checkout_state.read_text(), '{"serial":2}')
+                self.assertEqual(external_state.read_text(), '{"serial":1}')
 
     def test_wrapper_plan_never_applies_or_runs_ansible_and_fresh_closes_endpoint(self):
         # A resolved release fixture isolates orchestration from registry credentials.

@@ -8,9 +8,9 @@
 # This playbook covers ONLY the Ansible halves; run it after the matching TF apply (see Makefile
 # `up` target / ansible/README.md). Tags let you run a single phase: --tags egress,mirror etc.
 #
-# STOP for SEV-SNP BIOS happens between the bastion-prep phase and the install phase — there is a
-# hard pause printing the BIOS recipe. The node must have its SEV-SNP BIOS set (via Latitude IPMI)
-# before it netboots, so the install phase is gated behind that confirmation.
+# Firmware preflight happens between bastion preparation and installation. The acknowledgement
+# covers the actual node identity, firmware, UEFI boot path and raw-host SNP checks; it is not
+# an automated hardware test. See docs/amd-firmware-preflight.md before acknowledging.
 
 # Validate the controller's release inputs before any selected preparation/install writes.
 # Cleanup stays available even when the BOM is unresolved. Verify mode reads cluster state only.
@@ -122,39 +122,42 @@
       tags: [dns, dns-ntp, bastion-prep]
 
 # =====================================================================================
-# STOP-GATE — SEV-SNP BIOS. Set this via the Latitude browser IPMI/KVM on the NODE before it
-# netboots. (Hands-on; not automatable through the provider.) The install phase below assumes
-# this is done.
+# STOP-GATE — acknowledge evidence for this node before its destructive reinstall.
+# Firmware menu locations and security-fix versions depend on the board and BIOS.
 # =====================================================================================
-- name: "STOP — set the SEV-SNP BIOS on the node before continuing"
+- name: "STOP — verify AMD firmware and SNP prerequisites before continuing"
   hosts: localhost
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
   tags: [bios, install]
   tasks:
-    - name: Print the SEV-SNP BIOS recipe and pause
+    - name: Print the AMD firmware preflight requirements and pause
       ansible.builtin.pause:
         prompt: |
 
           ====================================================================
-          STOP — SET THE SEV-SNP BIOS ON THE NODE (Latitude IPMI/KVM -> AMI Aptio)
+          STOP — VERIFY THIS NODE'S AMD FIRMWARE AND SNP PREREQUISITES
           ====================================================================
-          This is the ONE hands-on hardware step. Apply BEFORE the node netboots:
+          Follow docs/amd-firmware-preflight.md before the node is reinstalled:
 
-            North Bridge -> SEV-SNP Support           = Enabled   (Auto = OFF — this is the gotcha)
-            CPU Config   -> SMEE                        = Enabled
-            CPU Config   -> SNP Memory (RMP Table) Coverage = Enabled
-            CPU Config   -> SEV-ES ASID Space Limit     = 100
-            CPU Config   -> SEV Control                 = Enabled
+            1. Match server ID, CPU, motherboard, BIOS and BMC to the actual node.
+            2. Verify saved firmware settings using this board's documentation.
+               Assess firmware security fixes separately from SNP functionality.
+            3. Verify UEFI boot mode and the intended UEFI installer boot path.
+            4. Pass scripts/host-snp-check.sh on this node after the saved settings
+               take effect; retain the command result and relevant kernel logs.
 
-          The misleading "IOMMU SNP feature not enabled" kernel message is caused by
-          SEV-SNP Support = Auto, NOT IOMMU — do not chase IOMMU.
+          An unloaded module, pending BIOS changes or CPU feature flags are not a pass.
+          Missing RMP controls and IOMMU errors require board-specific diagnosis.
+          Recheck after reprovisioning; do not assume firmware settings were preserved.
 
-          Re-provisioning resets BIOS to defaults — re-apply this recipe every time.
+          docs/notes/latitude-snp-bringup.md records the historical H13 recipe.
+          It is not a universal H12/H13 BIOS configuration or a current security baseline.
 
-          Type SNP-SET (then ENTER) once the BIOS is set and saved, to continue to
-          discover + install. (Ctrl-C then 'A' to abort.)
+          Type SNP-SET (then ENTER) only after completing this preflight, to continue
+          to discover + install. This token records acknowledgement, not an automated
+          hardware or attestation result. (Ctrl-C then 'A' to abort.)
       register: bios_ack
       when: not (skip_bios_pause | default(false) | bool)
 
@@ -169,18 +172,18 @@
       ansible.builtin.assert:
         that: (bios_ack.user_input | default('') | trim) == 'SNP-SET'
         fail_msg: >-
-          SEV-SNP BIOS gate NOT acknowledged — refusing to netboot. This is what a
+          AMD firmware preflight NOT acknowledged — refusing to netboot. This is what a
           non-interactive run looks like (ansible.builtin.pause cannot prompt without a TTY);
-          re-run this phase from a real terminal. If the BIOS is already set and rung-0 has
-          been verified green on this node, pass -e skip_bios_pause=true to proceed
-          deliberately. Never skip it merely to get past this message: the install will
-          succeed and the cluster will not be confidential.
-        success_msg: "SEV-SNP BIOS acknowledged — proceeding to discover + install"
+          re-run this phase from a real terminal. Only after recording this node's identity,
+          firmware security review, UEFI boot path and successful raw-host SNP check under
+          docs/amd-firmware-preflight.md may an unattended rerun deliberately use
+          -e skip_bios_pause=true. The bypass does not perform or establish these checks.
+        success_msg: "AMD firmware preflight acknowledged — proceeding to discover + install"
       when: not (skip_bios_pause | default(false) | bool)
 
 # =====================================================================================
 # PHASE B — Discover node MACs from the Latitude API (fix #4). Run AFTER `terraform apply`
-# of the node module (the server must exist). Rewrites group_vars/discovered.yml.
+# of the node module (the server must exist). Saves MAC bindings in external state.
 # =====================================================================================
 - name: "Phase B — discover node interface MACs (Latitude API)"
   ansible.builtin.import_playbook: discover.yml
@@ -188,7 +191,7 @@
 
 # =====================================================================================
 # PHASE C — Render configs -> serve boot artifacts -> reinstall+wait. Runs on the bastion.
-# discovered.yml (from Phase B) overrides the machines list, so parent_mac is now populated.
+# Validated MAC bindings from Phase B fill missing MACs in the current machine inputs.
 # =====================================================================================
 - name: "Phase C — render configs, serve boot artifacts, drive the install"
   hosts: bastions
@@ -196,11 +199,26 @@
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
-    # Load the discovered MACs if discover.yml has run (optional so syntax-check/dry runs work).
-    - name: Load discovered MACs (overrides the machines list)
-      ansible.builtin.include_vars: "{{ playbook_dir }}/../group_vars/discovered.yml"
-      when: (playbook_dir ~ '/../group_vars/discovered.yml') is exists
-      tags: [render, install, always]
+    # Run on the controller, where COCO_STATE_DIR and discovery evidence live.
+    # A separate output variable also supports `-e machines=...`: Ansible extra
+    # vars cannot be overridden by set_fact, and current install inputs must win.
+    - name: Validate cached identities and merge MACs into current machine inputs
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/discover-node-macs.py"
+          - merge
+        stdin: "{{ {'machines': machines} | to_json }}"
+      delegate_to: localhost
+      become: false
+      register: discovery_merge
+      changed_when: false
+      tags: [render, install]
+
+    - name: Use the validated machine inputs for rendering
+      ansible.builtin.set_fact:
+        discovery_machines: "{{ discovery_merge.stdout | from_json }}"
+      tags: [render, install]
   roles:
     - role: render_configs   # fix #3 — install-config + agent-config (additionalNTPSources in agent)
       tags: [render, install]

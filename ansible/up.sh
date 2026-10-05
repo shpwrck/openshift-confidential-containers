@@ -61,8 +61,8 @@ tf() {
     tf_args+=("-var-file=$varfile")
   fi
   if [[ "$TF_ACTION" != none ]]; then
-    if [[ -f "$module/terraform.tfstate" && ! -f "$state_dir/terraform.tfstate" ]]; then
-      echo "ERROR: existing $name state is in the checkout; move/import it into $state_dir before provisioning" >&2
+    if [[ -f "$module/terraform.tfstate" ]]; then
+      echo "ERROR: existing $name state is in the checkout; reconcile it with $state_dir before provisioning" >&2
       exit 2
     fi
     mkdir -p "$state_dir"

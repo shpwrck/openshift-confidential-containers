@@ -1,55 +1,23 @@
-# Latitude.sh rig — provision one SNP-capable bare-metal node
+# Latitude AMD validation node
 
-Reproducible up/down for the **disposable** SEV-SNP verification node. **Destroy after each
-spike** (hourly billing). Provisioning spends money — `terraform apply` is gated on your approval.
+This module provisions the disposable AMD node. The [bastion module](bastion/README.md) owns the mirror server, VLAN and inbound firewall; provision it first because this module reads its external Terraform state. Both servers incur charges until deleted. Use an explicit total budget and verify teardown through provider inventory.
 
-> **Two modules.** This is the *disposable* node. The *persistent* mirror/air-gap host lives in
-> [`bastion/`](bastion/) — apply it **first** (it owns the VLAN + lockdown firewall this node
-> reads via `terraform_remote_state`). Keeping the bastion up across node re-provisions means the
-> ~1–2 h mirror is paid **once**. For a quick standalone rung-0 box with no bastion, set
-> `-var air_gap=false`.
+## Select and verify the machine
 
-## Prereqs
-- Latitude account + API token → `export LATITUDESH_AUTH_TOKEN=...`
-- `terraform` (or `tofu`), `ssh`. Optional: the `lsh` CLI to query plans/sites.
-- An SSH key (existing Latitude key id, or `create_ssh_key=true`).
+Check current project access, site stock, hourly rates, SSH keys and remote firmware access before applying a plan. Select by the actual CPU, board, firmware and boot capabilities. A marketed plan name is insufficient: the October 5 run requested `m4-metal-medium`, advertised as EPYC 9124, but received EPYC 7313P / H12SSW-NTR / BIOS 2.3. Its initial SNP checks failed. [Current evidence](../../docs/validation/latitude-preflight-2026-10-05.json)
 
-## Pick a plan + site (Genoa, hourly)
-```bash
-lsh plans list        # find a 4th-gen EPYC (Genoa 9004) SKU + a site with stock
-lsh projects list     # get your proj_... id
-```
-Fill `terraform.tfvars` (copy from `terraform.tfvars.example`).
+The selected OSC matrix and functional hardware checks determine eligibility; do not reject a CPU solely because another historical rig used Genoa. Complete [AMD firmware preflight](../../docs/amd-firmware-preflight.md), including UEFI, RMP reservation, firmware security fixes and successful live SNP initialization. The historical H13 recipe is not a universal BIOS configuration.
 
-## Provision
-```bash
-cd infra/latitude
-terraform init
-terraform plan        # review
-terraform apply       # <-- spends money; approve explicitly
-terraform output ssh_hint
-```
+## Provision with external state
 
-## Pre-flight (confirmed before spend, 2026-06-25)
-- **IPMI/BIOS access: yes** — Latitude provides browser IPMI + serial-console-over-SSH on all
-  sites (<https://docs.latitude.sh/docs/ipmi>), so we can reach AMD CBS to enable SNP.
-- **Billing: no setup fee, no documented hourly minimum** for bare metal; hourly = pay-for-use.
-- Residual unknown the spike resolves: is the AMD CBS SNP submenu reachable (not vendor-locked)
-  on this node — visible within minutes on the IPMI console.
+Follow [the current quickstart](../../docs/current-quickstart.md) and [Latitude validation procedure](../../docs/latitude-validation.md). Keep the provider token in the environment and tfvars/state outside this checkout and Homelab. Copy the non-secret values from `terraform.tfvars.example` into the private external input file; do not create a secret-bearing `terraform.tfvars` here.
 
-## Verify SEV-SNP host
-1. SSH in (`rocky@<primary_ipv4>` for the rocky-10 image — try `root@` if refused; or use the
-   **IPMI serial console** as fallback).
-2. `scp ../../scripts/host-snp-check.sh rocky@<ip>: && ssh rocky@<ip> sudo bash host-snp-check.sh`.
-   The script **discriminates** kernel-incapable vs BIOS-off vs provider-veto — a FAIL is NOT
-   automatically a provider veto; follow its RESULT guidance.
-3. If it points at BIOS: IPMI console → reboot → AMD CBS: **SEV-SNP Support** + **SMEE** on,
-   **SEV-ES ASID Space Limit** > 0, **RMP Table** on, **Memory Interleaving** off (Error 0x3).
-   Re-run. A green result proves silicon+provider — NOT the RHCOS kernel (that's the later phase).
+The wrapper uses separate `$COCO_STATE_DIR/terraform/bastion` and `terraform/node` directories and passes the bastion state path to this module. Review its plan for project, site, machine, billing, VLAN/firewall assignments and SSH identity before applying. Provider 4.6.0 is locked; implicit reinstallation is disabled.
 
-## Tear down (do this when done — saves money)
-```bash
-terraform destroy            # removes ONLY the node + its VLAN/firewall attachments
-```
-The [`bastion/`](bastion/) (mirror cache) is a separate state and is **untouched** — re-provision
-the node and it rejoins the same mirror. Destroy the bastion only at the very end of the engagement.
+Provisioning creates the initial provider OS. OpenShift installation later uses an explicit, journaled reinstall through Ansible. Neither an apply nor a BIOS acknowledgement proves that SNP works.
+
+## Verify and clean up
+
+Use the provider image's documented SSH user and run `scripts/host-snp-check.sh` with sufficient privileges on the node. A failed result requires diagnosis; it does not automatically establish a provider limitation. Repeat host verification under the installed RHCOS kernel before guest attestation and workload proofs.
+
+Destroy the node first, then the bastion, using the same external state and input files. The [teardown procedure](../../docs/latitude-validation.md#close-the-endpoint-and-tear-down) includes the required commands and verification. Powering off a server or losing SSH connectivity is not evidence that billing stopped.

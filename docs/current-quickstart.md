@@ -34,7 +34,7 @@ python3 scripts/verify-release.py
 python3 scripts/verify-release.py --require-resolved
 ```
 
-Keep pull secrets, private keys, kubeconfigs, Terraform state and proof evidence outside the checkout and outside Homelab. `COCO_STATE_DIR` is rejected when it resolves inside either location. The wrapper keeps Terraform state and provider data in separate `terraform/bastion` and `terraform/node` directories there. It refuses to provision when it finds old in-checkout state without its external counterpart; migrate or import that state before continuing so existing servers are not duplicated.
+Keep pull secrets, private keys, kubeconfigs, Terraform state and proof evidence outside the checkout and outside Homelab. `COCO_STATE_DIR` is rejected when it resolves inside either location. The wrapper keeps Terraform state and provider data in separate `terraform/bastion` and `terraform/node` directories there. It refuses to provision when it finds in-checkout state, even if external state also exists. Reconcile the resource identities and preserve the authoritative state outside the checkout before continuing so existing servers are not duplicated; do not overwrite either state blindly.
 
 An existing bastion can keep its remote pull secret. A new bastion can receive a controller file through `pull_secret_src`. Put environment-specific Ansible values in a private external YAML file, for example `$COCO_STATE_DIR/rig.yml`. Review [the defaults](../ansible/group_vars/all.yml) and set:
 
@@ -56,13 +56,15 @@ bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-These commands reuse infrastructure. `--apply-tf` explicitly adds Terraform provisioning; review [the infrastructure plan](latitude-validation.md) first. The wrapper reads non-secret bastion IP, VLAN VID and server ID outputs after apply and passes them to Ansible. Explicit Ansible overrides still win. Fresh installation retains the existing BIOS acknowledgement gate; verify the actual firmware settings and hardware capability before continuing. Do not use `skip_bios_pause` as a substitute for that verification.
+These commands reuse infrastructure. `--apply-tf` explicitly adds Terraform provisioning; review [the infrastructure plan](latitude-validation.md) first. The wrapper reads non-secret bastion IP, VLAN VID and server ID outputs after apply and passes them to Ansible. Explicit Ansible overrides still win. Fresh installation retains the existing BIOS acknowledgement gate. Complete [AMD firmware preflight](amd-firmware-preflight.md) for the actual board, firmware security fixes, UEFI boot path and raw-host SNP result before continuing. Do not use `skip_bios_pause` as a substitute for that verification.
 
 Tools are verified against the requested release's published checksums. Existing binaries are reused only when their recorded hashes match. A changed ImageSet, tool, destination or release invalidates the mirror completion marker. A changed installer, payload or rendered configuration invalidates PXE assets. Rebuilding assets belonging to an existing cluster requires deliberate `reinstall_existing=true` or a new assets directory; it is not an upgrade shortcut.
 
 A provider request is recorded before submission. If a timeout leaves the request ambiguous, inspect provider state before using `retry_reinstall=true`. A successful request for unchanged boot inputs is not automatically sent again.
 
 Provider request journals live outside generated assets (by default `/opt/install/provider-requests`) and survive PXE regeneration. A legacy journal inside the assets directory stops regeneration until its state is inspected and the record is moved to the durable directory.
+
+PXE publication copies artifacts to `/var/www/coco-boot-artifacts`. The installer source and assets remain private under `/opt/install`; only the published copies need nginx access. Preparation verifies nginx readability and public HTTP Range behavior before a provider reinstall can proceed.
 
 Successful fresh installation checks the actual ClusterVersion version and digest, applies the generated mirror resources, and closes the boot endpoint. If an install stops midway, inspect whether the node still needs the boot files; once it does not, close the endpoint explicitly:
 

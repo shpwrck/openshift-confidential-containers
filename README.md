@@ -2,7 +2,7 @@
 
 Install and prove CPU confidential containers on a disposable bare-metal rig, then use the evidence to prepare a customer deployment. The active target is **AMD SEV-SNP**, with a separate Trustee trust domain for customer use.
 
-**Current work targets OCP 4.20.39, OpenShift sandboxed containers 1.13.1, and Red Hat build of Trustee 1.2.1.** Authenticated catalog, bundle and image identities are resolved; a new Latitude.sh hardware run is still pending. Historical results from OCP 4.20.18 / OSC 1.12 / Trustee 1.1 do not validate the new set.
+**Current work targets OCP 4.20.39, OpenShift sandboxed containers 1.13.1, and Red Hat build of Trustee 1.2.1.** Authenticated catalog, bundle and image identities are resolved; a new Latitude.sh run is in progress, with SNP hardware acceptance and guest proofs still pending. Historical results from OCP 4.20.18 / OSC 1.12 / Trustee 1.1 do not validate the new set.
 
 ## Start here
 

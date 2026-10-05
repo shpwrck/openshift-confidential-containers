@@ -14,7 +14,7 @@ all:
     bastions:
       hosts:
         bastion:
-          # FILL via `terraform -chdir=infra/latitude/bastion output -raw bastion_public_ipv4`,
+          # FILL via `terraform -chdir=infra/latitude/bastion output -state="$COCO_STATE_DIR/terraform/bastion/terraform.tfstate" -raw bastion_public_ipv4`,
           # or override on the CLI: -e bastion_ansible_host=<ip>
           ansible_host: "{{ bastion_ansible_host | default('REPLACE_WITH_BASTION_PUBLIC_IPV4') }}"
           ansible_user: "{{ bastion_ssh_user | default('rocky') }}"
