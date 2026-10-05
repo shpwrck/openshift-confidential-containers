@@ -12,6 +12,7 @@ LEGACY_WEBROOT = '/opt/install/boot-artifacts'
 SYSTEM_TREES = ('/etc', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/boot', '/dev', '/proc', '/sys',
                 '/run', '/root', '/var/lib', '/var/cache', '/var/log', '/var/spool', '/var/run', '/var/lock')
 BROAD_DIRECTORIES = ('/', '/opt', '/var', '/var/www', '/srv', '/tmp', '/var/tmp', '/home', '/Users', '/mnt', '/media')
+HOME_ROOTS = ('/home', '/Users')
 
 
 def overlap(first, second):
@@ -21,7 +22,7 @@ def overlap(first, second):
 def unsafe_publication_target(target):
     if target in {Path(path).resolve() for path in BROAD_DIRECTORIES} or target == Path.home().resolve():
         return True
-    if target.parent in (Path('/home'), Path('/Users')):
+    if target.parent in {Path(path).resolve() for path in HOME_ROOTS}:
         return True
     return any(target == Path(path).resolve() or Path(path).resolve() in target.parents for path in SYSTEM_TREES)
 

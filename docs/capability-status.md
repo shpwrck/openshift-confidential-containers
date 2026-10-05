@@ -1,6 +1,6 @@
 # Capability status and next experiments
 
-Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 / Trustee 1.2. The selected OCP payload is 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. The Latitude bastion and mirror are prepared, and host signature verification passed. The delivered AMD node has not passed SNP host prerequisites; no guest rung is validated for this release set.
+Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 / Trustee 1.2. The selected OCP payload is 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. The Latitude bastion and mirror are prepared, and host signature verification passed. The Miami replacement passed [raw-host SNP prerequisites](validation/latitude-mia2-host-2026-10-05.json), with an explicit old-firmware security gap. RHCOS and guest proofs remain pending; no guest rung is validated for this release set.
 
 ## What changed enough to retest
 

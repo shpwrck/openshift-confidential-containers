@@ -42,9 +42,9 @@ The later conflicting-Terraform-state guard also passed its four focused wrapper
 ## Required before deployment and completion
 
 1. Complete the Latitude hardware run under the approved $150 total budget.
-   Hardware candidate selection is underway. Authenticated artifact resolution, mirror transfer and a
+   The Miami replacement passed raw-host SNP acceptance. Authenticated artifact resolution, mirror transfer and a
    zero-change repeated preparation passed. Artifact preparation is distinct from hardware acceptance.
-2. Verify actual host networking, firmware and AMD SEV-SNP capability.
+2. Complete the fresh Miami bastion bootstrap, then verify networking and SNP under the installed RHCOS kernel.
 3. Run the documented installation and AMD proofs,
    then repeat a clean run while recording timings and manual interventions.
 4. Complete guest signed-image enforcement. Host signature verification and the unsigned
@@ -67,19 +67,14 @@ Credentials and dedicated SSH keys are held outside Homelab. The validation uses
 m4-metal-small ($0.81/hour) and m4-metal-medium ($1.25/hour), with a $150 total cap.
 The bastion completed mirroring and repeated preparation with zero changes. Signed-image
 preparation passed host verification, including an attributable unsigned-control rejection.
-The node arrived as EPYC 7313P / H12SSW-NTR / BIOS 2.3 / BMC 01.00.41, differing from the advertised EPYC
-9124 plan. Enabling its actual-board firmware controls exposed /dev/sev, but post-reboot
-checks still fail: BIOS has not reserved RMP memory and SNP is disabled. A read-only sweep
-of all seven BIOS tabs, all 15 Advanced submenu roots and the documented nested menus
-exposed no RMP coverage control under the saved settings. Disabled controls were not unlocked;
-Discard Changes and Exit preserved the configuration. No firmware was flashed. The exact
-board's current published bundle is BIOS 3.6/BMC 01.08.06, but an update is not a proven fix.
-Latitude's public access docs do not establish whether customers may flash firmware. The owner
-authorized sequential replacement candidates within the existing cap. The rejected Dallas node
-was destroyed and its absence verified through the provider API. A Miami candidate delivered
-EPYC 9124 / H13SST-G / BIOS 1.6 in UEFI mode; firmware configuration and the post-reboot
-host gate are in progress. The Dallas bastion remains available during hardware selection.
-A support request is prepared but has not been sent. See [firmware preflight](docs/amd-firmware-preflight.md).
+The first Dallas node delivered EPYC 7313P / H12SSW-NTR / BIOS 2.3 and failed RMP/SNP checks
+following saved firmware settings and a complete exposed-menu sweep. It was destroyed and
+provider deletion verified. The [Miami replacement](docs/validation/latitude-mia2-host-2026-10-05.json)
+delivered EPYC 9124 / H13SST-G / BIOS 1.6; five ordinary settings enabled full-memory RMP
+coverage and SNP. It passed the raw-host gate in UEFI mode, with a recovered INIT retry retained
+in the evidence. The old firmware remains a security gap. The latest cloud-init is now being
+exercised on a new same-site bastion; Dallas remains temporarily available. No firmware flash
+or support outreach occurred. See [firmware preflight](docs/amd-firmware-preflight.md).
 
 Live validation found and repaired a readiness-marker permission issue. Actual oc-mirror
 output also exposed resource-kind and filtered-catalog identity assumptions. The repaired
@@ -89,6 +84,9 @@ records these preparation results and the failed host gate.
 Installer artifact generation, public PXE Range serving and unchanged-artifact reuse also passed
 after separating the nginx webroot from private installer files. Endpoint cleanup was verified.
 This run used SELinux Permissive; enforcing mode and actual node boot remain unverified.
+The [later live cleanup test](docs/validation/latitude-pxe-cleanup-2026-10-05.json) passed both
+entry points and a deliberate readiness failure: rescue closed publication while preserving
+private sources and unchanged artifacts.
 [CI passed on 66efc0f](https://github.com/shpwrck/openshift-confidential-containers/actions/runs/37326370219)
 after fixes for older jq and the macOS connection fixture. Later work still requires its own checks.
 Keep Terraform state, cost records, boot assets, kubeconfigs and proof recovery material

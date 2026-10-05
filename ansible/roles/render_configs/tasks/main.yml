@@ -10,6 +10,23 @@
 #   - install-config pullSecret = MIRROR creds only (node is air-gapped).
 #   - VLAN-only nmstate (parent NIC ipv4/ipv6 disabled; tagged VLAN child carries node IP).
 
+- name: Require an explicit verified install disk before creating renderer files
+  ansible.builtin.assert:
+    that:
+      - item.root_device is defined
+      - item.root_device is string
+      - item.root_device == item.root_device | trim
+      - item.root_device is match('^/dev/(?:[A-Za-z0-9_-][A-Za-z0-9_.:-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.:-]*$')
+    fail_msg: >-
+      Machine '{{ item.name }}' requires an explicit absolute /dev/... root_device
+      (node_root_device for the default single-node configuration). Verify the intended
+      install target and its serial on the node before rendering; installation erases
+      that disk. Prefer a stable /dev/disk/by-path/... path because NVMe device numbering
+      can change across reboots. No install disk is selected automatically.
+  loop: "{{ discovery_machines | default(machines) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Assert each machine has a discovered parent_mac (run discover.yml first)
   ansible.builtin.assert:
     that:

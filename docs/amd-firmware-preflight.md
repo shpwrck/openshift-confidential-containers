@@ -51,6 +51,31 @@ The current failure occurs at the raw-host firmware/SNP gate before OpenShift in
 
 ## Review firmware security separately
 
+### H13 replacement: functional host acceptance
+
+The [October 5 Miami candidate](validation/latitude-mia2-host-2026-10-05.json) delivered EPYC 9124 /
+H13SST-G, BIOS 1.6 and BMC 01.01.13, already booted in UEFI mode. Its CPU menu exposed RMP
+coverage with help stating that Enabled covers the entire system memory. Setting RMP coverage
+and SMEE to Enabled, the SEV-ES ASID limit to 100, and NB IOMMU/SNP to Enabled produced a
+successful raw-host check. SVM and SEV Control were already enabled. No interleaving, persistent
+boot-order change or firmware flash was needed.
+
+The provider OS reported SNP API 1.55 build 24, a physical RMP range, `/dev/sev` and
+`sev_snp=Y`. One `SECURE_DATA_INVALID` initialization retry recovered before SEV/SNP became
+enabled; the evidence retains that warning. RHCOS, guest launch and attestation remain later
+checks. On this UEFI system, `bootctl reboot-to-firmware` reported support and a one-time
+`systemctl reboot --firmware-setup` entered Setup when serial key timing did not.
+
+The exact H13SST-G [download catalog](https://www.supermicro.com/en/support/resources/downloadcenter/firmware/MBD-H13SST-G/BIOS)
+listed BIOS 3.7/BMC 1.09.02 when checked. Published H13 fixes include BIOS 3.4 for
+[AMD-SB-3019](https://www.supermicro.com/en/support/security_AMD-SB-3019), 3.5 for
+[AMD-SB-3020](https://www.supermicro.com/en/support/security_AMD-SB-3020), and 3.7 for
+[AMD-SB-3030](https://www.supermicro.com/en/support/security_AMD-SB-3030). BIOS 1.6 remains below
+those fixes. Accepting this disposable functional experiment does not clear that security gap
+or establish a current secure customer baseline.
+
+### Security review by exact board
+
 There is no global BIOS version comparison across boards. Check the exact model's vendor security advisories and the actual running firmware, microcode and attested TCB. Functional SNP initialization on old firmware does not establish that known vulnerabilities are fixed.
 
 For H12SSW-iNR/NTR, published fixes include:

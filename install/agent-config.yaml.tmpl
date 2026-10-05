@@ -34,7 +34,7 @@ hosts:
     # Pin the install target disk. Root device TBD tomorrow on the Latitude node — confirm
     # with `lsblk`/`ls -l /dev/disk/by-path` on the booted node before locking this in.
     rootDeviceHints:
-      deviceName: /dev/nvme0n1      # FILL: /dev/nvme0n1 or /dev/sda (confirm on the actual node)
+      deviceName: REPLACE_WITH_VERIFIED_INSTALL_DEVICE # FILL: prefer the verified /dev/disk/by-path/... link
 
     # NIC the installer matches this host config to. Must be the boot/data interface MAC.
     interfaces:

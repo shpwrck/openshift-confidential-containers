@@ -228,6 +228,61 @@ class DiscoveryAnsibleTests(unittest.TestCase):
                     additional_ntp_sources=['192.0.2.10'], vlan_vid=1234, vlan_prefix=24, bastion_vlan_ip='192.0.2.10',
                     mirror_dns_name='mirror.fixture.invalid')
 
+    def render_disk_fixture(self):
+        self.variables.update(yaml.safe_load((ROOT / 'ansible/group_vars/all.yml').read_text()))
+        self.variables.update(self.render_variables())
+        self.variables.update(boot_artifacts_token='a' * 32, bastion_public_ipv4='192.0.2.10',
+                              install_src_dir=str(self.base / 'install/src'),
+                              cluster_assets_dir=str(self.base / 'install/cluster-assets'))
+        tasks = yaml.safe_load((ROOT / 'ansible/roles/render_configs/tasks/main.yml').read_text())
+        first_write = next(index for index, task in enumerate(tasks)
+                           if task['name'] == 'Ensure the install src + cluster-assets dirs exist')
+        # Execute the real guard sequence AND its first filesystem mutation. This catches a
+        # guard moved below directory creation, without needing mirror credentials or a host.
+        selected = copy.deepcopy(tasks[:first_write + 1])
+        render = copy.deepcopy(next(task for task in tasks if task['name'] == 'Render agent-config.yaml into the src dir'))
+        render['ansible.builtin.template']['src'] = str(ROOT / 'ansible/roles/render_configs/templates/agent-config.yaml.j2')
+        selected.append(render)
+        for task in selected:
+            task['become'] = False
+            task['no_log'] = False  # Fixture paths and MACs only.
+            for action in ('ansible.builtin.file', 'ansible.builtin.template'):
+                if action in task:
+                    task[action].pop('owner', None)
+                    task[action].pop('group', None)
+        return selected
+
+    def test_default_node_disk_must_be_supplied_before_renderer_writes(self):
+        tasks = self.render_disk_fixture()
+        output = self.run_play(tasks, {'node_server_id': 'sv_manual',
+                                      'node_parent_mac': '02:00:00:00:01:01',
+                                      'node_external_mac': '02:00:00:00:01:02'}, expected=2)
+        self.assertIn('Verify the intended', output)
+        self.assertIn('/dev/disk/by-path/', output)
+        self.assertFalse((self.base / 'install').exists())
+
+    def test_each_machine_needs_a_valid_explicit_disk_before_renderer_writes(self):
+        tasks = self.render_disk_fixture()
+        verified = dict(machine(), parent_mac='02:00:00:00:00:01')
+        for value in (None, '', 'nvme0n1', '/dev/', '/tmp/disk', '/dev/../sda', '/dev/sda\n'):
+            invalid = dict(verified, name='second-node', root_device=value)
+            if value is None:
+                invalid.pop('root_device')
+            with self.subTest(root_device=value):
+                output = self.run_play(tasks, {'machines': [verified, invalid]}, expected=2)
+                self.assertIn('requires an explicit absolute /dev/', output)
+                self.assertFalse((self.base / 'install').exists())
+
+    def test_verified_stable_and_explicit_device_paths_render_unchanged(self):
+        tasks = self.render_disk_fixture()
+        paths = ['/dev/disk/by-path/pci-0000:c2:00.0-nvme-1', '/dev/nvme0n1', '/dev/sda']
+        effective = [dict(machine(), name=f'node-{index}', parent_mac=f'02:00:00:00:00:{index + 1:02x}',
+                          root_device=path) for index, path in enumerate(paths)]
+        # Both the guard and template must use the already validated discovery output.
+        self.run_play(tasks, {'machines': [dict(machine(), root_device='')], 'discovery_machines': effective})
+        rendered = yaml.safe_load((self.base / 'install/src/agent-config.yaml').read_text())
+        self.assertEqual([host['rootDeviceHints']['deviceName'] for host in rendered['hosts']], paths)
+
     def test_real_discovery_then_render_keeps_extra_var_disk_network_and_nic_changes(self):
         base_url, calls = self.start_api()
         output = self.run_play(self.discovery_tasks(), {'machines': [machine()], 'latitude_api_base': base_url,

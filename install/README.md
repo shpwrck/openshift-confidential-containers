@@ -151,13 +151,13 @@ confidential pod is `Ready`.
 | `sshKey` | install-config | Your `~/.ssh/<key>.pub` |
 | `rendezvousIP` | agent-config | The single node's static IPv4 (SNO: = the host IP) |
 | `hostname`, `role` | agent-config | Node hostname; role stays `master` |
-| `rootDeviceHints.deviceName` | agent-config | `lsblk` on the node — `/dev/nvme0n1` or `/dev/sda` |
+| `rootDeviceHints.deviceName` | agent-config | Match `lsblk` serials to `/dev/disk/by-path/`; verify the intended installation disk |
 | `interfaces[].macAddress` | agent-config | Real NIC MAC from IPMI / `ip link` — never guess |
 | `networkConfig` (ip/dns/routes) | agent-config | Static IPv4, gateway, and a DNS that resolves both cluster + mirror |
 
-## TODOs (resolve on the node, tomorrow)
+## Inputs to verify on the actual node
 
-- Confirm **root device** (`/dev/nvme0n1` vs `/dev/sda`) and lock `rootDeviceHints`.
+- Confirm the installation disk by serial and use its stable `/dev/disk/by-path/` link in `rootDeviceHints`; NVMe numbering can change across reboots.
 - Capture the **NIC name + MAC** from IPMI/`ip link`.
 - Confirm the **static IP / gateway / DNS / subnet** assigned to the node.
 - VERIFY all four operator **channels** in `imageset-config.yaml`.

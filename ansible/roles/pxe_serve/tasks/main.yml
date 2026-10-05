@@ -81,7 +81,7 @@
         rm -rf -- {{ boot_artifacts_webroot | quote }};
         mkdir -p -- {{ (boot_artifacts_webroot ~ '/' ~ pxe_url_prefix) | quote }};
         cp -rf -- {{ (boot_artifacts_dir ~ '/.') | quote }} {{ (boot_artifacts_webroot ~ '/' ~ pxe_url_prefix ~ '/') | quote }};
-        chmod -R a+rX -- {{ boot_artifacts_webroot | quote }}
+        chmod -R -- a+rX {{ boot_artifacts_webroot | quote }}
       args:
         executable: /bin/bash
       become: true

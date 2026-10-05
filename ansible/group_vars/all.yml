@@ -1,10 +1,10 @@
 ---
 # ============================================================================
 # ALL knobs for the disconnected SNO air-gapped bring-up.
-# Translated faithfully from scripts/*.sh + install/*.tmpl + the runbook
-# (validated on hardware 2026-06-28). Override any value with -e on the CLI or
-# a per-environment group_vars file; the customer multi-node cluster only edits
-# `machines` (a LIST) plus a handful of network values.
+# Override deployment inputs with -e or a private external environment file.
+# Verify hardware-specific NIC, disk and firmware inputs on the actual node.
+# The machines list supports multiple host records, but each customer topology
+# requires its own validation; historical rig results do not validate this release.
 #
 # SECRETS ARE NEVER STORED HERE. The Latitude token, mirror admin password, and
 # RH pull-secret are looked up at runtime from the environment / files on the
@@ -182,7 +182,9 @@ machines:
     external_if: "{{ node_external_if | default('enp195s0f0') }}"
     # external_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
     external_mac: "{{ node_external_mac | default('') }}"
-    root_device: "{{ node_root_device | default('/dev/nvme0n1') }}"
+    # Verify the install target and serial on the node; prefer a stable /dev/disk/by-path path.
+    # NVMe numbering can change across firmware reboots, so there is no safe disk default.
+    root_device: "{{ node_root_device | default('') }}"
     # parent_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
     parent_mac: "{{ node_parent_mac | default('') }}"
 

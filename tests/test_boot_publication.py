@@ -13,6 +13,7 @@ import threading
 import urllib.error
 import urllib.request
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -68,11 +69,27 @@ class PublicationPathsTests(unittest.TestCase):
 
     def test_broad_system_directories_are_rejected_but_dedicated_custom_paths_work(self):
         for target in ('/', '/etc', '/etc/nginx', '/var', '/var/lib', '/usr/local', '/opt',
-                       '/var/www', '/home/example', '/root/.ssh'):
+                       '/var/www', '/home/example', '/Users/example', '/root/.ssh'):
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, 'dedicated directory'):
                 self.plan('stop', webroot=Path(target))
         for target in ('/srv/coco-publication', '/opt/coco-publication', '/var/www/custom-boot'):
             self.assertIn(target, self.plan('stop', webroot=Path(target))['remove'])
+
+    def test_symlinked_home_root_still_protects_each_account_directory(self):
+        homes = self.base / 'homes'
+        account = homes / 'example'
+        account.mkdir(parents=True)
+        (account / 'private-input').write_text('retained')
+        alias = self.base / 'home-alias'
+        alias.symlink_to(homes, target_is_directory=True)
+        with patch.object(module, 'HOME_ROOTS', (str(alias),)):
+            for target in (alias / 'example', account):
+                for mode in ('serve', 'stop'):
+                    with self.subTest(target=target, mode=mode), self.assertRaisesRegex(ValueError, 'dedicated directory'):
+                        self.plan(mode, webroot=target)
+            self.assertIn(str(account / 'coco-publication'),
+                          self.plan('stop', webroot=account / 'coco-publication')['remove'])
+        self.assertEqual((account / 'private-input').read_text(), 'retained')
 
     def test_legacy_directory_used_as_source_is_preserved(self):
         sources = [*self.private, self.legacy]
@@ -96,7 +113,7 @@ class PublicationPathsTests(unittest.TestCase):
         tools.mkdir()
         sudo = tools / 'sudo'
         sudo.write_text('''#!/usr/bin/env python3
-import os, pathlib, subprocess, sys
+import os, pathlib, shutil, subprocess, sys
 args = sys.argv[1:]
 base = pathlib.Path(os.environ['FIXTURE_BASE']).resolve()
 with (base / 'sudo-calls').open('a') as stream:
@@ -108,12 +125,12 @@ if args[0] in ('rm', 'mkdir', 'cp', 'chmod', 'install', 'tee'):
     # modes have no path meaning; every actual pathname must stay in this fixture.
     paths = [value for value in args[1:] if value.startswith('/')]
     assert paths and all(base in pathlib.Path(value).resolve().parents for value in paths), args
-    raise SystemExit(subprocess.run(['/usr/bin/' + args[0], *args[1:]]).returncode)
+    raise SystemExit(subprocess.run([shutil.which(args[0], path=os.defpath), *args[1:]]).returncode)
 if args[0] in ('test', 'grep'):
-    raise SystemExit(subprocess.run(['/usr/bin/' + args[0], *args[1:]]).returncode)
+    raise SystemExit(subprocess.run([shutil.which(args[0], path=os.defpath), *args[1:]]).returncode)
 if args[0] == 'runuser':
     assert args[1:5] == ['-u', 'nginx', '--', 'test'], args
-    raise SystemExit(subprocess.run(['/usr/bin/test', *args[5:]]).returncode)
+    raise SystemExit(subprocess.run([shutil.which('test', path=os.defpath), *args[5:]]).returncode)
 if args == ['systemctl', 'is-active', '--quiet', 'firewalld']:
     raise SystemExit(3)
 assert args in (['nginx', '-t'], ['systemctl', 'reload', 'nginx'], ['systemctl', 'stop', 'nginx'],
@@ -206,7 +223,7 @@ assert args in (['nginx', '-t'], ['systemctl', 'reload', 'nginx'], ['systemctl',
                                 cwd=self.base, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         metadata = self.base / 'protected-state/source-paths.json'
-        self.assertIn(str(self.legacy), json.loads(metadata.read_text())['sources'])
+        self.assertIn(str(self.legacy.resolve()), json.loads(metadata.read_text())['sources'])
         self.assertEqual(metadata.stat().st_mode & 0o777, 0o600)
         self.assertEqual(metadata.parent.stat().st_mode & 0o777, 0o700)
         result = subprocess.run(['bash', str(script), 'stop'], env=env,
@@ -249,12 +266,13 @@ assert args in (['nginx', '-t'], ['systemctl', 'reload', 'nginx'], ['systemctl',
         block = yaml.safe_load((ROOT / 'ansible/roles/pxe_serve/tasks/main.yml').read_text())[1]['block']
         stage = copy.deepcopy(next(task for task in block if task['name'].startswith('Stage the boot artifacts')))
         stage['become'] = False
+        stage['no_log'] = False  # Synthetic paths/token only; expose fixture failures.
         literal_target = self.base / '${COCO_PATH_FRAGMENT}' / 'src'
         self.plan('serve', webroot=literal_target)  # Validation sees the literal, independent pathname.
         token = 'c' * 32
         self.run_local_ansible([stage], {'boot_artifacts_webroot': str(literal_target),
                               'boot_artifacts_dir': str(self.private[0]), 'pxe_url_prefix': token},
-                              env_overrides={'COCO_PATH_FRAGMENT': 'install'})
+                              env_overrides={'COCO_PATH_FRAGMENT': 'install', 'POSIXLY_CORRECT': '1'})
         self.check_private()
         self.assertTrue((literal_target / token / 'retained-input').is_file())
 
@@ -308,6 +326,7 @@ assert args in (['nginx', '-t'], ['systemctl', 'reload', 'nginx'], ['systemctl',
             'Stage the boot artifacts into the tokenized webroot')])
         for task in selected:
             task['become'] = False
+            task['no_log'] = False  # Synthetic paths/token only; expose staging failures.
         selected.append({'ansible.builtin.copy': {'dest': str(self.base / 'boot.conf'), 'content': 'fixture config', 'mode': '0600'}})
         probe = copy.deepcopy(next(task for task in block if task['name'] == 'Verify public boot artifact access from the controller'))
         probe.update(retries=1, delay=0)

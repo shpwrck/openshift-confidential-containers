@@ -44,6 +44,13 @@ An existing bastion can keep its remote pull secret. A new bastion can receive a
 - `node_ssh_pubkey_src`: the public key to embed in the node.
 - `boot_artifacts_token`: a fresh value from `openssl rand -hex 16`, kept in that external file.
 
+Select the installation disk explicitly. Prefer its verified `/dev/disk/by-path/` path for
+`node_root_device` (or each machine's `root_device`), as recommended by the
+[Agent-based Installer root-device guidance](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/observability/installing_an_on-premise_cluster_with_the_agent-based_installer/index).
+The Miami validation node's OS disk changed from `nvme0n1` to `nvme1n1` after a firmware reboot.
+Match the stable path to the intended disk serial and boot target before installation; do not
+reuse a previous allocation's disk path.
+
 Load the Latitude API credential through the environment (`LATITUDESH_AUTH_TOKEN`), without placing its value in shell history or checked-in files. No credentials are included in this checkout.
 
 ## Prepare, install, verify

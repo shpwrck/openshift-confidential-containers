@@ -1,6 +1,6 @@
 # Latitude AMD validation node
 
-This module provisions the disposable AMD node. The [bastion module](bastion/README.md) owns the mirror server, VLAN and inbound firewall; provision it first because this module reads its external Terraform state. Both servers incur charges until deleted. Use an explicit total budget and verify teardown through provider inventory.
+This module provisions the disposable AMD node. Start with `air_gap=false` to check the actual hardware before building the mirror. The [bastion module](bastion/README.md) owns the mirror server, VLAN and inbound firewall; provision it in the same site before enabling `air_gap=true` on the accepted node. Both servers incur charges until deleted. Use an explicit total budget and verify teardown through provider inventory.
 
 ## Select and verify the machine
 

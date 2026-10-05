@@ -2,19 +2,20 @@
 
 ## Status and scope
 
-**Hardware validation in progress; SNP gate not passed.** [Dated preflight evidence](validation/latitude-preflight-2026-10-05.json) records the completed preparation checks and their limits. Sequential hardware candidates are authorized under the approved $150 total cap. Authenticated artifact resolution, actual image mirroring, registry TLS and DNS checks completed. An unchanged preparation rerun passed with zero changes and skipped transfer. Signed-image host verification accepted the signed control and rejected the same-content unsigned control for a signature-specific reason; guest enforcement remains untested.
+**Raw-host SNP passed on the Miami replacement; OpenShift and guest proofs remain pending.** [Dated preflight evidence](validation/latitude-preflight-2026-10-05.json) records the completed preparation checks and their limits. Sequential hardware candidates are authorized under the approved $150 total cap. Authenticated artifact resolution, actual image mirroring, registry TLS and DNS checks completed. An unchanged preparation rerun passed with zero changes and skipped transfer. Signed-image host verification accepted the signed control and rejected the same-content unsigned control for a signature-specific reason; guest enforcement remains untested.
 
 Installer artifacts were generated successfully. PXE publication initially failed because nginx could not traverse the private installer directory. Moving the public copies to `/var/www/coco-boot-artifacts` passed the nginx read check, public HTTP 206 Range check and root-path 404 check. A repeat run reused the artifacts. Cleanup removed the webroots and boot configuration, closed port 8080 and made the tokenized endpoint unreachable. These checks used SELinux Permissive and did not boot the node.
 
-The delivered node is EPYC 7313P / H12SSW-NTR / BIOS 2.3 / BMC 01.00.41, rather than the EPYC 9124 advertised for the selected plan. Saved SMEE, IOMMU, ASID and SNP settings exposed `/dev/sev`, but the host check still fails: BIOS did not reserve RMP memory and SNP remains disabled. A read-only sweep of all seven BIOS tabs, all 15 Advanced submenu roots and the documented nested menus exposed no RMP coverage control with the saved configuration. Disabled controls were not unlocked; the inspection ended with Discard Changes and Exit, without changes or flashing. The exact board's published BIOS 3.6/BMC 01.08.06 bundle addresses newer firmware needs, but has not been validated as a fix for this failure. Latitude's public console-access docs do not establish a customer flashing policy; a provider update or approved procedure/replacement is the next step. The support draft remains unsent. See [firmware preflight](amd-firmware-preflight.md) for scope, security fixes and update limits. No new OpenShift installation or guest proof has completed. The previous rig's July results remain historical evidence.
+A [later live cleanup check](validation/latitude-pxe-cleanup-2026-10-05.json) exercised both entry points
+and a deliberately failed Ansible readiness probe. Rescue returned failure and closed the endpoint;
+private installer files and artifact hashes/mtimes were preserved. Protected source metadata remained
+root-owned with a `0700` directory and `0600` file. SELinux enforcing mode remains unverified.
 
-The complete run targets a disposable AMD SEV-SNP CPU environment. Intel and GPU work are outside this effort. This page plans fresh infrastructure and installation; the existing customer cluster follows a separate upgrade rehearsal.
+The first Dallas allocation delivered EPYC 7313P / H12SSW-NTR / BIOS 2.3 instead of the advertised EPYC 9124. Its saved settings did not produce RMP reservation or working SNP, and the exposed-menu sweep found no RMP coverage control. The node was destroyed and provider deletion verified. The [firmware investigation](amd-firmware-preflight.md) retains the failed result and its limits.
 
-The rejected Dallas node has been destroyed, with deletion confirmed through the provider API.
-The next candidate in Miami delivered EPYC 9124 / H13SST-G / BIOS 1.6 and already boots in UEFI
-mode. Its BIOS exposes RMP coverage; configuration and the post-reboot host check are in progress.
-The Dallas bastion is retained temporarily. A usable candidate in another site needs a bastion
-and VLAN in that same site; its firmware security level remains a separate acceptance question.
+The [Miami replacement](validation/latitude-mia2-host-2026-10-05.json) delivered EPYC 9124 / H13SST-G / BIOS 1.6. After enabling the five required controls, it retained UEFI and passed the raw-host check: RMP allocation, SNP API 1.55 build 24, `/dev/sev` and `sev_snp=Y`. A recovered initialization retry is retained in the evidence. This is a functional lab acceptance; the old firmware remains below published security fixes and does not establish a current secure customer baseline.
+
+A fresh Miami bastion is provisioning to exercise the latest bootstrap and provide the same-site VLAN. The Dallas bastion is retained temporarily. No new OpenShift installation or guest proof has completed; earlier July results remain historical evidence. This run targets disposable AMD SEV-SNP CPU infrastructure. Customer upgrades, separate-cluster topologies, Intel and GPU work require separate validation.
 
 ## Inputs required before provisioning
 
