@@ -31,7 +31,7 @@ SEV-SNP only**. Intel and GPU work are outside this effort.
 
 ## Validation performed locally
 
-The offline checks pass locally: 94 Python regression tests, 59 release/worker/VCEK/mirror tests and
+The offline checks pass locally: 106 Python regression tests, 59 release/worker/VCEK/mirror tests and
 10 OPA memory-policy cases. Checks also cover ShellCheck, shell syntax, all four overlays,
 Ansible syntax/lint and local documentation links. Both Terraform modules pass format and
 schema validation with provider 4.6.0. No live provider, cluster or SSH operation was used
