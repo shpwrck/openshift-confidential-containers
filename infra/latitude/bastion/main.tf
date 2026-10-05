@@ -49,7 +49,7 @@ resource "latitudesh_server" "bastion" {
   hostname         = var.hostname
   plan             = var.plan
   site             = var.site
-  operating_system = var.operating_system # rocky-10 (RHEL-family): mirror-registry + podman validated
+  operating_system = var.operating_system # Rocky 9 lab baseline; see supported-host distinction in README.
   billing          = var.billing          # "hourly" while engaged; "monthly" is cheaper if it runs for weeks
   ssh_keys         = var.ssh_key_ids
 

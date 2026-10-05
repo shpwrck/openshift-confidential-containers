@@ -11,8 +11,10 @@ SEV-SNP only**. Intel and GPU work are outside this effort.
 
 ## Implemented for review
 
-- One release inventory: OCP 4.20.39 payload, OSC 1.13.1 and Trustee 1.2.1 candidates,
-  public coco-tools identity, UBI minimal 9.8 amd64, and explicit unresolved catalog entries.
+- One resolved release inventory: OCP 4.20.39, OSC 1.13.1 and Trustee 1.2.1,
+  exact supporting operators, authenticated bundles/related images, coco-tools and UBI minimal.
+  [Artifact evidence](docs/validation/release-resolution-2026-10-05.json) records immutable identities;
+  an oc-mirror v2 dry run passed with 220 planned images.
 - Checksum-verified tools; input-bound mirror/PXE reuse; prepare/fresh-install/verify modes;
   persistent provider request journals; automatic boot-endpoint closure after successful install.
 - Latitude provider 4.6.0 with locked dependencies and implicit reinstallation disabled.
@@ -29,7 +31,7 @@ SEV-SNP only**. Intel and GPU work are outside this effort.
 
 ## Validation performed locally
 
-The offline checks pass locally: 74 Python regression tests, 47 release/worker/VCEK tests and
+The offline checks pass locally: 94 Python regression tests, 59 release/worker/VCEK/mirror tests and
 10 OPA memory-policy cases. Checks also cover ShellCheck, shell syntax, all four overlays,
 Ansible syntax/lint and local documentation links. Both Terraform modules pass format and
 schema validation with provider 4.6.0. No live provider, cluster or SSH operation was used
@@ -37,12 +39,11 @@ for these checks. GitHub CI results are recorded separately on the pull request.
 
 ## Required before deployment and completion
 
-1. Resolve authenticated Red Hat catalog, bundle, related-image and diagnostics identities;
-   select a verified mirror-registry archive/checksum. The deployment gate intentionally fails
-   until this inventory is resolved. Artifact resolution is distinct from hardware acceptance.
-2. Obtain Latitude project/access and Red Hat credential-file locations outside Homelab;
-   review current AMD stock, site, networking, firmware access and infrastructure costs.
-3. Provision new disposable infrastructure, run the documented installation and AMD proofs,
+1. Complete the in-progress Latitude deployment under the approved $150 total budget.
+   Catalog/image resolution, credentials, stock checks and mirror-registry 2.0.12 archive
+   verification are complete. Artifact resolution is distinct from hardware acceptance.
+2. Verify actual host networking, firmware and AMD SEV-SNP capability.
+3. Run the documented installation and AMD proofs,
    then repeat a clean run while recording timings and manual interventions.
 4. Prove signed-image transport through the actual registry. Test encrypted images only on
    an independently reviewed payload containing the host-pull fix and compatible operands.
@@ -59,7 +60,10 @@ Use this branch and the [current quickstart](docs/current-quickstart.md),
 and [Latitude acceptance plan](docs/latitude-validation.md). The initial audit is retained
 in [the adjustment plan](docs/design/current-version-adjustment-plan.md).
 
-The owner will provide credentials; none were retrieved for this implementation. Keep secrets,
-Terraform state, boot assets, kubeconfigs and proof recovery material outside the checkout and
-Homelab. Historical rig results do not validate this release set. No new Latitude resources
-have been created, and the overall hardware-validation objective remains unfinished.
+Credentials and dedicated SSH keys are held outside Homelab. The approved Test/Dallas rig
+uses m4-metal-small ($0.81/hour) and m4-metal-medium ($1.25/hour), with a $150 total cap.
+The bastion is deployed and mirroring images. The AMD node is provisioning; hardware
+acceptance is still pending. One live readiness-marker permission issue was fixed before
+resuming preparation, and is recorded in the private run evidence.
+Keep Terraform state, cost records, boot assets, kubeconfigs and proof recovery material
+outside the checkout and Homelab. Historical rig results do not validate this release set.

@@ -4,9 +4,11 @@ site    = "NYC"                # MUST match the node's site (virtual networks ar
 plan    = ""                   # FILL: cheapest metal SKU w/ disk for the mirror — `lsh plans list`
 
 hostname = "coco-bastion"
-# operating_system defaults to rocky-10 (RHEL-family; the cloud-init uses NetworkManager + dnf).
+# operating_system defaults to rocky-9 (compatible lab baseline; live validation required).
+# Red Hat supports mirror-registry on RHEL 8/9; Rocky does not inherit that support.
+# The cloud-init uses NetworkManager + dnf.
 # Do NOT set ubuntu here — a verbatim copy would boot the wrong OS and the Rocky cloud-init fails.
-# operating_system = "rocky-10"
+# operating_system = "rocky-9"
 billing = "hourly" # "monthly" if the bastion will run for the whole project
 
 ssh_key_ids = ["ssh_XXXXXXXXXXXXX"] # FILL: your Latitude SSH key ID — same key as the node

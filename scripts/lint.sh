@@ -12,6 +12,7 @@ bash scripts/check-coco-workload-labels.sh
 bash scripts/test-coco-mem-rego.sh
 python3 scripts/verify-release.py
 python3 scripts/test-release-manifest.py
+python3 scripts/test-mirror-resources.py
 python3 scripts/test-worker-install.py
 python3 scripts/test-worker-safety.py
 python3 scripts/test-vcek-bundle.py

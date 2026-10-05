@@ -2,15 +2,15 @@
 
 ## Status and scope
 
-**Pending hardware validation.** The current checkout has local regression tests for tools, mirrors, PXE assets, provider request handling and proof logic. No new Latitude servers, live provider requests, SSH sessions or OpenShift deployments were created by these implementation tests. The previous rig was torn down; its July results are historical evidence, not results for OCP 4.20.39 / OSC 1.13 / Trustee 1.2.
+**Pending hardware validation.** The current checkout has local regression tests for tools, mirrors, PXE assets, provider request handling and proof logic. The offline implementation tests made no live provider, SSH or cluster changes. Subsequent authenticated preflight has verified registry access, selected artifact identities, project access and plan availability, and registered a dedicated SSH public key. The bastion is deployed and transferring images; the AMD node is provisioning under the approved $150 total cap. No new OpenShift or SNP proof has completed. The previous rig was torn down; its July results are historical evidence, not results for OCP 4.20.39 / OSC 1.13 / Trustee 1.2.
 
 The complete run targets a disposable AMD SEV-SNP CPU environment. Intel and GPU work are outside this effort. This page plans fresh infrastructure and installation; the existing customer cluster follows a separate upgrade rehearsal.
 
 ## Inputs required before provisioning
 
-1. Resolve [the BOM](../install/release-manifest.json): immutable catalog and bundle identities, exact CSVs/channels, related images and helper images. `python3 scripts/verify-release.py --require-resolved` must pass.
+1. Verify [the resolved BOM](../install/release-manifest.json), using [the resolution procedure](release-resolution.md) when refreshing pins: immutable catalog and bundle identities, exact CSVs/channels, related images and helper images. `python3 scripts/verify-release.py --require-resolved` must pass.
 2. Confirm access to the Latitude project and current stock for the selected site/plan, the intended SSH key, billing mode, admin CIDR and firmware access. Record server IDs once provisioned; do not assume old IDs still exist.
-3. Select a **versioned HTTPS mirror-registry archive and its published SHA-256**. Set `mirror_registry_url` and `mirror_registry_sha256` in the bastion inputs. Both are required; there is no `latest` or unchecked fallback. The implementation does not claim that a new archive pin has already been verified.
+3. Select a **versioned HTTPS mirror-registry archive and its published SHA-256**. Set `mirror_registry_url` and `mirror_registry_sha256` in the bastion inputs. Both are required; there is no `latest` or unchecked fallback. The current run has verified mirror-registry 2.0.12 against the published SHA-256; the bastion guide records the pin and host prerequisites.
 4. Keep the Red Hat pull secret, provider credential, SSH keys and any later kubeconfigs in private external storage. The wrapper accepts `COCO_BASTION_TFVARS` and `COCO_NODE_TFVARS` as absolute file paths; never put secret-bearing files or state under Homelab.
 5. Complete an external Ansible environment file with reviewed networking, disk, NIC and boot-token inputs as described in [the quickstart](current-quickstart.md).
 
@@ -23,7 +23,7 @@ firmware access or the final infrastructure price. Confirm those before creating
 
 ## Plan and provision in stages
 
-These commands are an operator procedure; they have not been executed against the provider during implementation.
+The current run has completed the bastion apply and started the node apply with external state. The complete installation and later hardware checkpoints remain to be exercised.
 
 ```bash
 export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"

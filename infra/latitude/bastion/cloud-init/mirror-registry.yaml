@@ -1,11 +1,11 @@
 #cloud-config
-# Bastion bootstrap (Rocky Linux 10): private-VLAN L3 + Red Hat mirror-registry (quay).
+# Bastion bootstrap (Rocky Linux 9 lab): private-VLAN L3 + Red Hat mirror-registry (quay).
 # Templated by Terraform (latitudesh_user_data.bastion): $${name} tokens are TF template vars,
 # NOT shell vars. Bootstrap log lands in /var/log/cloud-init-output.log.
 #
-# OS: RHEL-family (rocky-10) — mirror-registry + podman (AppStream 5.x) are validated here, and
-# the network stack is NetworkManager (not netplan). SELinux is ENFORCING; mirror-registry labels
-# its quayRoot itself, but # VERIFY the quay pod starts cleanly under SELinux on first provision.
+# OS: Rocky 9 is the compatible lab baseline. Red Hat documents RHEL 8/9 as supported
+# mirror-registry hosts; Rocky is not a supported RHEL substitute. This candidate still needs
+# live validation. The network stack is NetworkManager; verify the Quay pod under SELinux.
 #
 # Network model (the REAL air gap, not a cosmetic VLAN):
 #   - this host gets a STATIC private IP (${bastion_vlan_ip}/${vlan_prefix}) on the rig VLAN
@@ -27,11 +27,30 @@ packages:
   - curl
   - tar
   - openssl
+  - hostname
+  - openssh-clients
+  - openssh-server
   - NetworkManager
   - chrony # NTP source for the air-gapped node (clock skew hangs bootstrap + breaks attestation)
   - dnsmasq # serves the mirror DNS name over the VLAN (RHCOS can't use /etc/hosts at install time)
 
 write_files:
+  - path: /usr/local/bin/check-mirror-prerequisites.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      for tool in podman curl tar openssl hostname ssh ssh-keygen sshd; do
+        command -v "$tool" >/dev/null 2>&1 \
+          || { echo "FATAL: missing mirror-registry prerequisite: $tool" >&2; exit 1; }
+      done
+      # mirror-registry evaluates hostname -f before parsing --targetHostname or --help.
+      # An explicit localhost target cannot compensate for missing hostname resolution.
+      if ! HOST_FQDN="$(hostname -f 2>/dev/null)" || [[ -z "$HOST_FQDN" ]]; then
+        echo "FATAL: hostname -f must succeed before mirror-registry starts; configure the bastion hostname in DNS or /etc/hosts" >&2
+        exit 1
+      fi
+
   # --- VLAN L3 setup: AUTO-DETECT the parent NIC, then write the NM keyfile + dnsmasq iface ---
   # The parent interface is hardware-bound and varies by Latitude plan (e.g. m4-metal-small has
   # NO bond0 — it is eno1[public]/eno2[private]). With vlan_parent_interface="auto" (default) we
@@ -107,6 +126,7 @@ write_files:
       MIRROR_ROOT="${mirror_root}"
       QUAY_ROOT="$MIRROR_ROOT/quay"
       mkdir -p "$QUAY_ROOT"
+      /usr/local/bin/check-mirror-prerequisites.sh
 
       # registry DNS name -> private VLAN IP, so quayHostname resolves to the private segment
       # on the bastion (and the node uses the same name -> same IP over the VLAN).
@@ -163,16 +183,29 @@ write_files:
         echo "FATAL: quay CA not found at $CA_SRC (version-specific path?) — not marking ready"; exit 1
       fi
       install -D -m0644 "$CA_SRC" "$MIRROR_ROOT/ca/rootCA.pem"
+      # Clear an earlier failed attempt only after this retry completed and its CA
+      # was installed. Phase A deliberately gives FAILED precedence over READY.
+      rm -f "$MIRROR_ROOT/MIRROR_FAILED"
       date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_READY"
 
 runcmd:
-  # detect the VLAN parent NIC + bring up the private VLAN (public default route untouched).
-  - [ bash, -lc, "/usr/local/bin/setup-rig-vlan.sh" ]
-  # NTP + DNS services for the node over the VLAN; open them in firewalld if it is active.
-  - [ bash, -lc, "systemctl enable --now chronyd dnsmasq" ]
-  - [ bash, -lc, "if systemctl is-active --quiet firewalld; then firewall-cmd --permanent --add-service=dns --add-service=ntp --add-port=8443/tcp && firewall-cmd --reload; fi || true" ]
-  # pipefail on the outer shell too, so a failed bootstrap is a non-zero cloud-init result
-  # (not masked by tee's exit). A separate FAILED marker is written if the script errors.
-  - [ bash, -lc, "set -o pipefail; /usr/local/bin/bootstrap-mirror.sh 2>&1 | tee -a /var/log/mirror-bootstrap.log || { date -u +%FT%TZ > ${mirror_root}/MIRROR_FAILED; exit 1; }" ]
+  # Run these dependent steps together: separate runcmd entries can continue after
+  # VLAN/service failure and let registry setup write a misleading READY marker.
+  - - bash
+    - -lc
+    - |
+      set -euo pipefail
+      umask 077
+      MIRROR_ROOT="${mirror_root}"
+      mkdir -p "$MIRROR_ROOT"
+      trap 'date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_FAILED"' ERR
+      /usr/local/bin/setup-rig-vlan.sh
+      systemctl enable --now chronyd dnsmasq
+      if systemctl is-active --quiet firewalld; then
+        firewall-cmd --permanent --add-service=dns --add-service=ntp --add-port=8443/tcp
+        firewall-cmd --reload
+      fi
+      # pipefail preserves bootstrap errors through the log tee.
+      /usr/local/bin/bootstrap-mirror.sh 2>&1 | tee -a /var/log/mirror-bootstrap.log
 
 final_message: "mirror-registry bootstrap finished after $UPTIME s — admin password: sudo cat ${mirror_root}/mirror-admin-password"

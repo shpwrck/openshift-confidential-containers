@@ -125,7 +125,11 @@ class WorkerInstallTests(unittest.TestCase):
             oc = path / "oc"
             oc.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$MOCK_OC_LOG"\nexit 99\n')
             oc.chmod(0o755)
-            env = {"PATH":str(path)+":"+os.environ["PATH"], "WORKER_CONTEXT":"fixture-worker", "MOCK_OC_LOG":str(log)}
+            unresolved = json.loads((ROOT / "install/release-manifest.json").read_text())
+            unresolved["catalog"]["resolution"] = "unresolved"
+            manifest = path / "unresolved-release.json"
+            manifest.write_text(json.dumps(unresolved))
+            env = {"PATH":str(path)+":"+os.environ["PATH"], "WORKER_CONTEXT":"fixture-worker", "MOCK_OC_LOG":str(log), "RELEASE_MANIFEST":str(manifest)}
             result = subprocess.run(["bash", "scripts/apply-sno.sh"], cwd=ROOT, env=env, text=True, capture_output=True)
             self.assertNotEqual(0, result.returncode)
             self.assertIn("unresolved", result.stderr)

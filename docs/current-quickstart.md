@@ -1,6 +1,6 @@
 # Current quickstart
 
-This checkout targets **OCP 4.20.39, OSC 1.13, and Trustee 1.2** for CPU confidential containers. The OCP release payload is verified; OSC 1.13.1 and Trustee 1.2.1 are catalog candidates. Authenticated catalog, bundle, related-image, and helper-image resolution is still required. The new workflow has local fixture coverage but has **not completed a new Latitude hardware run**. Historical OCP 4.20.18 results do not validate this release set.
+This checkout targets **OCP 4.20.39, OSC 1.13, and Trustee 1.2** for CPU confidential containers. The OCP payload and authenticated catalog, bundle, related-image, and helper-image identities are verified. See [the resolution procedure and evidence](release-resolution.md) before refreshing these pins. The new workflow has local fixture coverage but has **not completed a new Latitude hardware run**. Historical OCP 4.20.18 results do not validate this release set.
 
 The authoritative inputs are [the release manifest](../install/release-manifest.json). Start here instead of copying commands with older pins from historical runbooks. See [Latitude validation](latitude-validation.md) for infrastructure planning and the acceptance record.
 

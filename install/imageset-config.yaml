@@ -1,6 +1,4 @@
-# Generated/checked against install/release-manifest.json.
-# Candidate catalog and diagnostic tags are deliberately unresolved: run
-# scripts/verify-release.py --require-resolved before mirroring or deployment.
+# Artifact identities verified 2026-10-05; not deployed or hardware validated.
 apiVersion: mirror.openshift.io/v2alpha1
 kind: ImageSetConfiguration
 mirror:
@@ -13,29 +11,40 @@ mirror:
       maxVersion: 4.20.39
       type: ocp
   operators:
-  - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.20
+  - catalog: registry.redhat.io/redhat/redhat-operator-index@sha256:d0ba2f762a9514cf31bcb7ce77b837c6cedb517190f54eb2729be0fa02afb964
     packages:
     - name: sandboxed-containers-operator
       channels:
       - name: stable
         minVersion: 1.13.1
         maxVersion: 1.13.1
+      defaultChannel: stable
     - name: trustee-operator
       channels:
       - name: stable
         minVersion: 1.2.1
         maxVersion: 1.2.1
+      defaultChannel: stable
     - name: nfd
       channels:
       - name: stable
+        minVersion: 4.20.0-202609201357
+        maxVersion: 4.20.0-202609201357
+      defaultChannel: stable
     - name: openshift-cert-manager-operator
       channels:
       - name: stable-v1
+        minVersion: 1.20.1
+        maxVersion: 1.20.1
+      defaultChannel: stable-v1
     - name: gatekeeper-operator-product
       channels:
       - name: stable
+        minVersion: 3.21.1
+        maxVersion: 3.21.1
+      defaultChannel: stable
   additionalImages:
   - name: quay.io/openshift_sandboxed_containers/coco-tools@sha256:3d8227aedb4423ecc6d6e868a43d38ab8ed7fb9683cbb1b9a1d2bee6d1994667
   - name: registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e
-  - name: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:1.13.1
-  - name: registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9:1.2
+  - name: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c37ef009bf983e9b74b240844332d16f09bf3b9d6685883df1ac7c5262a40a1
+  - name: registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9@sha256:e8f272967e5cb0091621a798af4ef41a39c5a945d0101dce5564c59eaaa19d63

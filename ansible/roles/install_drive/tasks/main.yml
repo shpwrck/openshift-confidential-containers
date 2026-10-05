@@ -163,13 +163,70 @@
     fail_msg: "No generated cluster resources were found; mirror preparation is incomplete."
   when: install_mode == 'fresh'
 
-- name: Apply the oc-mirror cluster-resources (IDMS/ITMS + CatalogSource)
+- name: Read generated resources for catalog identity validation
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ mirror_cluster_resources.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  become: true
+  register: install_drive_mirror_resource_contents
+  when: install_mode == 'fresh'
+
+- name: Stage the mirror resource validator
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../scripts/normalize-mirror-resources.py"
+    dest: "{{ mirror_workspace }}/normalize-mirror-resources.py"
+    mode: "0644"
+  become: true
+  when: install_mode == 'fresh'
+
+- name: Stage non-secret resource and BOM inputs for validation
+  ansible.builtin.copy:
+    content: "{{ item.content | to_nice_json }}\n"
+    dest: "{{ mirror_workspace }}/{{ item.name }}"
+    mode: "0600"
+  loop:
+    - name: generated-cluster-resources.json
+      content: >-
+        {{ install_drive_mirror_resource_contents.results | default([])
+           | map(attribute='content') | map('b64decode') | map('from_yaml_all')
+           | map('list') | flatten | reject('equalto', none) | list }}
+    - name: selected-release.json
+      content: "{{ coco_release }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+  when: install_mode == 'fresh'
+
+- name: Verify mirrored catalog and normalize its source name and immutable image
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ mirror_workspace }}/normalize-mirror-resources.py"
+      - --manifest
+      - "{{ mirror_workspace }}/selected-release.json"
+      - --input-json
+      - "{{ mirror_workspace }}/generated-cluster-resources.json"
+      - --mirror-endpoint
+      - "{{ mirror_endpoint }}"
+      - --output
+      - "{{ mirror_workspace }}/normalized-cluster-resources.json"
+      - --evidence
+      - "{{ mirror_workspace }}/catalog-identity.json"
+  become: true
+  environment:
+    PATH: "{{ tool_path }}"
+  changed_when: false
+  when: install_mode == 'fresh'
+
+- name: Apply verified mirror resources (IDMS/ITMS + normalized CatalogSource)
   ansible.builtin.command:
     argv:
       - oc
       - apply
       - -f
-      - "{{ mirror_workspace }}/working-dir/cluster-resources/"
+      - "{{ mirror_workspace }}/normalized-cluster-resources.json"
   become: true
   environment:
     KUBECONFIG: "{{ cluster_assets_dir }}/auth/kubeconfig"

@@ -27,8 +27,8 @@ variable "plan" {
 
 variable "operating_system" {
   type        = string
-  default     = "rocky-10"
-  description = "Bastion OS — RHEL-family (Rocky 10): mirror-registry + podman (AppStream) validated here, NetworkManager network stack, SELinux enforcing. `lsh` OS slugs: rocky-10 / almalinux-10."
+  default     = "rocky-9"
+  description = "Bastion OS: Rocky 9 is the compatible lab baseline using NetworkManager and Podman; live validation is required. Red Hat supports mirror-registry on RHEL 8/9, not Rocky. Verify the OS is offered for the selected Latitude plan."
 }
 
 variable "billing" {

@@ -1,8 +1,7 @@
 # Trustee 1.2 bootstrap, configuration and proof
 
 This AMD SEV-SNP workflow targets the version selected by `install/release-manifest.json`.
-Its current Operator/catalog identities remain candidates until the release gate
-passes. It has offline tests; no hardware appraisal or customer upgrade is claimed.
+Its Operator and catalog identities are resolved; rerun the release gate before deployment. It has offline tests; no hardware appraisal or customer upgrade is claimed.
 Python 3.12+, `requirements-dev.txt`, `jq`, and the selected `oc` are required.
 
 ## Ownership and upgrade boundary

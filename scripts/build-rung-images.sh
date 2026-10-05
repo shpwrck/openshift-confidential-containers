@@ -401,8 +401,8 @@ if [[ "${1:-}" == "sign-rung-signed-only" ]]; then
 	mkdir -p "$ARTIFACT_DIR"
 	ensure_cosign_keys
 	sign_rung_signed
-	# Emit the pushed DIGEST refs so `make deploy-trustee-rung-signed` / `make run-rung-signed` need no
-	# manual `skopeo inspect` — apply-rung-image.sh rejects non-@sha256 refs, and the make defaults
+	# Emit the pushed DIGEST refs so `make deploy-trustee` / `make test-rung WHICH=rung-signed` need no
+	# manual `skopeo inspect` — the workload renderer rejects non-@sha256 refs, and the make defaults
 	# are the `:signed`/`:unsigned` TAGS. Source this file or read the digest refs from it.
 	rb_digest="$(skopeo_inspect "docker://${RUNG_SIGNED_IMAGE}" | jq -r '.Digest')"
 	ru_digest="$(skopeo_inspect "docker://${RUNG_SIGNED_UNSIGNED_IMAGE}" | jq -r '.Digest')"
@@ -426,7 +426,7 @@ if [[ "${1:-}" == "sign-rung-signed-only" ]]; then
 		printf 'export RUNG_SIGNED_COSIGN_PUB=%q\n' "$COSIGN_PUB"
 		printf 'export RUNG_IMAGE_MANIFEST=%q\n' "$signed_manifest"
 	} > "$ARTIFACT_DIR/rung-signed.env"
-	echo "Wrote $ARTIFACT_DIR/rung-signed.env — 'source' it (or pass RUNG_SIGNED_IMAGE=<digest-ref>) before deploy-trustee-rung-signed / run-rung-signed."
+	echo "Wrote $ARTIFACT_DIR/rung-signed.env — source it before make deploy-trustee and make test-rung WHICH=rung-signed."
 	exit 0
 fi
 

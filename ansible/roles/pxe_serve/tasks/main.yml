@@ -118,12 +118,17 @@
         - semanage port -a -t http_port_t -p tcp "{{ boot_artifacts_port }}"
       when: ansible_facts.selinux is defined and ansible_facts.selinux.status == 'enabled'
 
+    # Installation is a separate ansible-playbook invocation from bastion prep;
+    # setup does not include service facts and the earlier memory cache is gone.
+    - name: Gather service facts before opening the boot-artifacts port
+      ansible.builtin.service_facts:
+      become: true
+
     - name: Open the boot-artifacts port in firewalld (if active)
       ansible.builtin.command: "{{ item }}"
       become: true
       register: pxe_fw
       changed_when: "'success' in (pxe_fw.stdout | default(''))"
-      failed_when: false
       loop:
         - firewall-cmd --add-port={{ boot_artifacts_port }}/tcp --permanent
         - firewall-cmd --reload
@@ -163,6 +168,30 @@
         status_code: [403, 404]
       register: pxe_root_check
       when: pxe_url_prefix | length > 0
+
+    # A loopback probe cannot detect an ingress firewall blocking the public URL.
+    # This checks the controller path; actual node PXE access remains a boot check.
+    - name: Verify public boot artifact access from the controller
+      ansible.builtin.uri:
+        url: "{{ boot_artifacts_base_url }}/agent.x86_64-initrd.img"
+        method: GET
+        headers:
+          Range: "bytes=0-1"
+        # Let uri close an ignored Range (200) without reading a whole initrd.
+        # The task-level condition below still requires 206 before proceeding.
+        status_code: [200, 206]
+        return_content: false
+        follow_redirects: none
+        use_proxy: false
+        timeout: 10
+      delegate_to: localhost
+      become: false
+      register: pxe_public_range_check
+      retries: 3
+      delay: 2
+      until: pxe_public_range_check.status | default(0) == 206
+      failed_when: pxe_public_range_check.status | default(0) != 206
+      no_log: true
 
     - name: Report the protected boot endpoint status
       ansible.builtin.debug:

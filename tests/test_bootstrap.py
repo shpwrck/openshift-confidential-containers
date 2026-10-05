@@ -123,13 +123,33 @@ shutil.copyfile(source, args[args.index('-o')+1])
         workspace = self.base / 'workspace with spaces'
         resources = workspace / 'working-dir/cluster-resources'
         resources.mkdir(parents=True)
-        (resources / 'idms.yaml').write_text('fixture')
-        self.env.update(WORKSPACE='file://' + str(workspace))
-        self.env.pop('ARTIFACTORY_REGISTRY', None)
-        self.env.pop('MIRROR_REGISTRY', None)
+        bom = json.loads((ROOT / 'install/release-manifest.json').read_text())
+        endpoint = 'mirror.example:8443'
+        repository = endpoint + '/' + bom['catalog']['ref'].split('@')[0].split('/', 1)[1]
+        source_image = repository + ':' + bom['catalog']['digest'].replace(':', '-', 1)
+        (resources / 'idms.yaml').write_text(yaml.safe_dump({
+            'apiVersion': 'config.openshift.io/v1', 'kind': 'ImageDigestMirrorSet',
+            'metadata': {'name': 'fixture'}, 'spec': {'imageDigestMirrors': []}}))
+        (resources / 'catalog.yaml').write_text(yaml.safe_dump({
+            'apiVersion': 'operators.coreos.com/v1alpha1', 'kind': 'CatalogSource',
+            'metadata': {'name': 'digest-generated-name', 'namespace': 'openshift-marketplace'},
+            'spec': {'sourceType': 'grpc', 'image': source_image}}))
+        write_executable(self.bin / 'oc', '''#!/usr/bin/env python3
+import json,os,sys
+with open(os.environ['FIXTURE_CALLS'],'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')
+print(json.dumps({'name':sys.argv[-1], 'digest':'sha256:'+'b'*64, 'contentDigest':'sha256:'+'b'*64,
+ 'config':{'os':'linux','architecture':'amd64','config':{'Labels':{'operators.operatorframework.io.index.configs.v1':'/configs'}}}}))
+''')
+        self.env.update(WORKSPACE='file://' + str(workspace), ARTIFACTORY_REGISTRY=endpoint,
+                        BIN_DIR=str(self.bin), RELEASE_MANIFEST=str(ROOT / 'install/release-manifest.json'),
+                        IMAGESET_CONFIG=str(ROOT / 'install/imageset-config.yaml'))
         out = self.run_cmd(['bash', str(ROOT / 'scripts/mirror.sh'), 'resources'])
-        self.assertIn(str(resources), out)
-        self.assertIn('idms.yaml', out)
+        self.assertIn(str(workspace / 'normalized-cluster-resources.json'), out)
+        normalized = json.loads((workspace / 'normalized-cluster-resources.json').read_text())
+        catalog = next(item for item in normalized['items'] if item['kind'] == 'CatalogSource')
+        self.assertEqual(catalog['metadata']['name'], bom['catalog']['source'])
+        self.assertEqual(catalog['spec']['image'], repository + '@sha256:' + 'b' * 64)
+        self.assertEqual(len(self.log.read_text().splitlines()), 2)
 
     def test_wrapper_verify_has_no_provisioning_and_uses_absolute_config(self):
         write_executable(self.bin / 'ansible-playbook', '''#!/usr/bin/env python3

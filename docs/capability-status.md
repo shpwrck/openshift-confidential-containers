@@ -45,7 +45,29 @@ make test-rung WHICH=rung-rvps
 
 Names above are examples; select the actual contexts and endpoint. Namespace marking is a deliberate setup step after verifying the target, not something the proof runner adds automatically. The agent policy must be reviewed for the workload, including blocking administrator `ExecProcessRequest`; merely providing a file does not prove its restrictions. Initdata is visible in the pod annotation: put resource references and public certificates there, not secrets. `INITDATA_FILE` reuses approved bytes exactly and checks that its image policy URI matches the selected rung. `EMIT_INITDATA=1` prints the bytes used by the renderer for measurement generation.
 
-For rung C, build artifacts with `make build-rung-signed`, verify them, and load their immutable references from the external artifact manifest. Provide `RUNG_SIGNED_IMAGE` and `RUNG_SIGNED_UNSIGNED_IMAGE`. Use the same approved guest image policy for both. A DNS, TLS, registry authentication or invalid-image failure is inconclusive.
+For rung C, supply the mirror's trusted CA/authentication and `COSIGN_PASSWORD` through the
+external credential workflow, then build the signed and unsigned controls without encryption
+tooling:
+
+```bash
+make build-rung-signed
+source "$COCO_STATE_DIR/rung-image-artifacts/rung-signed.env"
+make verify-rung-signed-signature
+```
+
+If `ARTIFACT_DIR` was overridden, source `rung-signed.env` from that directory instead. The
+file selects the immutable image references, public key and artifact manifest. On the
+explicitly selected Permissive lab, `make deploy-trustee` seeds and attaches the image policy
+and public key, then waits for refreshed serving pods. For Restricted Trustee, provision
+those resources through the approved procedure in [the Trustee guide](trustee-current.md).
+Run `make test-rung WHICH=rung-signed` after configuration converges.
+
+The generated lab policy requires the same signing key for both configured repositories,
+using separate exact repository scopes by default. Custom `RUNG_SIGNED_POLICY_FILE` policies
+must also cover both controls with the same signature requirement; a default-reject rule
+outside the signed repository does not prove signature verification. The unsigned repository
+must be readable and free of a signature from the selected key. A DNS, TLS, registry
+authentication or invalid-image failure is inconclusive.
 
 For the SNP endorsement test also supply `PROOF_NODE` and `VCEK_SECRET_NAME` for that worker. Record the selected host, firmware/TCB, VCEK source identity and certificate hash. A matching HWID alone is not enough to reuse a certificate after a TCB change.
 

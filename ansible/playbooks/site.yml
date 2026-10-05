@@ -59,7 +59,9 @@
 # =====================================================================================
 - name: "Phase A — bastion preparation (egress, tools, mirror, dns/ntp)"
   hosts: bastions
-  gather_facts: true
+  # A new server can be reported as running before SSH accepts connections.
+  # Automatic setup runs before pre_tasks, so gather only after the wait below.
+  gather_facts: false
   vars_files:
     - ../group_vars/all.yml
   # Gate the whole phase on the bastion's first-boot mirror bootstrap (#71). `terraform apply`
@@ -76,6 +78,10 @@
         timeout: "{{ bastion_ssh_wait_timeout | default(900) }}"
       tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
 
+    - name: Gather bastion facts after SSH is ready
+      ansible.builtin.setup:
+      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+
     - name: Wait for the first-boot mirror bootstrap to settle
       ansible.builtin.shell: |
         set -o pipefail
@@ -84,6 +90,9 @@
         else echo PENDING; fi
       args:
         executable: /bin/bash
+      # Bootstrap protects /opt/mirror with mode 0700; the SSH login cannot
+      # distinguish an inaccessible READY marker from one that is absent.
+      become: true
       register: mirror_bootstrap_state
       changed_when: false
       retries: "{{ mirror_bootstrap_retries | default(160) }}"

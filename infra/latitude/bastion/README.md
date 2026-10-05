@@ -19,17 +19,40 @@ workspace on the bastion's own disk (`mirror_root`, default `/opt/mirror`), so:
 Different state, different lifecycle. **Apply this module first** — the node module reads its
 outputs (`virtual_network_id`, `firewall_id`) via `terraform_remote_state`.
 
+## Registry and host prerequisites
+
+The bastion defaults to **Rocky Linux 9 as a compatible lab baseline**, subject to live
+validation on the selected Latitude plan. Red Hat's [mirror-registry prerequisites](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/disconnected_environments/installing-mirroring-creating-registry)
+specify **RHEL 8 or 9**, Podman 3.4.2 or later, OpenSSL, DNS and SSH connectivity. Rocky
+does not inherit Red Hat host support. This bastion choice does not change the disposable
+SNP node's initial operating system.
+
+Cloud-init explicitly installs `hostname`, `openssh-clients` and `openssh-server` alongside
+the registry dependencies. Before generating credentials or downloading the archive,
+bootstrap checks the required commands and that `hostname -f` succeeds. Fix the bastion's
+hostname in DNS or `/etc/hosts` if that check fails: mirror-registry evaluates it even when
+`--targetHostname localhost` is supplied.
+
+The public **2.0.12 AMD64 archive** was downloaded and matched Red Hat's published checksum
+on 2026-10-05. Its root-level executable and bundled images match this bootstrap's extraction
+layout; install flags were checked with `--help`. A serving registry installation remains
+part of live validation. Use these explicit inputs:
+
+```hcl
+mirror_registry_url    = "https://mirror.openshift.com/pub/cgw/mirror-registry/2.0.12/mirror-registry-amd64.tar.gz"
+mirror_registry_sha256 = "6de43edfd77a61bb27116bb7a9a5715884722a811f92cd5d9dfca406afb457b2"
+```
+
+Source: [Red Hat's versioned archive and checksum listing](https://mirror.openshift.com/pub/cgw/mirror-registry/2.0.12/).
+Recheck the current release and checksum when preparing a later validation run.
+
 ## Provision
 
-```bash
-cd infra/latitude/bastion
-cp terraform.tfvars.example terraform.tfvars   # FILL: plan (cheap metal SKU), site == node's site, admin_cidr
-export LATITUDESH_AUTH_TOKEN=...
-terraform init
-terraform apply                                  # <-- spends money; approve explicitly
-terraform output mirror_endpoint                 # DNS name:8443 -> MIRROR_REGISTRY for `make mirror-content`
-terraform output node_hosts_entry                # "<bastion-vlan-ip> <mirror-name>" -> node agent-config
-```
+Follow the [current quickstart](../../../docs/current-quickstart.md) and
+[Latitude validation procedure](../../../docs/latitude-validation.md) for controller
+prerequisites, external Terraform state and variable files, plan review and provisioning.
+Keep the bastion and node states separate. Set the versioned registry inputs above in the
+external bastion variable file; do not place credentials or Terraform state in this checkout.
 
 Watch the bootstrap: `ssh rocky@<bastion-ip>` then `tail -f /var/log/mirror-bootstrap.log`.
 Ready when `<mirror_root>/MIRROR_READY` exists (a `MIRROR_FAILED` marker is written instead on a
@@ -55,6 +78,6 @@ in Terraform state, the Latitude user-data store, or this repo.
 
 ## Tear down (only at the end of the engagement)
 
-```bash
-terraform destroy   # loses the mirror cache — only when the whole spike is done
-```
+Use the teardown steps in the [Latitude validation procedure](../../../docs/latitude-validation.md)
+with the same external state and variable files used to provision. Destroy the node first,
+then the bastion when the mirror cache is no longer needed.

@@ -32,6 +32,7 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertEqual([], self.check("snp"))
 
     def test_candidate_artifacts_block_deployment(self):
+        self.bom["operators"]["osc"]["resolution"] = "candidate"
         self.bom["images"]["cocoTools"]["resolution"] = "candidate"
         errors = self.check(resolved=True)
         self.assertTrue(any("unresolved operators.osc" in x for x in errors))

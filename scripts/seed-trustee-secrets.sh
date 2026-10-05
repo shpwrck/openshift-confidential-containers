@@ -32,6 +32,7 @@ RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-en
 RUNG_SIGNED_COSIGN_PUB="${RUNG_SIGNED_COSIGN_PUB:-}"
 RUNG_SIGNED_POLICY_FILE="${RUNG_SIGNED_POLICY_FILE:-}"
 RUNG_SIGNED_IMAGE="${RUNG_SIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
+RUNG_SIGNED_UNSIGNED_IMAGE="${RUNG_SIGNED_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b-unsigned:unsigned}"
 RUNG_SIGNED_POLICY_IMAGE_PREFIX="${RUNG_SIGNED_POLICY_IMAGE_PREFIX:-}"
 
 tmpdir=""
@@ -118,17 +119,18 @@ image_repo_ref() {
 }
 
 render_default_rung_signed_policy() {
-	local image_prefix="$1"
-	jq -n --arg image_prefix "$image_prefix" --arg mirror_registry "$MIRROR_REGISTRY" '{
+	local image_prefix="$1" signed_repo unsigned_repo
+	signed_repo="$(image_repo_ref "$RUNG_SIGNED_IMAGE")"
+	unsigned_repo="$(image_repo_ref "$RUNG_SIGNED_UNSIGNED_IMAGE")"
+	# Both repositories must reach the same signature requirement. Rejecting the negative
+	# solely because it is outside the signed repository's policy scope proves nothing about signatures.
+	jq -n --arg image_prefix "$image_prefix" --arg signed_repo "$signed_repo" \
+		--arg unsigned_repo "$unsigned_repo" --arg mirror_registry "$MIRROR_REGISTRY" '
+		[{type: "sigstoreSigned", keyPath: "kbs:///default/sig-public-key/rung-signed"}] as $signature_requirement |
+	{
 		default: [{type: "reject"}],
 		transports: {
 			docker: {
-				($image_prefix): [
-					{
-						type: "sigstoreSigned",
-						keyPath: "kbs:///default/sig-public-key/rung-signed"
-					}
-				],
 				($mirror_registry + "/openshift/release"): [
 					{type: "insecureAcceptAnything"}
 				],
@@ -138,6 +140,10 @@ render_default_rung_signed_policy() {
 				($mirror_registry + "/ubi9"): [
 					{type: "insecureAcceptAnything"}
 				]
+			} + {
+				($image_prefix): $signature_requirement,
+				($signed_repo): $signature_requirement,
+				($unsigned_repo): $signature_requirement
 			}
 		}
 	}'
