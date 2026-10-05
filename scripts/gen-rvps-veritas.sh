@@ -91,7 +91,7 @@ cleanup_paths=()
 # shellcheck disable=SC2329  # invoked indirectly via the EXIT trap below
 cleanup() {
   local path
-  for path in "${cleanup_paths[@]}"; do
+  for path in ${cleanup_paths[@]+"${cleanup_paths[@]}"}; do
     [[ -n "${path}" ]] && rm -rf "${path}"
   done
 }
@@ -105,7 +105,7 @@ for version in ${OCP_VERSION}; do
 done
 if [[ -n "${VERITAS_EXTRA_ARGS}" ]]; then
   read -r -a extra_args <<< "${VERITAS_EXTRA_ARGS}"
-  veritas_args+=("${extra_args[@]}")
+  veritas_args+=(${extra_args[@]+"${extra_args[@]}"})
 fi
 
 copy_veritas_output() {

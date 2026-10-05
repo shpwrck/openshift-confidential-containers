@@ -159,7 +159,7 @@ load_vcek_bundle() {
 	else
 		ders=()
 		while IFS= read -r der_line; do ders+=("$der_line"); done < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
-		[[ "${#ders[@]}" -gt 0 ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
+		[[ -n ${ders[*]-} ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
 		for der in "${ders[@]}"; do
 			hwid="$(basename "$(dirname "$der")" | tr 'A-F' 'a-f')"
 			[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "invalid HWID directory name for $der: $hwid"
@@ -325,16 +325,18 @@ oc -n "$NS" create secret generic sample \
 # entries when the hardware set changes; this HWID-derived name binds the secret to its source host.
 # The full HWID stays in the mountPath.
 vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256_stdin | cut -c1-16)"; }
-for i in "${!vcek_hwids[@]}"; do
+vcek_count=0
+for i in ${vcek_hwids[@]+"${!vcek_hwids[@]}"}; do
 	vcek_name="$(vcek_secret_name "${vcek_hwids[$i]}")"
 	oc -n "$NS" create secret generic "$vcek_name" \
 		--from-file=vcek.der="${vcek_ders[$i]}" \
 		--dry-run=client -o json | apply_secret
 	echo "VCEK ${vcek_name}: ${vcek_hwids[$i]}"
+	vcek_count=$((vcek_count + 1))
 done
 
 echo "Trustee secrets seeded in $NS"
-echo "VCEK_COUNT=${#vcek_hwids[@]}"
+echo "VCEK_COUNT=$vcek_count"
 [[ -s "$tmpdir/rung-encrypted-image.key" ]] && echo "RUNG_ENCRYPTED_KEY_RESOURCE=${RUNG_ENCRYPTED_KEY_SECRET}/${RUNG_ENCRYPTED_KEY_NAME}"
 [[ -s "$tmpdir/cosign.pub" ]] && echo "RUNG_SIGNED_PUBLIC_KEY_RESOURCE=sig-public-key/rung-signed"
 [[ -s "$tmpdir/security-policy-rung-signed.json" ]] && echo "RUNG_SIGNED_POLICY_RESOURCE=security-policy/rung-signed"

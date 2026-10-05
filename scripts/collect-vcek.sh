@@ -68,7 +68,7 @@ case "${1:-}" in
     trustee_oc whoami >/dev/null
     shopt -s nullglob
     ders=("$OUT"/*/vcek.der)
-    [[ ${#ders[@]} -gt 0 ]] || die "no certificates to seed under VCEK_BUNDLE"
+    [[ -n "${ders[0]+present}" ]] || die "no certificates to seed under VCEK_BUNDLE"
     # Validate the entire set before the first write, including URL/report changes.
     for der in "${ders[@]}"; do
       hwid="$(basename "$(dirname "$der")")"
@@ -84,7 +84,7 @@ case "${1:-}" in
   --download)
     shopt -s nullglob
     urls=("$OUT"/*/vcek.url)
-    [[ ${#urls[@]} -gt 0 ]] || die "no collected VCEK URLs under VCEK_BUNDLE"
+    [[ -n "${urls[0]+present}" ]] || die "no collected VCEK URLs under VCEK_BUNDLE"
     for url_file in "${urls[@]}"; do
       dir="$(dirname "$url_file")"
       source_hash="$(python3 "$HELPER" request "$dir" --kind url --source "$url_file")"
@@ -118,7 +118,7 @@ case "${1:-}" in
     worker_oc whoami >/dev/null
     output="$(worker_oc debug "node/$NODE" -- chroot /host podman run --rm --authfile "$PODMAN_AUTHFILE" --privileged -v /dev:/dev "$TOOLS_IMG" /tools/snphost show vcek-url 2>&1)" || die "snphost collection failed"
     urls=(); while IFS= read -r url; do urls+=("$url"); done < <(grep -oE 'https://[^[:space:]]+' <<<"$output" | sort -u)
-    [[ ${#urls[@]} -gt 0 ]] || die "snphost returned no VCEK URL"
+    [[ -n "${urls[0]+present}" ]] || die "snphost returned no VCEK URL"
     for url in "${urls[@]}"; do
       hwid="$(parse_hwid_from_url "$url")"; dir="$OUT/$hwid"; mkdir -p "$dir"
       tmp="$(mktemp "$dir/url.XXXXXX")"; printf '%s\n' "$url" > "$tmp"

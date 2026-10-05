@@ -19,7 +19,7 @@ if "--context=fixture-worker" not in args and "--context=fixture-trustee" not in
 args = [a for a in args if not a.startswith(("--context=", "--request-timeout="))]
 fixture = json.load(open(os.environ["MOCK_FIXTURE"]))
 if args == ["whoami"]: print("fixture-user")
-elif args[:1] == ["api-resources"]: print("namespaces\npods")
+elif args[:1] == ["api-resources"]: print("\n".join(["namespaces", "pods"]+fixture.get("extraResources", [])))
 elif args[:3] == ["get", "clusterversion", "version"]: print(json.dumps(fixture["cv"]))
 elif args[:2] == ["get", "mcp"]:
     print(json.dumps({"items":[{"metadata":{"name":"fixture"}, "status":{"machineCount":1, "conditions":[{"type":"Updated", "status":"True"},{"type":"Updating", "status":"False"},{"type":"Degraded", "status":"False"}]}}]}))
@@ -27,8 +27,15 @@ elif args[:2] == ["get", "namespaces"]:
     if args[2] in fixture.get("namespaces", {}): print(json.dumps(fixture["namespaces"][args[2]]))
 elif args[:2] == ["wait", "node"]: pass
 elif args[:1] == ["-n"] and args[2:4] == ["get", "catalogsource"]: print("READY", end="")
-elif args[:1] == ["-n"] and args[2:4] == ["get", "pods"]: print(json.dumps({"items":fixture.get("pods", [])}))
-else: raise SystemExit("unexpected mocked oc call: " + repr(args))
+elif args[:1] == ["-n"] and args[2:] == ["get", "pods", "-o", "json"]: print(json.dumps({"items":fixture.get("pods", [])}))
+else:
+    ns = ""
+    if args[:1] == ["-n"]: ns, args = args[1], args[2:]
+    if args[:1] == ["get"] and len(args) >= 3:
+        obj = fixture.get("objects", {}).get(args[1]+"/"+args[2]+"@"+ns)
+        if obj: print(json.dumps(obj))
+    elif fixture.get("allowDelete") and args[:1] in (["delete"], ["patch"], ["wait"]): pass
+    else: raise SystemExit("unexpected mocked oc call: " + repr(args))
 '''
 
 
@@ -117,6 +124,13 @@ class WorkerSafetyTests(unittest.TestCase):
         self.assertIn("must be outside", result.stderr)
         self.assertFalse((ROOT / "forbidden-fixture").exists())
 
+    def test_empty_download_bundle_reports_missing_input_without_array_error(self):
+        result = self.run_script("collect-vcek.sh", "--download")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no collected VCEK URLs", result.stderr)
+        self.assertNotIn("unbound variable", result.stderr)
+        self.assertEqual([], self.calls())
+
     def test_reset_requires_all_intent_and_context_flags_before_oc(self):
         valid = {"WORKER_CONTEXT":"fixture-worker", "TRUSTEE_CONTEXT":"fixture-worker", "TRUSTEE_LAB":"1", "ALLOW_DISPOSABLE_UNINSTALL":"1"}
         for field in valid:
@@ -138,6 +152,23 @@ class WorkerSafetyTests(unittest.TestCase):
         result = self.run_script("uninstall-coco.sh", "validate-once", env={"WORKER_CONTEXT":"fixture-worker"})
         self.assertNotEqual(0, result.returncode)
         self.assertIn("coco-proof-dynamic-123", result.stdout)
+
+    def test_reset_keeps_arguments_intact_for_namespaced_and_cluster_resources(self):
+        self.fixture["allowDelete"] = True
+        self.fixture["namespaces"] = {"coco-validation":{"metadata":{"labels":{"coco.openshift.io/disposable":"true"}}}}
+        self.fixture["pods"] = [{"metadata":{"name":"coco-proof-fixture", "labels":{"coco.openshift.io/proof-run":"test"}}}]
+        self.fixture["extraResources"] = ["runtimeclasses.node.k8s.io"]
+        deleting = {"metadata":{"deletionTimestamp":"2026-10-05T00:00:00Z", "finalizers":["fixture-finalizer"]}}
+        self.fixture["objects"] = {"pods/coco-proof-fixture@coco-validation":deleting, "runtimeclasses.node.k8s.io/kata-cc@":deleting}
+        result = self.run_script("uninstall-coco.sh", env={"WORKER_CONTEXT":"fixture-worker", "TRUSTEE_CONTEXT":"fixture-worker", "TRUSTEE_LAB":"1", "ALLOW_DISPOSABLE_UNINSTALL":"1", "FORCE_FINALIZERS":"1"})
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = [[a for a in call if not a.startswith(("--context=", "--request-timeout="))] for call in self.calls()]
+        self.assertIn(["-n", "coco-validation", "delete", "pods", "coco-proof-fixture", "--ignore-not-found", "--wait=false"], calls)
+        self.assertIn(["delete", "runtimeclasses.node.k8s.io", "kata-cc", "--ignore-not-found", "--wait=false"], calls)
+        patch = '{"metadata":{"finalizers":[]}}'
+        self.assertIn(["-n", "coco-validation", "patch", "pods", "coco-proof-fixture", "--type=merge", "-p", patch], calls)
+        self.assertIn(["patch", "runtimeclasses.node.k8s.io", "kata-cc", "--type=merge", "-p", patch], calls)
+        self.assertFalse(any("" in call for call in calls), "empty optional namespace must add zero arguments")
 
 
 if __name__ == "__main__":

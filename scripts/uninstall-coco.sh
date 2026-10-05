@@ -29,11 +29,20 @@ operands=(
 
 die() { echo "ERROR: $*" >&2; exit 2; }
 known_resource() { grep -Fxq "$1" <<<"$API_RESOURCES"; }
+resource_oc() {
+  local ns="$1"; shift
+  # Bash 3.2 treats an empty array expansion as unset under nounset. Branch on
+  # the optional namespace instead, keeping each command argument intact.
+  if [[ -n "$ns" ]]; then
+    worker_oc -n "$ns" "$@"
+  else
+    worker_oc "$@"
+  fi
+}
 get_object() {
-  local kind="$1" name="$2" ns="${3:-}" args=()
+  local kind="$1" name="$2" ns="${3:-}"
   known_resource "$kind" || return 0
-  [[ -z "$ns" ]] || args=(-n "$ns")
-  worker_oc "${args[@]}" get "$kind" "$name" --ignore-not-found -o json
+  resource_oc "$ns" get "$kind" "$name" --ignore-not-found -o json
 }
 
 check_disposable_scope() {
@@ -51,20 +60,19 @@ check_disposable_scope() {
 }
 
 delete_object() {
-  local kind="$1" name="$2" ns="${3:-}" object args=()
+  local kind="$1" name="$2" ns="${3:-}" object
   object="$(get_object "$kind" "$name" "$ns")" || die "failed to inspect $kind/$name"
   [[ -n "$object" ]] || return 0
-  [[ -z "$ns" ]] || args=(-n "$ns")
-  worker_oc "${args[@]}" delete "$kind" "$name" --ignore-not-found --wait=false
+  resource_oc "$ns" delete "$kind" "$name" --ignore-not-found --wait=false
   if [[ "${FORCE_FINALIZERS:-0}" == 1 ]]; then
     object="$(get_object "$kind" "$name" "$ns")" || die "failed to inspect deletion state"
     if [[ -n "$object" ]] && jq -e '.metadata.deletionTimestamp != null and (.metadata.finalizers // [] | length) > 0' <<<"$object" >/dev/null; then
       echo "FORCE_FINALIZERS=1: explicitly removing finalizers on deleting $kind/$name"
-      worker_oc "${args[@]}" patch "$kind" "$name" --type=merge -p '{"metadata":{"finalizers":[]}}'
+      resource_oc "$ns" patch "$kind" "$name" --type=merge -p '{"metadata":{"finalizers":[]}}'
     fi
   fi
   # Keep the owning controller installed until its operands finish deletion.
-  worker_oc "${args[@]}" wait --for=delete "$kind/$name" --timeout="${WAIT_TIMEOUT}s" || die "$kind/$name still exists; controllers retained. Inspect finalizers before any explicit FORCE_FINALIZERS=1 retry."
+  resource_oc "$ns" wait --for=delete "$kind/$name" --timeout="${WAIT_TIMEOUT}s" || die "$kind/$name still exists; controllers retained. Inspect finalizers before any explicit FORCE_FINALIZERS=1 retry."
 }
 
 workload_names() {

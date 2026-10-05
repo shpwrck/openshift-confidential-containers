@@ -43,7 +43,7 @@ sha256_stdin() { _require_sha256 || return; "${COMPAT_SHA256[@]}" | awk '{print 
 # have_sha256 — silent predicate for a script's dependency preflight, used in
 # place of a `command -v sha256sum` check. True when a sha256 tool is on PATH, so
 # callers supply their own message: `have_sha256 || die "..."`.
-have_sha256() { [[ ${#COMPAT_SHA256[@]} -gt 0 ]]; }
+have_sha256() { [[ -n ${COMPAT_SHA256[*]-} ]]; }
 
 # _require_sha256 — fail loudly (rc 127, as a missing command would) instead of silently
 # emitting an empty digest when no sha256 tool exists. Guards sha256_file/sha256_stdin so an
