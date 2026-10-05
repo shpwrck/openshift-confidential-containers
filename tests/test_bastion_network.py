@@ -77,6 +77,13 @@ class Connection(LocalConnection):
         for task in phase['pre_tasks']:
             startup.append(copy.deepcopy(task))
             if 'ansible.builtin.setup' in task:
+                # Exercise real setup after the connection retry, but only collect
+                # the OS-family fact asserted below. Full workstation discovery can
+                # block on unrelated hardware/network probes on macOS runners.
+                startup[-1]['ansible.builtin.setup'] = {
+                    'gather_subset': ['!all', '!min', 'distribution'],
+                    'gather_timeout': 5,
+                }
                 break
         self.assertTrue(any('ansible.builtin.setup' in task for task in startup))
         output = self.run_play({

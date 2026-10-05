@@ -130,7 +130,7 @@ render_default_rung_signed_policy() {
 	{
 		default: [{type: "reject"}],
 		transports: {
-			docker: {
+			docker: ({
 				($mirror_registry + "/openshift/release"): [
 					{type: "insecureAcceptAnything"}
 				],
@@ -144,7 +144,7 @@ render_default_rung_signed_policy() {
 				($image_prefix): $signature_requirement,
 				($signed_repo): $signature_requirement,
 				($unsigned_repo): $signature_requirement
-			}
+			})
 		}
 	}'
 }
