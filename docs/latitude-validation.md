@@ -24,8 +24,11 @@ The Dallas bastion's unique artifacts were backed up and cryptographically verif
 The [public-route feasibility check](validation/latitude-mia2-public-route-2026-10-05.json)
 passed trusted registry TLS from the accepted node and cluster-manifest generation with the
 pinned OpenShift installer. The explicit [public-routed lab profile](public-routed-lab.md)
-is a candidate workaround for product tests. Boot, public service controls and installed-node
-connectivity remain unverified; it cannot establish private-network or disconnected acceptance.
+is a candidate workaround for product tests. The node now passes public DNS, NTP and trusted
+mirror TLS checks. Administrator DNS/NTP denials and a temporary mirror-denial policy produced
+matching firewall counters; normal access recovered and repeat checks passed. The guard is
+enabled and active. Node boot, installed connectivity and reboot persistence remain unverified;
+these checks cannot establish private-network or disconnected acceptance.
 
 A separate [live Chrony repair](validation/latitude-mia2-chrony-2026-10-05.json) fixed a missing
 include that prevented the prepared bastion from serving NTP. The private-source local positive

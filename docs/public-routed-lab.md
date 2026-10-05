@@ -76,10 +76,29 @@ image architecture validation was skipped; this result is schema/manifest accept
 
 The [OpenShift 4.20 Agent-based Installer preparation documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing_an_on-premise_cluster_with_the_agent-based_installer/preparing-to-install-with-agent-based-installer)
 describes static host network configuration. It does not turn this experimental topology into
-an isolated network. Before proceeding, the lab still needs:
+an isolated network.
 
-- Bastion service reachability restricted to the intended node and administration paths,
-  including DNS, NTP and mirror TLS with the existing trusted hostname.
+A later private artifact inspection generated the exact installer's PXE files and extracted
+the complete Agent Ignition without changing the source configuration or publishing files.
+The initrd starts networking to fetch the live root filesystem before Agent applies those
+static profiles. Its default is automatic networking (`ip=auto`), so the rendered static
+configuration alone does not remove that earlier DHCP dependency. Both early networking and
+ingress protection must be covered before a public boot. The
+[dated receipt](validation/latitude-mia2-public-route-2026-10-05.json) records the inspected
+artifact identities; no node boot or filtering proof is implied.
+
+The same receipt records a later live bastion check: the raw node passed public DNS, NTP and
+trusted mirror TLS; administrator DNS/NTP requests were denied with matching firewall counters.
+A temporary policy also denied administrator mirror access while preserving node access;
+restoring the normal policy recovered administrator access. Reapplying the normal guard and
+repeating the checks passed. Original DNS and Quay remained available, with no Quay restart.
+These were scoped rig changes, not a reusable public-service deployment role. Bastion reboot,
+IPv6 enforcement and SELinux Enforcing remain unverified. The receipt also retains an existing
+mirror-leaf incompatibility with strict X.509 validation; controller curl checks used full CA
+and hostname verification.
+
+Before proceeding, the lab still needs:
+
 - Node ingress protection during the live installer and after RHCOS installation; a Latitude
   firewall object or assignment alone does not prove host enforcement.
 - Fresh checks on the exact public NIC and source address, with both ordinary and exact-flow

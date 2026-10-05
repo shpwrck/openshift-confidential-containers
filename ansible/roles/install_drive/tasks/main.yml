@@ -80,10 +80,11 @@
     marker: "# {mark} ANSIBLE coco cluster records ({{ cluster_name }})"
     block: |
       {% for m in machines if m.role == 'master' %}
-      {{ m.vlan_ip }} api.{{ cluster_name }}.{{ base_domain }}
-      {{ m.vlan_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
-      {{ m.vlan_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}
-      {{ m.vlan_ip }} oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}
+      {% set cluster_host_ip = node_public_ipv4 if network_profile | default('private-vlan') == 'public-routed-lab' else m.vlan_ip %}
+      {{ cluster_host_ip }} api.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}
       {% endfor %}
   become: true
   when: install_mode == 'fresh'

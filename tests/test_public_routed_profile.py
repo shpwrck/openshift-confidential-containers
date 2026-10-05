@@ -219,6 +219,41 @@ class PublicRoutedProfileTests(unittest.TestCase):
                 self.assertFalse(legacy.exists())
                 self.assertFalse(nginx_conf.exists())
 
+    def test_bastion_hosts_task_uses_public_sno_or_each_private_master_address(self):
+        tasks = yaml.safe_load((ROOT / 'ansible/roles/install_drive/tasks/main.yml').read_text())
+        source = next(task for task in tasks if task.get('ansible.builtin.blockinfile', {}).get('path') == '/etc/hosts')
+        private_machines = [{'role': 'master', 'vlan_ip': '192.168.66.11'},
+                            {'role': 'master', 'vlan_ip': '192.168.66.12'},
+                            {'role': 'worker', 'vlan_ip': '192.168.66.13'}]
+        cases = [('default-private', None, private_machines, ['192.168.66.11', '192.168.66.12']),
+                 ('private', 'private-vlan', private_machines, ['192.168.66.11', '192.168.66.12']),
+                 ('public', 'public-routed-lab', private_machines[:1], ['192.0.2.11'])]
+        names = ['api.fixture.fixture.invalid', 'api-int.fixture.fixture.invalid',
+                 'console-openshift-console.apps.fixture.fixture.invalid',
+                 'oauth-openshift.apps.fixture.fixture.invalid']
+        for label, profile, machines, addresses in cases:
+            with self.subTest(profile=label):
+                hosts = self.base / ('hosts-' + label)
+                hosts.write_text('127.0.0.1 localhost\n')
+                task = copy.deepcopy(source)
+                task['become'] = False
+                task['ansible.builtin.blockinfile']['path'] = str(hosts)
+                variables = dict(self.variables, install_mode='fresh', machines=machines,
+                                 cluster_node_ip='192.168.66.99')
+                # A stale global alias must not collapse separate private master addresses.
+                if profile is None:
+                    variables.pop('network_profile', None)
+                else:
+                    variables['network_profile'] = profile
+                play = self.base / ('hosts-' + label + '.yml')
+                play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'connection': 'local',
+                                                'gather_facts': False, 'vars': variables, 'tasks': [task]}]))
+                result = subprocess.run(['ansible-playbook', '-i', 'localhost,', str(play)],
+                                        env=self.env, cwd=self.base, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                records = [line for line in hosts.read_text().splitlines() if line and not line.startswith('#')]
+                self.assertEqual(records, ['127.0.0.1 localhost'] + [ip + ' ' + name for ip in addresses for name in names])
+
     def test_unknown_profile_fails_before_creating_installer_sources(self):
         self.run_render({'network_profile': 'public-vlan-typo'}, success=False)
 
