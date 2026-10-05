@@ -144,6 +144,12 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:
         self.assertEqual(record['cwd'], str(ROOT / 'ansible'))
         self.assertEqual(record['config'], str(ROOT / 'ansible/ansible.cfg'))
         self.assertIn('install_mode=verify', record['argv'])
+        self.log.unlink()
+        self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify', '--',
+                      '-e', 'test_text=value with spaces', '--limit', 'bastion'])
+        spaced_record = json.loads(self.log.read_text())
+        self.assertEqual(spaced_record['argv'], ['playbooks/site.yml', '--tags', 'drive',
+            '-e', 'test_text=value with spaces', '--limit', 'bastion', '-e', 'install_mode=verify'])
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'upgrade'], 2)
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify', '--apply-tf'], 2)
 

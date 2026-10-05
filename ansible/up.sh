@@ -26,6 +26,8 @@ while [[ $# -gt 0 ]]; do
 done
 case "$MODE" in prepare|fresh-install|verify) ;; *) echo "ERROR: unsupported mode '$MODE'; in-place upgrades require a separate supported procedure" >&2; exit 2 ;; esac
 [[ "$MODE" != verify || "$TF_ACTION" == none ]] || { echo "ERROR: verify cannot plan or apply Terraform" >&2; exit 2; }
+# Bash 3.2 treats empty arrays as unset under nounset; conditional expansion below
+# preserves zero arguments for empty arrays and boundaries for populated arrays.
 EXTRA=("$@")
 AUTO_EXTRA=()
 COCO_STATE_DIR="${COCO_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openshift-confidential-containers}"
@@ -68,10 +70,10 @@ tf() {
     export TF_DATA_DIR="$state_dir/data"
     terraform -chdir="$module" init -input=false
     if [[ "$name" == node ]]; then
-      terraform -chdir="$module" "$TF_ACTION" -state="$state_dir/terraform.tfstate" "${tf_args[@]}" \
+      terraform -chdir="$module" "$TF_ACTION" -state="$state_dir/terraform.tfstate" ${tf_args[@]+"${tf_args[@]}"} \
         -var="bastion_state_path=$COCO_STATE_DIR/terraform/bastion/terraform.tfstate"
     else
-      terraform -chdir="$module" "$TF_ACTION" -state="$state_dir/terraform.tfstate" "${tf_args[@]}"
+      terraform -chdir="$module" "$TF_ACTION" -state="$state_dir/terraform.tfstate" ${tf_args[@]+"${tf_args[@]}"}
     fi
     if [[ "$TF_ACTION" == apply ]]; then
       if [[ "$name" == bastion ]]; then
@@ -90,7 +92,7 @@ tf() {
   fi
 }
 if [[ "$MODE" == verify ]]; then
-  ansible-playbook playbooks/site.yml --tags drive "${EXTRA[@]}" -e install_mode=verify
+  ansible-playbook playbooks/site.yml --tags drive ${EXTRA[@]+"${EXTRA[@]}"} -e install_mode=verify
   exit
 fi
 # Check the complete product BOM before spending on infrastructure or changing a bastion.
@@ -109,11 +111,11 @@ if [[ "$TF_ACTION" == plan ]]; then
   echo "Terraform planning finished; no infrastructure apply or Ansible run was requested."
   exit 0
 fi
-ansible-playbook playbooks/site.yml --tags bastion-prep "${AUTO_EXTRA[@]}" "${EXTRA[@]}"
+ansible-playbook playbooks/site.yml --tags bastion-prep ${AUTO_EXTRA[@]+"${AUTO_EXTRA[@]}"} ${EXTRA[@]+"${EXTRA[@]}"}
 [[ "$MODE" == fresh-install ]] || exit 0
 echo "Fresh installation: selected provider machines will be reinstalled after the BIOS gate"
 tf "$REPO/infra/latitude" node
-ansible-playbook playbooks/site.yml --tags install "${AUTO_EXTRA[@]}" "${EXTRA[@]}" -e install_mode=fresh
+ansible-playbook playbooks/site.yml --tags install ${AUTO_EXTRA[@]+"${AUTO_EXTRA[@]}"} ${EXTRA[@]+"${EXTRA[@]}"} -e install_mode=fresh
 # Close the secret-bearing endpoint as part of successful installation.
-ansible-playbook playbooks/site.yml --tags pxe-stop "${AUTO_EXTRA[@]}" "${EXTRA[@]}"
+ansible-playbook playbooks/site.yml --tags pxe-stop ${AUTO_EXTRA[@]+"${AUTO_EXTRA[@]}"} ${EXTRA[@]+"${EXTRA[@]}"}
 echo "Fresh installation completed; boot-artifact endpoint closed."
