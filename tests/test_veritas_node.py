@@ -167,12 +167,19 @@ class NodeVeritasTests(unittest.TestCase):
         self.assertEqual(record["expiration"], "2099-01-01T00:00:00Z")
 
     def test_command_or_validation_failure_preserves_last_good_output(self):
-        for mode in ("command-failure", "expired", "malformed"):
+        failures = {
+            "command-failure": "Veritas failed on selected node",
+            "expired": "RVPS record is expired or lacks a timezone: snp_launch_measurement",
+            "malformed": "RVPS record lacks a nonempty value: snp_launch_measurement",
+        }
+        for mode, expected_error in failures.items():
             with self.subTest(mode=mode):
                 self.output.write_text("last known-good output\n")
                 self.env["FIXTURE_VERITAS_MODE"] = mode
                 result = self.run_veritas()
                 self.assertNotEqual(result.returncode, 0)
+                # A transport failure must not satisfy a validator-failure case.
+                self.assertIn(expected_error, result.stderr)
                 self.assertEqual(self.output.read_text(), "last known-good output\n")
                 self.assertNotIn(AUTH_MARKER, result.stdout + result.stderr)
                 node = json.loads((self.state / "node-report.json").read_text())

@@ -17,8 +17,8 @@ variable "hostname" {
 
 variable "plan" {
   type        = string
-  description = "Genoa (4th-gen EPYC) bare-metal plan slug. Confirm availability: `lsh plans list`."
-  # e.g. one of the m4/f4/rs4 Genoa SKUs — leave to fill after querying the account.
+  description = "AMD EPYC plan verified against the selected SNP support matrix. Confirm account availability: `lsh plans list`."
+  # Verify the exact CPU and firmware; a provider Gen 4 label alone does not establish SNP eligibility.
 }
 
 variable "site" {

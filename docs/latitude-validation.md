@@ -14,6 +14,13 @@ The complete run targets a disposable AMD SEV-SNP CPU environment. Intel and GPU
 4. Keep the Red Hat pull secret, provider credential, SSH keys and any later kubeconfigs in private external storage. The wrapper accepts `COCO_BASTION_TFVARS` and `COCO_NODE_TFVARS` as absolute file paths; never put secret-bearing files or state under Homelab.
 5. Complete an external Ansible environment file with reviewed networking, disk, NIC and boot-token inputs as described in [the quickstart](current-quickstart.md).
 
+Select by the exact CPU and firmware, not just Latitude's “Gen 4” family label. Its
+[public catalog](https://www.latitude.sh/pricing) currently lists `m4.metal.medium`
+with EPYC 9124 and `m4.metal.large` with EPYC 9254; these are candidates to check against
+the selected Red Hat support matrix and required capacity. Other similarly named plans
+use different CPU families. Public listings do not establish account stock, enabled SNP,
+firmware access or the final infrastructure price. Confirm those before creating servers.
+
 ## Plan and provision in stages
 
 These commands are an operator procedure; they have not been executed against the provider during implementation.
