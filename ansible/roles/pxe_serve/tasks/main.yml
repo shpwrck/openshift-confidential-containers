@@ -46,27 +46,11 @@
       ansible.builtin.assert:
         that:
           - boot_artifacts_token != 'REPLACE_WITH_openssl_rand_hex_16'
-          - boot_artifacts_token | length >= 16
+          - boot_artifacts_token is match('^[0-9a-fA-F]{32,}$')
         fail_msg: "boot_artifacts_token is the placeholder — set a real openssl rand -hex 16 token."
 
-    - name: Build the agent PXE/iPXE boot artifacts (openshift-install agent create pxe-files)
-      ansible.builtin.command:
-        cmd: openshift-install --dir {{ cluster_assets_dir }} agent create pxe-files
-        creates: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
-      become: true
-      environment:
-        PATH: "{{ tool_path }}"
-
-    - name: Confirm the generated .ipxe exists
-      ansible.builtin.stat:
-        path: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
-      become: true
-      register: ipxe_stat
-
-    - name: Fail if pxe-files were not generated
-      ansible.builtin.fail:
-        msg: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe not found — agent create pxe-files failed."
-      when: not ipxe_stat.stat.exists
+    - name: Verify or regenerate boot artifacts for these inputs
+      ansible.builtin.include_tasks: prepare.yml
 
     # Derive the URL path the node will actually request from the generated .ipxe and serve
     # EXACTLY that — guarantees the serve location matches the tokenized bootArtifactsBaseURL.
@@ -75,20 +59,21 @@
         src: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
       become: true
       register: ipxe_content
+      no_log: true
 
     - name: Extract the URL path prefix from the .ipxe
       ansible.builtin.set_fact:
         pxe_url_prefix: >-
           {{ (ipxe_content.content | b64decode
               | regex_search('http://[^/]+/([^ ]*)/agent\.x86_64-vmlinuz', '\1')
-              | first) | default('', true) }}
+              | default([], true) | first) | default('', true) }}
+      no_log: true
 
-    - name: Warn if the .ipxe base URL has NO path segment (guessable root)
-      ansible.builtin.debug:
-        msg: >-
-          WARN: the .ipxe base URL has no path segment — artifacts would sit at a GUESSABLE root
-          leaking ignition secrets. Set bootArtifactsBaseURL to a tokenized path and rebuild.
-      when: pxe_url_prefix | length == 0
+    - name: Require the generated iPXE URL to use this run's token
+      ansible.builtin.assert:
+        that: pxe_url_prefix == boot_artifacts_token
+        fail_msg: "Generated iPXE does not match the selected boot token; refusing to serve stale or unprotected assets."
+      no_log: true
 
     - name: Ensure nginx is installed
       ansible.builtin.package:
@@ -108,6 +93,7 @@
       become: true
       register: pxe_stage
       changed_when: true
+      no_log: true
 
     - name: Write the nginx server block (listing OFF; only the tokenized path resolves)
       ansible.builtin.template:
@@ -118,6 +104,7 @@
         mode: "0644"
       become: true
       register: pxe_nginx_conf
+      no_log: true
 
     - name: Apply SELinux context to the webroot (if SELinux enforcing)
       ansible.builtin.command: "{{ item }}"
@@ -167,6 +154,7 @@
       retries: 3
       delay: 2
       until: pxe_range_check.status == 206
+      no_log: true
 
     - name: Verify the initrd is NOT reachable at the guessable root
       ansible.builtin.uri:
@@ -176,9 +164,9 @@
       register: pxe_root_check
       when: pxe_url_prefix | length > 0
 
-    - name: Report the iPXE URL to feed Latitude
+    - name: Report the protected boot endpoint status
       ansible.builtin.debug:
         msg: >-
-          Boot artifacts published. Feed Latitude this iPXE URL:
-          http://{{ bastion_public_ipv4 }}:{{ boot_artifacts_port }}/{{ pxe_url_prefix }}{{ '/' if pxe_url_prefix | length > 0 else '' }}agent.x86_64.ipxe
-          — AFTER the node boots, run the site stop tag (pxe_mode=stop) to close it.
+          Boot artifacts are ready for the selected fresh installation; the boot token is omitted from logs.
+          The wrapper closes this endpoint after a successful install. For a staged/manual run,
+          run the pxe-stop tag once boot artifacts are no longer needed.

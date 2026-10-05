@@ -29,6 +29,7 @@ ssh_key_ids = ["ssh_XXXXXXXXXXXXX"] # FILL: your Latitude SSH key ID — same ke
 mirror_init_user = "init"
 mirror_root      = "/opt/mirror"
 
-# Supply-chain: pin a versioned URL + its sha256 before customer use (rig may run unverified).
+# Required: verify a versioned archive URL and its published SHA-256 before provisioning.
+# No latest/unverified fallback is supported.
 # mirror_registry_url    = "https://mirror.openshift.com/pub/cgw/mirror-registry/<ver>/mirror-registry-amd64.tar.gz"
 # mirror_registry_sha256 = "<sha256 of the tarball>"

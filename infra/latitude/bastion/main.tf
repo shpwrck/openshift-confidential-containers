@@ -16,10 +16,11 @@
 # (../bastion/terraform.tfstate) — so apply THIS module first.
 
 terraform {
+  required_version = ">= 1.13, < 2.0"
   required_providers {
     latitudesh = {
       source  = "latitudesh/latitudesh"
-      version = "~> 3.3" # resolved to v3.3.0
+      version = "= 4.6.0" # reviewed provider schema; locked per module
     }
   }
 }
@@ -43,6 +44,7 @@ resource "latitudesh_virtual_network" "rig" {
 # only disk for the mirror cache + internet egress to populate it. Pick the smallest plan
 # with enough disk via `lsh plans list`; leave the slug to var.plan (do not invent one).
 resource "latitudesh_server" "bastion" {
+  allow_reinstall  = false # reinstall is an explicit, journaled Ansible operation
   project          = var.project
   hostname         = var.hostname
   plan             = var.plan

@@ -5,17 +5,20 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/compat.sh
 source "${REPO_ROOT}/scripts/lib/compat.sh"
+# shellcheck source=scripts/lib/release.sh
+source "${REPO_ROOT}/scripts/lib/release.sh"
+UBI_IMAGE="$(release_value images.ubiMinimal.ref)"
 MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 # Default to the MIRROR copy: this repo targets an air-gapped bastion where the public
 # registry.access.redhat.com is unreachable. The mirror preserves the manifest digest; override
 # SOURCE_IMAGE for a connected build.
-SOURCE_IMAGE="${SOURCE_IMAGE:-${MIRROR_REGISTRY}/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63}"
+SOURCE_IMAGE="${SOURCE_IMAGE:-${MIRROR_REGISTRY}/${UBI_IMAGE#*/}}"
 SOURCE_IMAGE_REF="${SOURCE_IMAGE_REF:-docker://${SOURCE_IMAGE}}"
 SKOPEO_COPY_ARGS="${SKOPEO_COPY_ARGS:---remove-signatures}"
 # TLS-verify escape for registry reads/inspects, independent of SKOPEO_COPY_ARGS — e.g. on a fresh
 # box that lacks the mirror CA: SKOPEO_INSPECT_ARGS="--tls-verify=false".
 SKOPEO_INSPECT_ARGS="${SKOPEO_INSPECT_ARGS:-}"
-ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-image-artifacts}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-${COCO_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openshift-confidential-containers}/rung-image-artifacts}"
 RUNG_ENCRYPTED_IMAGE="${RUNG_ENCRYPTED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-c:encrypted}"
 RUNG_SIGNED_IMAGE="${RUNG_SIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
 RUNG_SIGNED_UNSIGNED_IMAGE="${RUNG_SIGNED_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b-unsigned:unsigned}"
@@ -32,6 +35,18 @@ COSIGN_VERIFY_ARGS="${COSIGN_VERIFY_ARGS:-}"
 VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="${VERIFY_RUNG_ARTIFACTS_AFTER_BUILD:-1}"
 VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT="${VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-encrypted-key-wrap.sh}"
 VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT="${VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-signed-signature.sh}"
+
+# Keys and registry credentials must never be generated in the checkout or Homelab.
+python3 - "$REPO_ROOT" "$ARTIFACT_DIR" "$COSIGN_KEY" "$RUNG_ENCRYPTED_KEY_FILE" <<'PYGUARD'
+from pathlib import Path
+import sys
+repo = Path(sys.argv[1]).resolve()
+for item in sys.argv[2:]:
+    path = Path(item).expanduser().resolve()
+    if path == repo or repo in path.parents or str(path).lower() == '/mnt/c/homelab' or str(path).lower().startswith('/mnt/c/homelab/'):
+        sys.exit('ERROR: image artifacts and keys must be outside the repository and Homelab; use COCO_STATE_DIR')
+PYGUARD
+umask 077
 
 die() {
 	echo "ERROR: $*" >&2
@@ -194,16 +209,27 @@ generate_rung_encrypted_key() {
 }
 
 ensure_cosign_keys() {
+	local key_tmp
 	if [[ -s "$COSIGN_KEY" && -s "$COSIGN_PUB" ]]; then
 		return
 	fi
+	# Do not rotate an established identity just because its companion file is missing.
+	[[ ! -e "$COSIGN_KEY" && ! -e "$COSIGN_PUB" ]] || die "incomplete cosign key pair; restore the missing companion instead of generating a new identity"
 	[[ -n "${COSIGN_PASSWORD:-}" ]] || die "set COSIGN_PASSWORD to generate/sign the rung-signed key pair"
 	echo "Generating cosign key pair under $ARTIFACT_DIR"
-	(
-		cd "$ARTIFACT_DIR"
-		COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign generate-key-pair >/dev/null
-	)
-	[[ -s "$COSIGN_KEY" && -s "$COSIGN_PUB" ]] || die "cosign key generation did not create $COSIGN_KEY and $COSIGN_PUB"
+	key_tmp="$(mktemp -d "$ARTIFACT_DIR/.cosign-key.XXXXXX")"
+	if ! (cd "$key_tmp" && COSIGN_PASSWORD="$COSIGN_PASSWORD" cosign generate-key-pair >/dev/null); then
+		rm -rf "$key_tmp"
+		die "cosign key generation failed; configured key paths were not replaced"
+	fi
+	if [[ ! -s "$key_tmp/cosign.key" || ! -s "$key_tmp/cosign.pub" ]]; then
+		rm -rf "$key_tmp"
+		die "cosign key generation returned without a complete key pair"
+	fi
+	mkdir -p "$(dirname "$COSIGN_KEY")" "$(dirname "$COSIGN_PUB")"
+	mv "$key_tmp/cosign.key" "$COSIGN_KEY"
+	mv "$key_tmp/cosign.pub" "$COSIGN_PUB"
+	rmdir "$key_tmp"
 	chmod 0600 "$COSIGN_KEY"
 }
 
@@ -380,10 +406,25 @@ if [[ "${1:-}" == "sign-rung-signed-only" ]]; then
 	# are the `:signed`/`:unsigned` TAGS. Source this file or read the digest refs from it.
 	rb_digest="$(skopeo_inspect "docker://${RUNG_SIGNED_IMAGE}" | jq -r '.Digest')"
 	ru_digest="$(skopeo_inspect "docker://${RUNG_SIGNED_UNSIGNED_IMAGE}" | jq -r '.Digest')"
+	[[ "$rb_digest" =~ ^sha256:[0-9a-f]{64}$ && "$ru_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "signed/unsigned registry digest is missing or invalid"
+	# A prior run may have left a cosign signature on the unsigned repository. Check the
+	# published control too; a successful signed build alone cannot establish that it is unsigned.
+	rb_ref="$(image_digest_ref "$RUNG_SIGNED_IMAGE" "$rb_digest")"
+	ru_ref="$(image_digest_ref "$RUNG_SIGNED_UNSIGNED_IMAGE" "$ru_digest")"
+	signed_manifest="$ARTIFACT_DIR/rung-signed-manifest.json"
+	jq -n --arg image "$rb_ref" --arg unsigned "$ru_ref" --arg pub "$COSIGN_PUB" \
+		--arg pub_sha "$(file_sha256 "$COSIGN_PUB")" \
+		'{rung_signed:{digest_ref:$image,unsigned_digest_ref:$unsigned,cosign_pub:$pub,cosign_pub_sha256:$pub_sha}}' \
+		> "$signed_manifest"
+	require_script "$VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT"
+	RUNG_SIGNED_IMAGE="$rb_ref" RUNG_SIGNED_UNSIGNED_IMAGE="$ru_ref" RUNG_SIGNED_COSIGN_PUB="$COSIGN_PUB" \
+		RUNG_IMAGE_MANIFEST="$signed_manifest" REQUIRE_RUNG_IMAGE_MANIFEST=1 COSIGN_VERIFY_ARGS="$COSIGN_VERIFY_ARGS" \
+		bash "$VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT"
 	{
-		echo "export RUNG_SIGNED_IMAGE=$(image_digest_ref "$RUNG_SIGNED_IMAGE" "$rb_digest")"
-		echo "export RUNG_SIGNED_UNSIGNED_IMAGE=$(image_digest_ref "$RUNG_SIGNED_UNSIGNED_IMAGE" "$ru_digest")"
-		echo "export RUNG_SIGNED_COSIGN_PUB=$COSIGN_PUB"
+		printf 'export RUNG_SIGNED_IMAGE=%q\n' "$(image_digest_ref "$RUNG_SIGNED_IMAGE" "$rb_digest")"
+		printf 'export RUNG_SIGNED_UNSIGNED_IMAGE=%q\n' "$(image_digest_ref "$RUNG_SIGNED_UNSIGNED_IMAGE" "$ru_digest")"
+		printf 'export RUNG_SIGNED_COSIGN_PUB=%q\n' "$COSIGN_PUB"
+		printf 'export RUNG_IMAGE_MANIFEST=%q\n' "$signed_manifest"
 	} > "$ARTIFACT_DIR/rung-signed.env"
 	echo "Wrote $ARTIFACT_DIR/rung-signed.env — 'source' it (or pass RUNG_SIGNED_IMAGE=<digest-ref>) before deploy-trustee-rung-signed / run-rung-signed."
 	exit 0

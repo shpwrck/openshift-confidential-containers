@@ -1,5 +1,7 @@
 # Manual Install Guide — OpenShift Confidential Containers (SEV-SNP, air-gapped)
 
+> **Historical baseline:** version-specific commands below describe the earlier rig. For OSC 1.13 / Trustee 1.2, start with [the current quickstart](current-quickstart.md) and its release inventory. Historical results do not validate the new release set.
+
 A fully **manual**, provider-neutral procedure for standing up the air-gapped
 single-node OpenShift (SNO) Confidential Containers (CoCo) verification environment **by
 hand** — every step done without Terraform, Ansible, or the `Makefile`.

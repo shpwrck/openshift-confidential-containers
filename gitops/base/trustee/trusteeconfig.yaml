@@ -1,0 +1,14 @@
+# Customer baseline: TLS Secrets are provisioned out of band. For the complete
+# offline bootstrap/configure workflow use scripts/apply-trustee.sh.
+apiVersion: confidentialcontainers.org/v1alpha1
+kind: TrusteeConfig
+metadata:
+  name: trustee-config
+  namespace: trustee-operator-system
+spec:
+  profileType: Restricted
+  kbsServiceType: ClusterIP
+  httpsSpec:
+    tlsSecretName: kbs-https-cert
+  attestationTokenVerificationSpec:
+    tlsSecretName: kbs-token-cert

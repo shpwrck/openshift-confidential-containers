@@ -1,5 +1,7 @@
 # Air-Gapped SNO + Confidential Containers Bring-Up — Execution Plan (SEV-SNP, Latitude.sh)
 
+> **Historical baseline:** version-specific commands below describe the earlier rig. For OSC 1.13 / Trustee 1.2, start with [the current quickstart](../current-quickstart.md) and its release inventory. Historical results do not validate the new release set.
+
 **Target:** OCP **4.20.18** · OSC **1.12** · Trustee **1.1** · TEE = **AMD SEV-SNP (Genoa)** · Single-Node OpenShift on disposable Latitude bare metal, behind a persistent mirror bastion.
 
 This is the disposable verification rig that proves each CoCo capability (secret release → measurement verification → signed image → encrypted image) under a *real* air gap before any of it touches a production cluster. For a fresh rig, start at Phase 0 and treat every stop-gate below as live. Current state: the SNO/Trustee rig is up, rung-signed has scoped happy/unsigned-denial evidence, and rung-encrypted remains blocked on the direct CRI-O/Kata encrypted-image pull path tracked upstream ([cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084)).

@@ -103,6 +103,7 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
+      umask 077
       MIRROR_ROOT="${mirror_root}"
       QUAY_ROOT="$MIRROR_ROOT/quay"
       mkdir -p "$QUAY_ROOT"
@@ -120,18 +121,15 @@ write_files:
       fi
       chmod 600 "$PW_FILE"
 
-      # --- fetch mirror-registry; verify checksum when pinned (supply-chain) ------------
+      # --- fetch the explicit mirror-registry archive; verification is mandatory -------
       URL="${mirror_registry_url}"
       SHA="${mirror_registry_sha256}"
+      [[ "$URL" == https://* && "$URL" != */latest/* && "$SHA" =~ ^[0-9a-fA-F]{64}$ ]] \
+        || { echo "FATAL: versioned HTTPS mirror-registry URL and SHA-256 are required"; exit 1; }
       cd /opt
-      curl -fsSL "$URL" -o mirror-registry.tar.gz
-      if [ -n "$SHA" ]; then
-        echo "$SHA  mirror-registry.tar.gz" | sha256sum -c - \
-          || { echo "FATAL: mirror-registry checksum mismatch"; exit 1; }
-      else
-        echo "WARN: mirror_registry_sha256 unset — running UNVERIFIED mirror-registry as root."
-        echo "WARN: pin a sha256 (and a versioned URL, not 'latest') before customer use."
-      fi
+      curl -fsSL --retry 3 "$URL" -o mirror-registry.tar.gz
+      echo "$SHA  mirror-registry.tar.gz" | sha256sum -c - \
+        || { echo "FATAL: mirror-registry checksum mismatch"; exit 1; }
       mkdir -p /opt/mirror-registry && tar -xzf mirror-registry.tar.gz -C /opt/mirror-registry
 
       # mirror-registry installs quay via ANSIBLE over SSH to the target host. Rocky images have

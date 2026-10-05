@@ -1,0 +1,209 @@
+---
+# Kept separate so artifact invalidation can be exercised locally without nginx or a provider.
+- name: Require an explicit fresh-install artifact build
+  ansible.builtin.assert:
+    that:
+      - (install_mode | default('verify')) == 'fresh'
+      - (tee | default('snp')) == 'snp'
+      - cluster_assets_dir is match('^/')
+      - install_src_dir is match('^/')
+      - cluster_assets_dir not in ['/', '/opt', '/opt/install', '/home', '/root', '/tmp']
+      - boot_artifacts_dir == cluster_assets_dir ~ '/boot-artifacts'
+      - install_src_dir != cluster_assets_dir
+      - not install_src_dir.startswith(cluster_assets_dir ~ '/')
+      - ocp_release_image | default('') is search('@sha256:[0-9a-f]{64}$')
+    fail_msg: "PXE creation requires install_mode=fresh, separate absolute source/assets directories, and an exact ocp_release_image."
+
+- name: Inspect installer and complete source inputs
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+    follow: false
+  become: true
+  loop:
+    - "{{ install_src_dir }}/install-config.yaml"
+    - "{{ install_src_dir }}/agent-config.yaml"
+    - "{{ local_bin }}/openshift-install"
+  register: pxe_inputs
+
+- name: Require regular source files and installer
+  ansible.builtin.assert:
+    that: item.stat.isreg | default(false)
+    fail_msg: "A source config or installer is missing; run render and tools preparation first."
+  loop: "{{ pxe_inputs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Verify installer release and payload identity
+  ansible.builtin.command:
+    argv: ["{{ local_bin }}/openshift-install", version]
+  become: true
+  register: pxe_installer_version
+  changed_when: false
+
+- name: Require the installer to match the mirrored payload
+  ansible.builtin.assert:
+    that:
+      - (pxe_installer_version.stdout_lines | first).split()[1] == ocp_version
+      - ocp_release_image.split('@')[-1] in pxe_installer_version.stdout
+    fail_msg: "Installer release/payload differs from the BOM. Extract the matching installer from the mirrored release before creating PXE assets."
+
+- name: Fingerprint boot inputs and tool identity
+  ansible.builtin.set_fact:
+    pxe_input_identity: >-
+      {{ {'configs': pxe_inputs.results[:2] | map(attribute='stat.checksum') | list,
+          'installer': pxe_inputs.results[2].stat.checksum,
+          'release': ocp_release_image, 'version': ocp_version} | to_json | hash('sha256') }}
+
+- name: Inspect previous boot artifact state
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  become: true
+  loop:
+    - "{{ cluster_assets_dir }}"
+    - "{{ cluster_assets_dir }}/.coco-pxe-inputs"
+    - "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
+    - "{{ cluster_assets_dir }}/auth/kubeconfig"
+    - "{{ boot_artifacts_dir }}/agent.x86_64-vmlinuz"
+    - "{{ boot_artifacts_dir }}/agent.x86_64-initrd.img"
+  register: pxe_prior
+
+- name: Refuse a symlink for the generated assets directory
+  ansible.builtin.assert:
+    that: not (pxe_prior.results[0].stat.islnk | default(false))
+    fail_msg: "cluster_assets_dir must be a dedicated directory, not a symlink."
+
+- name: Read prior boot input identity
+  ansible.builtin.slurp:
+    src: "{{ cluster_assets_dir }}/.coco-pxe-inputs"
+  become: true
+  register: pxe_prior_identity
+  when: pxe_prior.results[1].stat.exists
+
+- name: Decide whether boot assets need regeneration
+  ansible.builtin.set_fact:
+    pxe_rebuild: >-
+      {{ (pxe_prior_identity.content | default('') | b64decode | trim) != pxe_input_identity
+         or not pxe_prior.results[2].stat.exists
+         or not pxe_prior.results[4].stat.exists
+         or not pxe_prior.results[5].stat.exists }}
+
+- name: Protect existing cluster assets from an accidental reinstall
+  ansible.builtin.assert:
+    that: not (pxe_rebuild | bool) or not pxe_prior.results[3].stat.exists or (reinstall_existing | default(false) | bool)
+    fail_msg: >-
+      Inputs changed for assets that already contain a kubeconfig. This is a fresh-install path,
+      not an upgrade. Choose an empty assets directory, or explicitly set reinstall_existing=true
+      for the disposable machines being rebuilt; preserve required state first.
+
+# Provider action evidence must survive regenerated PXE assets, including ambiguous requests.
+- name: Select durable provider journal location
+  ansible.builtin.set_fact:
+    provider_request_dir: "{{ install_request_dir | default((cluster_assets_dir | dirname) ~ '/provider-requests') }}"
+
+- name: Require provider journals outside generated installer state
+  ansible.builtin.assert:
+    that:
+      - provider_request_dir.startswith('/')
+      - provider_request_dir != cluster_assets_dir
+      - not provider_request_dir.startswith(cluster_assets_dir ~ '/')
+    fail_msg: "install_request_dir must be an absolute directory outside cluster_assets_dir."
+
+- name: Locate provider request records before replacing assets
+  ansible.builtin.find:
+    paths: ["{{ cluster_assets_dir }}", "{{ provider_request_dir }}"]
+    patterns: ".coco-reinstall-*.json"
+    hidden: true
+    file_type: file
+  become: true
+  register: pxe_request_records
+  when: pxe_rebuild | bool
+
+- name: Keep legacy journals until explicitly migrated
+  ansible.builtin.assert:
+    that: not item.path.startswith(cluster_assets_dir ~ '/')
+    fail_msg: >-
+      A provider request journal is inside replaceable assets. Inspect provider state and move
+      that journal to {{ provider_request_dir }} before rebuilding; the evidence must survive.
+  loop: "{{ pxe_request_records.files | default([]) }}"
+
+- name: Read durable request states before replacing boot artifacts
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  become: true
+  loop: "{{ pxe_request_records.files | default([]) }}"
+  register: pxe_request_states
+
+- name: Refuse to discard boot assets for an ambiguous provider request
+  ansible.builtin.assert:
+    that: >-
+      (item.content | b64decode | from_json).get('state', '') != 'sending'
+      or (retry_reinstall | default(false) | bool)
+    fail_msg: >-
+      A provider reinstall request is ambiguous. Inspect the provider before changing its boot
+      artifacts. Set retry_reinstall=true only after confirming that the request was not accepted.
+  loop: "{{ pxe_request_states.results | default([]) }}"
+
+- name: Regenerate artifacts from only the selected input revision
+  when: pxe_rebuild | bool
+  block:
+    - name: Remove stale generated installer state
+      ansible.builtin.file:
+        path: "{{ cluster_assets_dir }}"
+        state: absent
+      become: true
+
+    - name: Create private installer assets directory
+      ansible.builtin.file:
+        path: "{{ cluster_assets_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      become: true
+
+    - name: Stage the exact source configurations
+      ansible.builtin.copy:
+        src: "{{ install_src_dir }}/{{ item }}"
+        dest: "{{ cluster_assets_dir }}/{{ item }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+      no_log: true
+      loop: [install-config.yaml, agent-config.yaml]
+
+    - name: Build the requested PXE artifact set
+      ansible.builtin.command:
+        argv: ["{{ local_bin }}/openshift-install", --dir, "{{ cluster_assets_dir }}", agent, create, pxe-files]
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      changed_when: true
+      no_log: true
+
+    - name: Check that artifact generation completed
+      ansible.builtin.stat:
+        path: "{{ boot_artifacts_dir }}/{{ item }}"
+      become: true
+      register: pxe_generated
+      loop: [agent.x86_64.ipxe, agent.x86_64-vmlinuz, agent.x86_64-initrd.img]
+
+    - name: Require the generated iPXE entry point
+      ansible.builtin.assert:
+        that: item.stat.isreg | default(false)
+        fail_msg: "Installer returned without a complete PXE artifact set; completion was not recorded."
+      loop: "{{ pxe_generated.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Record successful boot input identity atomically
+      ansible.builtin.copy:
+        content: "{{ pxe_input_identity }}\n"
+        dest: "{{ cluster_assets_dir }}/.coco-pxe-inputs"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true

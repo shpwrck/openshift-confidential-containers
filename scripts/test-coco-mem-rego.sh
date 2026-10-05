@@ -11,8 +11,7 @@
 # Extracts the rego straight out of the ConstraintTemplate so the test can never drift from the
 # manifest that is actually applied.
 #
-# Requires `opa` on PATH (https://openpolicyagent.org/downloads). Skips cleanly if absent, so it
-# is safe to wire into lint on machines that do not have it.
+# Requires `opa` on PATH; make install-dev-tools provides the pinned binary.
 #
 # Gatekeeper uses Rego v0, while opa >= 1.0 defaults to v1 — hence --v0-compatible throughout.
 set -euo pipefail
@@ -22,8 +21,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 MANIFEST="gitops/base/gatekeeper/constraint-coco-mem.yaml"
 
 if ! command -v opa >/dev/null 2>&1; then
-	echo "coco-mem rego tests SKIPPED (#70): opa not on PATH"
-	exit 0
+	echo "ERROR: opa is required; run make install-dev-tools" >&2
+	exit 2
 fi
 
 tmp="$(mktemp -d)"

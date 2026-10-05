@@ -1,167 +1,48 @@
 #!/usr/bin/env bash
-# Render restrictive Trustee policies for the measured-initdata gate.
+# Offline CPU-policy extension: preserves vendor appraisals, emits no resource policy.
 set -euo pipefail
-# shellcheck source=scripts/lib/compat.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compat.sh"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
+  cat <<'EOF'
+usage: BASE_CPU_POLICY_FILE=<actual-default_cpu.rego> render-measurement-policy.sh <rendered-initdata.toml>
 
-NS="${NS:-trustee-operator-system}"
-RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-encrypted}"
+Outputs one Trustee 1.2 CPU ConfigMap in JSON (valid YAML).
+CPU_CONFIGMAP_NAME must identify the generated KbsConfig CPU-policy reference.
+The input policy must be the reviewed, installed Restricted CPU policy. Its
+hardware, launch and configuration appraisals are preserved. This renderer adds
+an initdata digest condition; it does not establish what the selected PodVM measures.
 
-die() {
-	echo "ERROR: $*" >&2
-	exit 2
-}
-
-need() {
-	command -v "$1" >/dev/null || die "$1 is not on PATH"
-}
-
-kbs_uri_resource_path() {
-	local uri="$1" path
-	if [[ "$uri" != kbs:///* ]]; then
-		die "KBS URI must start with kbs:///: $uri"
-	fi
-	path="${uri#kbs:///}"
-	[[ -n "$path" && "$path" != /* ]] || die "KBS URI has no resource path: $uri"
-	printf '%s\n' "$path"
-}
-
-rego_array_for_path() {
-	local path="$1" part
-	local -a parts
-	IFS=/ read -r -a parts <<< "$path"
-	for part in "${parts[@]}"; do
-		[[ -n "$part" ]] || die "KBS URI contains an empty path component: $path"
-	done
-	printf '%s\n' "${parts[@]}" | jq -R . | jq -s -c .
-}
-
-render() {
-	local initdata_file="$1" key_path key_path_rego initdata_sha256
-
-	[[ -f "$initdata_file" ]] || die "initdata file not found: $initdata_file"
-	need jq
-
-	# Reject ANY unresolved __PLACEHOLDER__ (__KBS_URL__, __TRUSTEE_CA_PEM__, __MIRROR_CA_PEM__, …).
-	# The earlier guard listed only two and missed __MIRROR_CA_PEM__ that the example initdata carries.
-	if grep -Eq '__[A-Z][A-Z0-9_]*__' "$initdata_file"; then
-		die "$initdata_file still has unresolved initdata placeholders (__...__)"
-	fi
-	# Allow an optional trailing TOML inline comment after the algorithm line (the example file has one).
-	if ! grep -Eq '^algorithm[[:space:]]*=[[:space:]]*"sha256"[[:space:]]*(#.*)?$' "$initdata_file"; then
-		die "$initdata_file must declare algorithm = \"sha256\" for this SNP HOST_DATA policy renderer"
-	fi
-
-	# CAVEAT (verify on the encrypted-image path — currently upstream-blocked): this is the sha256 of the
-	# initdata FILE as-is. The policy below gates the image key on the attestation report's init_data
-	# matching this digest, so it is correct ONLY if OSC measures these same bytes into init_data /
-	# HOST_DATA. If OSC measures a different encoding (e.g. the gzip+base64 annotation value, or a
-	# canonicalized form), the digest never matches and the key is silently withheld. Confirm against
-	# a real encrypted-image attestation report before relying on this.
-	initdata_sha256="$(sha256_file "$initdata_file")"
-	key_path="$(kbs_uri_resource_path "$RUNG_ENCRYPTED_KEY_ID")"
-	key_path_rego="$(rego_array_for_path "$key_path")"
-
-	cat <<YAML
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: attestation-policy
-  namespace: ${NS}
-data:
-  default_cpu.rego: |
-    package policy
-
-    import rego.v1
-
-    # AR4SI (RATS EAR) trustworthiness tiers: 2 = "Affirming" (claim verified/trusted); higher
-    # tiers (32+, e.g. 36) are "Warning"/not-affirmed. The image key is released (resource-policy
-    # below) only when 'configuration' is 2 — which happens ONLY if the measured init_data matches
-    # our digest. The 36 default keeps 'configuration' un-affirmed until that match, so a measured-
-    # initdata mismatch leaves it at 36 and the key is withheld. Other claims default to 2 (affirmed).
-    default hardware := 2
-    default executables := 2
-    default configuration := 36
-    default file_system := 2
-    default instance_identity := 2
-    default runtime_opaque := 2
-    default storage_opaque := 2
-    default sourced_data := 2
-
-    configuration := 2 if {
-      input.init_data == "${initdata_sha256}"
-    }
-
-    trust_claims := {
-      "executables": executables,
-      "hardware": hardware,
-      "configuration": configuration,
-      "file-system": file_system,
-      "instance-identity": instance_identity,
-      "runtime-opaque": runtime_opaque,
-      "storage-opaque": storage_opaque,
-      "sourced-data": sourced_data,
-    }
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: resource-policy
-  namespace: ${NS}
-data:
-  policy.rego: |
-    package policy
-
-    import rego.v1
-
-    default allow := false
-
-    image_key_path := ${key_path_rego}
-
-    image_key_request if {
-      data.plugin == "resource"
-      data["resource-path"] == image_key_path
-    }
-
-    allow if {
-      data.plugin == "resource"
-      not image_key_request
-    }
-
-    allow if {
-      image_key_request
-      some sm
-      input["submods"][sm]["ear.trustworthiness-vector"]["configuration"] == 2
-    }
-YAML
-}
-
-usage() {
-	cat >&2 <<'EOF'
-usage: render-measurement-policy.sh <rendered-initdata.toml>
-
-Renders two ConfigMaps:
-  - attestation-policy: affirms configuration only when input.init_data equals
-    the SHA-256 HOST_DATA value for the provided initdata TOML.
-  - resource-policy: releases only the RUNG_ENCRYPTED_KEY_ID resource when the EAR
-    trustworthiness-vector configuration claim is affirming.
-
-Environment:
-  NS              Trustee namespace (default: trustee-operator-system)
-  RUNG_ENCRYPTED_KEY_ID   KBS URI for the encrypted-image key
+Prerequisite: a reviewed default-deny resource policy must enforce affirming
+hardware, executables and configuration appraisals. No resource policy is generated.
+Run paired allow/tamper/recovery hardware proofs before relying on this binding.
 EOF
-}
-
-case "${1:-}" in
-	-h|--help)
-		usage
-		exit 0
-		;;
-	"")
-		usage
-		exit 2
-		;;
-	*)
-		render "$1"
-		;;
-esac
+  exit 0
+fi
+[[ "$#" == 1 && -s "$1" ]] || { echo 'ERROR: provide exactly one rendered initdata TOML file' >&2; exit 2; }
+[[ -s "${BASE_CPU_POLICY_FILE:-}" ]] || { echo 'ERROR: BASE_CPU_POLICY_FILE must be the actual reviewed CPU policy' >&2; exit 2; }
+[[ -n "${CPU_CONFIGMAP_NAME:-}" ]] || { echo 'ERROR: CPU_CONFIGMAP_NAME must be resolved from KbsConfig.spec.kbsAttestationPolicyConfigMapName' >&2; exit 2; }
+python3 - "$REPO_ROOT/scripts/lib" "$BASE_CPU_POLICY_FILE" "$1" "$CPU_CONFIGMAP_NAME" "${NS:-trustee-operator-system}" "${TEE:-snp}" <<'PY'
+import hashlib, json, pathlib, re, sys, tomllib
+sys.path.insert(0, sys.argv[1])
+from proof_core import Incomplete, bind_initdata_policy
+from trustee_config import name, restricted_cpu_features
+try:
+    raw = pathlib.Path(sys.argv[3]).read_bytes()
+    text = raw.decode()
+    if re.search(r'__[A-Z][A-Z0-9_]*__', text):
+        raise ValueError("initdata contains unresolved placeholders")
+    if tomllib.loads(text).get("algorithm") != "sha256":
+        raise ValueError("initdata must declare algorithm = sha256")
+    base = pathlib.Path(sys.argv[2]).read_text()
+    if sys.argv[6] != "snp":
+        raise ValueError("this workflow targets AMD SEV-SNP; set TEE=snp")
+    restricted_cpu_features(base, sys.argv[6])
+    cpu = bind_initdata_policy(base, hashlib.sha256(raw).hexdigest())
+    result = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": name(sys.argv[4]), "namespace": name(sys.argv[5])}, "data": {"default_cpu.rego": cpu}}
+    json.dump(result, sys.stdout, indent=2)
+    print()
+    print("CPU extension rendered; approved resource policy and paired hardware proof are prerequisites.", file=sys.stderr)
+except (ValueError, OSError, Incomplete) as exc:
+    print(f"ERROR: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+PY

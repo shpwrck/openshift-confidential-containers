@@ -4,8 +4,8 @@
 # hardware config (CPU family + firmware). See docs/design/engagement-design.md §4.
 #
 # Runs the coco-tools `veritas` generator over your initdata and emits an RVPS reference-values
-# YAML to merge into the `rvps-reference-values` ConfigMap
-# referenced by gitops/base/trustee/kbsconfig.template.yaml.
+# ConfigMap payload in the Trustee 1.2 reference_value format.
+# Publish through apply-trustee.sh configure after reviewing the selected CPU policy.
 #
 # Where it runs: by default `podman` on THIS host (point it at the node, or copy initdata to the
 # node and run there). Set NODE=<name> to run it on the cluster node via `oc debug node` instead
@@ -14,11 +14,11 @@
 # Usage:    TEE=snp ./scripts/gen-rvps-veritas.sh             # local podman
 #           TEE=snp NODE=<node> ./scripts/gen-rvps-veritas.sh  # run on the node via oc debug
 # Env:
-#   TEE=snp|tdx
-#   OCP_VERSION="4.20.18"                         # repeat with spaces for multiple versions
-#   PULL_SECRET=./pull-secret.json
-#   INITDATA=./initdata-flavour-b.toml
-#   OUT=./rvps-<tee>.yaml
+#   TEE=snp
+#   OCP_VERSION=<BOM version>                         # repeat with spaces for multiple versions
+#   PULL_SECRET=$HOME/.local/state/coco/pull-secret.json
+#   INITDATA=$COCO_STATE_DIR/initdata.toml
+#   OUT=$COCO_STATE_DIR/rvps-snp.yaml
 #   DEBUG_IMAGE=<cached-image>                     # NODE mode only, avoids public support-tools
 #   REGISTRIES_CONF=./registries.conf              # mounted as /etc/containers/registries.conf
 #   REGISTRY_CERTS_DIR=/etc/containers/certs.d     # NODE mode path must exist on the node
@@ -36,13 +36,20 @@
 # REGISTRY_CERTS_DIR=<dir>/<mirror-host:port>/ca.crt. Then the tags-list authenticates to quay while
 # the heavy component-image pulls come from the mirror.
 set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/release.sh
+source "$REPO_ROOT/scripts/lib/release.sh"
+load_release_defaults
+TRUSTEE_NAME="${TRUSTEE_NAME:-trustee-config}"
+TRUSTEE_NS="${TRUSTEE_NS:-trustee-operator-system}"
 
 TEE="${TEE:-snp}"
-TOOLS_IMG="${TOOLS_IMG:-quay.io/openshift_sandboxed_containers/coco-tools@sha256:89c219d2c7cb8359e8cc86605df1d31ce3be0f2565683b8bff882dba0c8e2605}"
-OCP_VERSION="${OCP_VERSION:-4.20.18}"
-PULL_SECRET="${PULL_SECRET:-./pull-secret.json}"
-INITDATA="${INITDATA:-./initdata-flavour-b.toml}"
-OUT="${OUT:-./rvps-${TEE}.yaml}"
+TOOLS_IMG="${TOOLS_IMG:?resolved coco-tools image is required}"
+OCP_VERSION="${OCP_VERSION:?OCP_VERSION is required}"
+PULL_SECRET="${PULL_SECRET:-${COCO_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openshift-confidential-containers}/credentials/pull-secret.json}"
+COCO_STATE_DIR="${COCO_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openshift-confidential-containers}"
+INITDATA="${INITDATA:-${COCO_STATE_DIR}/initdata.toml}"
+OUT="${OUT:-${COCO_STATE_DIR}/rvps-${TEE}.yaml}"
 NODE="${NODE:-}"
 DEBUG_IMAGE="${DEBUG_IMAGE:-}"
 REGISTRIES_CONF="${REGISTRIES_CONF:-}"
@@ -51,7 +58,9 @@ VERITAS_OC_WRAPPER="${VERITAS_OC_WRAPPER:-}"
 VERITAS_EXTRA_ARGS="${VERITAS_EXTRA_ARGS:-}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
-[[ "${TEE}" == "snp" || "${TEE}" == "tdx" ]] || die "TEE must be 'snp' or 'tdx' (got '${TEE}')"
+command -v python3 >/dev/null || die "python3 is required for target RVPS validation"
+require_resolved_release
+[[ "${TEE}" == "snp" ]] || die "this workflow targets AMD SEV-SNP; set TEE=snp"
 [[ -s "${INITDATA}" ]] || die "initdata not found: ${INITDATA} (set INITDATA=...)"
 [[ -s "${PULL_SECRET}" ]] || die "pull secret not found: ${PULL_SECRET} (set PULL_SECRET=...)"
 [[ -n "${OCP_VERSION}" ]] || die "OCP_VERSION is required for Veritas baremetal mode"
@@ -66,6 +75,18 @@ b64() { base64 | tr -d '\n'; }                 # encode stdin to a single line (
 if printf '' | base64 -d >/dev/null 2>&1; then _b64d_flag='-d'; else _b64d_flag='-D'; fi
 b64d() { base64 "${_b64d_flag}"; }             # decode stdin (GNU `-d` / BSD `-D`)
 
+umask 077
+# Keep credential-bearing temporary node scripts outside the checkout regardless of TMPDIR.
+export TMPDIR=/tmp
+python3 - "$REPO_ROOT" "$PULL_SECRET" "$OUT" <<'CHECK'
+import pathlib, sys
+repo = pathlib.Path(sys.argv[1]).resolve()
+for item in sys.argv[2:]:
+    path = pathlib.Path(item).resolve()
+    if path == repo or repo in path.parents or str(path).casefold() == '/mnt/c/homelab' or str(path).casefold().startswith('/mnt/c/homelab/'):
+        raise SystemExit("ERROR: pull secret and RVPS output must be outside the checkout and Homelab")
+CHECK
+mkdir -p "$(dirname "$OUT")"
 cleanup_paths=()
 # shellcheck disable=SC2329  # invoked indirectly via the EXIT trap below
 cleanup() {
@@ -75,6 +96,8 @@ cleanup() {
   done
 }
 trap cleanup EXIT
+raw_output="$(mktemp /tmp/coco-rvps-raw.XXXXXX)"
+cleanup_paths+=("$raw_output")
 
 veritas_args=(veritas --platform baremetal --tee "${TEE}" --authfile /pull-secret.json --initdata /initdata.toml)
 for version in ${OCP_VERSION}; do
@@ -93,73 +116,65 @@ copy_veritas_output() {
 }
 
 if [[ -n "${NODE}" ]]; then
-  # Run on the node: stage inputs into the debug pod, run podman there, stream the YAML back.
+  # Stream protected input through stdin; never embed credentials in a debug Pod's command.
+  # shellcheck source=scripts/lib/cluster-context.sh
+  source "$REPO_ROOT/scripts/lib/cluster-context.sh"
+  load_worker_context
   command -v oc >/dev/null || die "oc not on PATH (needed for NODE mode)"
-  oc whoami >/dev/null 2>&1 || die "not logged into a cluster"
-  [[ -n "${DEBUG_IMAGE}" ]] || echo "WARN: DEBUG_IMAGE unset — 'oc debug' uses the default public support-tools image; on a disconnected cluster set DEBUG_IMAGE=<mirrored image>." >&2
+  worker_oc whoami >/dev/null 2>&1 || die "not logged into WORKER_CONTEXT"
+  [[ "$DEBUG_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]] || die "NODE mode requires a mirrored, immutable DEBUG_IMAGE"
   echo ">> running veritas (${TEE}) on node ${NODE}"
-  capture="$(mktemp)"
+  capture="$(mktemp "${OUT}.log.XXXXXX")"
   node_script="$(mktemp)"
-  cleanup_paths+=("${capture}" "${node_script}")
-  # NODE mode has no clean way to copy files in/out of an ephemeral `oc debug` pod, and the pod's
-  # stdout is interleaved with debug chatter. So: base64-INJECT the inputs + node script into the
-  # pod, and FENCE the YAML output between __VERITAS_RVPS_B64_*__ markers so it can be awk-extracted
-  # cleanly from the noisy stream (decoded by the awk + b64d below).
+  cleanup_paths+=("${node_script}")
   b64_ps="$(b64 < "${PULL_SECRET}")"
   b64_id="$(b64 < "${INITDATA}")"
   b64_registries=""
   b64_oc_wrapper=""
   [[ -n "${REGISTRIES_CONF}" ]] && b64_registries="$(b64 < "${REGISTRIES_CONF}")"
   [[ -n "${VERITAS_OC_WRAPPER}" ]] && b64_oc_wrapper="$(b64 < "${VERITAS_OC_WRAPPER}")"
-  cat > "${node_script}" <<EOF
-set -euo pipefail
-t=\$(mktemp -d)
-trap 'rm -rf "\${t}"' EXIT
-mkdir -p "\${t}/out"
-printf '%s' '${b64_ps}' | base64 -d > "\${t}/pull-secret.json"
-printf '%s' '${b64_id}' | base64 -d > "\${t}/initdata.toml"
-podman_args=(run --rm --privileged -v /dev:/dev -v "\${t}:/work:z" -v "\${t}/pull-secret.json:/pull-secret.json:ro,z" -v "\${t}/initdata.toml:/initdata.toml:ro,z")
-if [[ -n '${b64_registries}' ]]; then
-  # mount ONLY registries.conf — bind-mounting a dir over /etc/containers would hide the
-  # image's policy.json + registries.d/ that veritas's inner image pulls rely on
-  printf '%s' '${b64_registries}' | base64 -d > "\${t}/registries.conf"
-  podman_args+=(-v "\${t}/registries.conf:/etc/containers/registries.conf:ro,z")
+  {
+    printf 'set -euo pipefail\numask 077\n'
+    printf 'b64_ps=%q\nb64_id=%q\nb64_registries=%q\nb64_oc_wrapper=%q\n' "$b64_ps" "$b64_id" "$b64_registries" "$b64_oc_wrapper"
+    printf 'REGISTRY_CERTS_DIR=%q\nTOOLS_IMG=%q\n' "$REGISTRY_CERTS_DIR" "$TOOLS_IMG"
+    printf 'veritas_args=('
+    printf '%q ' "${veritas_args[@]}"
+    printf ')\n'
+    cat <<'NODE_SCRIPT'
+t=$(mktemp -d)
+trap 'rm -rf "${t}"' EXIT
+mkdir -p "${t}/out"
+printf '%s' "$b64_ps" | base64 -d > "${t}/pull-secret.json"
+printf '%s' "$b64_id" | base64 -d > "${t}/initdata.toml"
+podman_args=(run --rm --privileged -v /dev:/dev -v "${t}:/work:z" -v "${t}/pull-secret.json:/pull-secret.json:ro,z" -v "${t}/initdata.toml:/initdata.toml:ro,z")
+if [[ -n "$b64_registries" ]]; then
+  printf '%s' "$b64_registries" | base64 -d > "${t}/registries.conf"
+  podman_args+=(-v "${t}/registries.conf:/etc/containers/registries.conf:ro,z")
 fi
-if [[ -n '${REGISTRY_CERTS_DIR}' ]]; then
-  [[ -d '${REGISTRY_CERTS_DIR}' ]] || { echo "ERROR: REGISTRY_CERTS_DIR not found on node: ${REGISTRY_CERTS_DIR}" >&2; exit 1; }
-  podman_args+=(-v '${REGISTRY_CERTS_DIR}:/etc/containers/certs.d:ro,z')
+if [[ -n "$REGISTRY_CERTS_DIR" ]]; then
+  [[ -d "$REGISTRY_CERTS_DIR" ]] || { echo "ERROR: registry certificate directory not found on node" >&2; exit 1; }
+  podman_args+=(-v "${REGISTRY_CERTS_DIR}:/etc/containers/certs.d:ro,z")
 fi
-if [[ -n '${b64_oc_wrapper}' ]]; then
-  mkdir -p "\${t}/bin"
-  printf '%s' '${b64_oc_wrapper}' | base64 -d > "\${t}/bin/oc"
-  chmod +x "\${t}/bin/oc"
-  podman_args+=(-v "\${t}/bin:/veritas-bin:ro,z" -e PATH="/veritas-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+if [[ -n "$b64_oc_wrapper" ]]; then
+  mkdir -p "${t}/bin"
+  printf '%s' "$b64_oc_wrapper" | base64 -d > "${t}/bin/oc"
+  chmod +x "${t}/bin/oc"
+  podman_args+=(-v "${t}/bin:/veritas-bin:ro,z" -e PATH="/veritas-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 fi
-veritas_args=(veritas --platform baremetal --tee '${TEE}' --authfile /pull-secret.json --initdata /initdata.toml)
-for version in ${OCP_VERSION}; do
-  veritas_args+=(--ocp-version "\${version}")
-done
-if [[ -n '${VERITAS_EXTRA_ARGS}' ]]; then
-  read -r -a extra_args <<< '${VERITAS_EXTRA_ARGS}'
-  veritas_args+=("\${extra_args[@]}")
-fi
-podman "\${podman_args[@]}" '${TOOLS_IMG}' "\${veritas_args[@]}" -o /work/out >&2
+podman "${podman_args[@]}" "$TOOLS_IMG" "${veritas_args[@]}" -o /work/out >&2
 printf '__VERITAS_RVPS_B64_BEGIN__\n'
-base64 -w0 "\${t}/out/rvps-reference-values.yaml"
+base64 -w0 "${t}/out/rvps-reference-values.yaml"
 printf '\n__VERITAS_RVPS_B64_END__\n'
-EOF
-  node_script_b64="$(b64 < "${node_script}")"
-  debug_args=(debug "node/${NODE}")
-  [[ -n "${DEBUG_IMAGE}" ]] && debug_args+=(--image="${DEBUG_IMAGE}")
-  debug_args+=(-- chroot /host bash -c "printf '%s' '${node_script_b64}' | base64 -d > /tmp/gen-rvps-veritas-node.sh && bash /tmp/gen-rvps-veritas-node.sh")
-  if ! oc "${debug_args[@]}" > "${capture}" 2>&1; then
-    cat "${capture}" >&2
-    die "veritas failed on node ${NODE}"
+NODE_SCRIPT
+  } > "$node_script"
+  debug_args=(debug --no-stdin=false --no-tty "node/${NODE}" --image="$DEBUG_IMAGE" -- chroot /host bash -s)
+  if ! worker_oc "${debug_args[@]}" < "$node_script" > "$capture" 2>&1; then
+    die "Veritas failed on selected node; inspect protected log $capture"
   fi
-  if ! awk '/^__VERITAS_RVPS_B64_BEGIN__$/ { emit = 1; next } /^__VERITAS_RVPS_B64_END__$/ { emit = 0 } emit { print }' "${capture}" | b64d > "${OUT}"; then
-    cat "${capture}" >&2
-    die "could not extract veritas output from oc debug stream"
+  if ! awk '/^__VERITAS_RVPS_B64_BEGIN__$/ { emit = 1; next } /^__VERITAS_RVPS_B64_END__$/ { emit = 0 } emit { print }' "$capture" | b64d > "$raw_output"; then
+    die "could not extract Veritas output; inspect protected log $capture"
   fi
+
 else
   command -v podman >/dev/null || die "podman not on PATH (or set NODE=<node> to run on the cluster node)"
   if ! podman image exists "${TOOLS_IMG}"; then
@@ -190,12 +205,31 @@ else
     podman_args+=(-v "${wrapper_stage}:/veritas-bin:ro,z" -e PATH="/veritas-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
   fi
   podman "${podman_args[@]}" "${TOOLS_IMG}" "${veritas_args[@]}" -o /veritas-out
-  copy_veritas_output "${veritas_out_dir}" "${OUT}"
+  copy_veritas_output "${veritas_out_dir}" "${raw_output}"
 fi
 
-[[ -s "${OUT}" ]] || die "veritas produced no output at ${OUT}"
-echo "Wrote ${OUT}."
-echo "Next: merge into the rvps-reference-values ConfigMap (one run per distinct socket/hardware"
-echo "  config; re-run if initdata changes or KBS logs a measurement mismatch)."
-[[ "${TEE}" == "tdx" ]] && echo "TDX: derive --hw-xfam-allow flags from Trustee logs (xfam is CPU/BIOS-specific) — do not copy from docs."
+[[ -s "${raw_output}" ]] || die "veritas produced no output"
+validated_output="$(mktemp /tmp/coco-rvps-validated.XXXXXX)"
+cleanup_paths+=("$validated_output")
+python3 "$REPO_ROOT/scripts/lib/trustee_config.py" rvps --file "$raw_output" \
+  --name "${TRUSTEE_RVPS_CONFIGMAP:-${TRUSTEE_NAME}-rvps-reference-values}" \
+  --namespace "$TRUSTEE_NS" > "$validated_output"
+# Only replace the caller's last known-good output after full parse/expiry/format validation.
+python3 - "$validated_output" "$OUT" <<'PUBLISH'
+import os, pathlib, sys, tempfile
+source, output = map(pathlib.Path, sys.argv[1:])
+fd, temporary = tempfile.mkstemp(prefix='.rvps-', dir=output.parent)
+try:
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(source.read_bytes())
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, output)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PUBLISH
+echo "Wrote validated Trustee 1.2 RVPS ConfigMap: ${OUT}."
+echo "Next: review the records against the selected CPU policy, then publish with Trustee configure."
+echo "Generation does not publish reference values or prove appraisal; run paired reference-value proofs."
 exit 0

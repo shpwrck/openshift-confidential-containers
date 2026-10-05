@@ -1,56 +1,119 @@
 #!/usr/bin/env bash
-# Single entrypoint for the hands-off disconnected SNO air-gapped bring-up.
-#
-# Sequences the TF-owns-infra / Ansible-owns-host+install boundary:
-#   1. terraform apply  bastion        (TF: persistent mirror/air-gap host)
-#   2. ansible Phase A   bastion-prep  (egress -> tools -> mirror push -> dns/ntp)
-#   3. terraform apply  node           (TF: disposable SNP node, operating_system=ipxe)
-#   4. ansible Phase B+C discover + render + pxe-serve + install (reinstall netboot + wait)
-#   5. STOP for the SEV-SNP BIOS (hard pause inside the playbook, before the install phase)
-#
-# This script does NOT run terraform itself by default (the repo rule forbids live applies in
-# authoring); it PRINTS the terraform commands and runs only the Ansible halves. Pass --apply-tf
-# to also run the terraform applies (interactive approval).
-#
-# Secrets come from the environment, never from committed files:
-#   export LATITUDESH_AUTH_TOKEN=...   # Latitude API token (discover + reinstall)
-#   The RH pull-secret must already be on the bastion at ~/pull-secret.json (Phase 0).
-#
-# Required -e overrides (from terraform output), or set them in a local group_vars file:
-#   bastion_ansible_host        = bastion public IPv4 (SSH target)
-#   bastion_public_ipv4_override= bastion public IPv4 (baked into the iPXE URL)
-#   vlan_vid_override           = terraform output virtual_network_vid
-#   node_server_id              = the node's Latitude server id
-#   boot_artifacts_token        = openssl rand -hex 16
+# Preparation is the default. A machine reinstall requires --mode fresh-install.
+# This wrapper is for the disposable Latitude rig; it is not an OCP upgrade tool.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
-APPLY_TF=0
-[[ "${1:-}" == "--apply-tf" ]] && { APPLY_TF=1; shift || true; }
-
-EXTRA=("$@")  # pass-through -e overrides, e.g. ./up.sh -e vlan_vid_override=123 -e node_server_id=sv_x
-
+MODE=prepare
+TF_ACTION=none
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)
+      [[ $# -ge 2 ]] || { echo "ERROR: --mode needs prepare, fresh-install, or verify" >&2; exit 2; }
+      MODE="$2"; shift 2 ;;
+    --apply-tf|--plan-tf)
+      [[ "$TF_ACTION" == none ]] || { echo "ERROR: choose only one Terraform action" >&2; exit 2; }
+      TF_ACTION="${1#--}"; TF_ACTION="${TF_ACTION%-tf}"; shift ;;
+    --help|-h)
+      echo "Usage: $0 [--mode prepare|fresh-install|verify] [--plan-tf|--apply-tf] [Ansible options]"
+      echo "prepare: mirror/tools/DNS only (default); fresh-install: explicit machine reinstall; verify: read-only cluster release check"
+      echo "--plan-tf performs Terraform planning only; it never runs Ansible or applies a plan."
+      echo "Keep local secrets and Terraform state in COCO_STATE_DIR outside the checkout."
+      exit 0 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+case "$MODE" in prepare|fresh-install|verify) ;; *) echo "ERROR: unsupported mode '$MODE'; in-place upgrades require a separate supported procedure" >&2; exit 2 ;; esac
+[[ "$MODE" != verify || "$TF_ACTION" == none ]] || { echo "ERROR: verify cannot plan or apply Terraform" >&2; exit 2; }
+EXTRA=("$@")
+AUTO_EXTRA=()
+COCO_STATE_DIR="${COCO_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openshift-confidential-containers}"
+# Terraform's local state may contain credentials. Resolve existing symlink parents too.
+COCO_STATE_DIR="$(python3 - "$COCO_STATE_DIR" "$REPO" <<'PY'
+from pathlib import Path
+import sys
+state, repo = (Path(p).expanduser().resolve() for p in sys.argv[1:])
+for forbidden in (repo, Path('/mnt/c/homelab')):
+    if str(state).lower() == str(forbidden).lower() or str(state).lower().startswith(str(forbidden).lower() + '/'):
+        raise SystemExit('ERROR: COCO_STATE_DIR must be outside the checkout and Homelab; select a private external state directory')
+print(state)
+PY
+)"
+export COCO_STATE_DIR
+# Normalize selected input paths before entering the Ansible directory.
+for config_var in RELEASE_MANIFEST IMAGESET_CONFIG; do
+  if [[ -n "${!config_var:-}" ]]; then
+    printf -v "$config_var" '%s' "$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${!config_var}")"
+    export "${config_var?}"
+  fi
+done
+export ANSIBLE_CONFIG="${ANSIBLE_CONFIG:-$HERE/ansible.cfg}"
+cd "$HERE"
 tf() {
-  if [[ "$APPLY_TF" == "1" ]]; then
-    terraform -chdir="$1" init -input=false
-    terraform -chdir="$1" apply
+  local module="$1" name="$2" state_dir="$COCO_STATE_DIR/terraform/$2" varfile
+  local tf_args=()
+  if [[ "$name" == bastion ]]; then varfile="${COCO_BASTION_TFVARS:-}"; else varfile="${COCO_NODE_TFVARS:-}"; fi
+  if [[ -n "$varfile" ]]; then
+    [[ "$varfile" == /* && -f "$varfile" ]] || { echo "ERROR: $name tfvars must be an existing absolute external path" >&2; exit 2; }
+    tf_args+=("-var-file=$varfile")
+  fi
+  if [[ "$TF_ACTION" != none ]]; then
+    if [[ -f "$module/terraform.tfstate" && ! -f "$state_dir/terraform.tfstate" ]]; then
+      echo "ERROR: existing $name state is in the checkout; move/import it into $state_dir before provisioning" >&2
+      exit 2
+    fi
+    mkdir -p "$state_dir"
+    chmod 700 "$state_dir"
+    export TF_DATA_DIR="$state_dir/data"
+    terraform -chdir="$module" init -input=false
+    if [[ "$name" == node ]]; then
+      terraform -chdir="$module" "$TF_ACTION" -state="$state_dir/terraform.tfstate" "${tf_args[@]}" \
+        -var="bastion_state_path=$COCO_STATE_DIR/terraform/bastion/terraform.tfstate"
+    else
+      terraform -chdir="$module" "$TF_ACTION" -state="$state_dir/terraform.tfstate" "${tf_args[@]}"
+    fi
+    if [[ "$TF_ACTION" == apply ]]; then
+      if [[ "$name" == bastion ]]; then
+        local bastion_ip vlan_vid
+        bastion_ip="$(terraform -chdir="$module" output -state="$state_dir/terraform.tfstate" -raw bastion_public_ipv4)"
+        vlan_vid="$(terraform -chdir="$module" output -state="$state_dir/terraform.tfstate" -raw virtual_network_vid)"
+        AUTO_EXTRA+=(-e "bastion_ansible_host=$bastion_ip" -e "bastion_public_ipv4_override=$bastion_ip" -e "vlan_vid_override=$vlan_vid")
+      else
+        local server_id
+        server_id="$(terraform -chdir="$module" output -state="$state_dir/terraform.tfstate" -raw server_id)"
+        AUTO_EXTRA+=(-e "node_server_id=$server_id")
+      fi
+    fi
   else
-    echo ">> (skipped — pass --apply-tf to run) terraform -chdir=$1 init && apply"
+    echo "Terraform $name unchanged; pass --apply-tf to provision it using external state."
   fi
 }
-
-echo "=== 1/5 terraform apply BASTION (persistent mirror host) ==="
-tf "$REPO/infra/latitude/bastion"
-
-echo "=== 2/5 ansible Phase A — bastion prep (egress, tools, mirror, dns/ntp) ==="
-ansible-playbook playbooks/site.yml --tags bastion-prep "${EXTRA[@]}"
-
-echo "=== 3/5 terraform apply NODE (disposable SNP node, operating_system=ipxe) ==="
-tf "$REPO/infra/latitude"
-
-echo "=== 4+5/5 ansible discover + install (STOPS for SEV-SNP BIOS before netboot) ==="
-ansible-playbook playbooks/site.yml --tags install "${EXTRA[@]}"
-
-echo
-echo "=== bring-up driven. After the node has booted, CLOSE the boot endpoint: ==="
-echo "    ansible-playbook playbooks/site.yml --tags pxe-stop ${EXTRA[*]}"
+if [[ "$MODE" == verify ]]; then
+  ansible-playbook playbooks/site.yml --tags drive "${EXTRA[@]}" -e install_mode=verify
+  exit
+fi
+# Check the complete product BOM before spending on infrastructure or changing a bastion.
+# shellcheck source=scripts/lib/release.sh
+source "$REPO/scripts/lib/release.sh"
+load_release_defaults
+if [[ "$MODE" == fresh-install && "${TEE:-snp}" != snp ]]; then
+  echo "ERROR: Latitude fresh-install currently validates AMD SEV-SNP hardware only" >&2
+  exit 2
+fi
+require_resolved_release
+echo "Prepare the bastion and verify the requested mirror inputs"
+tf "$REPO/infra/latitude/bastion" bastion
+if [[ "$TF_ACTION" == plan ]]; then
+  [[ "$MODE" != fresh-install ]] || tf "$REPO/infra/latitude" node
+  echo "Terraform planning finished; no infrastructure apply or Ansible run was requested."
+  exit 0
+fi
+ansible-playbook playbooks/site.yml --tags bastion-prep "${AUTO_EXTRA[@]}" "${EXTRA[@]}"
+[[ "$MODE" == fresh-install ]] || exit 0
+echo "Fresh installation: selected provider machines will be reinstalled after the BIOS gate"
+tf "$REPO/infra/latitude" node
+ansible-playbook playbooks/site.yml --tags install "${AUTO_EXTRA[@]}" "${EXTRA[@]}" -e install_mode=fresh
+# Close the secret-bearing endpoint as part of successful installation.
+ansible-playbook playbooks/site.yml --tags pxe-stop "${AUTO_EXTRA[@]}" "${EXTRA[@]}"
+echo "Fresh installation completed; boot-artifact endpoint closed."

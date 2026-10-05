@@ -1,5 +1,7 @@
 # Design — OpenShift Confidential Containers (air-gapped SEV-SNP)
 
+> **Historical baseline:** version-specific commands below describe the earlier rig. For OSC 1.13 / Trustee 1.2, start with [the current quickstart](../current-quickstart.md) and its release inventory. Historical results do not validate the new release set.
+
 Status: draft · Last updated 2026-06-25
 
 This is the synthesis of the setup grilling. It records **why** each decision was made so a

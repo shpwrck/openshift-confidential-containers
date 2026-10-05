@@ -1,5 +1,7 @@
 # Ansible — hands-off disconnected SNO air-gapped bring-up
 
+> **Historical baseline:** version-specific commands below describe the earlier rig. For OSC 1.13 / Trustee 1.2, start with [the current quickstart](../docs/current-quickstart.md) and its release inventory. Historical results do not validate the new release set.
+
 This tree reproduces, hands-off, the proven disconnected single-node OpenShift (SNO) air-gapped
 bring-up on Latitude — pausing only at the SEV-SNP BIOS step. It is a faithful Ansible translation
 of the validated `scripts/*.sh`, `install/*.tmpl`, and `docs/runbooks/disconnected-sno-bringup.md`

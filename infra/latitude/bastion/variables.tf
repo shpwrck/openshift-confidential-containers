@@ -111,12 +111,18 @@ variable "mirror_root" {
 
 variable "mirror_registry_url" {
   type        = string
-  default     = "https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry-amd64.tar.gz"
-  description = "mirror-registry tarball URL. Pin a versioned URL (not 'latest') + mirror_registry_sha256 before customer use."
+  description = "Versioned HTTPS mirror-registry tarball URL, verified alongside mirror_registry_sha256. Required; there is no latest fallback."
+  validation {
+    condition     = startswith(var.mirror_registry_url, "https://") && !can(regex("(?i)(^|/)latest(/|$)", var.mirror_registry_url))
+    error_message = "Provide a versioned HTTPS mirror-registry URL; latest is not a reproducible bootstrap input."
+  }
 }
 
 variable "mirror_registry_sha256" {
   type        = string
-  default     = ""
-  description = "sha256 of the mirror-registry tarball. When set, cloud-init verifies it (supply-chain). Empty = run unverified (rig only)."
+  description = "Published SHA-256 of the selected mirror-registry tarball. Required and always checked before extraction."
+  validation {
+    condition     = can(regex("^[0-9a-fA-F]{64}$", var.mirror_registry_sha256))
+    error_message = "Provide the selected mirror-registry tarball's verified 64-character SHA-256."
+  }
 }

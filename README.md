@@ -1,93 +1,53 @@
 # OpenShift Confidential Containers
 
-Stand up **OpenShift Confidential Containers (CoCo)** with AMD SEV-SNP on bare metal,
-prove each capability on a disposable test rig, then apply the proven configuration to the
-target air-gapped multi-node cluster.
+Install and prove CPU confidential containers on a disposable bare-metal rig, then use the evidence to prepare a customer deployment. The active target is **AMD SEV-SNP**, with a separate Trustee trust domain for customer use.
 
-## Stack
-
-| Layer | Choice |
-|-------|--------|
-| TEE | **AMD SEV-SNP** first; Intel TDX added later as an additive overlay (⚠️ see air-gap caveat) |
-| Path | **Bare-metal Kata host** (the worker's RHCOS kernel is the SNP host) |
-| Platform | Customer baseline: OSC **1.12** + Red Hat build of Trustee **1.1**; tested rig pin: OCP 4.20.18. Use the **1.12** docs only and re-check its live OCP z-stream matrix before customer use. |
-| Attestation (air-gap) | Trustee-side **OfflineStore** VCEK cache (`kbsLocalCertCacheSpec`) — see [design doc](docs/design/engagement-design.md) |
-| GitOps | Kustomize substrate; `oc apply -k` + Makefile on the rig; ArgoCD (mirrored) in the production env |
-
-## Visual overview
-
-Start with the
-[`organizational operating playbook`](docs/getting-started-and-operations.md). It defines the customer
-roles, tangible artifacts, approval gates, and end-to-end workflows for net-new installation,
-workload releases, routine operations, and upgrades on the 1.12 baseline.
-
-See [`docs/architecture.md`](docs/architecture.md) for the repository-specific component diagrams,
-attestation sequence, and step-by-step flow from bastion preparation through negative tests and
-production promotion.
-
-## Environments
-
-- **Test rig** — Single Node OpenShift (SNO) on one **Latitude.sh hourly** bare-metal node,
-  plus a secondary Trustee cluster. Disposable; spun up, proven, destroyed. Simulated air-gap
-  (bastion/mirror host + egress-firewalled node).
-- **Production** — full **multi-node** bare metal, **air-gapped**, separate Trustee cluster.
-
-> **Driving from macOS?** The operator scripts run on stock macOS (bash 3.2 + BSD userland) —
-> no GNU coreutils needed. See [macOS operator prerequisites](docs/runbooks/macos-operator-prerequisites.md)
-> for the required CLIs and which scripts run on your workstation vs the bastion.
-
-## Capability rungs (prove on rig → apply to production)
-
-- **A** (`rung-kbs`) — KBS secret-resource release (attestation gates a credential)
-- **B** (`rung-rvps`) — RVPS measurement verification (a populated `snp_launch_measurement` gates release)
-- **C** (`rung-signed`) — signed image (`image_security_policy`)
-- **D** (`rung-encrypted`) — encrypted container image (wrong measurement → pod won't start; direct pull is upstream-blocked, cri-o/cri-o#10084) — **manual**, excluded from the hands-off loop
-
-Each rung is "done" only when (1) reproduced from written steps on a fresh node and (2) its
-**negative test** (the denial) passes. Run `make negative-test WHICH=<rung-kbs|rung-rvps|rung-signed|rung-encrypted|air-gap|all>` — each
-denial is self-contained: the secret/policy/VCEK swap it needs is backed up and **automatically
-reverted**, so the rig returns to baseline.
-
-**Proof status** (rig: disconnected SNO, EPYC Genoa; last proven 2026-07-01):
-
-| Rung / test | Happy path | Negative (the denial) | State |
-|---|---|---|---|
-| **A** (`rung-kbs`) — secret release | ✅ air-gapped attest via VCEK **OfflineStore** → secret released | no valid attestation → secret **withheld (403)** — bare-attestation negative **authored in #17** | happy **PROVEN**; bare negative pending #17 |
-| **B** (`rung-rvps`) — measurement verification | a populated `snp_launch_measurement` matches the evidence → released | ✅ restrictive measured-initdata policy — tampered initdata → secret **withheld (403)**; untampered control still releases (apply+revert) | **PROVEN 2026-07-01** — runs via `WHICH=rung-kbs` today; relocates to `WHICH=rung-rvps` in #18 (currently a SKIP) |
-| **air-gap** — OfflineStore is load-bearing | (rung-kbs happy) | ✅ swap VCEK for a wrong cert → attestation **401** (not a silent KDS hit) | **PROVEN** |
-| **C** (`rung-signed`) — signed image | scaffolding + tag-shaped diagnostics | `image_security_policy` rejects unsigned/tampered | signature **transport gap** — the minimal mirror-registry doesn't serve the Quay signature extension (see [`failure-modes.md`](docs/runbooks/failure-modes.md)) |
-| **D** (`rung-encrypted`) — encrypted image *(manual)* | — | wrong measurement → key withheld → pod won't start | **upstream-blocked** — host encrypted-layer pre-pull, [cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084) |
-
-See Phase 6 of [`docs/runbooks/install-execution-plan.md`](docs/runbooks/install-execution-plan.md)
-for the build → KBS-resource → apply → negative sequence, and
-[`docs/design/engagement-design.md`](docs/design/engagement-design.md) §5 for the definition of "proven".
-
-## Layout
-
-```
-docs/getting-started-and-operations.md  beginner-first product, ownership, and lifecycle guide
-docs/install-guide.md  fully MANUAL, provider-neutral bring-up (no Terraform/Ansible)
-docs/runbooks/         phase checklists for the automated path + failure modes
-docs/design/           design notes + pre-deployment scoping list
-docs/notes/            hardware bring-up + air-gap guest-pull reference notes
-docs/research/         dated primary-source research behind the customer guide
-infra/                 Terraform (node, bastion, VLAN, firewall, netboot)
-ansible/               bastion config + OpenShift install automation (`make bringup-sno-airgapped`)
-gitops/                Kustomize base/ + overlays {sno,customer} × {workers,trustee}
-scripts/               rung-0 SNP-host gate, VCEK collection, Veritas RVPS
-Makefile               rig driver (verify gates, apply rungs)
-```
+**Current work targets OCP 4.20.39, OpenShift sandboxed containers 1.13.1, and Red Hat build of Trustee 1.2.1.** These are a candidate release set: authenticated catalog/image resolution and a new Latitude.sh hardware run are still pending. Historical results from OCP 4.20.18 / OSC 1.12 / Trustee 1.1 do not validate the new set.
 
 ## Start here
 
-- **Learn and plan customer operations:** read
-  [`docs/getting-started-and-operations.md`](docs/getting-started-and-operations.md). Complete its
-  ownership and Day 0 decisions before selecting an install path.
-- **By hand (any provider):** follow [`docs/install-guide.md`](docs/install-guide.md) — the
-  full manual procedure, no Terraform/Ansible.
-- **Automated (Latitude.sh):** use the Terraform + Ansible + `Makefile` path:
+1. [Current quickstart](docs/current-quickstart.md): prerequisites, external state, prepare/install/verify commands.
+2. [Latitude validation](docs/latitude-validation.md): new infrastructure, hardware checks, acceptance evidence and teardown.
+3. [Trustee 1.2 workflow](docs/trustee-current.md): Restricted configuration, migration, TLS, collateral and RVPS.
+4. [Capability rungs](docs/capability-status.md): what each test proves, what remains blocked, and useful demos.
+5. [Architecture and flowcharts](docs/architecture.md): component boundaries and the installation/proof sequence.
 
 ```bash
-make help                  # list targets
-make verify-snp-host NODE=<node>   # rung-0 gate: prove SEV-SNP host before any GitOps
+make help           # current entry points
+make check-release  # local manifest consistency
+make proof-plan     # list tests; no cluster access
+make preflight      # fails until required artifact identities are resolved
 ```
+
+[The release manifest](install/release-manifest.json) is the source of product versions, immutable payloads, TEE profiles and unresolved prerequisites. Deployment commands check it before making changes. Operator InstallPlans use Manual approval and are checked against that inventory.
+
+## Capability ladder
+
+| Test | Required evidence | Current status |
+|---|---|---|
+| A: `rung-kbs` | Confidential workload receives a synthetic resource; plain workload cannot use the guest data hub | New runner authored; hardware rerun pending |
+| `rung-initdata` | Approved measured configuration runs; changed bytes are rejected while CPU checks remain active | Separate from RVPS; hardware rerun pending |
+| B: `rung-rvps` | Actual guest launch reference allows release; removing that reference denies it | Trustee 1.2 format implemented; hardware proof pending |
+| C: `rung-signed` | Signed digest runs; an unsigned/wrong-key digest is rejected by the guest | Registry signature transport must be proved |
+| `air-gap` | Wrong selected-node endorsement denies attestation; restored collateral succeeds | SNP fixture implemented; network isolation evidence is separate |
+| D: `rung-encrypted` | Encrypted guest image runs; changed measured configuration withholds its key | Experimental; released payload inclusion remains unverified |
+
+Every proof starts fresh and requires a positive control, an attributable denial, verified restoration and successful recovery. Unrelated startup failures and skipped tests are not passes. Full acceptance also requires a clean repeat run and recorded network isolation. [Details and product evidence](docs/capability-status.md).
+
+## Repository map
+
+| Path | Purpose |
+|---|---|
+| `install/` | Release inventory, ImageSets and installer templates |
+| `infra/latitude/` | Disposable bastion/node infrastructure |
+| `ansible/` | Preparation, explicit fresh installation and read-only verification |
+| `gitops/` | AMD worker and Trustee manifests |
+| `scripts/` | Staged operations, artifact preparation and proof runner |
+| `tests/` | Hardware-free failure/recovery fixtures |
+| `docs/` | Current guides plus labeled historical investigation material |
+
+Keep credentials, keys, Terraform state, installer assets and proof recovery files outside the checkout. The default working directory is `$HOME/.local/state/openshift-confidential-containers`. All live operations require an explicit cluster context. Destructive proof tests require explicitly marked disposable namespaces.
+
+For local validation, use Python 3.12+, install [the development requirements](requirements-dev.txt) in an external virtual environment, then run `make install-dev-tools` and `make lint`. Add the printed tools directory to `PATH`. Linux is the provisioning controller; portable workstation scripts are also checked on macOS. These checks do not validate firmware, attestation or a disconnected installation.
+
+Earlier procedures are retained for investigation and migration context; see [the documentation index](docs/README.md). Use the current guides for this release set.

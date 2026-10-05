@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/compat.sh
 source "${REPO_ROOT}/scripts/lib/compat.sh"
 MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
-ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/rung-image-artifacts}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-${COCO_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openshift-confidential-containers}/rung-image-artifacts}"
 RUNG_SIGNED_IMAGE="${RUNG_SIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
 RUNG_SIGNED_UNSIGNED_IMAGE="${RUNG_SIGNED_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b-unsigned:unsigned}"
 RUNG_SIGNED_IMAGE_REF="${RUNG_SIGNED_IMAGE_REF:-}"
@@ -104,7 +104,7 @@ verify_manifest_consistency() {
 		if [[ "$REQUIRE_RUNG_IMAGE_MANIFEST" == "1" ]]; then
 			fail "signed/encrypted image manifest missing: $manifest"
 		fi
-		pass "signed/encrypted image manifest not present; skipped manifest consistency check"
+		echo "INFO: signed/encrypted image manifest not present; manifest consistency was not checked"
 		return
 	fi
 	jq -e \
@@ -140,13 +140,30 @@ pass "unsigned image digest resolved to $unsigned_digest_ref"
 
 verify_manifest_consistency "$RUNG_IMAGE_MANIFEST" "$signed_digest_ref" "$unsigned_digest_ref" "$pub_sha"
 
+# Cosign uses a non-zero status for both signature rejection and transport failures.
+# Keep diagnostics private and require a recognizable rejection before calling this proof green.
+umask 077
+verify_tmp="$(mktemp -d)"
+trap 'rm -rf "$verify_tmp"' EXIT
 # shellcheck disable=SC2086
-cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_SIGNED_COSIGN_PUB" "$signed_digest_ref" >/dev/null
+if ! cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_SIGNED_COSIGN_PUB" "$signed_digest_ref" >"$verify_tmp/signed.log" 2>&1; then
+	echo "INCOMPLETE: signed positive control could not be verified; inspect registry access, signature and key inputs before retrying" >&2
+	exit 3
+fi
 pass "configured public key verifies signed image"
 
 # shellcheck disable=SC2086
-if cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_SIGNED_COSIGN_PUB" "$unsigned_digest_ref" >/dev/null 2>&1; then
+if cosign verify $COSIGN_VERIFY_ARGS --key "$RUNG_SIGNED_COSIGN_PUB" "$unsigned_digest_ref" >"$verify_tmp/unsigned.log" 2>&1; then
 	fail "unsigned negative-control image unexpectedly verifies with the configured public key: $unsigned_digest_ref"
 fi
-pass "unsigned negative-control image does not verify with the configured public key"
+# A rejection-shaped wrapper must not hide a nested auth, TLS, network or registry failure.
+if grep -Eiq '(unauthorized|authentication required|access denied|denied: requested access|forbidden|\b401\b|\b403\b|\b429\b|\b50[0-9]\b|no such host|timed? ?out|context deadline|connection refused|connection reset|TLS|x509|certificate|manifest unknown|NAME_UNKNOWN|unexpected status)' "$verify_tmp/unsigned.log"; then
+	echo "INCOMPLETE: unsigned control verification encountered a registry/authentication/transport failure; signature rejection is not proven" >&2
+	exit 3
+fi
+if ! grep -Eiq '(no matching signatures|no signatures found|signature verification failed|invalid signature|failed to verify signature|signature[^[:cntrl:]]*(key mismatch|verification failure))' "$verify_tmp/unsigned.log"; then
+	echo "INCOMPLETE: cosign failed without an attributable signature rejection; do not count this as a negative proof" >&2
+	exit 3
+fi
+pass "unsigned negative-control image has an attributable signature rejection"
 echo "rung-signed signature verification OK."

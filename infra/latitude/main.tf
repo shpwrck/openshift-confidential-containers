@@ -1,8 +1,9 @@
 terraform {
+  required_version = ">= 1.13, < 2.0"
   required_providers {
     latitudesh = {
       source  = "latitudesh/latitudesh"
-      version = "~> 3.3" # resolved to v3.3.0
+      version = "= 4.6.0" # reviewed provider schema; locked per module
     }
   }
 }
@@ -21,6 +22,7 @@ resource "latitudesh_ssh_key" "rig" {
 }
 
 resource "latitudesh_server" "snp_rig" {
+  allow_reinstall  = false # reinstall is an explicit, journaled Ansible operation
   project          = var.project
   hostname         = var.hostname
   plan             = var.plan             # Genoa SKU slug — confirm via the API discovery step
@@ -32,7 +34,7 @@ resource "latitudesh_server" "snp_rig" {
   # Custom image via iPXE: set operating_system="ipxe" and point ipxe at a boot script.
   ipxe = var.ipxe_url != "" ? var.ipxe_url : null
 
-  # Optional cloud-init (e.g. install snpguest/qemu, confirm kernel) once booted.
+  # Optional existing latitudesh_user_data resource ID, not raw cloud-init content.
   user_data = var.user_data != "" ? var.user_data : null
 }
 

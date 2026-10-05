@@ -28,6 +28,7 @@ ansible/group_vars/*.local.yml
 ansible/inventory/*.local.yml
 ansible/*.retry
 ansible/.vault-pass
+ansible/.ansible/
 
 # Terraform
 infra/**/.terraform/
@@ -38,3 +39,8 @@ infra/**/crash.log
 infra/**/.env
 .env
 infra/latitude/IPMI-ACCESS.md
+
+# Local Python tooling
+__pycache__/
+*.py[cod]
+.venv/

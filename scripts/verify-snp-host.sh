@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# Rung-0 gate: prove AMD SEV-SNP *host* is live on an OpenShift node BEFORE any GitOps.
+# Rung-0 gate: prove AMD SEV-SNP *host* prerequisites are present on an OpenShift node BEFORE any GitOps.
 # This is the verify-first step — if it fails, the bare-metal decision is invalid for this
 # provider/node and we stop (fall back to peer-pods / a different node).
 #
 # Usage: ./scripts/verify-snp-host.sh <node-name>
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/scripts/lib/cluster-context.sh"
+load_worker_context
+
 NODE="${1:?usage: verify-snp-host.sh <node-name>}"
 fail=0
 chk() { if eval "$2"; then echo "  PASS  $1"; else echo "  FAIL  $1"; fail=1; fi; }
 
-dbg() { oc debug "node/${NODE}" --quiet -- chroot /host bash -c "$1" 2>/dev/null; }
+dbg() { worker_oc debug "node/${NODE}" --quiet -- chroot /host bash -c "$1" 2>/dev/null; }
 
 echo "== SEV-SNP host gate on ${NODE} =="
 
@@ -33,7 +37,7 @@ chk "/dev/sev present"             "dbg 'test -e /dev/sev && echo y' | grep -q y
 
 echo
 if [ "${fail}" -eq 0 ]; then
-	echo "RESULT: SEV-SNP host is LIVE — proceed to GitOps."
+	echo "RESULT: SEV-SNP host checks passed; quote verification and attestation are separate proofs."
 else
 	echo "RESULT: GATE FAILED — do NOT proceed. Fix BIOS (SEV-SNP/Memory Interleaving/SMEE) or"
 	echo "        re-evaluate provider/node. See docs/design/engagement-design.md."

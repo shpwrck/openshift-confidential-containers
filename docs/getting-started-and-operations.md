@@ -1,5 +1,7 @@
 # OpenShift Confidential Containers 1.12: organizational operating playbook
 
+> **Historical baseline:** version-specific commands below describe the earlier rig. For OSC 1.13 / Trustee 1.2, start with [the current quickstart](current-quickstart.md) and its release inventory. Historical results do not validate the new release set.
+
 | Field | Value |
 |---|---|
 | Status | Customer review draft |

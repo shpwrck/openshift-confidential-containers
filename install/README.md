@@ -1,5 +1,7 @@
 # Disconnected SNO install — Agent-based Installer (SEV-SNP bare metal)
 
+> **Historical baseline:** version-specific commands below describe the earlier rig. For OSC 1.13 / Trustee 1.2, start with [the current quickstart](../docs/current-quickstart.md) and its release inventory. Historical results do not validate the new release set.
+
 Brings up a **single-node OpenShift** cluster, fully air-gapped, as the CoCo verification rig.
 Target: **OCP 4.20.18** (alt 4.19.28), **OSC 1.12**, **Trustee 1.1**, TEE = **AMD SEV-SNP**.
 The node is egress-firewalled to reach only the bastion mirror registry.

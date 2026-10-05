@@ -1,151 +1,154 @@
 #!/usr/bin/env bash
-# Staged, idempotent SNO worker-side CoCo install (Phase 4 — `make install-coco-operators`).
-#
-# Installs the operator stack + confidential runtime on an already-running SNO worker.
-# Each stage is gated (waits for a real readiness signal) and is safe to re-run:
-#   0. Pre-apply baseline  — node Ready, MCP stable, mirrored CatalogSource READY
-#   1. Operators           — NFD, cert-manager, OSC, Trustee, Gatekeeper (wait: CSVs Succeeded)
-#   2. NFD + SNP label     — apply NFD operands, wait for the SEV-SNP node label
-#   3. KataConfig          — enable CoCo; creates the kata-cc runtime (handler kata-snp); REBOOTS the node
-#   4. Gatekeeper policy   — CoCo container-memory floor (mutation + constraint)
-#   5. Final validation    — baseline green + kata-cc handler present
+# Staged worker installation; explicit context and resolved artifact identities required.
 set -euo pipefail
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/scripts/lib/release.sh"
+source "$REPO_ROOT/scripts/lib/tee-profile.sh"
+source "$REPO_ROOT/scripts/lib/cluster-context.sh"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-1800}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-20}"
-CATALOGSOURCE="${CATALOGSOURCE:-cs-redhat-operator-index-v4-20}"
+INSTALL_TOPOLOGY="${INSTALL_TOPOLOGY:-customer}"
 
-# --- What this installs (single source of truth) -----------------------------
-# Operators as "namespace:subscription"; every CSV must reach Succeeded.
-readonly OPERATORS=(
-	"openshift-nfd:nfd"
-	"cert-manager-operator:openshift-cert-manager-operator"
-	"openshift-sandboxed-containers-operator:sandboxed-containers-operator"
-	"trustee-operator-system:trustee-operator"
-	"openshift-gatekeeper-system:gatekeeper-operator-product"
-)
-readonly SNP_NODE_LABEL="amd.feature.node.kubernetes.io/snp=true"  # NFD sets this on a SEV-SNP node
-readonly COCO_RUNTIMECLASS="kata-cc"        # the confidential RuntimeClass workloads request
-readonly COCO_RUNTIME_HANDLER="kata-snp"    # what kata-cc resolves to on SEV-SNP (kata-tdx on Intel TDX)
-
-log() {
-	printf '\n== %s ==\n' "$*"
-}
-
-die() {
-	echo "ERROR: $*" >&2
-	exit 2
-}
-
-need() {
-	command -v "$1" >/dev/null || die "$1 is not on PATH"
-}
-
+log() { printf '\n== %s ==\n' "$*"; }
+die() { echo "ERROR: $*" >&2; exit 2; }
+need() { command -v "$1" >/dev/null || die "$1 is not on PATH"; }
 wait_until() {
-	local label="$1"
-	shift
-	local deadline=$((SECONDS + WAIT_TIMEOUT))
-	while (( SECONDS < deadline )); do
-		if "$@"; then
-			echo "PASS: $label"
-			return 0
-		fi
-		echo "Waiting ${SLEEP_SECONDS}s for ${label}..."
-		sleep "$SLEEP_SECONDS"
-	done
-	echo "ERROR: timed out waiting for ${label}" >&2
-	return 1
+  local label="$1"; shift
+  local deadline=$((SECONDS + WAIT_TIMEOUT))
+  while (( SECONDS < deadline )); do
+    if "$@"; then echo "PASS: $label"; return 0; fi
+    echo "Waiting ${SLEEP_SECONDS}s for $label..."
+    sleep "$SLEEP_SECONDS"
+  done
+  echo "ERROR: timed out waiting for $label" >&2; return 1
 }
 
-subscription_succeeded() {
-	local ns="$1" sub="$2"
-	local csv phase
-	csv="$(oc -n "$ns" get subscription "$sub" -o jsonpath='{.status.installedCSV}' 2>/dev/null || true)"
-	[[ -n "$csv" ]] || return 1
-	phase="$(oc -n "$ns" get csv "$csv" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
-	[[ "$phase" == "Succeeded" ]]
+render_stage() {
+  local mode="$1"
+  local args=("$mode" --manifest "${RELEASE_MANIFEST:-$REPO_ROOT/install/release-manifest.json}" --tee "$TEE" --topology "$INSTALL_TOPOLOGY")
+  [[ "${TRUSTEE_LAB:-0}" != 1 ]] || args+=(--lab)
+  python3 "$REPO_ROOT/scripts/lib/worker_install.py" "${args[@]}"
 }
 
-all_operator_csvs_succeeded() {
-	local entry
-	for entry in "${OPERATORS[@]}"; do
-		# entry is "namespace:subscription"
-		subscription_succeeded "${entry%%:*}" "${entry#*:}" || return 1
-	done
+manage_subscription() {
+  local key="$1" ns="$2" name="$3" expected actual phase plan plan_json args
+  expected="$(release_value "operators.${key}.startingCSV")" || die "unresolved CSV for $key"
+  actual="$(worker_oc -n "$ns" get subscription "$name" -o jsonpath='{.status.installedCSV}' 2>/dev/null || true)"
+  if [[ "$actual" == "$expected" ]]; then
+    phase="$(worker_oc -n "$ns" get csv "$actual" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    [[ "$phase" == Succeeded ]] && return 0
+  fi
+  plan="$(worker_oc -n "$ns" get subscription "$name" -o jsonpath='{.status.installPlanRef.name}' 2>/dev/null || true)"
+  [[ -n "$plan" ]] || return 1
+  plan_json="$(worker_oc -n "$ns" get installplan "$plan" -o json)" || return 1
+  args=(check-plan --manifest "${RELEASE_MANIFEST:-$REPO_ROOT/install/release-manifest.json}" --tee "$TEE" --expected-csv "$expected")
+  [[ "${TRUSTEE_LAB:-0}" != 1 ]] || args+=(--lab)
+  python3 "$REPO_ROOT/scripts/lib/worker_install.py" "${args[@]}" <<<"$plan_json" || die "refusing InstallPlan $ns/$plan: resolve catalog/CSV mismatch before retrying"
+  if [[ "$(jq -r '.spec.approved // false' <<<"$plan_json")" != true ]]; then
+    [[ "${APPROVE_INSTALLPLANS:-0}" == 1 ]] || die "pending reviewed InstallPlan $ns/$plan for $expected; inspect it, then explicitly set APPROVE_INSTALLPLANS=1 to allow matching plans"
+    worker_oc -n "$ns" patch installplan "$plan" --type=merge -p '{"spec":{"approved":true}}'
+  fi
+  return 1
 }
 
-snp_label_present() {
-	oc get nodes -l "$SNP_NODE_LABEL" --no-headers 2>/dev/null | grep -q .
+operators_ready() {
+  local entry key ns name ready=0
+  for entry in "${OPERATORS[@]}"; do
+    IFS=: read -r key ns name <<<"$entry"
+    manage_subscription "$key" "$ns" "$name" || ready=1
+  done
+  return "$ready"
 }
 
-runtimeclass_present() {
-	[[ "$(oc get runtimeclass "$COCO_RUNTIMECLASS" -o jsonpath='{.handler}' 2>/dev/null)" == "$COCO_RUNTIME_HANDLER" ]]
+tee_nodes_ready() {
+  local selector="$COCO_NODE_LABEL"
+  if [[ "$INSTALL_TOPOLOGY" == customer ]]; then
+    selector+=",${COCO_WORKER_POOL_LABEL}=${COCO_WORKER_POOL_VALUE}"
+  fi
+  worker_oc get nodes -l "$selector" -o json | jq -e '.items | length > 0' >/dev/null
+}
+runtime_ready() {
+  [[ "$(worker_oc get runtimeclass "$COCO_RUNTIMECLASS" -o jsonpath='{.handler}' 2>/dev/null)" == "$COCO_RUNTIME_HANDLER" ]]
+}
+kata_ready() {
+  local selector="$COCO_NODE_LABEL" pool=master kata nodes mcp runtime
+  if [[ "$INSTALL_TOPOLOGY" == customer ]]; then
+    selector+=",${COCO_WORKER_POOL_LABEL}=${COCO_WORKER_POOL_VALUE}"
+    pool="kata-oc"
+  fi
+  kata="$(worker_oc get kataconfig cluster-kataconfig -o json)" || return 1
+  nodes="$(worker_oc get nodes -l "$selector" -o json)" || return 1
+  mcp="$(worker_oc get mcp "$pool" -o json)" || return 1
+  runtime="$(worker_oc get runtimeclass "$COCO_RUNTIMECLASS" -o json)" || return 1
+  jq -n --argjson kata "$kata" --argjson nodes "$nodes" --argjson mcp "$mcp" --argjson runtime "$runtime" \
+    '{kata:$kata,nodes:$nodes,mcp:$mcp,runtime:$runtime}' | \
+    python3 "$REPO_ROOT/scripts/lib/worker_install.py" check-kata \
+      --manifest "${RELEASE_MANIFEST:-$REPO_ROOT/install/release-manifest.json}" --tee "$TEE" --topology "$INSTALL_TOPOLOGY"
+}
+baseline_ready() {
+  bash "$REPO_ROOT/scripts/validate-sno-baseline.sh" > "$INSTALL_TMP/baseline.log" 2>&1
+}
+crd_ready() { worker_oc wait --for=condition=Established "crd/$1" --timeout=10s >/dev/null 2>&1; }
+apply_memory_policy() {
+  render_stage templates < "$REPO_ROOT/gitops/base/gatekeeper/constraint-coco-mem.yaml" > "$INSTALL_TMP/templates.yaml"
+  render_stage constraints < "$REPO_ROOT/gitops/base/gatekeeper/constraint-coco-mem.yaml" > "$INSTALL_TMP/constraints.yaml"
+  worker_oc apply -f "$INSTALL_TMP/templates.yaml"
+  wait_until "memory constraint CRD" crd_ready cococontainermemory.constraints.gatekeeper.sh
+  worker_oc apply -f "$INSTALL_TMP/constraints.yaml"
+  echo "Memory constraints installed with their declared enforcement modes; unlabeled dryrun is audit-only."
 }
 
-sno_baseline_ok() {
-	CATALOGSOURCE="$CATALOGSOURCE" bash "$REPO_ROOT/scripts/validate-sno-baseline.sh" >/tmp/apply-sno-baseline.log 2>&1
+main() {
+  need python3; need oc; need jq
+  load_release_defaults
+  load_tee_profile
+  load_worker_context
+  case "$INSTALL_TOPOLOGY" in
+    customer) ;;
+    sno) [[ "${TRUSTEE_LAB:-0}" == 1 ]] || die "INSTALL_TOPOLOGY=sno requires explicit TRUSTEE_LAB=1 disposable co-located scope" ;;
+    *) die "INSTALL_TOPOLOGY must be customer or sno" ;;
+  esac
+  require_resolved_release  # Before any cluster mutation or InstallPlan approval.
+  if [[ "${TRUSTEE_LAB:-0}" == 1 && -n "${TRUSTEE_CONTEXT:-}" && "$TRUSTEE_CONTEXT" != "$WORKER_CONTEXT" ]]; then
+    die "TRUSTEE_LAB=1 requires the same worker/Trustee context"
+  fi
+  worker_oc whoami >/dev/null || die "not authenticated to WORKER_CONTEXT=$WORKER_CONTEXT"
+  if [[ "$INSTALL_TOPOLOGY" == customer ]]; then
+    worker_oc get nodes -l "${COCO_WORKER_POOL_LABEL}=${COCO_WORKER_POOL_VALUE}" -o json | jq -e '.items | length > 0' >/dev/null || die "customer deployment requires explicitly selected worker pool ${COCO_WORKER_POOL_LABEL}=${COCO_WORKER_POOL_VALUE}"
+  fi
+  INSTALL_TMP="$(mktemp -d)"; trap 'rm -rf "$INSTALL_TMP"' EXIT
+  OPERATORS=("nfd:openshift-nfd:nfd" "certManager:cert-manager-operator:openshift-cert-manager-operator" "osc:openshift-sandboxed-containers-operator:sandboxed-containers-operator" "gatekeeper:openshift-gatekeeper-system:gatekeeper-operator-product")
+  [[ "${TRUSTEE_LAB:-0}" != 1 ]] || OPERATORS+=("trustee:trustee-operator-system:trustee-operator")
+  log "Stage 0: selected worker context/version/catalog baseline"
+  wait_until baseline baseline_ready || { cat "$INSTALL_TMP/baseline.log" >&2; return 1; }
+  log "Stage 1: selected Operators and explicitly reviewed InstallPlans"
+  oc kustomize "$REPO_ROOT/gitops/base/operators" | render_stage operators > "$INSTALL_TMP/operators.yaml"
+  render_stage operators < "$REPO_ROOT/gitops/base/gatekeeper/operator.yaml" > "$INSTALL_TMP/gatekeeper.yaml"
+  worker_oc apply -f "$INSTALL_TMP/operators.yaml"
+  worker_oc apply -f "$INSTALL_TMP/gatekeeper.yaml"
+  wait_until "expected Operator CSVs Succeeded" operators_ready
+  log "Stage 2: NFD and selected TEE eligibility"
+  wait_until "NFD instance CRD" crd_ready nodefeaturediscoveries.nfd.openshift.io
+  wait_until "NFD rule CRD" crd_ready nodefeaturerules.nfd.openshift.io
+  worker_oc apply -k "$REPO_ROOT/$COCO_NFD_PATH"
+  wait_until "eligible $TEE nodes" tee_nodes_ready
+  log "Stage 3: confidential runtime on selected nodes (rollout may reboot)"
+  wait_until "KataConfig CRD" crd_ready kataconfigs.kataconfiguration.openshift.io
+  oc kustomize "$REPO_ROOT/gitops/base/kataconfig" | render_stage kata > "$INSTALL_TMP/kata.yaml"
+  worker_oc apply -f "$INSTALL_TMP/kata.yaml"
+  wait_until "expected confidential runtime handler" runtime_ready
+  wait_until "KataConfig and selected nodes have completed the runtime rollout" kata_ready
+  wait_until "baseline after runtime rollout" baseline_ready || { cat "$INSTALL_TMP/baseline.log" >&2; return 1; }
+  log "Stage 4: memory mutation and all declared constraints"
+  worker_oc apply -f "$REPO_ROOT/gitops/base/gatekeeper/gatekeeper-cr.yaml"
+  wait_until "Gatekeeper mutation CRD" crd_ready assign.mutations.gatekeeper.sh
+  worker_oc apply -f "$REPO_ROOT/gitops/base/gatekeeper/assign-coco-mem.yaml"
+  apply_memory_policy
+  log "Stage 5: final baseline/runtime verification"
+  wait_until baseline baseline_ready || { cat "$INSTALL_TMP/baseline.log" >&2; return 1; }
+  wait_until "runtime handler" runtime_ready
+  wait_until "KataConfig and selected nodes remain converged" kata_ready
+  echo "Worker installation complete; this does not establish attestation or image-policy proof."
+  echo "Next: prepare $TEE endorsements, deploy Trustee in its explicit context, then run named proofs."
 }
-
-crd_established() {
-	local crd="$1"
-	oc wait --for=condition=Established "crd/${crd}" --timeout=10s >/dev/null 2>&1
-}
-
-# The CoCo memory-floor policy file holds two YAML docs separated by '---':
-# a Gatekeeper ConstraintTemplate, then the constraint instance that uses it.
-# The instance's kind is a CRD the template generates, so the template must be
-# applied AND its CRD Established BEFORE the instance. Split on '---', apply in order.
-apply_constraint_template_then_instance() {
-	local src="$REPO_ROOT/gitops/base/gatekeeper/constraint-coco-mem.yaml"
-	local tmpdir template constraint
-	tmpdir="$(mktemp -d)"
-	template="$tmpdir/template.yaml"
-	constraint="$tmpdir/constraint.yaml"
-	awk 'BEGIN{doc=0} /^---[[:space:]]*$/ {doc++; next} doc==1 {print}' "$src" > "$template"
-	awk 'BEGIN{doc=0} /^---[[:space:]]*$/ {doc++; next} doc==2 {print}' "$src" > "$constraint"
-	oc apply -f "$template"
-	wait_until "CoCoContainerMemory constraint CRD" crd_established cococontainermemory.constraints.gatekeeper.sh
-	oc apply -f "$constraint"
-	rm -rf "$tmpdir"
-}
-
-# --- Preconditions -----------------------------------------------------------
-need oc
-need jq
-oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
-
-cd "$REPO_ROOT"
-
-log "Stage 0: pre-apply baseline gate"
-wait_until "SNO baseline" sno_baseline_ok || { cat /tmp/apply-sno-baseline.log >&2; exit 1; }
-
-log "Stage 1: install operators (NFD, cert-manager, OSC, Trustee, Gatekeeper)"
-oc apply -k gitops/base/operators
-oc apply -f gitops/base/gatekeeper/operator.yaml
-wait_until "operator CSVs Succeeded" all_operator_csvs_succeeded
-
-log "Stage 2: apply NFD operands; wait for the SEV-SNP node label"
-oc apply -k gitops/base/nfd
-wait_until "NFD SEV-SNP node label" snp_label_present
-
-log "Stage 3: apply KataConfig (enables CoCo; REBOOTS the node); wait for kata-cc"
-oc apply -k gitops/base/kataconfig
-wait_until "kata-cc runtime class" runtimeclass_present
-wait_until "SNO baseline after KataConfig rollout" sno_baseline_ok || { cat /tmp/apply-sno-baseline.log >&2; exit 1; }
-
-log "Stage 4: Gatekeeper instance + CoCo memory-floor policy"
-oc apply -f gitops/base/gatekeeper/gatekeeper-cr.yaml
-wait_until "Gatekeeper mutation CRDs" crd_established assign.mutations.gatekeeper.sh
-oc apply -f gitops/base/gatekeeper/assign-coco-mem.yaml
-apply_constraint_template_then_instance
-
-log "Stage 5: final validation"
-wait_until "SNO baseline final" sno_baseline_ok || { cat /tmp/apply-sno-baseline.log >&2; exit 1; }
-wait_until "kata-cc runtime class final" runtimeclass_present
-echo "SNO CoCo worker-side install OK"
-# collect-vcek MUST precede deploy-trustee (#75): apply-trustee.sh loads the VCEK bundle first
-# and dies without it, so the old hint ("make deploy-trustee && make run-rung-kbs") failed every
-# time it was followed literally.
-echo "Next: make collect-vcek NODE=<node>    # MUST come first — Trustee needs the VCEK bundle"
-echo "Then: make deploy-trustee && make run-rung-kbs"
+[[ "${BASH_SOURCE[0]}" != "$0" ]] || main "$@"

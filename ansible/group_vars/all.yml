@@ -13,7 +13,24 @@
 # ============================================================================
 
 # ---- OpenShift / cluster identity ------------------------------------------
-ocp_version: "4.20.18"
+# Derived from the same manifest/profile as the shell entry points. The controller preflight
+# validates effective overrides before preparation or installation writes.
+release_manifest_path: >-
+  {{ lookup('ansible.builtin.env', 'RELEASE_MANIFEST')
+     | default(playbook_dir ~ '/../../install/release-manifest.json', true) }}
+release_manifest_absolute: >-
+  {{ release_manifest_path if release_manifest_path.startswith('/')
+     else lookup('ansible.builtin.env', 'PWD') ~ '/' ~ release_manifest_path }}
+coco_release: "{{ lookup('ansible.builtin.file', release_manifest_absolute) | from_json }}"
+tee: "{{ lookup('ansible.builtin.env', 'TEE') | default('snp', true) }}"
+ocp_version: "{{ lookup('ansible.builtin.env', 'OCP_VERSION') | default(coco_release.platform.version, true) }}"
+ocp_release_image: "{{ lookup('ansible.builtin.env', 'OCP_RELEASE_IMAGE') | default(coco_release.platform.releaseImage, true) }}"
+imageset_config: >-
+  {{ lookup('ansible.builtin.env', 'IMAGESET_CONFIG')
+     | default(coco_release.profiles[tee].imageSet, true) }}
+imageset_config_absolute: >-
+  {{ imageset_config if imageset_config.startswith('/')
+     else playbook_dir ~ '/../../' ~ imageset_config }}
 cluster_name: "sno-coco"
 base_domain: "coco.lab.local"
 
@@ -60,6 +77,8 @@ mirror_ca_path: "/opt/mirror/ca/rootCA.pem"
 mirror_password_path: "/opt/mirror/mirror-admin-password"
 install_src_dir: "/opt/install/src"                    # source of truth for rendered configs
 cluster_assets_dir: "/opt/install/cluster-assets"      # the installer CONSUMES these copies
+# Provider request evidence is retained when generated cluster assets are replaced.
+install_request_dir: "{{ cluster_assets_dir | dirname }}/provider-requests"
 boot_artifacts_dir: "/opt/install/cluster-assets/boot-artifacts"
 boot_artifacts_webroot: "/opt/install/boot-artifacts"  # nginx webroot for the tokenized serve
 # secure_path omits /usr/local/bin, so every sudo invocation of the OpenShift tools must
@@ -81,7 +100,7 @@ node_ssh_pubkey_path: "{{ ansible_facts['env']['HOME'] }}/coco-rig.pub"
 node_ssh_pubkey_src: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
 
 # ---- Tool download source (mirror.openshift.com clients) -------------------
-ocp_clients_base: "https://mirror.openshift.com/pub/openshift-v4/amd64/clients"
+ocp_clients_base: "{{ coco_release.platform.clientBase }}"
 
 # ---- Boot artifacts serve (iPXE) -------------------------------------------
 boot_artifacts_port: 8080

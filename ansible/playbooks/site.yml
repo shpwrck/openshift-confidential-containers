@@ -12,6 +12,47 @@
 # hard pause printing the BIOS recipe. The node must have its SEV-SNP BIOS set (via Latitude IPMI)
 # before it netboots, so the install phase is gated behind that confirmation.
 
+# Validate the controller's release inputs before any selected preparation/install writes.
+# Cleanup stays available even when the BOM is unresolved. Verify mode reads cluster state only.
+- name: Validate the selected release before preparation or installation
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+  tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp, render, pxe, drive, install]
+  tasks:
+    - name: Validate the effective Ansible release and profile inputs
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/verify-release.py"
+          - --manifest
+          - "{{ release_manifest_absolute }}"
+          - --tee
+          - "{{ tee }}"
+      environment:
+        OCP_VERSION: "{{ ocp_version }}"
+        OCP_RELEASE_IMAGE: "{{ ocp_release_image }}"
+        IMAGESET_CONFIG: "{{ imageset_config_absolute }}"
+      changed_when: false
+
+    - name: Require resolved catalog and artifact identities
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/verify-release.py"
+          - --manifest
+          - "{{ release_manifest_absolute }}"
+          - --tee
+          - "{{ tee }}"
+          - --require-resolved
+      environment:
+        OCP_VERSION: "{{ ocp_version }}"
+        OCP_RELEASE_IMAGE: "{{ ocp_release_image }}"
+        IMAGESET_CONFIG: "{{ imageset_config_absolute }}"
+      changed_when: false
+      when: (install_mode | default('fresh')) != 'verify'
+
 # =====================================================================================
 # PHASE A — Bastion preparation (egress hardening -> tools -> mirror push -> dns/ntp).
 # Run AFTER `terraform apply` of the bastion module, BEFORE the node is provisioned.

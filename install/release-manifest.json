@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "id": "osc-1.13-trustee-1.2-ocp-4.20-cpu",
+  "checkedAt": "2026-10-05",
+  "platform": {
+    "version": "4.20.39",
+    "channel": "stable-4.20",
+    "architecture": "amd64",
+    "releaseImage": "quay.io/openshift-release-dev/ocp-release@sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850",
+    "clientBase": "https://mirror.openshift.com/pub/openshift-v4/amd64/clients",
+    "resolution": "verified",
+    "evidence": "https://api.openshift.com/api/upgrades_info/v1/graph?channel=stable-4.20&arch=amd64",
+    "upgradePathVerified": false
+  },
+  "compatibility": {
+    "cpuMinimums": {
+      "4.19": "4.19.38",
+      "4.20": "4.20.29",
+      "4.21": "4.21.24",
+      "4.22": "4.22.5"
+    },
+    "source": "https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.13/html/deploying_confidential_containers_on_bare-metal_servers/cc-discover_metal-cc",
+    "gpus": false
+  },
+  "catalog": {
+    "ref": "registry.redhat.io/redhat/redhat-operator-index:v4.20",
+    "source": "cs-redhat-operator-index-v4-20",
+    "digest": null,
+    "resolution": "unresolved",
+    "reason": "Authenticated catalog export and related-image inventory required; no credentials used during review."
+  },
+  "operators": {
+    "osc": {
+      "package": "sandboxed-containers-operator",
+      "version": "1.13.1",
+      "channel": "stable",
+      "startingCSV": "sandboxed-containers-operator.v1.13.1",
+      "bundleImage": null,
+      "resolution": "unresolved",
+      "reason": "Verify package/channel/version/CSV and relatedImages from the selected catalog before mutation."
+    },
+    "trustee": {
+      "package": "trustee-operator",
+      "version": "1.2.1",
+      "channel": "stable",
+      "startingCSV": "trustee-operator.v1.2.1",
+      "bundleImage": null,
+      "resolution": "unresolved",
+      "reason": "Verify package/channel/version/CSV and relatedImages from the selected catalog before mutation."
+    },
+    "nfd": {
+      "package": "nfd",
+      "version": null,
+      "channel": "stable",
+      "startingCSV": null,
+      "bundleImage": null,
+      "resolution": "unresolved",
+      "reason": "Verify package/channel/version/CSV and relatedImages from the selected catalog before mutation."
+    },
+    "certManager": {
+      "package": "openshift-cert-manager-operator",
+      "version": null,
+      "channel": "stable-v1",
+      "startingCSV": null,
+      "bundleImage": null,
+      "resolution": "unresolved",
+      "reason": "Verify package/channel/version/CSV and relatedImages from the selected catalog before mutation."
+    },
+    "gatekeeper": {
+      "package": "gatekeeper-operator-product",
+      "version": null,
+      "channel": "stable",
+      "startingCSV": null,
+      "bundleImage": null,
+      "resolution": "unresolved",
+      "reason": "Verify package/channel/version/CSV and relatedImages from the selected catalog before mutation."
+    }
+  },
+  "images": {
+    "cocoTools": {
+      "ref": "quay.io/openshift_sandboxed_containers/coco-tools@sha256:3d8227aedb4423ecc6d6e868a43d38ab8ed7fb9683cbb1b9a1d2bee6d1994667",
+      "tag": "0.5.1",
+      "resolution": "verified",
+      "reason": "Public immutable image identity verified; target Veritas/reference-format behavior still requires validation.",
+      "evidence": "https://quay.io/api/v1/repository/openshift_sandboxed_containers/coco-tools/tag/?onlyActiveTags=true&specificTag=0.5.1",
+      "compatibilityValidated": false
+    },
+    "ubiMinimal": {
+      "ref": "registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+      "resolution": "verified",
+      "reason": "Public amd64 manifest and image config verified 2026-10-05; guest workload validation is pending.",
+      "version": "9.8",
+      "release": "1790754119",
+      "architecture": "amd64",
+      "compatibilityValidated": false,
+      "evidence": "https://registry.access.redhat.com/v2/ubi9/ubi-minimal/manifests/sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e"
+    },
+    "oscMustGather": {
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:1.13.1",
+      "resolution": "unresolved",
+      "reason": "Candidate tag; confirm actual supported tag and immutable digest in authenticated registry."
+    },
+    "trusteeMustGather": {
+      "ref": "registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9:1.2",
+      "resolution": "unresolved",
+      "reason": "Documented 1.2 tag; authenticated digest resolution required."
+    }
+  },
+  "tools": {
+    "checksumsSource": "https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/4.20.39/sha256sum.txt",
+    "sha256": {
+      "openshift-client-linux.tar.gz": "3aeeb8012deba60bcdbe9d0a482aa31899a61c6953d76fff32e8d87d566a0202",
+      "openshift-install-linux.tar.gz": "364d5aef8357aaf42a1372bf23e366e3cf446a7c803509166ad12718e6d078fb",
+      "oc-mirror.tar.gz": "f8e74f540fb55d9b99e685d0230d01b7534968a344d7605158319b096c9bb495"
+    }
+  },
+  "profiles": {
+    "snp": {
+      "runtimeClass": "kata-cc",
+      "runtimeHandler": "kata-snp",
+      "nodeLabel": "amd.feature.node.kubernetes.io/snp=true",
+      "workerPoolLabel": "node-role.kubernetes.io/coco-snp",
+      "nfdPath": "gitops/base/nfd",
+      "workerOverlay": "gitops/overlays/customer-workers",
+      "hardwareValidated": false,
+      "imageSet": "install/imageset-config.yaml",
+      "workerPoolValue": ""
+    }
+  },
+  "imageSet": "install/imageset-config.yaml"
+}

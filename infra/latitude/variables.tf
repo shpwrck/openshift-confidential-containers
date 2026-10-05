@@ -41,7 +41,7 @@ variable "ipxe_url" {
 variable "user_data" {
   type        = string
   default     = ""
-  description = "Optional cloud-init user-data (install snpguest/qemu, verify kernel post-boot)."
+  description = "Optional existing Latitude user-data resource ID (not raw cloud-init content)."
 }
 
 variable "ssh_key_ids" {

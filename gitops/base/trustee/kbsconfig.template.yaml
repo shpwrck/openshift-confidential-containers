@@ -1,61 +1,6 @@
----
-# KbsConfig — the low-level Trustee CR (design note: use KbsConfig, NOT TrusteeConfig, because
-# the enterprise needs params TrusteeConfig doesn't expose: VCEK sources, proxy, detailed
-# policy). It wires the ConfigMaps (kbs-configmaps.yaml) and Secrets (created out-of-band, see
-# secret-stubs.example.yaml) into the KBS deployment.
-apiVersion: confidentialcontainers.org/v1alpha1
-kind: KbsConfig
-metadata:
-  name: kbsconfig
-  namespace: trustee-operator-system
-spec:
-  # VERIFY all field names against the trustee-operator v1.1 KbsConfig CRD:
-  #   `oc explain kbsconfig.spec` / config/templates @ v1.1.0.
-  kbsConfigMapName: kbs-config
-  kbsAuthSecretName: kbs-auth-public-key
-  # REQUIRED (trustee v1.1): without this the operator defaults to MicroservicesDeployment, which
-  # demands a separate attestation-service ConfigMap (kbsAsConfigMapName) and fails with
-  # "ConfigMap name hasn't been provided for volume as-config". AllInOne keeps the AS config inline
-  # in kbs-config.toml (below). Verified on the rig 2026-06-28 (trustee-operator v1.1.0).
-  kbsDeploymentType: AllInOneDeployment
-  kbsServiceType: ClusterIP # rig/early rungs; customer overlay may use a Route + HTTPS.
-
-  # Policies + reference values from kbs-configmaps.yaml.
-  kbsRvpsRefValuesConfigMapName: rvps-reference-values
-  kbsResourcePolicyConfigMapName: resource-policy
-  kbsAttestationPolicyConfigMapName: attestation-policy
-
-  # Secret-backed resources served to attested clients. NB (known issue): KBS resource names must
-  # NOT contain dots — registry pull secret is named `regcred`, not `.dockerconfigjson`.
-  kbsSecretResources:
-    - regcred         # mirror-registry pull secret (signed-image pulls).
-    - attestation-cert
-    - attestation-status # rung-kbs gate resource at kbs:///default/attestation-status/status.
-    - sample          # the rung-kbs demo secret released via cdh/resource/default/...
-    - credential      # mirror auth json served at kbs:///default/credential/test (CDH default
-                      # authenticated_registry_credentials_uri) — lets the in-guest image-rs pull
-                      # from the air-gapped mirror after attestation. (Resolves defect #16.)
-    - security-policy # permissive image policy at kbs:///default/security-policy/test (CDH default).
-    - registry-configuration # registries.conf remap at kbs:///default/registry-configuration/test.
-  # All of the above Secrets are created out-of-band; see secret-stubs.example.yaml.
-
-  # --- Air-gap VCEK OfflineStore (design §4) --------------------------------------------
-  # Mounts host VCEK .der into the KBS pod at the kds-store path the SNP verifier reads
-  # offline (no KDS). Authoritative layout (confidential-containers/trustee
-  # attestation-service/docs/amd-offline-certificate-cache.md):
-  #   /opt/confidential-containers/attestation-service/kds-store/vcek/<hwid-LOWERCASE>/vcek.der
-  # CRD schema is a LIST of {secretName, mountPath} (NOT a bare secretName — verified via
-  # `oc explain kbsconfig.spec.kbsLocalCertCacheSpec`). One entry per collected host/HWID; the
-  # secret's data key (vcek.der) becomes the file in mountPath. HWIDs are environment-bound, so
-  # scripts/apply-trustee.sh renders one entry per vcek-bundle/<hwid>/vcek.der. Wrong-case HWID
-  # or a missing host entry => attestation fails (air-gap negative test). Socket count does not
-  # change the collection or cache layout.
-  # GOTCHA: the operator uses secretName as the Pod VOLUME name, which is capped at 63 chars.
-  # The SNP HWID is 128 hex chars, so the secret must NOT be named after the HWID (that fails
-  # deployment validation: "volumes[].name ... must be no more than 63 characters"). Use a short
-  # secret name; the full lowercase HWID goes ONLY in mountPath (the dir the verifier reads).
-  kbsLocalCertCacheSpec:
-    secrets:
-      - secretName: vcek-snp-0   # short (<=63 chars); data key vcek.der lands in mountPath
-        # FILL/rendered: the chip's lowercase 128-hex HWID from vcek-bundle/<hwid>/vcek.der.
-        mountPath: /opt/confidential-containers/attestation-service/kds-store/vcek/<HWID-LOWERCASE-128-HEX>
+# Historical low-level Trustee 1.1 template is retained at Git commit
+# 2fec0a4a132f1c201696537fd7737b0907a5cfd3.
+# Trustee 1.2 generates KbsConfig from trusteeconfig.yaml. Customizations belong
+# on that generated resource after migration; scripts/apply-trustee.sh preserves
+# existing resources and certificate mounts. Never apply an independent KbsConfig
+# beside the generated one: the Operator uses fixed service/deployment names.
