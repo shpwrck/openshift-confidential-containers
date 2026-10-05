@@ -31,7 +31,24 @@ body = sys.stdin.read()
 (base / "stdin-script").write_text(body)
 (base / "stdin-mode").write_text(str(stat.S_IMODE(os.fstat(0).st_mode)))
 # Emulate only the streamed bash script. Never execute chroot, a real oc or a container.
-result = subprocess.run(["bash", "-s"], input=body, env=os.environ, text=True, capture_output=True)
+# The simulated node is RHCOS and uses GNU base64 even when the controller is
+# macOS. Scope this emulator to the node subprocess; the host retains its real
+# base64 command, including the controller's BSD decode/encode compatibility.
+node_bin = base / "node-bin"
+node_bin.mkdir(exist_ok=True)
+(node_bin / "base64").write_text("""#!/usr/bin/env python3
+import base64, pathlib, sys
+args = sys.argv[1:]
+if args == ['-d']:
+    sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read(), validate=True))
+elif len(args) == 2 and args[0] == '-w0':
+    sys.stdout.buffer.write(base64.b64encode(pathlib.Path(args[1]).read_bytes()))
+else:
+    raise SystemExit('unexpected node base64 arguments: ' + repr(args))
+""")
+(node_bin / "base64").chmod(0o755)
+node_env = dict(os.environ, PATH=str(node_bin) + os.pathsep + os.environ['PATH'])
+result = subprocess.run(["bash", "-s"], input=body, env=node_env, text=True, capture_output=True)
 sys.stdout.write(result.stdout)
 sys.stderr.write(result.stderr)
 raise SystemExit(result.returncode)
