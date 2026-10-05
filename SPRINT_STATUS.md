@@ -26,6 +26,8 @@ SEV-SNP only**. Intel and GPU work are outside this effort.
 - Shared workload/initdata renderer; exact approved-byte reuse; separate initdata and launch-reference
   proofs; allow/deny/restore/recovery controls; attributable failures and protected recovery files.
 - Signed-image preparation independent of encryption; transport errors cannot pass as signature denial.
+- Raw-node private-link qualification checks the selected VLAN, route, ARP, registry TLS, DNS and NTP
+  before reinstall; service probes bind to the reviewed private interface and source address.
 - Current guides and flowcharts, historical-baseline labels, and retired duplicate bastion helpers.
 - Required offline CI checks on Linux/macOS plus Terraform validation.
 
@@ -44,7 +46,8 @@ The later conflicting-Terraform-state guard also passed its four focused wrapper
 1. Complete the Latitude hardware run under the approved $150 total budget.
    The Miami replacement passed raw-host SNP acceptance. Authenticated artifact resolution, mirror transfer and a
    zero-change repeated preparation passed. Artifact preparation is distinct from hardware acceptance.
-2. Complete the fresh Miami bastion bootstrap, then verify networking and SNP under the installed RHCOS kernel.
+2. Resolve the failed private VLAN path, then verify networking and SNP under the installed RHCOS kernel.
+   The locked-user bootstrap passed on a fresh Miami bastion; it does not establish node connectivity.
 3. Run the documented installation and AMD proofs,
    then repeat a clean run while recording timings and manual interventions.
 4. Complete guest signed-image enforcement. Host signature verification and the unsigned
@@ -67,14 +70,24 @@ Credentials and dedicated SSH keys are held outside Homelab. The validation uses
 m4-metal-small ($0.81/hour) and m4-metal-medium ($1.25/hour), with a $150 total cap.
 The bastion completed mirroring and repeated preparation with zero changes. Signed-image
 preparation passed host verification, including an attributable unsigned-control rejection.
+The preserved controls were [restored on the Miami mirror](docs/validation/latitude-mia2-signed-controls-2026-10-05.json)
+with unchanged image/signature digests; both verification and an unchanged rerun passed.
 The first Dallas node delivered EPYC 7313P / H12SSW-NTR / BIOS 2.3 and failed RMP/SNP checks
 following saved firmware settings and a complete exposed-menu sweep. It was destroyed and
 provider deletion verified. The [Miami replacement](docs/validation/latitude-mia2-host-2026-10-05.json)
 delivered EPYC 9124 / H13SST-G / BIOS 1.6; five ordinary settings enabled full-memory RMP
 coverage and SNP. It passed the raw-host gate in UEFI mode, with a recovered INIT retry retained
-in the evidence. The old firmware remains a security gap. The latest cloud-init is now being
-exercised on a new same-site bastion; Dallas remains temporarily available. No firmware flash
-or support outreach occurred. See [firmware preflight](docs/amd-firmware-preflight.md).
+in the evidence. The old firmware remains a security gap. The latest cloud-init passed on a
+fresh Miami bastion, including key-only SSH, a locked account and empty module error lists.
+That comparison host was retired after preserving evidence. The Dallas bastion was also
+destroyed after its unique signing artifacts were backed up and cryptographically verified.
+No firmware flash or support outreach occurred. See [firmware preflight](docs/amd-firmware-preflight.md).
+
+The current [private network check](docs/validation/latitude-mia2-network-2026-10-05.json)
+fails across three hosts and two VLANs, including a same-rack comparison. Correctly tagged
+ARP leaves the private interfaces, but corresponding peer frames are absent. The provider
+root cause is unproven. A different server class is still provisioning for comparison.
+Installation waits for private mirror, DNS and NTP reachability.
 
 Live validation found and repaired a readiness-marker permission issue. Actual oc-mirror
 output also exposed resource-kind and filtered-catalog identity assumptions. The repaired
@@ -87,7 +100,7 @@ This run used SELinux Permissive; enforcing mode and actual node boot remain unv
 The [later live cleanup test](docs/validation/latitude-pxe-cleanup-2026-10-05.json) passed both
 entry points and a deliberate readiness failure: rescue closed publication while preserving
 private sources and unchanged artifacts.
-[CI passed on 66efc0f](https://github.com/shpwrck/openshift-confidential-containers/actions/runs/37326370219)
-after fixes for older jq and the macOS connection fixture. Later work still requires its own checks.
+[CI passed on c8e7869](https://github.com/shpwrck/openshift-confidential-containers/actions/runs/37347071907)
+for Ubuntu, macOS and Terraform, including the private-link checker. Later work still requires its own checks.
 Keep Terraform state, cost records, boot assets, kubeconfigs and proof recovery material
 outside the checkout and Homelab. Historical rig results do not validate this release set.

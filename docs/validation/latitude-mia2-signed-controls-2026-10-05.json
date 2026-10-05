@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-05T17:29:36.826558+00:00",
+  "status": "PASS",
+  "scope": "First Miami restoration and host signature verification only",
+  "target": {
+    "role": "first Miami mirror bastion",
+    "facility": "MIA2",
+    "registry": "mirror.rig.local:8443",
+    "privateIPv4": "192.168.66.10",
+    "identityChecks": [
+      "fresh provider server ID/hostname/IP/status",
+      "strict saved SSH host key",
+      "OS hostname and public interface address",
+      "registry hostname resolves only to bastion private address"
+    ]
+  },
+  "prerequisites": {
+    "skopeoVersion": "1.22.2",
+    "skopeoRPM": "2:1.22.2-8.el9_8.x86_64",
+    "dnfTransaction": 8,
+    "cosignVersion": "v2.6.5",
+    "cosignSHA256": "c3b4f5410e608af03a5eb0aaac84a4313d8da131248e08ff1759ac70c79d1644",
+    "trustedRootSHA256": "6494e21ea73fa7ee769f85f57d5a3e6a08725eae1e38c755fc3517c9e6bc0b66",
+    "miamiRegistryCASHA256": "0de23e8d2790a63b27bb09c659d6122e79deef688d349db5b88ba8bdcc459942",
+    "authSource": "Existing Miami /root/.docker/config.json; no Dallas registry credentials copied"
+  },
+  "namespace": {
+    "name": "coco",
+    "created": true,
+    "authenticatedUser": "init",
+    "isAdmin": true,
+    "repositories": [
+      {
+        "name": "rung-b",
+        "visibility": "private"
+      },
+      {
+        "name": "rung-b-unsigned",
+        "visibility": "private"
+      }
+    ]
+  },
+  "artifacts": {
+    "signedDigestRef": "mirror.rig.local:8443/coco/rung-b@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+    "unsignedDigestRef": "mirror.rig.local:8443/coco/rung-b-unsigned@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+    "signatureTag": "mirror.rig.local:8443/coco/rung-b:sha256-eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e.sig",
+    "signatureManifestDigest": "sha256:07e9208839a7e9e04ba919099723252b759ef51e50f989a7e934bf631ed71c3f",
+    "publicSigningKeySHA256": "a5ccb6bd8a016c35707deaf9f3c0d2e9007563956b1ee3c9c49d37155a3c8780",
+    "allManifestDigestsPreserved": true,
+    "privateSigningKeyTransferred": false,
+    "resigned": false,
+    "unsignedRepositorySignatureAddedOrRemoved": false
+  },
+  "controls": {
+    "firstRun": "PASS",
+    "unchangedRerun": "PASS",
+    "rerunActions": [
+      "REUSE signed",
+      "REUSE unsigned",
+      "REUSE signature"
+    ],
+    "positive": "Original public key accepted preserved signed image",
+    "negative": "Current verifier classified unsigned failure as signature rejection and excluded recognized registry/auth/TLS/network failures",
+    "manifestConsistency": "PASS",
+    "guestEnforcement": "NOT_RUN",
+    "disconnectedVerification": "NOT_PROVEN"
+  },
+  "firstAttempt": {
+    "status": "INCOMPLETE",
+    "pushesPerformed": false,
+    "reason": "Registry pull returned401 for absent coco namespace; authenticated API subsequently established absence. Existing Miami credentials were valid."
+  },
+  "limits": [
+    "No cluster, Trustee, guest or encrypted-image proof executed",
+    "No private signing key or password transferred; Quay login cookies and CSRF tokens remained in process memory",
+    "Cosign binary checksums verified via official HTTPS; release signature trust chain not independently verified",
+    "Explicit preserved public trusted-root avoids implicit TUF initialization, but network isolation was not measured",
+    "Verifier deletes raw Cosign temporary diagnostics; retained host-control log and exact script hashes support its classification"
+  ],
+  "evidenceSHA256": {
+    "restore-signed-controls.sh": "d2e6e19fe17d6fbf277dc65b1976b4c2e45b8fa11a3d08a756ea78e325a3ba12",
+    "inputs/verifier/scripts/verify-rung-signed-signature.sh": "1fd00ebc8e1f0bdca327eb70bf9087630bfb21468f1526fc02a761e7e5fa92e7",
+    "inputs/verifier/scripts/lib/compat.sh": "979da90ec9c2d681f994b89b59e41746e35ffc8f4a670d893bdcab95721d7c08",
+    "stage-and-install.log": "039f8eb9607742a0757b98e6ba41c52d831a7975c0cf3636477e4b9177ef97ec",
+    "restore-execution.log": "5505611d42af4d32fd1040074453d6f3a8605ad3d1337f32b6223cb62dde69d8",
+    "restore-execution-2.log": "a2e82cb1f0654f09aede1376a242d81f175e18da0d922001ed5dc044ab048a8c",
+    "reuse-execution.log": "f72c0eacab197a4d1ae762c65883fe770763753ecc4fb648c52caaa36aedcf2b",
+    "remote-version-hashes.txt": "23d29316410238aa39b8997cdd94adb82c37ef54c64873a6a0facb0efd982c5c",
+    "remote-evidence/namespace-preflight.json": "9dca49a329351c18b25e49202711bfa3edaf621edb82d5227cac88d80dab8785",
+    "remote-evidence/results/run.mrK4k4/host-controls.log": "0bc05b089c96c24e8cec28e0ab1bbce38b999bbc0d6de405076d7c76574339d4",
+    "remote-evidence/results/run.6Heoh4/host-controls.log": "0bc05b089c96c24e8cec28e0ab1bbce38b999bbc0d6de405076d7c76574339d4"
+  }
+}

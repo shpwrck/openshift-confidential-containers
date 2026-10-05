@@ -1,6 +1,6 @@
 # Capability status and next experiments
 
-Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 / Trustee 1.2. The selected OCP payload is 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. The Latitude bastion and mirror are prepared, and host signature verification passed. The Miami replacement passed [raw-host SNP prerequisites](validation/latitude-mia2-host-2026-10-05.json), with an explicit old-firmware security gap. RHCOS and guest proofs remain pending; no guest rung is validated for this release set.
+Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 / Trustee 1.2. The selected OCP payload is 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. The Latitude bastion and mirror are prepared, and host signature verification passed. The Miami replacement passed [raw-host SNP prerequisites](validation/latitude-mia2-host-2026-10-05.json), with an explicit old-firmware security gap. Its [private connection to the mirror currently fails](validation/latitude-mia2-network-2026-10-05.json), blocking installation. RHCOS and guest proofs remain pending; no guest rung is validated for this release set.
 
 ## What changed enough to retest
 
@@ -11,6 +11,10 @@ Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 
 **Encrypted images:** [OpenShift CRI-O PR 82](https://github.com/openshift/cri-o/pull/82) merged into `release-5.0` on October 5, 2026, at 08:20 UTC (merge commit `694532bb98d6a89cf999cd2969ccda8d4db561d1`). This is progress on the host-side encrypted-layer pull blocker. It does not establish inclusion in OCP 4.20.39 or supported encrypted-image operation with OSC 1.13. The [5.0.0-rc.0 release record](https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/5.0.0-rc.0/release.txt) predates that merge. The experiment needs a payload containing the change, its actual RHCOS/CRI-O build identity, compatible OSC operands and the allow/deny/recovery result. The default release inventory remains on the supported CPU matrix.
 
 Signed-image verification is not presented as a newly introduced OSC 1.13 capability. The unresolved local question is whether the selected registry serves signatures in a format the shipped guest image verifier can retrieve. A host-side `cosign verify` pass is necessary preparation, not the guest proof. On October 5, mirror-registry 2.0.12 accepted the signed control and host verification rejected the same-content unsigned control for a signature-specific reason. Guest enforcement remains pending. The historical minimal mirror-registry problem must be tested with the actual selected registry.
+
+The [Miami restoration check](validation/latitude-mia2-signed-controls-2026-10-05.json)
+also passed an unchanged rerun using the preserved image/signature digests and public key.
+It did not transfer the private signing key or re-sign either control.
 
 ## Keep the measurements distinct
 
@@ -45,15 +49,33 @@ make test-rung WHICH=rung-rvps
 
 Names above are examples; select the actual contexts and endpoint. Namespace marking is a deliberate setup step after verifying the target, not something the proof runner adds automatically. The agent policy must be reviewed for the workload, including blocking administrator `ExecProcessRequest`; merely providing a file does not prove its restrictions. Initdata is visible in the pod annotation: put resource references and public certificates there, not secrets. `INITDATA_FILE` reuses approved bytes exactly and checks that its image policy URI matches the selected rung. `EMIT_INITDATA=1` prints the bytes used by the renderer for measurement generation.
 
-For rung C, supply the mirror's trusted CA/authentication and `COSIGN_PASSWORD` through the
-external credential workflow, then build the signed and unsigned controls without encryption
-tooling:
+For rung C, run on a controller or bastion with `jq`, Skopeo and Cosign installed; mirror
+preparation does not install the signing tools. The Miami host check used Skopeo 1.22.2 and
+checksum-verified Cosign 2.6.5. See the [Skopeo setup instructions](release-resolution.md)
+and record the selected Cosign binary's version and checksum before use.
+
+Create the destination namespace and give the pushing account access before building. With
+the default Quay paths, create organization `coco` and private repositories `rung-b` and
+`rung-b-unsigned`. A missing namespace can return an authorization error even with valid
+credentials; inspect it through authenticated registry administration rather than disabling
+TLS or treating the error as signature rejection.
+
+Supply the mirror's trusted CA/authentication and `COSIGN_PASSWORD` through the external
+credential workflow, then build the signed and unsigned controls without encryption tooling:
 
 ```bash
 make build-rung-signed
 source "$COCO_STATE_DIR/rung-image-artifacts/rung-signed.env"
 make verify-rung-signed-signature
 ```
+
+Configure registry trust for both tools. The tested bastion used its own
+`REGISTRY_AUTH_FILE=/root/.docker/config.json`, `DOCKER_CONFIG=/root/.docker` and
+`SSL_CERT_FILE=/opt/mirror/ca/rootCA.pem`. For host verification it additionally set
+`COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --registry-cacert=/opt/mirror/ca/rootCA.pem --trusted-root=/path/to/prepared-trusted-root.json"`.
+The public trusted-root file was prepared on the connected controller and transferred with
+its recorded checksum. Explicit trust metadata avoids implicit TUF initialization; this host
+check did not measure network isolation. Use the paths and credentials for the current mirror.
 
 If `ARTIFACT_DIR` was overridden, source `rung-signed.env` from that directory instead. The
 file selects the immutable image references, public key and artifact manifest. On the

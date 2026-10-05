@@ -48,7 +48,10 @@ flowchart TD
   BOM[Review product matrix and resolve release inventory] --> Plan[Plan new Latitude infrastructure]
   Plan --> Hardware[Verify hardware availability and firmware capabilities]
   Hardware --> Prepare[Prepare bastion, mirror, DNS and checked tools]
-  Prepare --> Fresh[Explicit fresh install]
+  Prepare --> Private{Raw node reaches private mirror, DNS and NTP?}
+  Private -->|Pass| Fresh[Explicit fresh install]
+  Private -->|Fail| Network[Keep provider OS and diagnose private link]
+  Network --> Private
   Fresh --> OCP[Verify actual OCP payload and cluster health]
   OCP --> Operators[Install reviewed operator plans and wait for CRDs]
   Operators --> SNP[Verify SNP host and scoped NFD labels]
@@ -62,6 +65,10 @@ flowchart TD
 ```
 
 Preparation is the wrapper's default. Fresh installation is a separate operation and may replace the selected node's OS. It is not the customer upgrade procedure. A provider action with an ambiguous result requires inspection before retry; completion markers depend on the current inputs. Successful installation closes the temporary boot endpoint.
+
+The [private-link check](latitude-validation.md#prove-the-private-link-before-reinstall) runs
+from the raw node using the intended VLAN and trusted mirror CA. Mirror readiness on the
+bastion alone cannot establish that path. Keep raw-host, installed RHCOS and guest evidence separate.
 
 ## Each proof has four controls
 
