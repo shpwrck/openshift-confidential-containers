@@ -26,12 +26,16 @@ Prepare a private `$COCO_STATE_DIR/rig.yml` using the [quickstart inputs](../doc
 export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"
 
 bash ansible/up.sh --mode prepare -e "@$COCO_STATE_DIR/rig.yml"
-# Only after the node passes firmware/SNP preflight:
+# Only after the node passes firmware/SNP and private-link preflight:
 bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
 These commands reuse existing infrastructure. `--plan-tf` plans only; `--apply-tf` explicitly adds provisioning. See [the Latitude procedure](../docs/latitude-validation.md#plan-and-provision-in-stages) for plan review, provisioning and teardown.
+
+Complete the [manual private-link gate](../docs/latitude-validation.md#prove-the-private-link-before-reinstall)
+while the raw provider OS is still available. Stage networking separately before fresh-install;
+the wrapper does not perform this check automatically.
 
 Fresh install replaces the node's installed OS. It is not an in-place customer upgrade. `skip_bios_pause=true` is only an unattended acknowledgement after the required evidence exists. Successful installation closes the boot endpoint automatically; after an interrupted run, close it explicitly when safe:
 

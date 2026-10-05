@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-05T16:38:08.458861+00:00",
+  "recordedAt": "2026-10-05T17:14:44.843228+00:00",
   "scope": "Raw provider OS private-link qualification before any destructive OpenShift install",
   "status": "FAIL",
   "hosts": [
     "accepted AMD SNP node in MIA2",
-    "first mirror bastion in MIA2"
+    "first mirror bastion in MIA2",
+    "second mirror bastion in MIA2, same rack as first bastion"
   ],
   "configuration": {
     "sameProviderFacility": true,
@@ -22,7 +23,10 @@
     "pairedOriginalPacketCaptures": "Outgoing ARP on each private NIC; PACKET_AUXDATA confirms VLAN2032; corresponding incoming peer ARP absent",
     "promiscuousControl": "Peer ARP still absent; multicast switch frames received; socket memberships closed and promiscuity0 verified",
     "nicErrors": "No exposed CRC, discard, missed-packet, link-fault or timeout errors",
-    "nodeServices": "Mirror TLS, DNS and NTP probes timeout at unresolved private path; not evidence of service-specific defects"
+    "nodeServices": "Mirror TLS, DNS and NTP probes timeout at unresolved private path; not evidence of service-specific defects",
+    "thirdHostControl": "Bilateral probes fail between both bastions in the same rack and between second bastion and accepted SNP node",
+    "explicitTaggedFrameControl": "Three explicitly tagged ARP frames sent per host on VLAN2026; no corresponding incoming peer ARP. NIC offload settings unchanged.",
+    "finalPrivateLinkChecker": "Expected negative result on raw SNP node: interface/source/VID and before/after direct route pass; device-bound exact-flow mirror TLS, DNS and NTP time out; ARP remains INCOMPLETE."
   },
   "recoveryAttempts": [
     {
@@ -38,7 +42,7 @@
       "result": "API success; private connectivity still fails"
     }
   ],
-  "assessment": "Provider forwarding or port configuration remains a hypothesis. No demonstrated host offload defect. A third host is provisioning to distinguish the affected path.",
+  "assessment": "Private link failure reproduces across three hosts and two VLANs, including same-rack and cross-rack paths. A provider forwarding or port-configuration defect remains a hypothesis; no demonstrated NIC offload defect.",
   "limits": [
     "No OpenShift installation or guest proof",
     "First Miami mirror preparation passed locally; not reachable from the node",
@@ -50,6 +54,17 @@
     "bastion-arp-auxdata.json": "8c1f1fd7fa69cdb1ee9b43038c83cf05eb48e379b22d4358cf31bfc767d166fe",
     "node-promiscuous-arp.json": "4fccd52c3703dc5cfb279234a3b55e2c72ff75c1b153e61e22f99af09b638f91",
     "bastion-promiscuous-arp.json": "dc5829709de920c378507aba7be1bc24d089a12f5298de3e3e036d8444b3a389",
-    "nic-comparison.json": "49dd13f0ac8559b2135e0aebda778a78e9a0ba507ca4b7bb0938b1dc16dd5ee5"
-  }
+    "nic-comparison.json": "49dd13f0ac8559b2135e0aebda778a78e9a0ba507ca4b7bb0938b1dc16dd5ee5",
+    "three-host-control.json": "2d98006c05c6623731221c9d839fb7f5190619c77acd9db9b50c9b714c28e1c1",
+    "bastion-first-explicit-tagged-arp.json": "06e70e7a9c815b8a0c849616da55b4918b6ed72f3b24550fee8b15d005e6fcf5",
+    "bastion-second-explicit-tagged-arp.json": "06e70e7a9c815b8a0c849616da55b4918b6ed72f3b24550fee8b15d005e6fcf5",
+    "node-explicit-tagged-arp.json": "06e70e7a9c815b8a0c849616da55b4918b6ed72f3b24550fee8b15d005e6fcf5",
+    "checker-final-negative.json": "89ed1aae0fa47361623494fc5cf008d5f71398ac8d85ead50f9fdc0727303bfe",
+    "checker-final-negative-receipt.json": "986e7b6c17f197d338f7885327f049ec6e2d9f9201053f2580d212e4b153bb6d"
+  },
+  "diagnosticResourceStatus": {
+    "secondSmallBastion": "Retired after preserving fresh-bootstrap and private-network evidence; exact-server GET404 verified",
+    "mediumBastion": "Still deploying; local 20-minute apply timeout reconciled by importing the exact existing server into the same state; no duplicate allocation"
+  },
+  "checkerScriptSha256": "b1c5b2ff198bf2a2749900b5d66f249e39a0cff53e0084a14d4ba4603398c507"
 }

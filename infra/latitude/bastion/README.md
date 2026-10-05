@@ -100,3 +100,15 @@ does not establish the installed RHCOS policy; RHCOS configuration follows the
 Use the teardown steps in the [Latitude validation procedure](../../../docs/latitude-validation.md)
 with the same external state and variable files used to provision. Destroy the node first,
 then the bastion when the mirror cache is no longer needed.
+
+Retain the configuration revision and rendered bootstrap identity for each deployment in
+private external state. Provider 4.6.0 can report `Server Reinstall Required` even during
+destroy planning when the current user-data differs from the deployed payload. In that case,
+plan with the recorded deployed configuration and the same state, verify that the plan contains
+only the intended deletions, and apply that saved plan with the explicit state path. Keep
+`allow_reinstall=false`; cleanup does not require an OS reinstall.
+
+An interrupted create can leave a billable server at Latitude before Terraform records its
+ID. Inspect the provider inventory and the same external state before retrying. Once the old
+Terraform process has exited, back up the state and import the verified existing server ID if
+its resource is absent. Review a new plan; the previous create plan is no longer safe to apply.

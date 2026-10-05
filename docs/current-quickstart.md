@@ -59,11 +59,17 @@ Once release inputs are resolved and the external environment file is complete:
 
 ```bash
 bash ansible/up.sh --mode prepare -e "@$COCO_STATE_DIR/rig.yml"
+# Continue only after the firmware/SNP and private-link checks pass:
 bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
 These commands reuse infrastructure. `--apply-tf` explicitly adds Terraform provisioning; review [the infrastructure plan](latitude-validation.md) first. The wrapper reads non-secret bastion IP, VLAN VID and server ID outputs after apply and passes them to Ansible. Explicit Ansible overrides still win. Fresh installation retains the existing BIOS acknowledgement gate. Complete [AMD firmware preflight](amd-firmware-preflight.md) for the actual board, firmware security fixes, UEFI boot path and raw-host SNP result before continuing. Do not use `skip_bios_pause` as a substitute for that verification.
+
+Before reinstalling, also complete the [private-link check](latitude-validation.md#prove-the-private-link-before-reinstall)
+from the raw node. Apply VLAN assignments separately so the provider OS remains available for
+these probes. A successful bastion mirror run or provider `connected` status cannot establish
+that the node reaches the mirror, DNS and NTP. This is currently a manual prerequisite.
 
 Tools are verified against the requested release's published checksums. Existing binaries are reused only when their recorded hashes match. A changed ImageSet, tool, destination or release invalidates the mirror completion marker. A changed installer, payload or rendered configuration invalidates PXE assets. Rebuilding assets belonging to an existing cluster requires deliberate `reinstall_existing=true` or a new assets directory; it is not an upgrade shortcut.
 

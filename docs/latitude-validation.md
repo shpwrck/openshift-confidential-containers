@@ -15,7 +15,11 @@ The first Dallas allocation delivered EPYC 7313P / H12SSW-NTR / BIOS 2.3 instead
 
 The [Miami replacement](validation/latitude-mia2-host-2026-10-05.json) delivered EPYC 9124 / H13SST-G / BIOS 1.6. After enabling the five required controls, it retained UEFI and passed the raw-host check: RMP allocation, SNP API 1.55 build 24, `/dev/sev` and `sev_snp=Y`. A recovered initialization retry is retained in the evidence. This is a functional lab acceptance; the old firmware remains below published security fixes and does not establish a current secure customer baseline.
 
-The first Miami bastion completed image mirroring and local DNS preparation, but the node cannot reach it over the private VLAN. A [dated network check](validation/latitude-mia2-network-2026-10-05.json) records failed ARP on two VLANs, matching provider/NIC identities and unsuccessful assignment recovery. A second Miami bastion is provisioning as a third-host control and fresh-bootstrap test. The first Miami host retains a cloud-init user-module error; its mirror bootstrap succeeded, and the corrected template awaits fresh-boot validation. The Dallas bastion is retained temporarily while unique signed-image artifacts are preserved. No new OpenShift installation or guest proof has completed; earlier July results remain historical evidence. This run targets disposable AMD SEV-SNP CPU infrastructure. Customer upgrades, separate-cluster topologies, Intel and GPU work require separate validation.
+The first Miami bastion completed image mirroring and local DNS preparation, but the node cannot reach it over the private VLAN. A [dated network check](validation/latitude-mia2-network-2026-10-05.json) records failed ARP on two VLANs, matching provider/NIC identities and unsuccessful assignment recovery.
+
+A second Miami bastion completed [fresh-bootstrap validation](validation/latitude-fresh-bootstrap-2026-10-05.json): uploaded-key SSH works, the user password stays locked, all cloud-init module error lists are empty, and the mirror readiness marker and Quay service passed. A recoverable provider metadata warning is retained. The third-host comparison also failed private traffic, including between the two bastions in the same rack. Full release mirroring did not run on this second host; it was retired after preserving its evidence. The first Miami host retains its earlier cloud-init user-module error. A medium-class bastion comparison is still provisioning.
+
+The Dallas bastion's unique artifacts were backed up and cryptographically verified; Terraform destroy completed, and an exact-server API GET returned 404. No new OpenShift installation or guest proof has completed; earlier July results remain historical evidence. This run targets disposable AMD SEV-SNP CPU infrastructure. Customer upgrades, separate-cluster topologies, Intel and GPU work require separate validation.
 
 ## Inputs required before provisioning
 
@@ -101,14 +105,87 @@ provider OS input unchanged; Ansible's journaled installation step requests the 
 
 If preparation stops because its new-host inputs are incomplete, preserve the external Terraform state, correct the inputs, and rerun preparation. Do not create a second state directory for the same project resources. Pull-secret staging accepts `pull_secret_src` from the external Ansible file. Check the bastion's `MIRROR_READY`/`MIRROR_FAILED` result and its protected bootstrap logs before retrying a failed bootstrap.
 
-After reviewing the node plan and completing [AMD firmware preflight](amd-firmware-preflight.md) for the actual delivered board, UEFI boot path, firmware security fixes and raw-host SNP result:
+### Prove the private link before reinstall
+
+Apply only the reviewed node infrastructure changes while its provider OS is still available.
+Save and inspect the plan using the **same existing node state**; it must preserve the server and
+change only the intended assignments. This does not run Ansible or request a provider reinstall:
 
 ```bash
-bash ansible/up.sh --mode fresh-install --apply-tf -e "@$COCO_STATE_DIR/rig.yml"
+export TF_DATA_DIR="$COCO_STATE_DIR/terraform/node/data"
+terraform -chdir=infra/latitude plan \
+  -state="$COCO_STATE_DIR/terraform/node/terraform.tfstate" -var-file="$COCO_NODE_TFVARS" \
+  -var="bastion_state_path=$COCO_STATE_DIR/terraform/bastion/terraform.tfstate" \
+  -out="$COCO_STATE_DIR/terraform/node/private-link.tfplan"
+terraform -chdir=infra/latitude show "$COCO_STATE_DIR/terraform/node/private-link.tfplan"
+# Apply only after confirming the server is unchanged:
+terraform -chdir=infra/latitude apply \
+  -state="$COCO_STATE_DIR/terraform/node/terraform.tfstate" \
+  "$COCO_STATE_DIR/terraform/node/private-link.tfplan"
+```
+
+Before proceeding, retain these checks in private external evidence:
+
+1. Match the current server ID and discovered private MAC to the actual node interface, and
+   confirm both hosts' assigned network ID, VID and facility. Inspect `ip -d link` and select the
+   private parent explicitly; do not assume an interface name. Record the existing public routes
+   and resolver configuration.
+2. On the raw node, temporarily configure the intended private address/prefix on that parent's
+   VLAN. Use a dedicated NetworkManager profile with `connection.autoconnect no`,
+   `ipv4.never-default yes`, `ipv4.ignore-auto-dns yes`, no gateway or DNS servers, and IPv6
+   disabled. Inspect any existing profile before reusing it. Confirm public routes, resolver
+   configuration and SSH remain unchanged.
+3. From the **node**, prove ARP resolution to the bastion and reach the mirror by its certificate
+   hostname using the correct CA obtained over verified bastion SSH; do not disable TLS
+   verification. Query the bastion's DNS directly and make an NTP query without changing the
+   node's clock or persistent time configuration. Confirm the expected DNS answers and an NTP
+   response. An unauthenticated registry `/v2/` response of 401 can prove the TLS path, but does
+   not prove an authenticated image pull.
+
+Once the temporary VLAN profile is active, run the repository's
+[read-only checker](../scripts/check-private-link.py) **on the raw Linux node** with Python 3 and `ip`
+already installed. It needs sudo/root or the Linux network capabilities required for
+`SO_BINDTODEVICE`; it fails if interface binding is unavailable or denied. Copy the script and
+correct public CA there over verified SSH first. Replace
+every placeholder with the reviewed values; the interface is the VLAN child, not its parent:
+
+```bash
+sudo install -d -m 0700 -o root -g root /root/coco-private-link-evidence
+sudo python3 /path/to/check-private-link.py \
+  --interface '<private-vlan-interface>' --vid '<VID>' \
+  --node-ip '<intended-node-private-IPv4>' --bastion-ip '<bastion-private-IPv4>' \
+  --mirror-hostname '<mirror-certificate-hostname>' --mirror-port 8443 \
+  --ca-file /path/to/verified-mirror-ca.pem \
+  --evidence /root/coco-private-link-evidence/result.json
+```
+
+The checker requires an existing owner-only evidence directory owned by its executing account
+(root in this example) and writes JSON with mode `0600`.
+It checks the VLAN, address and direct route before and after bounded probes; every UDP and TLS
+socket binds to the reviewed interface and node address before connecting, with no unbound fallback.
+After allocating each socket's source port, it checks that exact protocol/port flow's route is
+direct on the reviewed interface. Unsupported iproute2 flow selectors fail the check without fallback.
+DNS must return the mirror's direct A record pointing to the bastion. It changes no addresses,
+routes, resolver settings or clock. Run it while networking is stable. A zero exit status proves these raw-host private-service
+checks only, not an image pull, network enforcement or installed RHCOS behavior. This remains a
+manual prerequisite; the installer does not invoke the checker automatically.
+
+**Stop before reinstall if any private-path check fails.** Provider `connected` status, a local
+bastion DNS check or `MIRROR_READY` alone cannot pass this gate. Retain ARP state, interface/VID
+details and the exact TLS/DNS/NTP errors in protected logs; a routing, DNS or TLS failure is not
+an enforcement denial. The [Miami network evidence](validation/latitude-mia2-network-2026-10-05.json)
+shows this boundary. Remove only the temporary diagnostic profile when it is no longer needed.
+
+After this gate and [AMD firmware preflight](amd-firmware-preflight.md) pass for the actual
+delivered board, UEFI boot path, firmware security fixes and raw-host SNP result, put the current
+bastion IP, VLAN VID and server ID in the external Ansible file and start installation:
+
+```bash
+bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-`--apply-tf` is explicit and Terraform retains its own approval prompt. Fresh install retains the BIOS gate. The provider reinstall step compares the returned machine ID with the requested ID, persists request intent before sending it, and does not repeat an accepted request for unchanged inputs. If a request fails ambiguously, inspect the provider before any retry.
+Infrastructure is already applied, so this fresh-install invocation omits `--apply-tf`. The private-link gate above is a manual prerequisite; fresh install retains its existing BIOS gate. The provider reinstall step compares the returned machine ID with the requested ID, persists request intent before sending it, and does not repeat an accepted request for unchanged inputs. If a request fails ambiguously, inspect the provider before any retry.
 
 The wrapper passes non-secret Terraform outputs into Ansible after apply. When using already provisioned machines without `--apply-tf`, supply their current bastion IP, VLAN VID and server ID in the external Ansible file.
 
