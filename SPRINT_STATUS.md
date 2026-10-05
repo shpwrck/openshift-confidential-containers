@@ -47,6 +47,8 @@ The later conflicting-Terraform-state guard also passed its four focused wrapper
    The Miami replacement passed raw-host SNP acceptance. Authenticated artifact resolution, mirror transfer and a
    zero-change repeated preparation passed. Artifact preparation is distinct from hardware acceptance.
 2. Resolve the failed private VLAN path, then verify networking and SNP under the installed RHCOS kernel.
+   A public-routed lab can advance product testing separately; its current profile is render-only
+   until ingress protection across boot and the installed node is validated.
    The locked-user bootstrap passed on a fresh Miami bastion; it does not establish node connectivity.
 3. Run the documented installation and AMD proofs,
    then repeat a clean run while recording timings and manual interventions.
@@ -86,7 +88,9 @@ No firmware flash or support outreach occurred. See [firmware preflight](docs/am
 The current [private network check](docs/validation/latitude-mia2-network-2026-10-05.json)
 fails across three hosts and two VLANs, including a same-rack comparison. Correctly tagged
 ARP leaves the private interfaces, but corresponding peer frames are absent. The provider
-root cause is unproven. A different server class is still provisioning for comparison.
+root cause is unproven. The medium-class comparison disappeared from the provider inventory
+before completing deployment; cause unknown. Its remaining resources were removed and absence
+verified. No further comparison machine was allocated.
 Installation waits for private mirror, DNS and NTP reachability.
 
 Live validation found and repaired a readiness-marker permission issue. Actual oc-mirror
@@ -104,3 +108,8 @@ private sources and unchanged artifacts.
 for Ubuntu, macOS and Terraform, including the private-link checker. Later work still requires its own checks.
 Keep Terraform state, cost records, boot assets, kubeconfigs and proof recovery material
 outside the checkout and Homelab. Historical rig results do not validate this release set.
+
+The [public-route feasibility check](docs/validation/latitude-mia2-public-route-2026-10-05.json)
+passed node-to-registry trusted TLS and pinned-installer manifest generation. The
+[Chrony repair](docs/validation/latitude-mia2-chrony-2026-10-05.json) passed a private-source local
+NTP response and zero-change rerun. Public service and boot protection remain prerequisites.

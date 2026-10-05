@@ -1,13 +1,12 @@
-{{ '#' }} Rendered by Ansible role render_configs — DISCONNECTED SNO agent-config.
+{{ '#' }} Rendered by Ansible role render_configs — {{ network_profile | default('private-vlan') }} SNO agent-config.
 {{ '#' }} additionalNTPSources lives HERE (the installer drops it from install-config — fix #3).
-{{ '#' }} VLAN-only nmstate: the parent NIC has ipv4/ipv6 DISABLED; the tagged VLAN child carries
-{{ '#' }} the node's private IP and reaches the mirror over the air gap. MACs are discovered at
-{{ '#' }} runtime (parent_mac), never hardcoded.
+{{ '#' }} NIC names are bound to discovered MACs; topology is selected explicitly.
+{{ '#' }} public-routed-lab configures public routing and does not enforce egress isolation.
 apiVersion: v1beta1
 kind: AgentConfig
 metadata:
   name: {{ cluster_name }}
-rendezvousIP: {{ node_vlan_ip }}
+rendezvousIP: {{ cluster_node_ip | default(node_vlan_ip) }}
 bootArtifactsBaseURL: {{ boot_artifacts_base_url }}
 additionalNTPSources:
 {% for ntp in additional_ntp_sources %}
@@ -36,11 +35,29 @@ hosts:
       interfaces:
         - name: {{ m.parent_if }}
           type: ethernet
-          state: up
+          state: {{ 'down' if network_profile | default('private-vlan') == 'public-routed-lab' else 'up' }}
           ipv4:
             enabled: false
           ipv6:
             enabled: false
+{% if network_profile | default('private-vlan') == 'public-routed-lab' %}
+        {{ '#' }} Public underlay: the provider gateway is the other address of the verified /31.
+        - name: {{ m.external_if }}
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: false
+            auto-dns: false
+            address:
+              - ip: {{ node_public_ipv4 }}
+                prefix-length: {{ node_public_prefix }}
+          ipv6:
+            enabled: false
+            dhcp: false
+            autoconf: false
+            auto-dns: false
+{% else %}
 {% if m.external_if is defined and m.external_if and m.external_mac is defined and m.external_mac %}
         {{ '#' }} PUBLIC NIC — held DOWN on purpose (#78). Leaving it undeclared does NOT leave it
         {{ '#' }} alone: an interface absent from networkConfig is unmanaged in the agent live
@@ -75,13 +92,19 @@ hosts:
                 prefix-length: {{ vlan_prefix }}
           ipv6:
             enabled: false
+{% endif %}
       dns-resolver:
         config:
           server:
-            - {{ bastion_vlan_ip }}
+            - {{ bastion_service_ip | default(bastion_vlan_ip) }}
       routes:
         config:
           - destination: 0.0.0.0/0
+{% if network_profile | default('private-vlan') == 'public-routed-lab' %}
+            next-hop-address: {{ node_public_gateway }}
+            next-hop-interface: {{ m.external_if }}
+{% else %}
             next-hop-address: {{ bastion_vlan_ip }}
             next-hop-interface: {{ m.parent_if }}.{{ vlan_vid }}
+{% endif %}
 {% endfor %}

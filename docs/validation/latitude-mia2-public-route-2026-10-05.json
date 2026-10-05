@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-05T17:48:21.221665+00:00",
+  "scope": "Public-routed lab workaround feasibility on the existing accepted AMD node and first Miami bastion",
+  "status": "PARTIAL",
+  "privateNetworkStatus": "Unresolved; private/disconnected acceptance remains pending",
+  "checks": {
+    "nodeToMirror": "PASS: device/source route through provider public gateway; TLS certificate verified with existing mirror CA and mirror.rig.local SNI; GET /v2/ returned HTTP401",
+    "installer": "PASS: exact OpenShift4.20.39 agent create cluster-manifests accepted static Ethernet /31, matching public NIC/MAC, provider next-hop, public bastion DNS/NTP and unused private NIC down",
+    "generatedManifestReadback": "PASS: generated machine network, rendezvous, addresses, routes and service endpoints match candidate"
+  },
+  "installerSha256": "1f094166cea9fa24360f07d149b7a8184c0150955b41475b02dabfd3f3b5befd",
+  "limits": [
+    "Cluster-manifest generation is not boot or nmstate activation proof",
+    "Installer could not validate release image architecture and skipped that check; reported binary/release architecture amd64",
+    "No PXE generated, published or requested in this feasibility experiment",
+    "Public DNS/NTP and restrictive ingress across live and installed node still need validation",
+    "No egress isolation, OpenShift cluster, attestation guest or encrypted-image claim",
+    "No credentials, active installation sources or active network configuration changed by the candidate experiment"
+  ],
+  "routedCheckerNegativeControl": {
+    "recordedAt": "2026-10-05T17:55:49.701726+00:00",
+    "status": "EXPECTED_FAIL",
+    "overallExit": 1,
+    "checks": {
+      "interface/source/reviewedGateway": "PASS",
+      "mirrorTLS": "PASS",
+      "DNS": "FAIL",
+      "NTP": "FAIL",
+      "gatewayARP": "PASS",
+      "pathAfterProbes": "PASS"
+    },
+    "dns": "Connection refused: public DNS listener not enabled",
+    "ntp": "Timed out: current daemon deliberately denies the node public source",
+    "tls": "HTTP401 with trusted TLSv1.3 and exact public route/source/device binding",
+    "checkerSha256": "413e4bbf9e1ee0da60b475a6beef413e92405b7e92f67f08761e616f90ba85c6",
+    "protectedReceiptSha256": "b4b3b285856bb9fa61090b57d822389c020411a15e1b13412461b68b820a3f78",
+    "limit": "No service, network or firewall changes; temporary checker/public CA removed; public service readiness remains incomplete"
+  },
+  "reusableRenderer": {
+    "status": "PASS",
+    "scope": "Actual repository render_configs role in a new isolated private directory on first Miami, followed by pinned installer cluster-manifest generation",
+    "ansible": {
+      "ok": 23,
+      "changed": 5,
+      "failed": 0
+    },
+    "installerExit": 0,
+    "networkReadback": "Generated NMStateConfig equals rendered network configuration and NIC/MAC mapping; canonical machine network matches /31",
+    "protectedReceiptSha256": "bcd86d639471c9d11c2b5bdcb2523a154bdc5f3813289c03375b3d50a45add47",
+    "candidateArchiveSha256": "e6d7ac3a345bb3305cf47018f849510fc05d20929c5715e673cc266302263c27",
+    "limits": [
+      "No active install sources changed",
+      "No boot assets generated or published",
+      "No provider reinstall or network service changes",
+      "Architecture validation skipped warning retained"
+    ]
+  }
+}

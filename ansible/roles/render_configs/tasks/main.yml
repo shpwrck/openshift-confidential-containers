@@ -7,8 +7,8 @@
 # Correctness baked in:
 #   - additionalNTPSources -> agent-config ONLY (installer drops it from install-config).
 #   - imageDigestSources -> oc-mirror v2 layout (release / release-images).
-#   - install-config pullSecret = MIRROR creds only (node is air-gapped).
-#   - VLAN-only nmstate (parent NIC ipv4/ipv6 disabled; tagged VLAN child carries node IP).
+#   - install-config pullSecret = MIRROR credentials only (not an egress policy).
+#   - private-vlan remains the default; public-routed-lab is explicitly selected and validated.
 
 - name: Require an explicit verified install disk before creating renderer files
   ansible.builtin.assert:
@@ -39,6 +39,92 @@
   loop_control:
     label: "{{ item.name }}"
 
+- name: Require an explicit supported network profile
+  ansible.builtin.assert:
+    that:
+      - network_profile | default('private-vlan') in ['private-vlan', 'public-routed-lab']
+    fail_msg: "network_profile must be private-vlan (default) or public-routed-lab."
+
+- name: Validate the experimental public routed lab before creating renderer files
+  when: network_profile | default('private-vlan') == 'public-routed-lab'
+  block:
+    - name: Refuse isolation claims and unsupported public cluster layouts
+      ansible.builtin.assert:
+        that:
+          - air_gap | default(false) | string | lower in ['false', 'no', 'off', '0']
+          - enforce_node_egress | default(false) | string | lower in ['false', 'no', 'off', '0']
+          - (discovery_machines | default(machines)) | length == 1
+          - control_plane_replicas | int == 1
+          - compute_replicas | int == 0
+          - (discovery_machines | default(machines))[0].role == 'master'
+          - cluster_node_ip == node_public_ipv4
+          - bastion_service_ip == bastion_public_ipv4
+          - additional_ntp_sources == [bastion_public_ipv4]
+        fail_msg: >-
+          public-routed-lab supports one master only and requires the public node rendezvous
+          address and public bastion DNS/NTP address. It cannot enable air_gap or
+          enforce_node_egress: host, pod and guest isolation are not implemented by this profile.
+
+    - name: Require distinct verified public and private NIC identities
+      ansible.builtin.assert:
+        that:
+          - item.external_if | default('') is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$')
+          - item.parent_if | default('') is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$')
+          - item.external_if != item.parent_if
+          - item.external_mac | default('') is match('^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
+          - item.parent_mac | default('') is match('^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
+          - item.external_mac | lower != item.parent_mac | lower
+        fail_msg: >-
+          public-routed-lab requires distinct current public/private NIC names and discovered
+          MACs. Verify the external-role NIC on this allocation; never reuse a previous host's MAC.
+      loop: "{{ discovery_machines | default(machines) }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Validate the explicit public IPv4 slash31 and provider gateway
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import ipaddress, json, sys
+            data = json.load(sys.stdin)
+            try:
+                if str(data['prefix']) != '31':
+                    raise ValueError('node_public_prefix must explicitly be 31')
+                node = ipaddress.IPv4Address(data['node'])
+                gateway = ipaddress.IPv4Address(data['gateway'])
+                bastion = ipaddress.IPv4Address(data['bastion'])
+                for address in (node, gateway, bastion):
+                    if address.is_unspecified or address.is_loopback or address.is_multicast or address.is_link_local:
+                        raise ValueError('node, gateway and bastion must be usable unicast IPv4 addresses')
+                subnet = ipaddress.IPv4Network(str(node) + '/31', strict=False)
+                if gateway == node or gateway not in subnet:
+                    raise ValueError('node_public_gateway must be the other address in the node /31')
+                if bastion in subnet:
+                    raise ValueError('the public bastion must be a separate routed destination, not the gateway')
+                for value in data['cluster_networks']:
+                    if subnet.overlaps(ipaddress.IPv4Network(value)):
+                        raise ValueError('public machineNetwork overlaps a cluster or service network')
+            except (ValueError, TypeError) as error:
+                sys.exit('public-routed-lab: ' + str(error))
+            print(json.dumps({'machine_network': str(subnet)}))
+        stdin: >-
+          {{ {'node': node_public_ipv4, 'prefix': node_public_prefix,
+              'gateway': node_public_gateway, 'bastion': bastion_public_ipv4,
+              'cluster_networks': [cluster_network_cidr, service_network_cidr]} | to_json }}
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: render_public_network
+
+- name: Select the validated machine network for this render
+  ansible.builtin.set_fact:
+    render_machine_network: >-
+      {{ (render_public_network.stdout | from_json).machine_network
+         if network_profile | default('private-vlan') == 'public-routed-lab'
+         else machine_network }}
+
 - name: Assert the boot-artifacts token was overridden
   ansible.builtin.assert:
     that:
@@ -48,12 +134,12 @@
       boot_artifacts_token is still the placeholder. Generate one (openssl rand -hex 16) and pass
       -e boot_artifacts_token=... — the secret-bearing initrd must not sit at a guessable path (#33).
 
-- name: Assert vlan_vid / bastion_public_ipv4 were provided
+- name: Assert required provider network outputs were provided
   ansible.builtin.assert:
     that:
-      - vlan_vid is not match('REPLACE_.*')
+      - network_profile | default('private-vlan') == 'public-routed-lab' or vlan_vid is not match('REPLACE_.*')
       - bastion_public_ipv4 is not match('REPLACE_.*')
-    fail_msg: "Set vlan_vid (-e vlan_vid_override=) and bastion_public_ipv4 (-e bastion_public_ipv4_override=) from terraform output."
+    fail_msg: "Set bastion_public_ipv4 from Terraform output; private-vlan also requires vlan_vid."
 
 - name: Ensure the install src + cluster-assets dirs exist
   ansible.builtin.file:
@@ -130,7 +216,7 @@
       or (item.external_mac | default('')) is truthy
     fail_msg: >-
       No external-role MAC was discovered for {{ item.name }}, so its public NIC cannot be pinned
-      and held down. Leaving it unmanaged reintroduces #78: NetworkManager will DHCP it in the
+      for the selected profile. Leaving it unmanaged reintroduces #78: NetworkManager will DHCP it in the
       agent live environment, the provider's resolver will outrank the static dns-resolver,
       {{ mirror_dns_name }} will stop resolving, and the install will park at "Cannot access
       Rendezvous Host". Re-run `--tags discover` (it reads role=external from the Latitude API),

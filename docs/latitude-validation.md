@@ -17,9 +17,20 @@ The [Miami replacement](validation/latitude-mia2-host-2026-10-05.json) delivered
 
 The first Miami bastion completed image mirroring and local DNS preparation, but the node cannot reach it over the private VLAN. A [dated network check](validation/latitude-mia2-network-2026-10-05.json) records failed ARP on two VLANs, matching provider/NIC identities and unsuccessful assignment recovery.
 
-A second Miami bastion completed [fresh-bootstrap validation](validation/latitude-fresh-bootstrap-2026-10-05.json): uploaded-key SSH works, the user password stays locked, all cloud-init module error lists are empty, and the mirror readiness marker and Quay service passed. A recoverable provider metadata warning is retained. The third-host comparison also failed private traffic, including between the two bastions in the same rack. Full release mirroring did not run on this second host; it was retired after preserving its evidence. The first Miami host retains its earlier cloud-init user-module error. A medium-class bastion comparison is still provisioning.
+A second Miami bastion completed [fresh-bootstrap validation](validation/latitude-fresh-bootstrap-2026-10-05.json): uploaded-key SSH works, the user password stays locked, all cloud-init module error lists are empty, and the mirror readiness marker and Quay service passed. A recoverable provider metadata warning is retained. The third-host comparison also failed private traffic, including between the two bastions in the same rack. Full release mirroring did not run on this second host; it was retired after preserving its evidence. The first Miami host retains its earlier cloud-init user-module error. A medium-class comparison disappeared from the provider inventory before deployment completed; its exact API GET returned 404. The cause is unknown. Its remaining firewall, user data and VLAN were removed and absence verified. The accepted AMD node and first Miami bastion remain.
 
 The Dallas bastion's unique artifacts were backed up and cryptographically verified; Terraform destroy completed, and an exact-server API GET returned 404. No new OpenShift installation or guest proof has completed; earlier July results remain historical evidence. This run targets disposable AMD SEV-SNP CPU infrastructure. Customer upgrades, separate-cluster topologies, Intel and GPU work require separate validation.
+
+The [public-route feasibility check](validation/latitude-mia2-public-route-2026-10-05.json)
+passed trusted registry TLS from the accepted node and cluster-manifest generation with the
+pinned OpenShift installer. The explicit [public-routed lab profile](public-routed-lab.md)
+is a candidate workaround for product tests. Boot, public service controls and installed-node
+connectivity remain unverified; it cannot establish private-network or disconnected acceptance.
+
+A separate [live Chrony repair](validation/latitude-mia2-chrony-2026-10-05.json) fixed a missing
+include that prevented the prepared bastion from serving NTP. The private-source local positive
+control passed, both public-source controls were denied, and the unchanged rerun made zero
+changes. This does not establish a working node-to-bastion private path.
 
 ## Inputs required before provisioning
 
@@ -168,7 +179,26 @@ direct on the reviewed interface. Unsupported iproute2 flow selectors fail the c
 DNS must return the mirror's direct A record pointing to the bastion. It changes no addresses,
 routes, resolver settings or clock. Run it while networking is stable. A zero exit status proves these raw-host private-service
 checks only, not an image pull, network enforcement or installed RHCOS behavior. This remains a
-manual prerequisite; the installer does not invoke the checker automatically.
+useful standalone check. Before each new reinstall request, the installer also runs a fresh
+checker invocation on the raw provider OS; it never substitutes a cached PASS.
+
+For that enforced check, set `raw_node_ssh_user`, `raw_node_ssh_key`, `bastion_ssh_key` and
+`private_link_known_hosts` in the external Ansible input file. Key and known-hosts paths are
+absolute controller paths outside the checkout. Verify both hosts' SSH keys before populating
+the dedicated known-hosts file; the gate neither enrolls new keys nor disables host verification.
+The raw SSH address comes from the current provider response, and sudo must work noninteractively.
+If provider-OS NIC naming differs from the rendered name, set the machine's `raw_parent_if`;
+its MAC must still match the current provider and prepared installer identities. The gate copies
+only the checker and public CA, verifies that CA against the prepared installer trust, preserves
+attempt evidence under `$COCO_STATE_DIR/validation/private-link`, and removes its temporary files.
+It does not configure the VLAN or install missing packages. The supported gate topology is this
+Latitude rig's mirror/DNS/NTP bastion; differing service endpoints require separate validation.
+
+An accepted request for the same artifact revision resumes installation without raw-host SSH.
+An ambiguous request still requires provider inspection and explicit retry; a retry must pass
+a fresh check before another POST. Changed inputs also require the existing reinstall override
+and fresh raw-host proof. A failed check records no new reinstall intent and preserves existing
+journals. It closes published boot files only when no accepted or ambiguous request can need them.
 
 **Stop before reinstall if any private-path check fails.** Provider `connected` status, a local
 bastion DNS check or `MIRROR_READY` alone cannot pass this gate. Retain ARP state, interface/VID
@@ -185,7 +215,7 @@ bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-Infrastructure is already applied, so this fresh-install invocation omits `--apply-tf`. The private-link gate above is a manual prerequisite; fresh install retains its existing BIOS gate. The provider reinstall step compares the returned machine ID with the requested ID, persists request intent before sending it, and does not repeat an accepted request for unchanged inputs. If a request fails ambiguously, inspect the provider before any retry.
+Infrastructure is already applied, so this fresh-install invocation omits `--apply-tf`. Temporary VLAN preparation and firmware review remain manual; fresh install enforces private-link proof before a new provider request and retains its BIOS gate. The provider reinstall step compares the returned machine ID with the requested ID, persists request intent before sending it, and does not repeat an accepted request for unchanged inputs. If a request fails ambiguously, inspect the provider before any retry.
 
 The wrapper passes non-secret Terraform outputs into Ansible after apply. When using already provisioned machines without `--apply-tf`, supply their current bastion IP, VLAN VID and server ID in the external Ansible file.
 

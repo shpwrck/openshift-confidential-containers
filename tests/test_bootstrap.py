@@ -300,6 +300,13 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:f.write(json.dumps({'tool':'ansi
         for path in src.parent.glob('*.yml'):
             data = unprivileged(yaml.safe_load(path.read_text()))
             (dest / path.name).write_text(yaml.safe_dump(data, sort_keys=False))
+        if task_file.endswith('/install_drive/tasks/reinstall.yml'):
+            # These existing tests isolate provider request idempotency. Dedicated
+            # private-link integration tests exercise failed/accepted gate behavior.
+            (dest / 'private_link.yml').write_text(yaml.safe_dump([{
+                'name': 'Local successful raw-host proof fixture',
+                'ansible.builtin.command': {'argv': ['true']}, 'changed_when': False,
+            }], sort_keys=False))
         play = [{'name': 'Offline bootstrap fixture', 'hosts': 'localhost', 'connection': 'local',
                  'gather_facts': False, 'vars': variables,
                  'tasks': [{'ansible.builtin.include_tasks': str(dest / src.name)}]}]

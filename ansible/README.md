@@ -33,9 +33,10 @@ bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 
 These commands reuse existing infrastructure. `--plan-tf` plans only; `--apply-tf` explicitly adds provisioning. See [the Latitude procedure](../docs/latitude-validation.md#plan-and-provision-in-stages) for plan review, provisioning and teardown.
 
-Complete the [manual private-link gate](../docs/latitude-validation.md#prove-the-private-link-before-reinstall)
-while the raw provider OS is still available. Stage networking separately before fresh-install;
-the wrapper does not perform this check automatically.
+Complete [private-link preparation](../docs/latitude-validation.md#prove-the-private-link-before-reinstall)
+while the raw provider OS is still available. Stage networking separately and supply the pinned
+raw-node/bastion SSH inputs. Fresh install runs the check before every new reinstall request;
+an accepted request resumes without requiring the replaced provider OS.
 
 Fresh install replaces the node's installed OS. It is not an in-place customer upgrade. `skip_bios_pause=true` is only an unattended acknowledgement after the required evidence exists. Successful installation closes the boot endpoint automatically; after an interrupted run, close it explicitly when safe:
 

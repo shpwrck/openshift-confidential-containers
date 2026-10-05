@@ -67,6 +67,14 @@
 - name: Verify the provider identity before sending a new reinstall
   when: prior_request.get('identity', '') != install_identity or prior_request.get('state', '') != 'requested'
   block:
+    - name: Block public routed reinstalls until early-boot ingress protection is implemented and verified
+      ansible.builtin.assert:
+        that: network_profile | default('private-vlan') == 'private-vlan'
+        fail_msg: >-
+          public-routed-lab reinstall is currently blocked: reviewed ingress protection for both
+          the agent live environment and installed RHCOS is not yet implemented and verified.
+          Render and gate-only routed service rehearsals are available; there is no bypass flag.
+
     - name: Read the selected provider machine
       ansible.builtin.uri:
         url: "{{ latitude_api_base }}/servers/{{ install_machine.server_id }}"
@@ -85,6 +93,17 @@
       ansible.builtin.assert:
         that: provider_machine.json.data.id == install_machine.server_id
         fail_msg: "Provider identity does not match the selected machine; no reinstall was sent."
+
+    - name: Require fresh raw-host network proof before recording reinstall intent
+      block:
+        - name: Check the current raw provider OS and prepared network inputs
+          ansible.builtin.include_tasks:
+            file: private_link.yml
+            apply:
+              ignore_unreachable: true
+      rescue:
+        - name: Preserve failure evidence and close unused publication
+          ansible.builtin.include_tasks: private_link_failure.yml
 
     - name: Show the machine selected for fresh installation
       ansible.builtin.debug:

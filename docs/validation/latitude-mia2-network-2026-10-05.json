@@ -45,7 +45,7 @@
   "assessment": "Private link failure reproduces across three hosts and two VLANs, including same-rack and cross-rack paths. A provider forwarding or port-configuration defect remains a hypothesis; no demonstrated NIC offload defect.",
   "limits": [
     "No OpenShift installation or guest proof",
-    "First Miami mirror preparation passed locally; not reachable from the node",
+    "First Miami mirror preparation passed locally; registry trusted TLS also responds over public routing from the accepted node. Private link remains unavailable.",
     "No firmware flashing or NIC offload change",
     "Temporary VLAN diagnosis still needs cleanup"
   ],
@@ -64,7 +64,8 @@
   },
   "diagnosticResourceStatus": {
     "secondSmallBastion": "Retired after preserving fresh-bootstrap and private-network evidence; exact-server GET404 verified",
-    "mediumBastion": "Still deploying; local 20-minute apply timeout reconciled by importing the exact existing server into the same state; no duplicate allocation"
+    "mediumBastion": "Provider API returned exact-server 404 and project inventory no longer listed the server while deployment was incomplete; cause unknown. Local state reconciled and remaining own firewall, user data and VLAN deleted, with GET404 verification. No replacement allocated."
   },
-  "checkerScriptSha256": "b1c5b2ff198bf2a2749900b5d66f249e39a0cff53e0084a14d4ba4603398c507"
+  "checkerScriptSha256": "b1c5b2ff198bf2a2749900b5d66f249e39a0cff53e0084a14d4ba4603398c507",
+  "followUp": "Public transport feasibility is recorded separately in latitude-mia2-public-route-2026-10-05.json; it does not resolve the private VLAN failure."
 }

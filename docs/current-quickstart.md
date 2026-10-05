@@ -69,7 +69,9 @@ These commands reuse infrastructure. `--apply-tf` explicitly adds Terraform prov
 Before reinstalling, also complete the [private-link check](latitude-validation.md#prove-the-private-link-before-reinstall)
 from the raw node. Apply VLAN assignments separately so the provider OS remains available for
 these probes. A successful bastion mirror run or provider `connected` status cannot establish
-that the node reaches the mirror, DNS and NTP. This is currently a manual prerequisite.
+that the node reaches the mirror, DNS and NTP. Temporary VLAN preparation remains manual;
+fresh install requires the documented pinned SSH inputs and runs a fresh check before every
+new reinstall request. Accepted requests resume without trying to reconnect to the provider OS.
 
 Tools are verified against the requested release's published checksums. Existing binaries are reused only when their recorded hashes match. A changed ImageSet, tool, destination or release invalidates the mirror completion marker. A changed installer, payload or rendered configuration invalidates PXE assets. Rebuilding assets belonging to an existing cluster requires deliberate `reinstall_existing=true` or a new assets directory; it is not an upgrade shortcut.
 
