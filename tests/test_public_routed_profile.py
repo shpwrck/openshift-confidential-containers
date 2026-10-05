@@ -186,11 +186,11 @@ class PublicRoutedProfileTests(unittest.TestCase):
             if 'ansible.builtin.file' in task:
                 task['ansible.builtin.file']['path'] = str(nginx_conf)
             if task.get('ansible.builtin.command') == 'nginx -t':
-                task['ansible.builtin.command'] = '/bin/true'
+                task['ansible.builtin.command'] = {'argv': [sys.executable, '-c', 'pass']}
             if 'ansible.builtin.systemd' in task:
                 # Fixture service reload only; retain actual entrypoint and cleanup actions.
                 task.pop('ansible.builtin.systemd')
-                task['ansible.builtin.command'] = '/bin/true'
+                task['ansible.builtin.command'] = {'argv': [sys.executable, '-c', 'pass']}
         (fixture_role / 'stop_publication.yml').write_text(yaml.safe_dump(stop))
         variables = dict(self.variables, network_profile='public-routed-lab',
                          pxe_publication_started=True,  # Stale fact from a previous role invocation.
