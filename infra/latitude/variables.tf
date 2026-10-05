@@ -64,7 +64,7 @@ variable "ssh_public_key_path" {
 variable "air_gap" {
   type        = bool
   default     = true
-  description = "Join the bastion VLAN (and optionally its firewall). false = standalone rung-0 node, no bastion."
+  description = "Join the bastion VLAN, with an optional firewall API assignment. This does not establish network isolation. false = standalone rung-0 node, no bastion."
 }
 
 variable "bastion_state_path" {
@@ -76,5 +76,5 @@ variable "bastion_state_path" {
 variable "enforce_latitude_firewall" {
   type        = bool
   default     = false
-  description = "Attach the bastion's INBOUND-hardening firewall (SSH/API/ingress from admin_cidr). Off by default so a wrong admin_cidr can't lock you out. (Egress lockdown is host-nftables, not this.)"
+  description = "Legacy name: creates a Latitude firewall API assignment only. Does not install/verify its host agent or prove enforcement. Keep false for the maintained RHCOS path; agent compatibility and lifecycle are unvalidated."
 }

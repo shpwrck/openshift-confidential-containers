@@ -44,7 +44,7 @@ Ten phases (0–9), four reboot-crossing stretches (Phase 4 BIOS, Phase 5 instal
 | [Prerequisites — pre-flight inventory](#prerequisites--pre-flight-inventory) | Gather every value + credential **while still connected**. | bastion | do first |
 | [Phase 0 — Tooling](#phase-0--tooling-on-the-bastion--admin-host) | Fetch version-pinned `oc` / `openshift-install` / `oc-mirror`. | bastion | minutes |
 | [Phase 1 — Provision the infrastructure](#phase-1--provision-the-infrastructure-by-hand) | Create VLAN, bastion, SNP node by hand (bastion first). | provider console | — |
-| [Phase 2 — Bastion preparation](#phase-2--bastion-preparation) | Egress lockdown, DNS/NTP, registry, host-side firewall. | bastion | — |
+| [Phase 2 — Bastion preparation](#phase-2--bastion-preparation) | Bastion egress tuning, DNS/NTP, registry, host-side firewall. | bastion | — |
 | [Phase 3 — Mirror the content](#phase-3--mirror-the-content-the-bottleneck-12-h-cacheable) | `oc-mirror` release + operator catalogs into the mirror (the bottleneck). | bastion | ~1–2 h, cacheable |
 | [Phase 4 — Rung-0 SNP host gate + BIOS](#phase-4--rung-0-snp-host-gate--the-bios-recipe) | Set the SNP BIOS recipe over IPMI, prove silicon before any install. | node (raw OS) | — |
 | [Phase 5 — Install SNO](#phase-5--install-sno-via-the-agent-based-installer) | Render + netboot the Agent-based Installer; wait for the cluster. | node → cluster | ~40–90 min |
@@ -239,7 +239,7 @@ Each file below has one consumer and one job.
 | NTP (`chrony`) | `/etc/chrony.d/rig.conf`, `agent-config.additionalNTPSources` | Gives the air-gapped node stable time. | Bootstrap or attestation behaves mysteriously because certificates/tokens are time-sensitive. |
 | Boot web server | `scripts/serve-boot-artifacts.sh`, nginx on `:8080` | Publishes iPXE kernel/initrd/rootfs under an unguessable path. | Netboot cannot fetch artifacts; if left running, secret-bearing initrd remains exposed. |
 | Console proxy | `/etc/nginx/conf.d/coco-public-console.conf`, managed by `ansible/roles/public_console/` | Publishes the disposable rig console/OAuth route through the bastion public IP using sslip.io names, then proxies to private OpenShift ingress. | The cluster is healthy but the browser cannot reach the console from outside the private VLAN. |
-| Egress shaping | `/etc/nftables/egress-clamp.nft`, node `nft` airgap table | Makes large mirror pulls reliable and proves the node cannot bypass the bastion. | `oc-mirror` EOFs, or negative air-gap tests accidentally pass by reaching public services. |
+| Egress controls | Bastion `/etc/nftables/egress-clamp.nft`; separate node `nft` airgap table | Bastion MSS tuning keeps large mirror pulls reliable. Node/workload isolation requires separate rules and traffic evidence. | `oc-mirror` EOFs, or tests reach public services despite assumed isolation. |
 
 #### Post-install GitOps files
 
@@ -379,8 +379,11 @@ the mirror exists before the node needs it.
 3. **Provision the SNP node**, attach it to the **same** VLAN, inject the same SSH key. Leave
    its BIOS at defaults for now — Phase 4 sets the SNP recipe and runs the rung-0 gate before
    any OpenShift install.
-4. **(Inbound firewall, optional)** Restrict inbound to the node/bastion to your admin CIDR
-   (SSH / API / ingress). Egress is locked **host-side** in Phase 2/4, not via the provider.
+4. **(Inbound restrictions)** Select and verify an enforcement mechanism for the node/bastion
+   (SSH / API / ingress). **Current correction to this historical procedure:** Latitude API
+   assignment alone does not install its host agent, and the provider preserves an automatic
+   SSH rule outside Terraform state. See [firewall and egress limits](../infra/latitude/bastion/README.md#firewall-assignment-and-network-enforcement).
+   Phase 2 tunes bastion egress; Phase 4's raw-host rules require separate validation.
 
 > Hourly bare-metal billing accrues from provisioning. Tear the node down between runs
 > (Phase 9); keep the bastion so the mirror persists.
@@ -638,10 +641,11 @@ read its `RESULT` line; a FAIL is not automatically a provider veto.
 
 ### 4.3 Lock egress host-side and verify the air gap bites
 
-Two separate controls — don't conflate them. Inbound is the provider firewall (Phase 1.4);
-**egress** is locked here with nftables, allowing only the bastion's private VLAN IP. A
-silently-reachable internet would hide the very VCEK-cache failure mode this environment
-exists to prove.
+The following historical example filters the raw provider OS's host `OUTPUT`, allowing
+the bastion's private VLAN IP. It does not configure inbound restriction or survive the
+OpenShift reinstall. The Latitude API object is separate from active host enforcement
+(see Phase 1.4). Public KDS access must be checked from Trustee's actual network context;
+host-only probes do not establish pod or guest isolation.
 
 ```bash
 ssh <user>@<node-ip> 'sudo nft -f - <<EOF
@@ -653,16 +657,21 @@ table inet airgap {
   }
 }
 EOF'
-# probe: public egress must be DEAD, the private mirror must answer:
-ssh <user>@<node-ip> 'curl -m5 -sI https://quay.io >/dev/null && echo "EGRESS OPEN (bad)" || echo "EGRESS BLOCKED (good)"'
-ssh <user>@<node-ip> 'curl -m5 -skI https://mirror.rig.local:8443 >/dev/null && echo "MIRROR OK over VLAN"'
+# Diagnostic probes: retain return codes and errors; failure alone is not proof of blocking.
+ssh <user>@<node-ip> 'curl --noproxy "*" -m5 -sSI https://quay.io'
+ssh <user>@<node-ip> 'curl --noproxy "*" -m5 -skI https://mirror.rig.local:8443'
 ```
 
 (Post-install, the same intent is expressed as the opt-in MachineConfig under
 [`gitops/base/airgap-egress/`](../gitops/base/airgap-egress/) — apply it **after** the SNO is
-healthy, not in the install-time overlay.)
+healthy, not in the install-time overlay. It also filters host `OUTPUT`; validate the
+actual Trustee/workload traffic separately. The private probe above checks connectivity
+with TLS verification disabled; current acceptance also requires mirror trust verification.)
 
-> **STOP-gate:** rung-0 green **and** public egress blocked **and** mirror reachable.
+> **STOP-gate:** rung-0 green and attributable public-egress denial with working private
+> mirror/DNS/NTP controls. DNS, TLS or routing failure alone is not denial evidence.
+> Repeat [network acceptance checks](latitude-validation.md#acceptance-evidence) after
+> reinstall and reboot, from the host and relevant pod/guest contexts.
 
 ---
 

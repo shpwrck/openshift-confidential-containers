@@ -6,7 +6,7 @@ once, so the disposable SNP node (`../`) can be cycled underneath it freely:
 - a **private virtual network** (VLAN) with real **L3** (static private IPs assigned in cloud-init),
 - a **bastion** bare-metal host running Red Hat **`mirror-registry`** (quay) under a **DNS name
   mapped to its private IP**, so the node's pull validates the cert SAN (no `x509` IP-SAN failure),
-- the **inbound-hardening firewall** the SNP node attaches to (egress lockdown is host nftables).
+- a **firewall API object** the SNP node can reference; enforcement needs separate validation.
 
 ## Why separate from the node module
 
@@ -74,15 +74,26 @@ Inspect bootstrap through SSH with sufficient privileges: `sudo tail -f /var/log
 
 The generated registry password lives at `/opt/mirror/mirror-admin-password` with mode 0600. The public CA is `/opt/mirror/ca/rootCA.pem`. Ansible reads these files and builds the required authentication and trust configuration; do not copy the password into terminal output, Terraform inputs, user-data or the checkout.
 
-## Two firewalls, two layers — don't confuse them
+## Firewall assignment and network enforcement
 
-- **Inbound** to the node: `latitudesh_firewall` here (SSH/API/ingress from `admin_cidr` only,
-  deny the rest). Attach via `-var enforce_latitude_firewall=true` in `../` (off by default so a
-  wrong `admin_cidr` can't lock you out). `admin_cidr` is **required** — no `0.0.0.0/0` default.
-- **Egress** lockdown (the air gap): **host-side nftables**, NOT a Latitude firewall — its egress
-  direction is undocumented, so we don't ship a false control. Runbook Phase 1 has the
-  default-deny-output-except-bastion snippet **and** the probe that proves public egress is
-  actually blocked. Do not claim the air gap is enforced until that probe is green.
+Latitude's [current firewall documentation](https://www.latitude.sh/docs/networking/firewall)
+describes a host-installed UFW/iptables agent and inbound/outbound rules. API assignment and
+agent installation are separate steps. This repository creates the firewall object and optional
+assignment; it does not install or verify that agent. Keep `enforce_latitude_firewall=false`
+for the maintained RHCOS path. Agent compatibility and persistence through reinstall are unvalidated.
+
+The [pinned provider's firewall documentation](https://github.com/latitudesh/terraform-provider-latitudesh/blob/v4.6.0/docs/resources/firewall.md)
+also records an automatic SSH rule that remains outside Terraform state and survives rule
+updates. Consequently, the configured `admin_cidr` does not establish exclusive SSH access.
+Inspect effective API and host rules and test allowed/denied traffic before claiming restriction.
+
+The bastion's `bastion_egress` role tunes MTU/MSS; it retains outbound access for mirroring.
+The separate [RHCOS egress MachineConfig](../../../gitops/base/airgap-egress/) is applied manually
+after cluster health is established and filters host `OUTPUT`. A failed host `curl` alone does
+not establish Trustee pod or guest isolation. Follow the [network acceptance checks](../../../docs/latitude-validation.md#acceptance-evidence),
+including private-service controls and fresh probes after reboot. The raw provider OS's firewall
+does not establish the installed RHCOS policy; RHCOS configuration follows the
+[Ignition/Machine Config Operator lifecycle](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/architecture/architecture-rhcos).
 
 ## Tear down (only at the end of the engagement)
 

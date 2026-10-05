@@ -57,29 +57,27 @@ variable "tags" {
   default = []
 }
 
-# --- Firewall: INBOUND hardening for the node -------------------------------------------
+# --- Firewall API object with intended inbound rules -----------------------------------
 variable "firewall_name" {
   type        = string
   default     = "coco-node-inbound-hardening"
-  description = "Inbound firewall name. Set a unique name for each parallel rig in the same Latitude project."
+  description = "Firewall API object name, not an enforcement guarantee. Set a unique name for each parallel rig in the same Latitude project."
   validation {
     condition     = length(trimspace(var.firewall_name)) > 0
     error_message = "Provide a nonempty firewall_name."
   }
 }
 
-# No default — fail closed. Set your admin source CIDR explicitly (the rig may use a wide
-# range, but that must be a conscious choice, not a shipped 0.0.0.0/0). NB: this firewall
-# hardens INBOUND to the node only; the air-gap EGRESS lockdown is host-nftables (runbook),
-# not this resource.
+# No default: select the source CIDR for these intended rules explicitly.
+# An additional automatic SSH rule is preserved outside Terraform's configured rules;
+# the API object and assignment alone do not establish enforcement. See README.md.
 variable "admin_cidr" {
   type        = string
-  description = "Admin source CIDR allowed inbound to the node (SSH/API). Required — set consciously."
+  description = "Source CIDR for intended SSH/API/ingress rules. Required; does not remove Latitude's automatic SSH rule or prove host enforcement."
 }
 
-# --- Private VLAN L3 (the real air gap) -------------------------------------------------
-# The SNP node reaches the mirror ONLY over this private segment. The registry is served under
-# a DNS name mapped to the bastion's private IP, so quay's cert SAN matches what the node dials.
+# --- Private VLAN L3 (network isolation must be verified separately) --------------------
+# The registry DNS name maps to the bastion's private IP so its certificate SAN matches.
 variable "vlan_subnet" {
   type        = string
   default     = "192.168.66.0/24"

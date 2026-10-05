@@ -15,7 +15,7 @@ The first Dallas allocation delivered EPYC 7313P / H12SSW-NTR / BIOS 2.3 instead
 
 The [Miami replacement](validation/latitude-mia2-host-2026-10-05.json) delivered EPYC 9124 / H13SST-G / BIOS 1.6. After enabling the five required controls, it retained UEFI and passed the raw-host check: RMP allocation, SNP API 1.55 build 24, `/dev/sev` and `sev_snp=Y`. A recovered initialization retry is retained in the evidence. This is a functional lab acceptance; the old firmware remains below published security fixes and does not establish a current secure customer baseline.
 
-A fresh Miami bastion is provisioning to exercise the latest bootstrap and provide the same-site VLAN. The Dallas bastion is retained temporarily. No new OpenShift installation or guest proof has completed; earlier July results remain historical evidence. This run targets disposable AMD SEV-SNP CPU infrastructure. Customer upgrades, separate-cluster topologies, Intel and GPU work require separate validation.
+The first Miami bastion completed image mirroring and local DNS preparation, but the node cannot reach it over the private VLAN. A [dated network check](validation/latitude-mia2-network-2026-10-05.json) records failed ARP on two VLANs, matching provider/NIC identities and unsuccessful assignment recovery. A second Miami bastion is provisioning as a third-host control and fresh-bootstrap test. The first Miami host retains a cloud-init user-module error; its mirror bootstrap succeeded, and the corrected template awaits fresh-boot validation. The Dallas bastion is retained temporarily while unique signed-image artifacts are preserved. No new OpenShift installation or guest proof has completed; earlier July results remain historical evidence. This run targets disposable AMD SEV-SNP CPU infrastructure. Customer upgrades, separate-cluster topologies, Intel and GPU work require separate validation.
 
 ## Inputs required before provisioning
 
@@ -121,12 +121,21 @@ Save each run's dated evidence outside the repository. Report **PASS**, **FAIL**
 | Identity and release | Git commit, resolved BOM digest, project/site/server IDs, firmware state, actual OCP version and payload digest, operator CSVs and related-image digests. |
 | Bootstrap reliability | Tool hashes; a repeated unchanged run reuses artifacts; a changed input triggers the relevant mirror/PXE work; no unsupported fallback. Record first-run timings and intervention count. |
 | Offline image path | Successful mirror, generated/applied mirror resources, target registry reachability, workload pulls through the mirror, and observed node egress policy. A local `MIRROR_READY` file alone is insufficient. |
+| Network enforcement | Effective host rules and any provider-agent status; allowed/denied traffic from the node host, Trustee and relevant workload/guest contexts; private mirror/DNS/NTP controls; repeat after reinstall/reboot. An API assignment or failed `curl` alone is insufficient. |
 | Runtime | Target CPU capability, RuntimeClass `kata-cc` resolving to handler `kata-snp`, hardware-backed guest launch, and selected node identity. |
 | Trustee | Exact Operator/CR schema; generated resource ownership and readiness; preserved signer identity; required TLS; approved default-deny policy and target RVPS/collateral identity. |
 | Security behavior | Fresh positive control, one isolated mutation, attributable denial, restoration, and a new successful control for KBS, initdata, RVPS and signed-image proofs. |
 | Missing collateral | Denial without the approved endorsement material, then recovery after restoring it. Separately demonstrate the network egress constraint. |
 | Resource behavior | Actual guest memory/CPU settings, cold and warm start times, and node allocatable impact. Larger memory defaults are a workaround until measured on the selected payload. |
 | Cleanup | Proof resources restored/removed; secret-bearing boot endpoint unreachable; saved evidence contains no credentials; provider inventory confirms intended teardown. |
+
+Keep `enforce_latitude_firewall=false` for this RHCOS path: it only selects an API assignment,
+and the repository does not install or verify Latitude's host agent. If assessing that service
+separately, inspect its effective API and host rules, including the automatic SSH rule omitted
+from Terraform state. The existing egress MachineConfig filters host `OUTPUT`; host probes do
+not establish pod/guest isolation. Record fresh public-connection denials attributable to the
+enforcement layer and successful private-service controls; distinguish DNS/TLS/routing failures.
+See [firewall and egress limits](../infra/latitude/bastion/README.md#firewall-assignment-and-network-enforcement).
 
 Do not promote encrypted-image or GPU support based on these CPU results. Any encrypted-image experiment must separately prove key wrapping, pull/decrypt/execute, attributable denial and recovery on the actual selected guest payload. The default acceptance gate excludes it.
 

@@ -57,6 +57,6 @@ The public PXE copies use `/var/www/coco-boot-artifacts`, separate from the priv
 
 ## Validation and topology limits
 
-The `machines` list is the configuration seam for hosts, but multi-node and separate-Trustee topologies still require their own validation. Do not infer them from SNO. Firmware, endorsement material and launch references must match each eligible worker. Node egress enforcement is a separate check from bastion egress tuning and the provider's inbound firewall.
+The `machines` list is the configuration seam for hosts, but multi-node and separate-Trustee topologies still require their own validation. Do not infer them from SNO. Firmware, endorsement material and launch references must match each eligible worker. Node/workload egress enforcement is separate from bastion egress tuning. The optional Latitude firewall API assignment does not install or verify its host agent; see [firewall and egress limits](../infra/latitude/bastion/README.md#firewall-assignment-and-network-enforcement).
 
 Run `make ansible-lint` for syntax/lint checks and `make lint` for the complete required offline checks. See [capability status](../docs/capability-status.md) for the hardware-backed acceptance proofs.

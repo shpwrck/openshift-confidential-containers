@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-05T16:38:08.458861+00:00",
+  "scope": "Raw provider OS private-link qualification before any destructive OpenShift install",
+  "status": "FAIL",
+  "hosts": [
+    "accepted AMD SNP node in MIA2",
+    "first mirror bastion in MIA2"
+  ],
+  "configuration": {
+    "sameProviderFacility": true,
+    "differentRacks": true,
+    "privateNicsMatchProviderMACRoles": true,
+    "link": "10 Gb/full duplex on both ports",
+    "originalVlan": 2032,
+    "temporaryControlVlan": 2026,
+    "providerAssignments": "connected"
+  },
+  "observations": {
+    "originalLink": "ARP resolution fails in both directions",
+    "controlLink": "ARP resolution fails in both directions",
+    "pairedOriginalPacketCaptures": "Outgoing ARP on each private NIC; PACKET_AUXDATA confirms VLAN2032; corresponding incoming peer ARP absent",
+    "promiscuousControl": "Peer ARP still absent; multicast switch frames received; socket memberships closed and promiscuity0 verified",
+    "nicErrors": "No exposed CRC, discard, missed-packet, link-fault or timeout errors",
+    "nodeServices": "Mirror TLS, DNS and NTP probes timeout at unresolved private path; not evidence of service-specific defects"
+  },
+  "recoveryAttempts": [
+    {
+      "action": "Recreate original node VLAN assignment",
+      "result": "API success; connectivity unchanged"
+    },
+    {
+      "action": "Recreate original bastion VLAN assignment using deployed-source Terraform plan",
+      "result": "API success; server/user-data unchanged; connectivity unchanged"
+    },
+    {
+      "action": "Create second VLAN and temporary non-autoconnect profiles on both hosts",
+      "result": "API success; private connectivity still fails"
+    }
+  ],
+  "assessment": "Provider forwarding or port configuration remains a hypothesis. No demonstrated host offload defect. A third host is provisioning to distinguish the affected path.",
+  "limits": [
+    "No OpenShift installation or guest proof",
+    "First Miami mirror preparation passed locally; not reachable from the node",
+    "No firmware flashing or NIC offload change",
+    "Temporary VLAN diagnosis still needs cleanup"
+  ],
+  "evidenceHashes": {
+    "node-arp-auxdata.json": "8c7b072fcba31f828dd3ad91871b0f717475d208f136dafd8ffe440170115f0f",
+    "bastion-arp-auxdata.json": "8c1f1fd7fa69cdb1ee9b43038c83cf05eb48e379b22d4358cf31bfc767d166fe",
+    "node-promiscuous-arp.json": "4fccd52c3703dc5cfb279234a3b55e2c72ff75c1b153e61e22f99af09b638f91",
+    "bastion-promiscuous-arp.json": "dc5829709de920c378507aba7be1bc24d089a12f5298de3e3e036d8444b3a389",
+    "nic-comparison.json": "49dd13f0ac8559b2135e0aebda778a78e9a0ba507ca4b7bb0938b1dc16dd5ee5"
+  }
+}

@@ -16,15 +16,15 @@ billing = "hourly" # "monthly" if the bastion will run for the whole project
 
 ssh_key_ids = ["ssh_XXXXXXXXXXXXX"] # FILL: your Latitude SSH key ID — same key as the node
 
-# REQUIRED, no default (fail closed) — left COMMENTED so a verbatim copy fails until you set it.
-# Your admin source CIDR for inbound SSH/API to the node. A wide range is acceptable for the
-# throwaway rig, but set it as a conscious choice (not a shipped 0.0.0.0/0).
+# REQUIRED for the configured rules — left COMMENTED so a copy fails until you set it.
+# This CIDR does not remove Latitude's automatic SSH rule or install its host agent.
+# See README.md before relying on enforcement; select any wide range consciously.
 # admin_cidr = "203.0.113.4/32" # FILL: your workstation/VPN egress IP (or "0.0.0.0/0" knowingly)
 
 # Default preserves existing rigs. Parallel rigs in the same project must use distinct names.
 # firewall_name = "coco-mia2-node-inbound"
 
-# Private VLAN L3 (the real air gap). Defaults are fine for the rig; node_vlan_ip + registry
+# Private VLAN L3 (isolation requires separate verification). node_vlan_ip + registry
 # name must be mirrored into the SNP node's agent-config / host resolution (see runbook).
 # vlan_subnet           = "192.168.66.0/24"
 # bastion_vlan_ip       = "192.168.66.10"

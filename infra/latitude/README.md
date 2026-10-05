@@ -1,6 +1,6 @@
 # Latitude AMD validation node
 
-This module provisions the disposable AMD node. Start with `air_gap=false` to check the actual hardware before building the mirror. The [bastion module](bastion/README.md) owns the mirror server, VLAN and inbound firewall; provision it in the same site before enabling `air_gap=true` on the accepted node. Both servers incur charges until deleted. Use an explicit total budget and verify teardown through provider inventory.
+This module provisions the disposable AMD node. Start with `air_gap=false` to check the actual hardware before building the mirror. The [bastion module](bastion/README.md) owns the mirror server, VLAN and firewall API object; provision it in the same site before enabling `air_gap=true` on the accepted node. Both servers incur charges until deleted. Use an explicit total budget and verify teardown through provider inventory.
 
 ## Select and verify the machine
 
@@ -15,6 +15,8 @@ Follow [the current quickstart](../../docs/current-quickstart.md) and [Latitude 
 The wrapper uses separate `$COCO_STATE_DIR/terraform/bastion` and `terraform/node` directories and passes the bastion state path to this module. Review its plan for project, site, machine, billing, VLAN/firewall assignments and SSH identity before applying. Provider 4.6.0 is locked; implicit reinstallation is disabled.
 
 Provisioning creates the initial provider OS. OpenShift installation later uses an explicit, journaled reinstall through Ansible. Neither an apply nor a BIOS acknowledgement proves that SNP works.
+
+Keep `enforce_latitude_firewall=false` for the maintained RHCOS path. Its legacy name selects an API assignment only; the repository does not install or verify Latitude's host agent. VLAN membership also does not prove isolation. See [firewall and egress limits](bastion/README.md#firewall-assignment-and-network-enforcement) before claiming restricted inbound access or an air gap.
 
 ## Verify and clean up
 

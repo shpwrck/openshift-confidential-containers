@@ -4,7 +4,7 @@
 #   - a private virtual network (VLAN) with real L3 (static private IPs assigned in cloud-init),
 #   - a bastion bare-metal host running the Red Hat `mirror-registry` (quay) under a DNS name
 #     mapped to its PRIVATE IP (so the node's mirror pull validates the cert SAN),
-#   - an INBOUND-hardening firewall the SNP node attaches to (egress lockdown is host nftables).
+#   - a firewall API object the SNP node can optionally reference; enforcement is unverified.
 #
 # Why a separate module / separate state from infra/latitude/ (the SNP node):
 # mirroring is the ~1-2h bottleneck and is CACHEABLE. Keeping the mirror workspace on
@@ -30,8 +30,8 @@ provider "latitudesh" {
 }
 
 # --- Private network the bastion + SNP node share ----------------------------------------
-# L2 membership only at this layer; static L3 addressing is assigned in cloud-init / agent-config
-# so the node's only sanctioned egress path is to the bastion's private IP across this VLAN.
+# L2 membership only at this layer; static L3 addressing is assigned in cloud-init / agent-config.
+# VLAN membership does not establish egress isolation.
 resource "latitudesh_virtual_network" "rig" {
   project     = var.project
   site        = var.site
@@ -86,17 +86,13 @@ resource "latitudesh_user_data" "bastion" {
   }))
 }
 
-# --- Inbound hardening firewall for the SNP node -----------------------------------------
-# SCOPE: this firewall hardens INBOUND traffic to the node. It is NOT the air-gap egress
-# mechanism — Latitude firewall egress direction is undocumented and likely inbound-only, so
-# the node's EGRESS lockdown is enforced host-side with nftables (default-deny output except
-# to the bastion; see runbook Phase 1). Shipping egress-looking rules here would be a false
-# control, so we don't.
-#
-# Coherent allowlist: only the admin surface reaches the node inbound (deny-by-default for the
-# rest). `from` = admin source CIDR (set consciously, no 0.0.0.0/0 default); the node does not
-# need any inbound from the bastion (the node initiates the mirror pull, it does not serve it).
-# The node attaches this via firewall_assignment (opt-in: var.enforce_latitude_firewall).
+# --- Firewall API object: intended inbound rules, not verified enforcement ---------------
+# Latitude documents a host-installed UFW/iptables agent with inbound/outbound rules.
+# This module creates only the rule object; node assignment installs no agent.
+# Provider 4.6.0 preserves an automatic SSH rule outside Terraform state, so admin_cidr
+# does not imply exclusive SSH access. Keep the resource identity for existing rigs.
+# Agent/RHCOS compatibility, effective rules and traffic must be checked separately;
+# see README.md. Egress acceptance also requires tests in the relevant network contexts.
 resource "latitudesh_firewall" "node_inbound" {
   project = var.project
   name    = var.firewall_name

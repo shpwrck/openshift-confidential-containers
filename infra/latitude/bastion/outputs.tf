@@ -10,7 +10,7 @@ output "virtual_network_vid" {
 
 output "firewall_id" {
   value       = latitudesh_firewall.node_inbound.id
-  description = "Consumed by the SNP node module to attach the inbound-hardening firewall (egress = host nftables)."
+  description = "Firewall API object ID for the optional node assignment; not evidence of active host enforcement."
 }
 
 output "bastion_public_ipv4" {
@@ -20,7 +20,7 @@ output "bastion_public_ipv4" {
 
 output "bastion_vlan_ip" {
   value       = var.bastion_vlan_ip
-  description = "Private VLAN IP the mirror is served on; the node's egress nftables allow ONLY this."
+  description = "Private VLAN IP serving the mirror. Node and workload egress isolation must be verified separately."
 }
 
 output "mirror_endpoint" {

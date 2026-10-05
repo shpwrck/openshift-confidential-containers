@@ -38,7 +38,7 @@ resource "latitudesh_server" "snp_rig" {
   user_data = var.user_data != "" ? var.user_data : null
 }
 
-# --- Air-gap wiring: join the bastion's VLAN + attach its egress-lockdown firewall --------
+# --- Private VLAN wiring and optional firewall API assignment ---------------------------
 # Gated on var.air_gap. With air_gap=false the node is a standalone rung-0 box (yesterday's
 # path: provision, prove SNP host, destroy) needing no bastion. With air_gap=true (default)
 # the bastion module must already be applied — we read its outputs from its local state.
@@ -54,9 +54,10 @@ resource "latitudesh_vlan_assignment" "node" {
   virtual_network_id = data.terraform_remote_state.bastion[0].outputs.virtual_network_id
 }
 
-# Attach the bastion's INBOUND-hardening firewall (SSH/API/ingress from admin_cidr only).
-# This is NOT the air-gap egress control — egress is locked host-side with nftables (runbook
-# Phase 1). Opt-in so a wrong admin_cidr can't lock you out of the node on first provision.
+# This creates an API assignment only; it does not install or verify Latitude's host agent.
+# No agent lifecycle is implemented for the later RHCOS installation. The provider also
+# preserves a default SSH rule outside Terraform's configured rules. See bastion/README.md
+# before relying on any inbound restriction or egress isolation.
 resource "latitudesh_firewall_assignment" "node" {
   count       = var.air_gap && var.enforce_latitude_firewall ? 1 : 0
   server_id   = latitudesh_server.snp_rig.id
