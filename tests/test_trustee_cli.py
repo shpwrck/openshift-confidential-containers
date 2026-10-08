@@ -144,6 +144,34 @@ class TrusteeCliTests(unittest.TestCase):
         self.assertIn("outside Homelab", result.stderr)
         self.assertEqual((self.data / "calls.jsonl").read_text(), "")
 
+    def test_protected_state_beside_an_external_checkout_is_allowed(self):
+        state = self.repo.parent / "coco-state"
+        state.mkdir()
+        password = state / "mirror-password"
+        password.write_text("synthetic-offline-fixture")
+        self.env["MIRROR_PASSWORD_FILE"] = str(password)
+        result = self.run_seed()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("credential", json.loads((self.data / "state.json").read_text()))
+
+    def test_homelab_input_is_refused_when_checkout_is_elsewhere(self):
+        self.env["MIRROR_PULL_SECRET"] = "/mnt/c/Homelab/do-not-read.json"
+        result = self.run_seed()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside Homelab", result.stderr)
+        self.assertEqual((self.data / "calls.jsonl").read_text(), "")
+
+    def test_external_symlink_into_checkout_is_refused_before_cluster_access(self):
+        target = self.repo / "do-not-read"
+        target.write_text("synthetic-offline-fixture")
+        link = self.data / "linked-password"
+        link.symlink_to(target)
+        self.env["MIRROR_PASSWORD_FILE"] = str(link)
+        result = self.run_seed()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside Homelab", result.stderr)
+        self.assertEqual((self.data / "calls.jsonl").read_text(), "")
+
 
 if __name__ == "__main__":
     unittest.main()
