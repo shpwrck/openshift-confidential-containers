@@ -1,0 +1,59 @@
+{
+  "observedAt": "2026-10-08T16:14:52.829666+00:00",
+  "phase": "Cherry hardware qualification",
+  "clusterInstalled": false,
+  "providerServerId": 1025551,
+  "region": "US-Chicago",
+  "advertisedPlan": "amd-epyc-9124p",
+  "prebuiltId": 850,
+  "state": "allocated",
+  "status": "host-snp-passed",
+  "rate": {
+    "currency": "EUR",
+    "unit": "Hours",
+    "amount": 0.53,
+    "taxed": false
+  },
+  "deadlineUTC": "2026-10-08T19:38:10.098548+00:00",
+  "fourHourHostEstimateEUR": 2.12,
+  "helperAllocated": false,
+  "hardwareResults": {
+    "actualCPU": "AMD EPYC 9124",
+    "UEFI": true,
+    "SNPInitialized": true,
+    "guestAttestation": null,
+    "motherboard": "Supermicro H13SST-G",
+    "BIOS": "3.7",
+    "BIOSDate": "2026-01-23",
+    "initialFailure": "Memory encryption not enabled by BIOS; /dev/sev missing; kvm_amd sev_snp=N",
+    "hostGateExit": 0,
+    "snphostVersion": "0.7.0",
+    "snphostOkExit": 0,
+    "SEVSNPAPI": "1.58 build 2",
+    "RMPPhysicalRange": "0x88200000 - 0x987fffff",
+    "TCB": {
+      "microcode": 88,
+      "SNP": 28,
+      "TEE": 0,
+      "bootLoader": 12
+    },
+    "settings": {
+      "SEV-ES ASID Space Limit": 100,
+      "SNP Memory (RMP Table) Coverage": "Enabled",
+      "SMEE": "Enabled",
+      "IOMMU": "Enabled",
+      "SEV-SNP Support": "Enabled"
+    }
+  },
+  "networkResults": {
+    "providerPrivateAddressAssigned": true,
+    "privateConnectivity": null,
+    "internetIsolation": null
+  },
+  "limits": [
+    "Provider assignment is not connectivity evidence.",
+    "Ubuntu raw-host prerequisites passed; no RHCOS, guest attestation or disconnected install proof yet.",
+    "Cleanup guard runs in the local WSL user systemd instance and requires it to remain running.",
+    "Overall $150 cap across providers remains; the qualification budget is $20."
+  ]
+}
