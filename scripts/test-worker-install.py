@@ -33,6 +33,42 @@ class WorkerInstallTests(unittest.TestCase):
     def test_reviewed_plan_is_accepted(self):
         self.check_plan(self.plan())
 
+    def bundle_plan(self):
+        plan = self.plan()
+        op = self.bom["operators"]["osc"]
+        step = plan["status"]["plan"][0]
+        step["resolving"] = op["startingCSV"]
+        step["resource"].pop("catalogSource")
+        step["resource"].pop("catalogSourceNamespace")
+        plan["status"]["bundleLookups"] = [{"identifier": op["startingCSV"],
+            "path": op["bundleImage"], "catalogSourceRef": {
+                "name": self.bom["catalog"]["source"], "namespace": "openshift-marketplace"}}]
+        return plan
+
+    def test_bundle_plan_uses_exact_immutable_lookup_provenance(self):
+        self.check_plan(self.bundle_plan())
+
+    def test_bundle_plan_without_lookup_is_not_approved(self):
+        plan = self.bundle_plan(); plan["status"]["bundleLookups"] = []
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            self.check_plan(plan)
+
+    def test_changed_bundle_digest_or_catalog_is_not_approved(self):
+        for field in ("path", "catalog"):
+            plan = self.bundle_plan(); lookup = plan["status"]["bundleLookups"][0]
+            if field == "path":
+                lookup["path"] = "registry.example/wrong@sha256:" + "f" * 64
+            else:
+                lookup["catalogSourceRef"]["name"] = "wrong-catalog"
+            with self.assertRaisesRegex(ValueError, "bundle lookup"):
+                self.check_plan(plan)
+
+    def test_step_cannot_borrow_a_different_reviewed_bundle(self):
+        plan = self.bundle_plan()
+        plan["status"]["plan"][0]["resolving"] = "unreviewed.v99"
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            self.check_plan(plan)
+
     def test_unknown_dependency_is_never_approved(self):
         plan = self.plan(); plan["spec"]["clusterServiceVersionNames"].append("unreviewed.v99")
         with self.assertRaisesRegex(ValueError, "unreviewed"):

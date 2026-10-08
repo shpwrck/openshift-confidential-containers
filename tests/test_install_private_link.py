@@ -192,6 +192,25 @@ class PrivateLinkInstallTests(unittest.TestCase):
         self.assertEqual(self.requests, ['GET', 'POST'])
         self.assertEqual(len(self.events.read_text().splitlines()), 1)
 
+    def test_resume_only_rejects_missing_or_ambiguous_request_without_provider_access(self):
+        self.variables['resume_install_only'] = True
+        self.run_role(2)
+        self.assertEqual(self.requests, [])
+        self.assertFalse(self.events.exists())
+        self.write_journal('sending')
+        self.variables['retry_reinstall'] = True
+        self.run_role(2)
+        self.assertEqual(self.requests, [])
+        self.assertFalse(self.events.exists())
+
+    def test_resume_only_accepted_request_works_after_raw_os_disappears(self):
+        self.run_role()
+        self.variables['resume_install_only'] = True
+        self.env['FIXTURE_GATE_FAIL'] = '1'
+        self.run_role()
+        self.assertEqual(self.requests, ['GET', 'POST'])
+        self.assertEqual(len(self.events.read_text().splitlines()), 1)
+
     def test_ambiguous_resume_never_probes_until_explicit_retry_and_preserves_intent_on_failure(self):
         self.write_journal('sending')
         previous = self.journal.read_bytes()

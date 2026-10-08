@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Preparation is the default. A machine reinstall requires --mode fresh-install.
-# This wrapper is for the disposable Latitude rig; it is not an OCP upgrade tool.
+# Supplied rigs can use Cherry or Latitude; Terraform modules remain Latitude-specific.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
@@ -9,14 +9,14 @@ TF_ACTION=none
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode)
-      [[ $# -ge 2 ]] || { echo "ERROR: --mode needs prepare, fresh-install, or verify" >&2; exit 2; }
+      [[ $# -ge 2 ]] || { echo "ERROR: --mode needs prepare, fresh-install, resume-install, or verify" >&2; exit 2; }
       MODE="$2"; shift 2 ;;
     --apply-tf|--plan-tf)
       [[ "$TF_ACTION" == none ]] || { echo "ERROR: choose only one Terraform action" >&2; exit 2; }
       TF_ACTION="${1#--}"; TF_ACTION="${TF_ACTION%-tf}"; shift ;;
     --help|-h)
-      echo "Usage: $0 [--mode prepare|fresh-install|verify] [--plan-tf|--apply-tf] [Ansible options]"
-      echo "prepare: mirror/tools/DNS only (default); fresh-install: explicit machine reinstall; verify: read-only cluster release check"
+      echo "Usage: $0 [--mode prepare|fresh-install|resume-install|verify] [--plan-tf|--apply-tf] [Ansible options]"
+      echo "prepare: mirror/tools/DNS only (default); fresh-install: explicit machine reinstall; resume-install: finish an accepted request; verify: read-only cluster release check"
       echo "--plan-tf performs Terraform planning only; it never runs Ansible or applies a plan."
       echo "Keep local secrets and Terraform state in COCO_STATE_DIR outside the checkout."
       exit 0 ;;
@@ -24,8 +24,8 @@ while [[ $# -gt 0 ]]; do
     *) break ;;
   esac
 done
-case "$MODE" in prepare|fresh-install|verify) ;; *) echo "ERROR: unsupported mode '$MODE'; in-place upgrades require a separate supported procedure" >&2; exit 2 ;; esac
-[[ "$MODE" != verify || "$TF_ACTION" == none ]] || { echo "ERROR: verify cannot plan or apply Terraform" >&2; exit 2; }
+case "$MODE" in prepare|fresh-install|resume-install|verify) ;; *) echo "ERROR: unsupported mode '$MODE'; in-place upgrades require a separate supported procedure" >&2; exit 2 ;; esac
+[[ ( "$MODE" != verify && "$MODE" != resume-install ) || "$TF_ACTION" == none ]] || { echo "ERROR: $MODE cannot plan or apply Terraform" >&2; exit 2; }
 # Bash 3.2 treats empty arrays as unset under nounset; conditional expansion below
 # preserves zero arguments for empty arrays and boundaries for populated arrays.
 EXTRA=("$@")
@@ -95,12 +95,20 @@ if [[ "$MODE" == verify ]]; then
   ansible-playbook playbooks/site.yml --tags drive ${EXTRA[@]+"${EXTRA[@]}"} -e install_mode=verify
   exit
 fi
+if [[ "$MODE" == resume-install ]]; then
+  # Reuse prepared assets and an accepted journal. The role refuses a missing,
+  # ambiguous or changed request before any provider call; no raw-OS discovery.
+  ansible-playbook playbooks/site.yml --tags drive ${EXTRA[@]+"${EXTRA[@]}"} -e install_mode=fresh -e resume_install_only=true
+  ansible-playbook playbooks/site.yml --tags pxe-stop ${EXTRA[@]+"${EXTRA[@]}"}
+  echo "Accepted installation completed; boot-artifact endpoint closed."
+  exit
+fi
 # Check the complete product BOM before spending on infrastructure or changing a bastion.
 # shellcheck source=scripts/lib/release.sh
 source "$REPO/scripts/lib/release.sh"
 load_release_defaults
 if [[ "$MODE" == fresh-install && "${TEE:-snp}" != snp ]]; then
-  echo "ERROR: Latitude fresh-install currently validates AMD SEV-SNP hardware only" >&2
+  echo "ERROR: fresh-install currently validates AMD SEV-SNP hardware only" >&2
   exit 2
 fi
 require_resolved_release

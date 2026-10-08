@@ -185,6 +185,20 @@ print(json.dumps(info))
         self.assertFalse(any(item['kind'] == 'ClusterCatalog' for item in normalized['items']))
         self.assertEqual(len(self.log.read_text().splitlines()), 2)
 
+    def test_wrapper_resume_skips_provisioning_discovery_and_rendering(self):
+        write_executable(self.bin / 'ansible-playbook', """#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ['FIXTURE_CALLS'], 'a') as f:
+    print(json.dumps(sys.argv[1:]), file=f)
+""")
+        self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'resume-install'])
+        calls = [json.loads(line) for line in self.log.read_text().splitlines()]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], ['playbooks/site.yml', '--tags', 'drive', '-e',
+                                   'install_mode=fresh', '-e', 'resume_install_only=true'])
+        self.assertEqual(calls[1], ['playbooks/site.yml', '--tags', 'pxe-stop'])
+        self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'resume-install', '--apply-tf'], 2)
+
     def test_wrapper_verify_has_no_provisioning_and_uses_absolute_config(self):
         write_executable(self.bin / 'ansible-playbook', '''#!/usr/bin/env python3
 import json,os,sys

@@ -29,6 +29,8 @@ bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
+If the controller stops after Cherry accepted the rebuild, retain the same external inputs and run `bash ansible/up.sh --mode resume-install -e "@$COCO_STATE_DIR/rig.yml"`. The accepted-journal gate forbids a new request in this mode; it does not try to log into the replaced provider OS.
+
 The qualification command requires already prepared boot files and reuses the exact check performed before a new rebuild. It sends no rebuild request. Fresh install journals intent before calling Cherry's `rebuild` action with a base64-encoded iPXE script; an accepted or ambiguous request is not silently repeated. A successful fresh install checks the release and health, then closes boot publication. An unresolved failure retains diagnostics and closes publication when no accepted request needs it.
 
 Initial provisioning and mirror installation for this dated trial used the protected controller recorded in the runbook. Cherry provisioning is not implemented by the repository's Terraform modules. Do not use `--apply-tf` or `--plan-tf` for a Cherry rig; those modules target Latitude. The trial's AlmaLinux 9.8 helper is a lab compatibility test; Red Hat documents RHEL as the supported mirror-registry host.
@@ -37,6 +39,7 @@ Initial provisioning and mirror installation for this dated trial used the prote
 
 - Reuse an installed curl command, including `curl-minimal`, instead of requesting a conflicting full package.
 - Open DNS, NTP and the registry with separate firewalld operations in both bootstrap and Ansible; fail when the managed firewall commands fail.
+- Validate bundle-backed OLM plans through their `bundleLookups`: exact CSV, bundle digest and catalog reference. This OCP release omits source fields on the individual plan steps.
 - Configure the helper's private API hostname before the installer wait. On this trial the API was reachable by IP but the wait could not discover it until this mapping was present.
 - Validate the registry leaf with strict X.509 checks before declaring it ready. The generated mirror-registry 2.0.12 leaf incorrectly included certificate-signing usage. The lab repair retains the CA and server key, issues a valid server leaf and uses the supported certificate-rotation command. Arbitrary trust failures do not replace the CA automatically.
 

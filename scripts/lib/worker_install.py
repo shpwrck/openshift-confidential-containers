@@ -31,12 +31,35 @@ def check_plan(plan, bom, tee, lab, expected_csv):
     steps = plan.get("status", {}).get("plan", [])
     if not steps:
         raise ValueError("InstallPlan has no resolved steps; wait for OLM resolution")
+    # OCP 4.20's bundle-backed plans carry source provenance on bundleLookups;
+    # step.resource can omit both deprecated catalog fields, including CSV steps.
+    expected_bundles = {op["startingCSV"]: op.get("bundleImage", "") for op in operators}
+    trusted_lookups = set()
+    for lookup in plan.get("status", {}).get("bundleLookups", []):
+        identifier = lookup.get("identifier")
+        source = lookup.get("catalogSourceRef", {})
+        if (identifier not in proposed or identifier in trusted_lookups
+                or not expected_bundles.get(identifier)
+                or lookup.get("path") != expected_bundles[identifier]
+                or source.get("name") not in sources
+                or source.get("namespace") != "openshift-marketplace"):
+            raise ValueError("InstallPlan bundle lookup differs from the reviewed CSV, immutable bundle or catalog")
+        trusted_lookups.add(identifier)
     csv_steps = set()
     for step in steps:
         resource = step.get("resource", {})
-        if resource.get("catalogSource") not in sources or resource.get("catalogSourceNamespace") != "openshift-marketplace":
-            raise ValueError("InstallPlan step comes from an unexpected catalog")
+        source, namespace = resource.get("catalogSource"), resource.get("catalogSourceNamespace")
+        resolving = step.get("resolving")
+        if source or namespace:
+            if source not in sources or namespace != "openshift-marketplace":
+                raise ValueError("InstallPlan step comes from an unexpected catalog")
+            if resolving and resolving not in proposed:
+                raise ValueError("InstallPlan step resolves an unreviewed CSV")
+        elif resolving not in trusted_lookups:
+            raise ValueError("InstallPlan step has no verified bundle/catalog provenance")
         if resource.get("kind") == "ClusterServiceVersion":
+            if resolving and resource.get("name") != resolving:
+                raise ValueError("InstallPlan CSV step disagrees with its resolving bundle")
             csv_steps.add(resource["name"])
     if csv_steps != proposed:
         raise ValueError("InstallPlan resolved CSV steps disagree with proposed CSV set")

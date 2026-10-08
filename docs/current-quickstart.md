@@ -13,6 +13,7 @@ The authoritative inputs are [the release manifest](../install/release-manifest.
 | Prepare a supplied bastion | `bash ansible/up.sh --mode prepare` | Mirror/tools/DNS preparation; the default mode. |
 | Plan disposable infrastructure | `bash ansible/up.sh --mode prepare --plan-tf` | Terraform init/plan only; no apply or Ansible work. |
 | Fresh install on the disposable rig | `bash ansible/up.sh --mode fresh-install` | Explicit machine reinstall, health/version checks, endpoint closure. |
+| Finish an accepted installation | `bash ansible/up.sh --mode resume-install` | Reuse accepted request and prepared assets; no raw-OS discovery, new rebuild or Terraform. |
 | Verify an installed cluster | `bash ansible/up.sh --mode verify` | Checks the selected OCP version, payload and health; no reinstall or Terraform. |
 
 Prepare and fresh-install stop at the unresolved-release check before making changes. Resolve the recorded identities from the selected authenticated catalogs; do not mark entries verified merely to bypass this check. `--plan-tf` also requires resolved release inputs before infrastructure planning.
@@ -74,6 +75,8 @@ fresh install requires the documented pinned SSH inputs and runs a fresh check b
 new reinstall request. Accepted requests resume without trying to reconnect to the provider OS.
 
 Tools are verified against the requested release's published checksums. Existing binaries are reused only when their recorded hashes match. A changed ImageSet, tool, destination or release invalidates the mirror completion marker. A changed installer, payload or rendered configuration invalidates PXE assets. Rebuilding assets belonging to an existing cluster requires deliberate `reinstall_existing=true` or a new assets directory; it is not an upgrade shortcut.
+
+After the provider OS has been replaced, use `--mode resume-install` to finish an interrupted accepted request with the same external inputs. This requires the unchanged accepted journal and skips raw-host discovery and artifact regeneration. A missing, ambiguous or changed journal stops before any provider request. It still finishes health/mirror-resource checks and closes boot publication. Do not restart the full fresh-install workflow merely to resume its wait.
 
 A provider request is recorded before submission. If a timeout leaves the request ambiguous, inspect provider state before using `retry_reinstall=true`. A successful request for unchanged boot inputs is not automatically sent again.
 

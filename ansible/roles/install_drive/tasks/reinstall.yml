@@ -50,6 +50,18 @@
   ansible.builtin.set_fact:
     prior_request: "{{ prior_request_content.content | default('e30=') | b64decode | from_json }}"
 
+- name: Require the unchanged accepted request when resuming only
+  ansible.builtin.assert:
+    that:
+      - prior_request.get('state', '') == 'requested'
+      - prior_request.get('identity', '') == install_identity
+      - prior_request.get('server_id', '') | string == install_machine.server_id | string
+    fail_msg: >-
+      resume-install requires this machine's accepted journal for the unchanged prepared
+      artifacts. Missing, ambiguous or changed requests cannot submit a rebuild in this mode.
+      Inspect the provider and preserved inputs before choosing a new fresh installation.
+  when: resume_install_only | default(false) | bool
+
 - name: Stop rather than automatically repeat an ambiguous provider action
   ansible.builtin.assert:
     that:
