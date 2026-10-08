@@ -214,22 +214,51 @@ class ResourceEdit:
         self.modified = None
 
 
-def restart_trustee(cluster: Cluster, namespace: str, timeout: int = 180) -> None:
+def restart_trustee(cluster: Cluster, namespace: str, timeout: int = 180, trustee_name: str = "") -> None:
     from trustee_config import FIELDS, ready_configmaps, selected_kbs, serving_ready
     trustees = cluster.get("trusteeconfigs", namespace=namespace).get("items", [])
     if len(trustees) != 1:
         raise Incomplete("Trustee rotation requires exactly one owning TrusteeConfig")
     tc = trustees[0]
+    if trustee_name and tc["metadata"]["name"] != trustee_name:
+        raise Incomplete("Trustee rotation target differs from the selected TrusteeConfig")
     try:
         selected = selected_kbs({"trustee": tc, "kbsconfigs": cluster.get("kbsconfigs", namespace=namespace)})
     except (ValueError, KeyError, TypeError) as exc:
         raise Incomplete("Trustee rotation requires an Operator-owned KbsConfig") from exc
-    old = [item["metadata"]["uid"] for item in cluster.get("pods", namespace=namespace).get("items", [])
-           if item.get("metadata", {}).get("labels", {}).get("app") == "kbs"]
-    cluster.call("rollout", "restart", "deployment/trustee-deployment", "-n", namespace)
+    deployment = cluster.get("deployment", "trustee-deployment", namespace)
+    dep_uid = deployment["metadata"]["uid"]
+
+    def owned_by(obj, kind, uid):
+        return any(o.get("controller") and o.get("kind") == kind and o.get("uid") == uid
+                   for o in obj.get("metadata", {}).get("ownerReferences", []))
+
+    if not owned_by(deployment, "KbsConfig", selected["metadata"]["uid"]):
+        raise Incomplete("Trustee deployment is not owned by the selected KbsConfig")
+    replicasets = {rs["metadata"]["uid"] for rs in cluster.get("replicasets", namespace=namespace).get("items", [])
+                   if owned_by(rs, "Deployment", dep_uid)}
+    previous = [p for p in cluster.get("pods", namespace=namespace).get("items", [])
+                if p.get("metadata", {}).get("labels", {}).get("app") == "kbs"]
+    if any(not any(owned_by(p, "ReplicaSet", uid) for uid in replicasets) for p in previous):
+        raise Incomplete("an app=kbs pod is outside the selected deployment; no pods were replaced")
+    old = [p["metadata"]["uid"] for p in previous]
+    # The Operator replaces the complete pod template and removes rollout-restart
+    # annotations. Replace only identified pods, using API UID preconditions, so
+    # the Secret converter reruns even when ConfigMap versions are unchanged.
+    from urllib.parse import quote
+    for pod in previous:
+        if pod["metadata"].get("deletionTimestamp"):
+            continue
+        path = f"/api/v1/namespaces/{quote(namespace, safe='')}/pods/{quote(pod['metadata']['name'], safe='')}"
+        cluster.call("delete", "--raw=" + path, "-f", "-", data={
+            "apiVersion": "v1", "kind": "DeleteOptions",
+            "preconditions": {"uid": pod["metadata"]["uid"]},
+        })
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         deployment = cluster.get("deployment", "trustee-deployment", namespace)
+        if deployment["metadata"]["uid"] != dep_uid or not owned_by(deployment, "KbsConfig", selected["metadata"]["uid"]):
+            raise Incomplete("Trustee deployment identity changed during rotation")
         pods = {"items": [item for item in cluster.get("pods", namespace=namespace).get("items", [])
                           if item.get("metadata", {}).get("labels", {}).get("app") == "kbs"]}
         try:

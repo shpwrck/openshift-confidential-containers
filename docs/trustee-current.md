@@ -105,6 +105,13 @@ requires current ConfigMap resource-version annotations, resource/cache mounts a
 new Ready pod UIDs. This includes the Secret converter lifecycle; an event alone
 does not prove refreshed resource contents are served.
 
+The refresh command replaces only pods whose ReplicaSet belongs to the selected
+Operator-owned deployment, using UID preconditions and normal termination. Trustee
+1.2.1 reconciles the complete pod template and removes `oc rollout restart`'s
+annotation; that command alone can leave the old serving pod running. The shared
+refresh step verifies replacement UIDs and current ConfigMap versions before
+configuration or a recovery proof can complete.
+
 ## Initdata binding and isolated validation
 
 The installed default CPU policy does not itself bind a complete initdata digest.

@@ -145,20 +145,11 @@ for secret in ${resources//,/ }; do
 done
 oc -n "$NS" get kbsconfig "$kbs_name" -o json | python3 "$HELPER" kbs-patch --tee "$TEE" --hwids "$hwids" --resources "$resources" > "$tmpdir/kbs-patch.json"
 oc -n "$NS" patch kbsconfig "$kbs_name" --type=merge --patch-file "$tmpdir/kbs-patch.json"
-# Converter-backed resource Secret refresh requires a new serving pod; do not infer
-# reload from an event. Watch the new UID as well as the deployment's revision.
-oc -n "$NS" get pods -l app=kbs -o json | jq '[.items[].metadata.uid]' > "$tmpdir/old-uids.json"
-oc -n "$NS" rollout restart deployment/trustee-deployment
-serving_ready() {
-  oc -n "$NS" get deployment trustee-deployment -o json > "$tmpdir/deployment.json" || return 1
-  oc -n "$NS" get pods -l app=kbs -o json > "$tmpdir/pods.json" || return 1
-  # Re-read live references and versions; a Ready pod alone may still serve old subPath data.
-  generated_ready || return 1
-  jq -n --slurpfile k "$tmpdir/kbs.json" --slurpfile m "$tmpdir/maps.json" \
-    --slurpfile d "$tmpdir/deployment.json" --slurpfile p "$tmpdir/pods.json" --slurpfile u "$tmpdir/old-uids.json" \
-    '{kbs:$k[0],maps:($m[0].items|map({key:.metadata.name,value:.})|from_entries),deployment:$d[0],pods:$p[0],old_uids:$u[0]}' | python3 "$HELPER" serving >/dev/null
-}
-wait_for "new Trustee serving pod" serving_ready
+# The Operator resets rollout-restart annotations. Refresh identified pods with
+# UID preconditions and verify new UIDs, ConfigMap versions and Secret mounts.
+refresh_context="${TRUSTEE_CONTEXT:-$(command oc config current-context)}"
+python3 "$REPO_ROOT/scripts/refresh-trustee.py" --context "$refresh_context" \
+  --namespace "$NS" --trustee-name "$TRUSTEE_NAME" --timeout "$WAIT_TIMEOUT"
 # Recheck migration/ownership after all updates. Hardware allow/deny tests remain separate.
 generated_ready || die "generated resource ownership changed during configuration"
 echo "Trustee $ACTION complete: profile=$TRUSTEE_PROFILE context=${TRUSTEE_CONTEXT:-current} name=$TRUSTEE_NAME"

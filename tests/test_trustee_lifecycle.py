@@ -36,7 +36,8 @@ class ClusterFixture:
     def template(self):
         # First post-restart observation is Ready but still mounts older ConfigMap data.
         version = "7" if self.rotated and self.cycles == 1 else "8"
-        return {"metadata": {"uid": "new" if self.rotated else "old", "labels": {"app": "kbs"},
+        return {"metadata": {"name": "trustee-pod", "uid": "new" if self.rotated else "old", "labels": {"app": "kbs"},
+                             "ownerReferences": [{"controller": True, "kind": "ReplicaSet", "uid": "rs-uid"}],
                              "annotations": {t.VERSIONS: ",".join(n + ":" + version for n in self.maps)}},
                 "spec": {"containers": [], "volumes": []},
                 "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
@@ -66,16 +67,21 @@ class ClusterFixture:
             result = self.maps[name]
         elif kind == "pods":
             result = {"items": [self.template()]}
+        elif kind == "replicasets":
+            result = {"items": [{"metadata": {"uid": "rs-uid", "ownerReferences": [
+                {"controller": True, "kind": "Deployment", "uid": "dep-uid"}]}}]}
         elif kind == "deployment":
-            self.cycles += 1
-            result = {"metadata": {"generation": 2}, "spec": {"replicas": 1, "template": self.template()},
+            if self.rotated:
+                self.cycles += 1
+            result = {"metadata": {"generation": 2, "uid": "dep-uid", "ownerReferences": [
+                {"controller": True, "kind": "KbsConfig", "uid": "kbs-uid"}]}, "spec": {"replicas": 1, "template": self.template()},
                       "status": {"observedGeneration": 2, "updatedReplicas": 1, "availableReplicas": 1}}
         else:
             raise AssertionError("unexpected mock resource " + kind)
         return copy.deepcopy(result)
 
-    def call(self, *args):
-        self.calls.append(args)
+    def call(self, *args, data=None):
+        self.calls.append((args, data))
         self.rotated = True
 
 
@@ -128,6 +134,27 @@ class TrusteeLifecycleTests(unittest.TestCase):
             restart_trustee(cluster, "fixture-namespace", timeout=10)
         self.assertEqual(cluster.cycles, 2)
         self.assertEqual(len(cluster.calls), 1)
+        args, data = cluster.calls[0]
+        self.assertEqual(args, ("delete", "--raw=/api/v1/namespaces/fixture-namespace/pods/trustee-pod", "-f", "-"))
+        self.assertEqual(data["preconditions"], {"uid": "old"})
+        self.assertNotIn("gracePeriodSeconds", data)
+
+    def test_rotation_refuses_unrelated_labelled_pod_before_any_delete(self):
+        cluster = ClusterFixture()
+        original = cluster.template
+        def unrelated():
+            pod = original()
+            pod["metadata"]["ownerReferences"] = []
+            return pod
+        with patch.object(cluster, "template", side_effect=unrelated), self.assertRaisesRegex(Incomplete, "outside the selected deployment"):
+            restart_trustee(cluster, "fixture-namespace", timeout=10)
+        self.assertEqual(cluster.calls, [])
+
+    def test_rotation_binds_explicit_trustee_name(self):
+        cluster = ClusterFixture()
+        with self.assertRaisesRegex(Incomplete, "rotation target differs"):
+            restart_trustee(cluster, "fixture-namespace", timeout=10, trustee_name="another-trustee")
+        self.assertEqual(cluster.calls, [])
 
 
 if __name__ == "__main__":
