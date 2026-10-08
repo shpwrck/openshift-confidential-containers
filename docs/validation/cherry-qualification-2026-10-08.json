@@ -14,7 +14,7 @@
     "amount": 0.53,
     "taxed": false
   },
-  "deadlineUTC": "2026-10-08T19:38:10.098548+00:00",
+  "deadlineUTC": null,
   "fourHourHostEstimateEUR": 2.12,
   "helperAllocated": true,
   "hardwareResults": {
@@ -86,7 +86,7 @@
   "limits": [
     "Provider assignment is not connectivity evidence.",
     "Ubuntu, Agent-live and installed RHCOS host prerequisites passed; guest attestation and a healthy completed cluster remain pending.",
-    "Cleanup guard runs in the local WSL user systemd instance and requires it to remain running.",
+    "Automatic retirement is disabled; no provider-side spending cap exists. Monitor charges and retire the exact owned resources manually within the approved budget.",
     "Overall $150 cap across providers remains; the qualification budget is $20.",
     "Raw-host isolation rehearsal was rolled back. Agent-live and installed-node isolation passed; pod and confidential-guest isolation remain pending.",
     "AlmaLinux 9.8 is the trial helper OS, not the supported RHEL mirror-registry host.",
@@ -126,5 +126,13 @@
       "strict-valid lab registry server leaf",
       "helper API hostname configured before installer wait"
     ]
+  },
+  "automaticRetirement": {
+    "status": "disabled externally at owner direction",
+    "observedAt": "2026-10-08T18:09:11Z",
+    "timer": "masked and inactive",
+    "service": "masked and inactive",
+    "privateDeadline": "unset",
+    "formerDeadlineUTC": "2026-10-08T19:38:10.098548+00:00"
   }
 }

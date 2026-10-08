@@ -1,6 +1,6 @@
 # Cherry validation
 
-The October 8, 2026 trial has passed the Ubuntu SNP host gate, bidirectional private networking and the prepared-install service check. OCP 4.20.39 content is mirrored. The Agent-live RHCOS SNP and isolation checks also passed. Installed RHCOS SNP and host isolation also passed; the main API and etcd are available while the cluster converges. Healthy-cluster and released OSC 1.13.1 / Trustee 1.2.1 guest proofs remain pending. These are not yet acceptance results. See the [dated receipt](validation/cherry-qualification-2026-10-08.json) and [current trial runbook](runbooks/cherry-qualification/README.md).
+The October 8, 2026 trial has passed the Ubuntu SNP host gate, bidirectional private networking and the prepared-install service check. OCP 4.20.39 content is mirrored. The Agent-live RHCOS SNP and isolation checks also passed. Installed RHCOS SNP and host isolation also passed; the main API and etcd are available while the cluster converges. Healthy-cluster and released OSC 1.13.1 / Trustee 1.2.1 guest proofs remain pending. These are not yet acceptance results. Automatic retirement was subsequently disabled at the owner's direction; the overall $150 cap remains. See the [dated receipt](validation/cherry-qualification-2026-10-08.json) and [current trial runbook](runbooks/cherry-qualification/README.md).
 
 ## What is being tested
 
