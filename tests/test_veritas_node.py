@@ -166,6 +166,14 @@ class NodeVeritasTests(unittest.TestCase):
         self.assertEqual(record["value"], ["a" * 96])
         self.assertEqual(record["expiration"], "2099-01-01T00:00:00Z")
 
+    def test_reviewed_kernel_cmdline_is_one_literal_argument(self):
+        cmdline = "tsc=reliable nr_cpus=1 agent.launch_process_timeout=6"
+        self.env["VERITAS_KERNEL_CMDLINE"] = cmdline
+        result = self.run_veritas()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argv = json.loads((self.state / "node-report.json").read_text())["argv"]
+        self.assertEqual(argv[argv.index("--kernel-cmdline") + 1], cmdline)
+
     def test_command_or_validation_failure_preserves_last_good_output(self):
         failures = {
             "command-failure": "Veritas failed on selected node",

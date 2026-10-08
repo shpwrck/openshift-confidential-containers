@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Generate RVPS reference values with Veritas. Hardware-bound: run on the TARGET hardware
-# (rig proves the procedure; production metal regenerates the data). One run per distinct
-# hardware config (CPU family + firmware). See docs/design/engagement-design.md §4.
+# Generate expected launch references from the selected release artifacts. Review
+# the target CPU/guest launch string and add its approved hardware TCB separately.
+# Generation is not an attestation or approval of the observed workload.
 #
 # Runs the coco-tools `veritas` generator over your initdata and emits an RVPS reference-values
 # ConfigMap payload in the Trustee 1.2 reference_value format.
@@ -9,7 +9,7 @@
 #
 # Where it runs: by default `podman` on THIS host (point it at the node, or copy initdata to the
 # node and run there). Set NODE=<name> to run it on the cluster node via `oc debug node` instead
-# — use that if veritas needs to read the live firmware/TCB rather than just the initdata.
+# — this selects the execution host; pinned Veritas does not collect host TCB values.
 #
 # Usage:    TEE=snp ./scripts/gen-rvps-veritas.sh             # local podman
 #           TEE=snp NODE=<node> ./scripts/gen-rvps-veritas.sh  # run on the node via oc debug
@@ -23,7 +23,8 @@
 #   REGISTRIES_CONF=./registries.conf              # mounted as /etc/containers/registries.conf
 #   REGISTRY_CERTS_DIR=/etc/containers/certs.d     # NODE mode path must exist on the node
 #   VERITAS_OC_WRAPPER=./oc                         # mounted before /usr/local/bin/oc in PATH
-#   VERITAS_EXTRA_ARGS="--kernel-cmdline ..."
+#   VERITAS_KERNEL_CMDLINE='...'                    # exact reviewed launch string, one argument
+#   VERITAS_EXTRA_ARGS="--max-cpu-count 4"           # whitespace-separated simple flags only
 #
 # DISCONNECTED (air-gap) RECIPE — proven on the rig 2026-07-01. Veritas verifies the OCP release
 # payload, and that verification does a registry TAGS-LIST on quay.io/openshift-release-dev, which
@@ -58,6 +59,7 @@ DEBUG_IMAGE="${DEBUG_IMAGE:-}"
 REGISTRIES_CONF="${REGISTRIES_CONF:-}"
 REGISTRY_CERTS_DIR="${REGISTRY_CERTS_DIR:-}"
 VERITAS_OC_WRAPPER="${VERITAS_OC_WRAPPER:-}"
+VERITAS_KERNEL_CMDLINE="${VERITAS_KERNEL_CMDLINE:-}"
 VERITAS_EXTRA_ARGS="${VERITAS_EXTRA_ARGS:-}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -106,6 +108,7 @@ veritas_args=(veritas --platform baremetal --tee "${TEE}" --authfile /pull-secre
 for version in ${OCP_VERSION}; do
   veritas_args+=(--ocp-version "${version}")
 done
+[[ -z "$VERITAS_KERNEL_CMDLINE" ]] || veritas_args+=(--kernel-cmdline "$VERITAS_KERNEL_CMDLINE")
 if [[ -n "${VERITAS_EXTRA_ARGS}" ]]; then
   read -r -a extra_args <<< "${VERITAS_EXTRA_ARGS}"
   veritas_args+=(${extra_args[@]+"${extra_args[@]}"})

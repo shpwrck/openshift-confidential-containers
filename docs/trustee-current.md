@@ -66,8 +66,10 @@ sample resources and any previously attached resource names remain present.
 
 ## Publish the reviewed policy and references
 
-Freeze the final initdata first. Generate references on the selected hardware
-using the resolved coco-tools image and keep registry credentials outside Homelab:
+Freeze the final initdata first. Generate expected launch references from the
+selected release artifacts using the resolved coco-tools image. Keep registry
+credentials outside Homelab. Supply the exact reviewed runtime kernel command line
+with `VERITAS_KERNEL_CMDLINE` when it differs from the generator's defaults:
 
 ```sh
 PULL_SECRET="$HOME/.local/state/coco/pull-secret.json" \
@@ -80,6 +82,20 @@ The generator accepts Veritas records only when they conform to Trustee 1.2:
 including `name`, UTC-seconds `expiration`, and typed `value`. It rejects duplicate,
 empty, malformed or expired records. Generation alone does not publish references
 or prove that they match the installed CPU policy.
+
+The Cherry run found `agent.launch_process_timeout=6` in Kata's actual launch
+string, absent from coco-tools 0.5.1's default. Computing with the exact string
+produced the measurement in the independently verified guest quote; accepting
+the default values would have left the executables appraisal failing. Supplying
+an explicit command line also selects only the non-GPU initrd by default.
+
+Veritas's bare-metal calculation does not collect SNP hardware TCB records. Add
+`snp_bootloader`, `snp_microcode`, `snp_snp_svn` and `snp_tee_svn` from the actual
+approved platform, with typed integer values and deliberate expiry. Validate them
+against the host and verified quote before publication. The pinned generator also
+computes its `init_data` record with SHA-384 regardless of the file's declared
+algorithm. Do not publish that unused record as a SHA-256 binding; this workflow
+enforces the exact SHA-256 bytes through the separate CPU-policy extension below.
 
 Provide an approved resource policy that defaults to deny and enforces the required
 hardware, executable and configuration appraisals for the intended resource paths.
