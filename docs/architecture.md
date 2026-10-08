@@ -45,15 +45,18 @@ Customer operations select `WORKER_CONTEXT` and `TRUSTEE_CONTEXT` independently.
 
 ```mermaid
 flowchart TD
-  BOM[Review product matrix and resolve release inventory] --> Plan[Plan new Latitude infrastructure]
-  Plan --> Hardware[Verify hardware availability and firmware capabilities]
+  BOM[Review product matrix and resolve release inventory] --> Plan[Select a supplied private-network rig]
+  Plan --> Hardware[Verify UEFI and raw-host SNP]
   Hardware --> Prepare[Prepare bastion, mirror, DNS and checked tools]
-  Prepare --> Private{Raw node reaches private mirror, DNS and NTP?}
-  Private -->|Pass| Fresh[Explicit fresh install]
+  Prepare --> Artifacts[Build reviewed private-network boot configuration]
+  Artifacts --> Private{Raw node reaches private mirror, DNS and NTP?}
+  Private -->|Pass| Isolation[Verify node and helper isolation configuration]
+  Isolation --> Fresh[Explicit fresh install]
   Private -->|Fail| Network[Keep provider OS and diagnose private link]
   Network --> Private
   Fresh --> OCP[Verify actual OCP payload and cluster health]
-  OCP --> Operators[Install reviewed operator plans and wait for CRDs]
+  OCP --> Installed[Verify installed-node SNP and isolation]
+  Installed --> Operators[Install reviewed operator plans and wait for CRDs]
   Operators --> SNP[Verify SNP host and scoped NFD labels]
   SNP --> Kata[Apply scoped KataConfig and wait through node changes]
   Kata --> Trustee[Bootstrap TrusteeConfig and wait for migration]
@@ -66,9 +69,9 @@ flowchart TD
 
 Preparation is the wrapper's default. Fresh installation is a separate operation and may replace the selected node's OS. It is not the customer upgrade procedure. A provider action with an ambiguous result requires inspection before retry; completion markers depend on the current inputs. Successful installation closes the temporary boot endpoint.
 
-The [private-link check](latitude-validation.md#prove-the-private-link-before-reinstall) runs
+The [private-link check](cherry-validation.md) runs
 from the raw node using the intended VLAN and trusted mirror CA. Mirror readiness on the
-bastion alone cannot establish that path. Keep raw-host, installed RHCOS and guest evidence separate.
+bastion alone cannot establish that path. Keep raw-host, Agent-live, installed RHCOS and guest evidence separate. The Cherry trial uses public, tokenized provider iPXE delivery for boot artifacts; the running Agent OS uses only the private VLAN. This does not demonstrate fully private boot-artifact delivery from power-on.
 
 ## Each proof has four controls
 

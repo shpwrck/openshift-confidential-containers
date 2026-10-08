@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-08",
+  "region": "us-east-2",
+  "source": "Authenticated EC2 DescribeInstanceTypes response",
+  "requestFilter": {"Name": "bare-metal", "Values": ["true"]},
+  "responseSelection": "ProcessorInfo.Manufacturer == AMD",
+  "observationType": "Sanitized transcription of the returned type names and SupportedBootModes, not a host boot test",
+  "infrastructureEstimatePresentedBeforeQueryUSD": 0,
+  "resourcesCreated": false,
+  "instances": [
+    {"type": "c6a.metal", "supportedBootModes": ["legacy-bios"]},
+    {"type": "c7a.metal-48xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "c8a.metal-24xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "c8a.metal-48xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "m6a.metal", "supportedBootModes": ["legacy-bios"]},
+    {"type": "m7a.metal-48xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "m8a.metal-24xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "m8a.metal-48xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "m8azn.metal-12xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "m8azn.metal-24xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "r6a.metal", "supportedBootModes": ["legacy-bios"]},
+    {"type": "r7a.metal-48xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "r8a.metal-24xl", "supportedBootModes": ["legacy-bios"]},
+    {"type": "r8a.metal-48xl", "supportedBootModes": ["legacy-bios"]}
+  ],
+  "decision": "All returned types fail the documented OSC 1.13 host UEFI prerequisite. Do not allocate them for this released-product validation.",
+  "limits": [
+    "No physical host was started or inspected.",
+    "This is a dated regional API observation, not a claim about future instance types.",
+    "It does not disprove the AWS custom Ubuntu/upstream CoCo sample."
+  ],
+  "documentation": [
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-type-boot-mode.html",
+    "https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.13/html/deploying_confidential_containers_on_bare-metal_servers/install-cc-overview_metal-cc"
+  ]
+}

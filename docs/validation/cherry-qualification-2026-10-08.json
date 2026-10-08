@@ -83,7 +83,8 @@
     "Overall $150 cap across providers remains; the qualification budget is $20.",
     "Raw-host isolation rehearsal was rolled back. Agent-live isolation passed; running-cluster and guest isolation remain pending.",
     "AlmaLinux 9.8 is the trial helper OS, not the supported RHEL mirror-registry host.",
-    "Fresh lab installation does not establish an upgrade path for an existing customer cluster."
+    "Fresh lab installation does not establish an upgrade path for an existing customer cluster.",
+    "Fully private boot-artifact delivery from power-on is not established."
   ],
   "helperServerId": 1025601,
   "installationResults": {
@@ -100,6 +101,7 @@
       "SEVSNPAPI": "1.58 build 2",
       "RMPPhysicalRange": "0x93700000 - 0xa3cfffff",
       "installedNodeCheck": null
-    }
+    },
+    "bootArtifactDelivery": "Provider iPXE via tokenized public helper endpoint; Agent OS uses only private VLAN"
   }
 }

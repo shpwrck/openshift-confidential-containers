@@ -8,7 +8,7 @@ Use a dedicated project with one AMD SNP node and a separate mirror/admin helper
 
 Both servers use an 802.3ad bond and a private VLAN on that bond. For this allocation the actual wire tag is 2064. The API's `vlan` object ID 1213 is not that wire tag. Read the configured VLAN and permanent physical MAC addresses on the raw OS. The Agent configuration keeps both bond members up, gives the bond no public IPv4/IPv6 address, and assigns only the private VLAN address.
 
-The helper serves private DNS, NTP and the TLS registry. Its managed forwarding rule blocks private-VLAN traffic from leaving through the public underlay, including when Podman enables IP forwarding. DNS does not proxy node queries upstream. The helper itself remains connected while staging content. A temporary raw-host firewall rehearsal passed for IPv4 and IPv6; it was rolled back. Running-cluster isolation still requires its own probes.
+The helper serves private DNS, NTP and the TLS registry. Its managed forwarding rule blocks private-VLAN traffic from leaving through the public underlay, including when Podman enables IP forwarding. DNS does not proxy node queries upstream. The helper itself remains connected while staging content. Provider iPXE fetched boot artifacts through the tokenized public helper endpoint before the Agent OS took over; fully private boot-artifact delivery from power-on is not proved by this trial. A temporary raw-host firewall rehearsal passed for IPv4 and IPv6; it was rolled back. Running-cluster isolation still requires its own probes.
 
 ## Use the prepared rig
 

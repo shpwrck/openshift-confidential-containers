@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-05T19:39:23.296254+00:00",
+  "scope": "Owner-requested retirement of all Latitude resources created for this validation task",
+  "status": "DESTROYED_AND_VERIFIED",
+  "allOwnedResourcesAbsent": true,
+  "exactOwnedResourceAbsenceChecks": 20,
+  "remainingProviderInventoryCounts": {
+    "servers": 0,
+    "virtual_networks": 0,
+    "firewalls": 0,
+    "user_data": 0,
+    "ssh_keys": 1
+  },
+  "remainingManagedTerraformResources": 0,
+  "retained": [
+    "Pre-existing Test project",
+    "Pre-existing SSH key; task-created validation key was deleted"
+  ],
+  "preservation": {
+    "uniqueBastionFiles": 1190,
+    "archiveSha256": "9def4c6d103e95e68acd39f2bbee2d95bec0bdcd85a83554bc0a2bc0fbc85fce",
+    "allUniqueFileHashesVerified": true,
+    "signedControlOciArchives": 3,
+    "finalRawHostEvidencePreserved": true,
+    "fullRegistryCachePreserved": false,
+    "imageRecovery": "Re-mirror pinned upstream release/operator images; unique signed controls were preserved separately"
+  },
+  "limits": [
+    "No OpenShift cluster was installed",
+    "No RHCOS, guest attestation or disconnected installation proof completed",
+    "Private networking remained unresolved",
+    "Public-network workaround was abandoned",
+    "API absence does not establish the final provider invoice"
+  ],
+  "replacement": {
+    "preferredProvider": "AWS",
+    "resourcesAllocated": false,
+    "qualification": "pending"
+  }
+}
