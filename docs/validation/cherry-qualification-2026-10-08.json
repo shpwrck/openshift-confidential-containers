@@ -1,13 +1,13 @@
 {
-  "observedAt": "2026-10-08T18:06:58.176849+00:00",
-  "phase": "Fresh disconnected installation",
-  "clusterInstalled": false,
+  "observedAt": "2026-10-08T19:35:43.761217+00:00",
+  "phase": "Installed platform and CPU confidential-container proofs",
+  "clusterInstalled": true,
   "providerServerId": 1025551,
   "region": "US-Chicago",
   "advertisedPlan": "amd-epyc-9124p",
   "prebuiltId": 850,
   "state": "allocated",
-  "status": "installed-rhcos-snp-passed-cluster-converging",
+  "status": "healthy-platform-and-five-cpu-proofs-repeated",
   "rate": {
     "currency": "EUR",
     "unit": "Hours",
@@ -21,7 +21,7 @@
     "actualCPU": "AMD EPYC 9124",
     "UEFI": true,
     "SNPInitialized": true,
-    "guestAttestation": null,
+    "guestAttestation": true,
     "motherboard": "Supermicro H13SST-G",
     "BIOS": "3.7",
     "BIOSDate": "2026-01-23",
@@ -44,12 +44,12 @@
       "IOMMU": "Enabled",
       "SEV-SNP Support": "Enabled"
     },
-    "rawHostVCEKDownload": "validated; RHCOS binding still required"
+    "rawHostVCEKDownload": "Current installed-RHCOS collection validated and published; offline quote verification, corrupt-VCEK denial and recovery passed"
   },
   "networkResults": {
     "providerPrivateAddressAssigned": true,
     "privateConnectivity": true,
-    "internetIsolation": null,
+    "internetIsolation": true,
     "rawHostIsolationRehearsal": {
       "freshPublicIPv4Blocked": true,
       "freshPublicIPv6Blocked": true,
@@ -57,7 +57,7 @@
       "rulesRemoved": true,
       "publicIPv4AndIPv6Restored": true
     },
-    "isolationMaintained": false,
+    "isolationMaintained": true,
     "serviceGate": "PASS",
     "privateForwardingIsolation": {
       "helperIPv4ForwardingEnabled": true,
@@ -81,17 +81,26 @@
       "publicIPv6": "UNREACHABLE",
       "publicRegistryDNS": "DENIED",
       "privateRegistryTLS": "401; trusted TLS succeeded"
+    },
+    "workloadIsolation": {
+      "ordinary": "PASS",
+      "confidentialGuest": "PASS",
+      "guestProbeExit": 0,
+      "reachableDestinationCalibrationExit": 42,
+      "execProcessDenied": true,
+      "evidenceSHA256": "9bd97840c5d8a0f0712357a1b73fd1434eb7aebbcb3ffd028deb7196f899cbdd",
+      "scope": "Fresh application TCP/DNS probes with trusted private registry positive control; BIOS/BMC/iPXE delivery excluded"
     }
   },
   "limits": [
-    "Provider assignment is not connectivity evidence.",
-    "Ubuntu, Agent-live and installed RHCOS host prerequisites passed; guest attestation and a healthy completed cluster remain pending.",
-    "Automatic retirement is disabled; no provider-side spending cap exists. Monitor charges and retire the exact owned resources manually within the approved budget.",
-    "Overall $150 cap across providers remains; the qualification budget is $20.",
-    "Raw-host isolation rehearsal was rolled back. Agent-live and installed-node isolation passed; pod and confidential-guest isolation remain pending.",
+    "Platform and all five individual CPU proofs plus a fresh combined proof repeat passed. Clean setup repeat remains pending.",
+    "A co-located Permissive HTTP lab with enforcing appraisals does not establish a separate customer Trustee trust domain or an existing customer upgrade.",
+    "Automatic retirement remains disabled at owner direction; monitor charges and retire exact owned resources manually within the overall $150 cap.",
+    "Raw-host isolation rehearsal was rolled back; Agent-live, installed node, ordinary pod and confidential guest fresh probes passed.",
     "AlmaLinux 9.8 is the trial helper OS, not the supported RHEL mirror-registry host.",
-    "Fresh lab installation does not establish an upgrade path for an existing customer cluster.",
-    "Fully private boot-artifact delivery from power-on is not established."
+    "Fully private boot-artifact delivery from power-on is not established.",
+    "No encrypted-image, Intel or GPU support is claimed.",
+    "Guest stdout was empty; finite startup exit checks and a deliberate failure calibration were used without relaxing the default guest agent policy."
   ],
   "helperServerId": 1025601,
   "installationResults": {
@@ -99,7 +108,7 @@
     "mirrorBootstrap": "PASS after curl-package and firewalld corrections",
     "registryTLS": "PASS after replacement of malformed generated leaf certificate",
     "immutablePayloadMirror": "PASS; oc-mirror completed selected payload and Operator content",
-    "freshClusterInstall": "in progress; installed main API and etcd available, remaining core services converging",
+    "freshClusterInstall": "PASS; installer completed at 2026-10-08T18:14:28Z, exact payload and stable cluster verified",
     "agentLiveEnvironment": {
       "RHCOS": "9.6.20260818-0",
       "kernel": "5.14.0-570.135.1.el9_6.x86_64",
@@ -124,15 +133,70 @@
       "curl package reuse",
       "separate firewalld service operations",
       "strict-valid lab registry server leaf",
-      "helper API hostname configured before installer wait"
-    ]
+      "helper API hostname configured before installer wait",
+      "Bundle-backed OLM plan provenance",
+      "Operator-safe Trustee refresh using pod UID preconditions",
+      "Peer/time-bound Trustee denial evidence",
+      "Guest sigstoreSigned rule rejection wording",
+      "Python 3.12+ preflight and exact kernel command-line argument"
+    ],
+    "clusterVersion": "4.20.39",
+    "payloadDigest": "sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850",
+    "coreOperators": {
+      "available": 34,
+      "total": 34,
+      "progressing": 0,
+      "degraded": 0
+    },
+    "masterMachineConfigPool": {
+      "updated": true,
+      "ready": 1,
+      "degraded": 0
+    },
+    "bootPublication": "CLOSED; source assets and kubeconfig retained, no nginx port 8080 listener",
+    "operators": {
+      "osc": "1.13.1",
+      "trustee": "1.2.1",
+      "nfd": "4.20.0-202609201357",
+      "certManager": "1.20.1",
+      "gatekeeper": "3.21.1"
+    },
+    "selectedCSVs": "All five Succeeded",
+    "runtimeClass": "kata-cc",
+    "runtimeHandler": "kata-snp",
+    "kataConfig": "Converged; host SNP gate passed after rollout/reboot",
+    "trustee": {
+      "profile": "Permissive",
+      "coLocated": true,
+      "transport": "HTTP lab only",
+      "offlineEndorsements": true,
+      "resourcePolicy": "Vendor restrictive EAR policy enforces hardware, executable and configuration appraisals",
+      "references": "Independently calculated non-GPU launch with exact command line, plus current verified SNP TCB; 30-day expiry"
+    },
+    "diagnostics": {
+      "oscMustGather": "PASS",
+      "trusteeMustGather": "PASS",
+      "protectedFileCount": 513
+    },
+    "combinedProofRepeat": "PASS; five cases, including restoration/recovery and verified cleanup"
   },
   "automaticRetirement": {
     "status": "disabled externally at owner direction",
-    "observedAt": "2026-10-08T18:09:11Z",
+    "observedAt": "2026-10-08T19:31:18.263719+00:00",
     "timer": "masked and inactive",
     "service": "masked and inactive",
     "privateDeadline": "unset",
     "formerDeadlineUTC": "2026-10-08T19:38:10.098548+00:00"
+  },
+  "upgradeObservations": {
+    "updateGraph": "Unreachable from the isolated cluster, as expected",
+    "nextMinorGate": "AdminAckRequired for 4.21 release Sigstore-signature mirroring; no acknowledgement or upgrade performed"
+  },
+  "pricingObservation": {
+    "observedAt": "2026-10-08T19:21:58.730308+00:00",
+    "unitPriceEUR": 0.53,
+    "rigHourlyEstimateEUR": 1.06,
+    "serverAccumulatedSubtotalEUR": 3.68,
+    "limit": "price_total is accumulated billing; unit_price is the hourly rate. This is not a final invoice or an overall-provider spend total."
   }
 }

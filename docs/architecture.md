@@ -1,6 +1,6 @@
 # Architecture and operational flow
 
-This is the current candidate workflow for OSC 1.13 / Trustee 1.2. Follow [the quickstart](current-quickstart.md) and [release inventory](../install/release-manifest.json). Diagrams show intended boundaries, not a completed hardware validation.
+This is the current workflow for OSC 1.13 / Trustee 1.2. Follow [the quickstart](current-quickstart.md) and [release inventory](../install/release-manifest.json). The Cherry lab has passed the platform and individual CPU proofs; clean setup repeat remains pending. The separate customer trust domains below are design boundaries, not a deployment established by the co-located lab.
 
 ## Components and trust domains
 
@@ -60,8 +60,9 @@ flowchart TD
   Operators --> SNP[Verify SNP host and scoped NFD labels]
   SNP --> Kata[Apply scoped KataConfig and wait through node changes]
   Kata --> Trustee[Bootstrap TrusteeConfig and wait for migration]
-  Trustee --> Policy[Validate collateral, RVPS and approved policies]
-  Policy --> Serving[Verify mounted configuration in serving pods]
+  Trustee --> References[Calculate launch references from artifacts and reviewed command line]
+  References --> Policy[Validate collateral, hardware TCB and enforcing policies]
+  Policy --> Serving[Refresh identified pods and verify current mounts]
   Serving --> Proof[Run independent capability proofs]
   Proof --> Repeat[Repeat from clean infrastructure]
   Repeat --> Customer[Review evidence for customer rollout]
@@ -80,7 +81,7 @@ flowchart TD
   Ready[Check release, contexts, disposable labels and policies] --> Lock[Acquire Trustee namespace lock]
   Lock --> Allow[Positive workload succeeds]
   Allow --> Change[Change one input or reference]
-  Change --> Deny[Require attributable denial and no application start]
+  Change --> Deny[Require attributable guest or same-peer Trustee denial]
   Deny --> Remove[Remove denied pod and verify deletion]
   Remove --> Restore[Restore exact prior policy or collateral]
   Restore --> Rotate[Verify new serving pods use restored configuration]
