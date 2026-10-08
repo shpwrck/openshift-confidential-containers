@@ -1,6 +1,6 @@
 # Capability status and next experiments
 
-Checked **2026-10-08**. The target is AMD CPU confidential containers with OSC 1.13.1 / Trustee 1.2.1 and OCP 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. Latitude was retired after its private-network qualification failed. The active [Cherry trial](cherry-validation.md) has passed the Ubuntu and Agent-live RHCOS SNP checks, bidirectional private networking, private DNS/NTP/registry TLS, and Agent-live isolation probes. Mirroring completed and fresh OpenShift installation is in control-plane bootstrap. Installed-node and guest proofs remain pending; no guest rung is validated for this release set.
+Checked **2026-10-08**. The target is AMD CPU confidential containers with OSC 1.13.1 / Trustee 1.2.1 and OCP 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. Latitude was retired after its private-network qualification failed. The active [Cherry trial](cherry-validation.md) has passed the Ubuntu and Agent-live RHCOS SNP checks, bidirectional private networking, private DNS/NTP/registry TLS, and Agent-live isolation probes. Mirroring completed, installed RHCOS SNP and host isolation passed, and the main API/etcd are available. Cluster health and guest proofs remain pending; no guest rung is validated for this release set.
 
 ## What changed enough to retest
 

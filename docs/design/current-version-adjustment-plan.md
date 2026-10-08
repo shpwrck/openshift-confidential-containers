@@ -2,7 +2,7 @@
 
 > Scope correction, October 5, 2026: the owner confirmed **AMD SEV-SNP only**. Intel suggestions below are historical planning context and are excluded from the active implementation and Latitude acceptance plan. See [the current quickstart](../current-quickstart.md).
 
-**Status:** proposal only; implementation and hardware validation have not begun.
+**Status:** historical October 2 proposal. Implementation has since begun under the AMD-only scope; [the current quickstart](../current-quickstart.md) and [Cherry validation](../cherry-validation.md) record the actual workflow and remaining hardware acceptance. The findings and Intel proposal below refer to the original review, not current deployment instructions.
 
 **Reviewed:** October 2, 2026 (America/New_York).
 

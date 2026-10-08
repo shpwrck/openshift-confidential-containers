@@ -1,5 +1,5 @@
 {
-  "observedAt": "2026-10-08T17:38:32.376145+00:00",
+  "observedAt": "2026-10-08T18:06:58.176849+00:00",
   "phase": "Fresh disconnected installation",
   "clusterInstalled": false,
   "providerServerId": 1025551,
@@ -7,7 +7,7 @@
   "advertisedPlan": "amd-epyc-9124p",
   "prebuiltId": 850,
   "state": "allocated",
-  "status": "installing-control-plane-bootstrap",
+  "status": "installed-rhcos-snp-passed-cluster-converging",
   "rate": {
     "currency": "EUR",
     "unit": "Hours",
@@ -74,14 +74,21 @@
       "publicIPv6": "UNREACHABLE",
       "publicRegistryDNS": "DENIED",
       "privateRegistryTCP": "REACHABLE"
+    },
+    "installedNodeIsolation": {
+      "networkPath": "br-ex through bond0.2064 over the verified LACP bond",
+      "publicIPv4TCP": "BLOCKED",
+      "publicIPv6": "UNREACHABLE",
+      "publicRegistryDNS": "DENIED",
+      "privateRegistryTLS": "401; trusted TLS succeeded"
     }
   },
   "limits": [
     "Provider assignment is not connectivity evidence.",
-    "Ubuntu and Agent-live RHCOS host prerequisites passed; installed RHCOS, guest attestation and completed disconnected install remain pending.",
+    "Ubuntu, Agent-live and installed RHCOS host prerequisites passed; guest attestation and a healthy completed cluster remain pending.",
     "Cleanup guard runs in the local WSL user systemd instance and requires it to remain running.",
     "Overall $150 cap across providers remains; the qualification budget is $20.",
-    "Raw-host isolation rehearsal was rolled back. Agent-live isolation passed; running-cluster and guest isolation remain pending.",
+    "Raw-host isolation rehearsal was rolled back. Agent-live and installed-node isolation passed; pod and confidential-guest isolation remain pending.",
     "AlmaLinux 9.8 is the trial helper OS, not the supported RHEL mirror-registry host.",
     "Fresh lab installation does not establish an upgrade path for an existing customer cluster.",
     "Fully private boot-artifact delivery from power-on is not established."
@@ -92,7 +99,7 @@
     "mirrorBootstrap": "PASS after curl-package and firewalld corrections",
     "registryTLS": "PASS after replacement of malformed generated leaf certificate",
     "immutablePayloadMirror": "PASS; oc-mirror completed selected payload and Operator content",
-    "freshClusterInstall": "in progress; Agent Installer reached Waiting for bootkube",
+    "freshClusterInstall": "in progress; installed main API and etcd available, remaining core services converging",
     "agentLiveEnvironment": {
       "RHCOS": "9.6.20260818-0",
       "kernel": "5.14.0-570.135.1.el9_6.x86_64",
@@ -100,8 +107,24 @@
       "hostSNPGateExit": 0,
       "SEVSNPAPI": "1.58 build 2",
       "RMPPhysicalRange": "0x93700000 - 0xa3cfffff",
-      "installedNodeCheck": null
+      "installedNodeCheck": "PASS under installed RHCOS; see installedNodeEnvironment"
     },
-    "bootArtifactDelivery": "Provider iPXE via tokenized public helper endpoint; Agent OS uses only private VLAN"
+    "bootArtifactDelivery": "Provider iPXE via tokenized public helper endpoint; Agent OS uses only private VLAN",
+    "clusterAPIResponding": true,
+    "nodeReady": true,
+    "installedNodeEnvironment": {
+      "RHCOS": "9.6.20260914-0",
+      "kernel": "5.14.0-570.141.1.el9_6.x86_64",
+      "UEFI": true,
+      "hostSNPGateExit": 0,
+      "SEVSNPAPI": "1.58 build 2",
+      "RMPPhysicalRange": "0x93700000 - 0xa3cfffff"
+    },
+    "automationRepairs": [
+      "curl package reuse",
+      "separate firewalld service operations",
+      "strict-valid lab registry server leaf",
+      "helper API hostname configured before installer wait"
+    ]
   }
 }
