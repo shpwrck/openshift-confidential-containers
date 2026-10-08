@@ -36,7 +36,8 @@ Initial provisioning and mirror installation for this dated trial used the prote
 ## Fixes discovered during preparation
 
 - Reuse an installed curl command, including `curl-minimal`, instead of requesting a conflicting full package.
-- Open DNS, NTP and the registry with separate firewalld operations.
+- Open DNS, NTP and the registry with separate firewalld operations in both bootstrap and Ansible; fail when the managed firewall commands fail.
+- Configure the helper's private API hostname before the installer wait. On this trial the API was reachable by IP but the wait could not discover it until this mapping was present.
 - Validate the registry leaf with strict X.509 checks before declaring it ready. The generated mirror-registry 2.0.12 leaf incorrectly included certificate-signing usage. The lab repair retains the CA and server key, issues a valid server leaf and uses the supported certificate-rotation command. Arbitrary trust failures do not replace the CA automatically.
 
 Preparation success does not establish a healthy OpenShift cluster, RHCOS SNP, guest attestation, signature enforcement or encrypted-image support. Use [the capability ladder](capability-status.md) after the platform checks. Record positive controls, attributable denials and recovery, then run a clean repeat before calling the workflow validated.

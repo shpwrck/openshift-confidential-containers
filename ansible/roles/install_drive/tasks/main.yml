@@ -55,6 +55,23 @@
     label: "{{ install_machine.name }} ({{ install_machine.server_id }})"
   when: install_trigger_reinstall | bool
 
+# --- /etc/hosts so oc works on the bastion (fix #9: bastion uses public DNS, not its dnsmasq) ---
+- name: Add cluster API/console names to the bastion /etc/hosts
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE coco cluster records ({{ cluster_name }})"
+    block: |
+      {% for m in machines if m.role == 'master' %}
+      {% set cluster_host_ip = node_public_ipv4 if network_profile | default('private-vlan') == 'public-routed-lab' else m.vlan_ip %}
+      {{ cluster_host_ip }} api.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}
+      {% endfor %}
+  become: true
+  when: install_mode == 'fresh'
+  tags: [api-resolver]
+
 # --- Wait for install-complete (bootstrap-complete timeout is NON-fatal, fix #9) ---
 - name: Wait for the Agent-based SNO install to complete (timeout non-fatal)
   ansible.builtin.command:
@@ -75,22 +92,6 @@
       wait-for install-complete rc={{ install_wait.rc | default('?') }}.
       {{ 'Completed.' if install_wait.rc | default(1) == 0
          else 'Installer wait did not complete — checking actual cluster release and health next.' }}
-  when: install_mode == 'fresh'
-
-# --- /etc/hosts so oc works on the bastion (fix #9: bastion uses public DNS, not its dnsmasq) ---
-- name: Add cluster API/console names to the bastion /etc/hosts
-  ansible.builtin.blockinfile:
-    path: /etc/hosts
-    marker: "# {mark} ANSIBLE coco cluster records ({{ cluster_name }})"
-    block: |
-      {% for m in machines if m.role == 'master' %}
-      {% set cluster_host_ip = node_public_ipv4 if network_profile | default('private-vlan') == 'public-routed-lab' else m.vlan_ip %}
-      {{ cluster_host_ip }} api.{{ cluster_name }}.{{ base_domain }}
-      {{ cluster_host_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
-      {{ cluster_host_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}
-      {{ cluster_host_ip }} oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}
-      {% endfor %}
-  become: true
   when: install_mode == 'fresh'
 
 # --- Poll clusterversion until Available=True / Progressing=False (fix #9) ---

@@ -49,14 +49,14 @@
   ansible.builtin.service_facts:
   become: true
 
-- name: Open dnsmasq + chrony in firewalld (if active)
+- name: Open private DNS and NTP in firewalld (if active)
   ansible.builtin.command: "{{ item }}"
   become: true
   register: dnsntp_fw
   changed_when: "'success' in (dnsntp_fw.stdout | default(''))"
-  failed_when: false
   loop:
-    - firewall-cmd --permanent --add-service=dns --add-service=ntp
+    - firewall-cmd --permanent --add-service=dns
+    - firewall-cmd --permanent --add-service=ntp
     - firewall-cmd --reload
   when: (ansible_facts.services['firewalld.service'] | default({})).state | default('') == 'running'
 

@@ -19,7 +19,7 @@
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
-  tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp, isolation, render, pxe, drive, install]
+  tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp, isolation, render, pxe, drive, install, api-resolver]
   tasks:
     - name: Validate the effective Ansible release and profile inputs
       ansible.builtin.command:
