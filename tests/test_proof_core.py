@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts/lib"))
 from proof_core import (Incomplete, ProofFailure, ResourceEdit, application_started,
-                        bind_initdata_policy, denial_matches, resource_released)
+                        bind_initdata_policy, denial_matches, resource_released, trustee_denial_matches)
 
 spec = importlib.util.spec_from_file_location("run_proofs", ROOT / "scripts/run-proofs.py")
 suite = importlib.util.module_from_spec(spec)
@@ -66,6 +66,22 @@ class ProofOracles(unittest.TestCase):
         self.assertFalse(denial_matches("air-gap", "VCEK offline verifier initialized"))
         self.assertFalse(denial_matches("rung-rvps", "measurement received"))
         self.assertTrue(denial_matches("air-gap", "Certificate chain verification failed"))
+
+    def test_server_denial_requires_specific_failure_and_same_peer_request(self):
+        error = "ERROR kbs::error: verify TEE evidence failed\nCaused by: Certificate chain from KDS failed verification\n"
+        access = 'INFO actix_web::middleware::logger: 10.128.0.68 "POST /kbs/v0/attest HTTP/1.1" 401 140\n'
+        self.assertTrue(trustee_denial_matches("air-gap", error + access, "10.128.0.68"))
+        self.assertFalse(trustee_denial_matches("air-gap", access, "10.128.0.68"))
+        self.assertFalse(trustee_denial_matches("air-gap", error + access, "10.128.0.69"))
+        self.assertFalse(trustee_denial_matches("air-gap", error + access.replace("401", "200"), "10.128.0.68"))
+        self.assertFalse(trustee_denial_matches("air-gap", error + access.replace("/attest", "/auth"), "10.128.0.68"))
+        self.assertFalse(trustee_denial_matches("air-gap", error + access, ""))
+        self.assertFalse(trustee_denial_matches("air-gap", error + access.replace("0.68", "0.69") + access, "10.128.0.68"))
+
+    def test_server_policy_denial_requires_resource_path(self):
+        access = 'INFO actix_web::middleware::logger: 10.128.0.70 "GET /kbs/v0/resource/default/credential/test HTTP/1.1" 403 12\n'
+        self.assertTrue(trustee_denial_matches("rung-rvps", "ERROR PolicyDeny\n" + access, "10.128.0.70"))
+        self.assertFalse(trustee_denial_matches("air-gap", "ERROR PolicyDeny\n" + access, "10.128.0.70"))
 
     def test_binding_preserves_vendor_checks_and_fails_unknown_policy(self):
         original = '''package policy

@@ -122,6 +122,32 @@ def denial_matches(case: str, text: str) -> bool:
     return not unrelated.search(text) and bool(DENIALS[case].search(text))
 
 
+def trustee_denial_matches(case: str, text: str, peer: str) -> bool:
+    """Bind an adjacent verifier/policy failure to this guest's HTTP denial.
+
+    Use only logs fetched since the negative pod's creation. An error from another
+    peer, a successful request or a bare HTTP denial is insufficient. Each access
+    record ends a frame, preventing an older failure from matching a later peer.
+    """
+    import ipaddress
+    try:
+        ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    access = re.compile(r'actix_web::middleware::logger:\s+(\S+)\s+"(GET|POST) (/kbs/v0/[^\s]+) HTTP/[^\"]+"\s+(\d{3})\b')
+    frame = []
+    for line in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines():
+        frame.append(line)
+        match = access.search(line)
+        if match:
+            address, method, path, status = match.groups()
+            endpoint = method == "POST" and path == "/kbs/v0/attest" if case == "air-gap" else method == "GET" and path.startswith("/kbs/v0/resource/")
+            if address == peer and endpoint and status in ("401", "403") and denial_matches(case, "\n".join(frame)):
+                return True
+            frame = []
+    return False
+
+
 def bind_initdata_policy(base: str, expected: str) -> str:
     """Add a monotonic configuration gate without discarding vendor TCB/launch checks.
 

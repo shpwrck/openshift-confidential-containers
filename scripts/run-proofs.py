@@ -20,7 +20,8 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 from proof_core import (Cluster, Incomplete, ProofFailure, ResourceEdit, application_started,
                         atomic_json, bind_initdata_policy, denial_matches, digest,
-                        resource_released, restart_trustee, state_directory, application_ready, ProofLock)
+                        resource_released, restart_trustee, state_directory, application_ready, ProofLock,
+                        trustee_denial_matches)
 
 REPO = Path(__file__).resolve().parent.parent
 CASES = {
@@ -166,8 +167,34 @@ class Runner:
         container = "app" if case in ("rung-signed", "rung-encrypted") else "attestation-gate"
         logs = self.worker.call("logs", name, "-n", self.ns, "-c", container, "--tail=80", optional=True)
         corpus = json.dumps(live.get("status", {})) + "\n" + events + "\n" + logs
+        client_path = self.state / (self.id + "-guest-negative.log")
+        client_path.write_text(corpus)
+        client_path.chmod(0o600)
         oracle = "rung-initdata" if case == "rung-encrypted" else case
-        if not denial_matches(oracle, corpus):
+        matched = denial_matches(oracle, corpus)
+        # Guest image pulls can expose only a generic CDH/ttrpc error. Fetch
+        # protected logs from the exact Ready serving pod and require a specific
+        # adjacent denial for the negative guest's IP, after its creation time.
+        if not matched and oracle in ("air-gap", "rung-initdata", "rung-rvps"):
+            peer = live.get("status", {}).get("podIP", "")
+            since = live["metadata"]["creationTimestamp"]
+            serving = [p for p in self.trustee.get("pods", namespace=self.tns).get("items", [])
+                       if p.get("metadata", {}).get("labels", {}).get("app") == "kbs"
+                       and not p["metadata"].get("deletionTimestamp")
+                       and any(c.get("type") == "Ready" and c.get("status") == "True" for c in p.get("status", {}).get("conditions", []))]
+            if len(serving) == 1:
+                server = serving[0]
+                server_log = self.trustee.call("logs", server["metadata"]["name"], "-n", self.tns, "-c", "kbs",
+                                               "--timestamps", "--since-time=" + since, optional=True)
+                path = self.state / (self.id + "-trustee-negative.log")
+                path.write_text(server_log)
+                path.chmod(0o600)
+                if peer and trustee_denial_matches(oracle, server_log, peer):
+                    matched = True
+                    self.evidence["serverDenial"] = {"servingPodUID": server["metadata"]["uid"],
+                                                    "peer": peer, "sinceTime": since,
+                                                    "corpusSHA256": hashlib.sha256(server_log.encode()).hexdigest()}
+        if not matched:
             raise Incomplete(f"{case}: pod did not start, but no attributable denial was observed")
         self.evidence["negative"] = {"status": "PASS", "podUID": uid, "corpusSHA256": hashlib.sha256(corpus.encode()).hexdigest()}
 

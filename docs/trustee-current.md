@@ -112,6 +112,13 @@ annotation; that command alone can leave the old serving pod running. The shared
 refresh step verifies replacement UIDs and current ConfigMap versions before
 configuration or a recovery proof can complete.
 
+An explicitly selected Permissive lab can also publish an enforcing resource
+policy and reference set using these same two file inputs and explicit
+`KBS_RESOURCE_NAMES`. Supply both files together. The ordinary Permissive resource
+policy permits resource access regardless of CPU appraisal, so it cannot establish
+initdata or RVPS enforcement. Adding enforcement does not change the profile's
+HTTP/token-trust settings or turn a co-located lab into the customer trust domain.
+
 ## Initdata binding and isolated validation
 
 The installed default CPU policy does not itself bind a complete initdata digest.

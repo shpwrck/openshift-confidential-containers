@@ -53,13 +53,15 @@ jq -e '.status.phase == "Succeeded"' <<< "$actual_csv" >/dev/null || die "select
 
 # Validate all local configuration before touching cluster state.
 resources="${KBS_RESOURCE_NAMES:-}"
-if [[ "$ACTION" == configure && "$TRUSTEE_PROFILE" == Restricted ]]; then
+publish_policy=0
+if [[ "$ACTION" == configure && ( "$TRUSTEE_PROFILE" == Restricted || -n "${TRUSTEE_RESOURCE_POLICY_FILE:-}" || -n "${TRUSTEE_RVPS_FILE:-}" ) ]]; then
   [[ -s "${TRUSTEE_RESOURCE_POLICY_FILE:-}" ]] || die "configure requires TRUSTEE_RESOURCE_POLICY_FILE (approved resource-policy.rego)"
   [[ -s "${TRUSTEE_RVPS_FILE:-}" ]] || die "configure requires TRUSTEE_RVPS_FILE (validated target reference set)"
-  [[ -n "$resources" ]] || die "configure requires explicit KBS_RESOURCE_NAMES; bootstrap attaches no customer resources"
+  [[ -n "$resources" ]] || die "policy/reference configuration requires explicit KBS_RESOURCE_NAMES"
   python3 "$HELPER" rvps --file "$TRUSTEE_RVPS_FILE" --namespace "$NS" > "$tmpdir/rvps.json"
   # A syntax/policy acceptance test is still required; block obvious permissive scaffolding here.
   grep -Eq 'default[[:space:]]+allow[[:space:]]*:?=[[:space:]]*false' "$TRUSTEE_RESOURCE_POLICY_FILE" || die "customer resource policy must default-deny"
+  publish_policy=1
 fi
 hwids="${HWIDS:-${HWID:-}}"
 [[ -n "$hwids" ]] || die "set HWIDS to the approved offline collateral identities (space/comma separated)"
@@ -125,7 +127,7 @@ rvps_cm="$(jq -r '.spec.kbsRvpsRefValuesConfigMapName' "$tmpdir/kbs.json")"
 oc -n "$NS" get cm "$config_cm" -o json | python3 "$HELPER" offline-config --tee "$TEE" > "$tmpdir/config-patch.json"
 oc -n "$NS" patch cm "$config_cm" --type=merge --patch-file "$tmpdir/config-patch.json"
 
-if [[ "$ACTION" == configure && "$TRUSTEE_PROFILE" == Restricted ]]; then
+if [[ "$publish_policy" == 1 ]]; then
   oc -n "$NS" get cm "$rvps_cm" -o json > "$tmpdir/rvps-live.json"
   jq -n --slurpfile c "$tmpdir/rvps-live.json" --slurpfile r "$tmpdir/rvps.json" '{metadata:{resourceVersion:$c[0].metadata.resourceVersion},data:$r[0].data}' > "$tmpdir/rvps-patch.json"
   oc -n "$NS" patch cm "$rvps_cm" --type=merge --patch-file "$tmpdir/rvps-patch.json"

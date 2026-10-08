@@ -32,7 +32,8 @@
 # the BASTION (which has quay egress) with a MERGED authfile:
 #   jq -s '{auths:(.[0].auths + .[1].auths)}' pull-secret.json ~/.docker/config.json > authfile.json
 # i.e. RH/quay creds (for the tags-list) PLUS mirror creds (for the digest pulls redirected by
-# REGISTRIES_CONF). Also set TOOLS_IMG=<mirror>/…/coco-tools@sha256:… and stage the mirror CA under
+# REGISTRIES_CONF). Keep the BOM's canonical TOOLS_IMG identity; configure the
+# host's digest mirror mapping for the outer pull and stage the mirror CA under
 # REGISTRY_CERTS_DIR=<dir>/<mirror-host:port>/ca.crt. Then the tags-list authenticates to quay while
 # the heavy component-image pulls come from the mirror.
 set -euo pipefail

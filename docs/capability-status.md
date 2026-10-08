@@ -101,6 +101,12 @@ The runner writes a new protected directory under `$COCO_STATE_DIR/proofs/` for 
 
 A namespace lock prevents concurrent runners changing the same Trustee. Policy edits use UID/resourceVersion checks, preserve unrelated fields and retain protected recovery copies. The denied pod is removed before restoring policy so it cannot retry after the resource becomes available. Restored configuration must be served by new Ready Trustee pods before the recovery control. A cleanup/restoration failure cannot produce PASS. Do not remove a stale lock until the interrupted run's resources and recovery files have been inspected.
 
+When the guest reports only a generic CDH error, the runner also checks protected
+Trustee logs fetched since the negative pod's creation. It requires a specific
+verifier or resource-policy failure beside the denied request from that pod's IP.
+An unrelated client's error or an HTTP denial by itself cannot complete the proof.
+Raw negative evidence remains outside the checkout; public receipts record hashes.
+
 ## Demos worth preparing
 
 1. A repeatable installation checkpoint: run verification twice, showing that the second pass neither reinstalls the node nor regenerates unchanged assets.
