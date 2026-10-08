@@ -2,6 +2,8 @@
 
 Research date: **2026-08-26**
 
+> **Historical baseline:** this workflow and gap audit describes the OSC 1.12 / Trustee 1.1 checkout reviewed on August 26. Its repository commands and gap assessments may be superseded. For the updated automation and live results, use [the current quickstart](../current-quickstart.md), [Trustee workflow](../trustee-current.md) and [capability status](../capability-status.md). Preserve the version-specific customer baseline separately.
+
 ## Scope and interpretation
 
 This note maps every numbered step in the three workflows in the

@@ -2,6 +2,8 @@
 
 Research date: **2026-08-26**
 
+> **Historical baseline:** this artifact research describes the OSC 1.12 / Trustee 1.1 checkout reviewed on August 26. Its repository commands and gap assessments may be superseded. For the updated automation and live results, use [the current quickstart](../current-quickstart.md), [Trustee workflow](../trustee-current.md) and [capability status](../capability-status.md). Preserve the version-specific customer baseline separately.
+
 | Boundary | Value |
 |---|---|
 | Product baseline | OpenShift sandboxed containers (OSC) 1.12; Red Hat build of Trustee 1.1 |
