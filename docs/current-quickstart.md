@@ -1,8 +1,8 @@
 # Current quickstart
 
-This checkout targets **OCP 4.20.39, OSC 1.13, and Trustee 1.2** for CPU confidential containers. The OCP payload and authenticated catalog, bundle, related-image, and helper-image identities are verified. See [the resolution procedure and evidence](release-resolution.md) before refreshing these pins. The new workflow has local fixture coverage but has **not completed a new Latitude hardware run**. Historical OCP 4.20.18 results do not validate this release set.
+This checkout targets **OCP 4.20.39, OSC 1.13, and Trustee 1.2** for CPU confidential containers. The OCP payload and authenticated catalog, bundle, related-image, and helper-image identities are verified. See [the resolution procedure and evidence](release-resolution.md) before refreshing these pins. The new workflow has local fixture coverage but has **not completed a new end-to-end hardware run**. Historical OCP 4.20.18 results do not validate this release set.
 
-The authoritative inputs are [the release manifest](../install/release-manifest.json). Start here instead of copying commands with older pins from historical runbooks. See [Latitude validation](latitude-validation.md) for infrastructure planning and the acceptance record.
+The authoritative inputs are [the release manifest](../install/release-manifest.json). Start here instead of copying commands with older pins from historical runbooks. See [Cherry validation](cherry-validation.md) for the active supplied-rig path and [Latitude validation](latitude-validation.md) for the retired environment and acceptance criteria.
 
 ## Choose the operation
 
@@ -51,7 +51,7 @@ The Miami validation node's OS disk changed from `nvme0n1` to `nvme1n1` after a 
 Match the stable path to the intended disk serial and boot target before installation; do not
 reuse a previous allocation's disk path.
 
-Load the Latitude API credential through the environment (`LATITUDESH_AUTH_TOKEN`), without placing its value in shell history or checked-in files. No credentials are included in this checkout.
+Select `infra_provider: cherry` and load `CHERRY_SERVERS_API_KEY` for a supplied Cherry rig; see [the Cherry guide](cherry-validation.md). The Terraform modules remain Latitude-specific. For a Latitude rig, load the API credential through the environment (`LATITUDESH_AUTH_TOKEN`), without placing its value in shell history or checked-in files. No credentials are included in this checkout.
 
 ## Prepare, install, verify
 

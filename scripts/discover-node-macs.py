@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Latitude NIC identities and merge only MACs into current install inputs."""
+"""Validate provider NIC identities and merge only MACs into current install inputs."""
 import argparse
 import json
 import os
@@ -7,6 +7,9 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.provider import server_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 MAC = re.compile(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\Z")
@@ -34,9 +37,9 @@ def check_machines(machines):
         name, server_id = machine.get("name"), machine.get("server_id")
         if not isinstance(name, str) or not name.strip() or name in names:
             raise InvalidDiscovery("Every machine must have a unique nonempty name")
-        if (not isinstance(server_id, str) or not re.fullmatch(r"sv_[A-Za-z0-9]+", server_id)
+        if (not isinstance(server_id, str) or not re.fullmatch(r"(?:sv_[A-Za-z0-9]+|[1-9][0-9]*)", server_id)
                 or server_id in server_ids):
-            raise InvalidDiscovery("Every machine must have a unique Latitude server_id (sv_...)")
+            raise InvalidDiscovery("Every machine must have a unique supported provider server_id")
         names.add(name)
         server_ids.add(server_id)
         if not isinstance(machine.get("parent_if"), str) or not machine["parent_if"].strip():
@@ -96,6 +99,49 @@ def capture(machines, servers):
     result = {"version": 1, "bindings": bindings}
     merge(machines, result)  # Cross-node uniqueness and required public-NIC checks.
     return result
+
+
+
+def capture_cherry(machines, servers, observations):
+    check_machines(machines)
+    if len(machines) != 1 or len(servers) != 1 or len(observations) != 1:
+        raise InvalidDiscovery("Cherry discovery currently supports exactly one SNO node")
+    m, observation = machines[0], observations[0]
+    identity = server_identity("cherry", servers[0], m["server_id"],
+                               m.get("provider_hostname", ""), m.get("provider_project_id", ""))
+    if observation.get("hostname") != identity["hostname"]:
+        raise InvalidDiscovery("Pinned SSH hostname differs from provider identity")
+    if identity["private_ipv4"] != m.get("vlan_ip"):
+        raise InvalidDiscovery("Provider private address differs from install inputs")
+    ports = m.get("bond_ports", [])
+    if len(ports) != 2 or m.get("bond_mode") != "802.3ad" or m.get("external_if"):
+        raise InvalidDiscovery("Cherry requires two verified LACP ports and no separate public NIC")
+    by_name = {x["ifname"]: x for x in observation["links"]}
+    parent = by_name.get(m["parent_if"], {})
+    if parent.get("linkinfo", {}).get("info_kind") != "bond":
+        raise InvalidDiscovery("Expected a current bond parent")
+    parent_mac = mac(parent.get("address"))
+    if parent_mac != mac(m.get("parent_mac")):
+        raise InvalidDiscovery("Bond MAC differs from install inputs")
+    names, addresses = set(), set()
+    for port in ports:
+        name = port.get("name")
+        address = mac(port.get("mac"))
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}", name) or name in names or address in addresses:
+            raise InvalidDiscovery("Bond ports must have distinct names and MAC addresses")
+        link = by_name.get(name, {})
+        if (link.get("link_type") != "ether" or link.get("master") != m["parent_if"]
+                or mac(link.get("permaddr", link.get("address"))) != address):
+            raise InvalidDiscovery("Bond member identity differs from the pinned SSH observation")
+        names.add(name)
+        addresses.add(address)
+    observed_addresses = {x.get("local") for i in observation["addresses"] for x in i.get("addr_info", [])}
+    if not {identity["public_ipv4"], identity["private_ipv4"]} <= observed_addresses:
+        raise InvalidDiscovery("Pinned SSH IP addresses differ from provider assignment")
+    document = {"version": 1, "bindings": [{"name": m["name"], "server_id": m["server_id"],
+                  "parent_mac": parent_mac, "external_mac": ""}]}
+    merge(machines, document)
+    return document
 
 
 def merge(machines, cached=None):
@@ -168,7 +214,7 @@ def write_cache(path, document):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("begin", "capture", "merge"))
+    parser.add_argument("mode", choices=("begin", "capture", "capture-cherry", "merge"))
     args = parser.parse_args()
     try:
         payload = json.load(sys.stdin)
@@ -183,8 +229,9 @@ def main():
             changed = path.exists()
             path.unlink(missing_ok=True)
             print(json.dumps({"changed": changed}))
-        elif args.mode == "capture":
-            document = capture(machines, payload.get("servers"))
+        elif args.mode in ("capture", "capture-cherry"):
+            document = (capture_cherry(machines, payload.get("servers", []), payload.get("observations", []))
+                        if args.mode == "capture-cherry" else capture(machines, payload.get("servers")))
             changed = write_cache(cache_path(), document)
             print(json.dumps({"changed": changed, "bindings": document["bindings"]}))
         else:

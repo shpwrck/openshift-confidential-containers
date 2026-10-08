@@ -40,14 +40,19 @@ shutil.copyfile(source, destination)
 destination.chmod(0o644)
 ''')
         install.chmod(0o755)
+        tls = self.bin / 'tls'
+        tls.write_text('#!/bin/sh\nexit "${FIXTURE_TLS_FAIL:-0}"\n')
+        tls.chmod(0o755)
         self.env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
-                        MIRROR_ROOT=str(self.mirror), QUAY_ROOT=str(self.mirror / 'quay'))
+                        MIRROR_ROOT=str(self.mirror), QUAY_ROOT=str(self.mirror / 'quay'),
+                        registry_dns_name='mirror.fixture.invalid')
 
     def run_completion(self):
         document = yaml.safe_load((ROOT / 'infra/latitude/bastion/cloud-init/mirror-registry.yaml').read_text())
         script = next(item['content'] for item in document['write_files']
                       if item['path'] == '/usr/local/bin/bootstrap-mirror.sh')
         completion = script[script.index('CA_SRC='):]
+        completion = completion.replace('/usr/local/bin/ensure-mirror-tls.sh', str(self.bin / 'tls'))
         return subprocess.run(['bash', '-c', 'set -euo pipefail\n' + completion], env=self.env,
                               cwd=self.base, capture_output=True, text=True, timeout=10)
 
@@ -60,6 +65,7 @@ destination.chmod(0o644)
         bootstrap = script.split('# registry DNS name', 1)[0] + script[script.index('CA_SRC='):]
         bootstrap = bootstrap.replace('${mirror_root}', str(self.mirror))
         bootstrap = bootstrap.replace('/usr/local/bin/check-mirror-prerequisites.sh', str(self.bin / 'prerequisites'))
+        bootstrap = bootstrap.replace('/usr/local/bin/ensure-mirror-tls.sh', str(self.bin / 'tls'))
         (self.bin / 'bootstrap').write_text(bootstrap)
         (self.bin / 'bootstrap').chmod(0o755)
         for name, step in (('vlan', 'vlan'), ('ntp', 'ntp'), ('prerequisites', 'prerequisites'),
@@ -91,6 +97,13 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
         self.assertFalse(self.failed.exists())
         self.assertEqual((self.mirror / 'ca/rootCA.pem').read_text(), self.ca.read_text())
         self.assertRegex((self.mirror / 'MIRROR_READY').read_text(), r'^\d{4}-\d{2}-\d{2}T')
+
+    def test_failed_tls_check_cannot_mark_the_registry_ready(self):
+        self.env['FIXTURE_TLS_FAIL'] = '1'
+        result = self.run_completion()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(self.failed.exists())
+        self.assertFalse((self.mirror / 'MIRROR_READY').exists())
 
     def test_missing_ca_retains_failure_and_does_not_declare_ready(self):
         self.ca.unlink()
@@ -131,7 +144,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
         result = self.run_startup('')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = (self.base / 'startup-calls').read_text().splitlines()
-        self.assertEqual(calls, ['vlan', 'ntp', 'services', 'services', 'services', 'firewall', 'firewall', 'prerequisites'])
+        self.assertEqual(calls, ['vlan', 'ntp', 'services', 'services', 'services', 'firewall', 'firewall', 'firewall', 'firewall', 'prerequisites'])
         self.assertFalse(self.failed.exists())
         self.assertTrue((self.mirror / 'MIRROR_READY').exists())
 

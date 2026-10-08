@@ -19,8 +19,15 @@ hosts:
     rootDeviceHints:
       deviceName: {{ m.root_device }}
     interfaces:
+{% if m.bond_ports | default([]) %}
+{% for port in m.bond_ports %}
+      - name: {{ port.name }}
+        macAddress: {{ port.mac }}
+{% endfor %}
+{% else %}
       - name: {{ m.parent_if }}
         macAddress: {{ m.parent_mac }}
+{% endif %}
 {% if m.external_if is defined and m.external_if and m.external_mac is defined and m.external_mac %}
       {{ '#' }} Bind the PUBLIC NIC's name to its DISCOVERED mac (#80). This list is the
       {{ '#' }} name<->MAC mapping the installer applies, so declaring it here makes
@@ -34,12 +41,36 @@ hosts:
     networkConfig:
       interfaces:
         - name: {{ m.parent_if }}
-          type: ethernet
+          type: {{ 'bond' if m.bond_ports | default([]) else 'ethernet' }}
+{% if m.bond_ports | default([]) %}
+          link-aggregation:
+            mode: {{ m.bond_mode }}
+            options:
+              miimon: '100'
+              lacp_rate: slow
+              xmit_hash_policy: layer3+4
+            port:
+{% for port in m.bond_ports %}
+              - {{ port.name }}
+{% endfor %}
+{% endif %}
           state: {{ 'down' if network_profile | default('private-vlan') == 'public-routed-lab' else 'up' }}
           ipv4:
             enabled: false
           ipv6:
             enabled: false
+{% for port in m.bond_ports | default([]) %}
+        - name: {{ port.name }}
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: false
+            dhcp: false
+          ipv6:
+            enabled: false
+            dhcp: false
+            autoconf: false
+{% endfor %}
 {% if network_profile | default('private-vlan') == 'public-routed-lab' %}
         {{ '#' }} Public underlay: the provider gateway is the other address of the verified /31.
         - name: {{ m.external_if }}

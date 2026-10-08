@@ -75,24 +75,8 @@
           the agent live environment and installed RHCOS is not yet implemented and verified.
           Render and gate-only routed service rehearsals are available; there is no bypass flag.
 
-    - name: Read the selected provider machine
-      ansible.builtin.uri:
-        url: "{{ latitude_api_base }}/servers/{{ install_machine.server_id }}"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ latitude_token }}"
-          Accept: "application/vnd.api+json"
-        return_content: true
-        status_code: 200
-      delegate_to: localhost
-      become: false
-      register: provider_machine
-      no_log: true
-
-    - name: Require the provider to return the requested machine
-      ansible.builtin.assert:
-        that: provider_machine.json.data.id == install_machine.server_id
-        fail_msg: "Provider identity does not match the selected machine; no reinstall was sent."
+    - name: Read and validate the selected provider identity
+      ansible.builtin.include_tasks: provider_identity.yml
 
     - name: Require fresh raw-host network proof before recording reinstall intent
       block:
@@ -109,7 +93,7 @@
       ansible.builtin.debug:
         msg: >-
           Fresh install: {{ install_machine.server_id }}
-          ({{ provider_machine.json.data.attributes.hostname | default(install_machine.name) }})
+          ({{ provider_identity.hostname | default(install_machine.name) }})
           to OCP {{ ocp_version }}. This replaces the machine's installed OS.
 
     # Persist intent before the call. A crash or an HTTP timeout then requires inspection,
@@ -123,21 +107,31 @@
         mode: "0600"
       become: true
 
+    - name: Prepare Cherry's iPXE script with real newline bytes
+      ansible.builtin.set_fact:
+        provider_ipxe_script: |
+          #!ipxe
+          chain --autofree {{ ipxe_url }}
+      when: infra_provider | default('latitude') == 'cherry'
+      no_log: true
+
     - name: Request the verified machine's fresh install
       ansible.builtin.uri:
-        url: "{{ latitude_api_base }}/servers/{{ install_machine.server_id }}/reinstall"
+        url: >-
+          {{ (cherry_api_base if infra_provider | default('latitude') == 'cherry' else latitude_api_base)
+             ~ '/servers/' ~ install_machine.server_id
+             ~ ('/actions' if infra_provider | default('latitude') == 'cherry' else '/reinstall') }}
         method: POST
         headers:
-          Authorization: "Bearer {{ latitude_token }}"
-          Content-Type: "application/vnd.api+json"
-          Accept: "application/vnd.api+json"
+          Authorization: "Bearer {{ cherry_token if infra_provider | default('latitude') == 'cherry' else latitude_token }}"
+          Content-Type: "{{ 'application/json' if infra_provider | default('latitude') == 'cherry' else 'application/vnd.api+json' }}"
+          Accept: "{{ 'application/json' if infra_provider | default('latitude') == 'cherry' else 'application/vnd.api+json' }}"
         body_format: json
-        body:
-          data:
-            type: reinstalls
-            attributes:
-              operating_system: ipxe
-              ipxe: "{{ ipxe_url }}"
+        body: >-
+          {{ {'type': 'rebuild', 'image': 'custom_ipxe_install', 'hostname': provider_identity.hostname,
+              'ipxe': provider_ipxe_script | b64encode}
+             if infra_provider | default('latitude') == 'cherry'
+             else {'data': {'type': 'reinstalls', 'attributes': {'operating_system': 'ipxe', 'ipxe': ipxe_url}}} }}
         status_code: [200, 201, 202]
       delegate_to: localhost
       become: false

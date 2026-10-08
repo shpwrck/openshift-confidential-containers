@@ -39,6 +39,33 @@
   loop_control:
     label: "{{ item.name }}"
 
+- name: Require a private LACP bond with distinct verified member identities
+  ansible.builtin.assert:
+    that:
+      - network_profile | default('private-vlan') == 'private-vlan'
+      - item.bond_mode | default('') == '802.3ad'
+      - item.bond_ports | length == 2
+      - not item.external_if | default('')
+      - item.bond_ports | map(attribute='name') | unique | length == 2
+      - item.bond_ports | map(attribute='mac') | map('lower') | unique | length == 2
+      - item.parent_if not in (item.bond_ports | map(attribute='name') | list)
+      - item.parent_mac | lower in (item.bond_ports | map(attribute='mac') | map('lower') | list)
+    fail_msg: "Bonded private VLANs require two distinct verified LACP ports and no separate public NIC."
+  loop: "{{ discovery_machines | default(machines) }}"
+  when: item.bond_ports | default([]) | length > 0
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Validate each configured bond member name and MAC
+  ansible.builtin.assert:
+    that:
+      - item.1.name is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$')
+      - item.1.mac is match('^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
+    fail_msg: "Bond members require valid interface names and verified physical MACs."
+  loop: "{{ (discovery_machines | default(machines)) | subelements('bond_ports', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }} / {{ item.1.name }}"
+
 - name: Require an explicit supported network profile
   ansible.builtin.assert:
     that:

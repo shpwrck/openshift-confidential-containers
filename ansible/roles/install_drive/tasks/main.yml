@@ -19,8 +19,12 @@
 
 - name: Validate each provider machine ID
   ansible.builtin.assert:
-    that: item.server_id is match('^sv_[A-Za-z0-9]+$')
-    fail_msg: "Expected an explicit Latitude server ID for {{ item.name }}."
+    that:
+      - infra_provider | default('latitude') in ['latitude', 'cherry']
+      - >-
+        item.server_id is match('^[1-9][0-9]*$') if infra_provider | default('latitude') == 'cherry'
+        else item.server_id is match('^sv_[A-Za-z0-9]+$')
+    fail_msg: "Expected an explicit selected-provider server ID for {{ item.name }}."
   loop: "{{ machines }}"
   loop_control:
     label: "{{ item.name }}"

@@ -1,0 +1,31 @@
+---
+- name: Qualify prepared install inputs and private services without reinstalling
+  hosts: bastions
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Require a supported provider and explicit prepared machines
+      ansible.builtin.assert:
+        that:
+          - infra_provider in ['latitude', 'cherry']
+          - machines | length > 0
+        fail_msg: "Select the provider and prepared machines explicitly."
+
+    - name: Read the prepared boot input identity
+      ansible.builtin.slurp:
+        src: "{{ cluster_assets_dir }}/.coco-pxe-inputs"
+      become: true
+      register: qualified_boot_identity
+
+    - name: Select the exact prepared artifact identity
+      ansible.builtin.set_fact:
+        install_identity: "{{ qualified_boot_identity.content | b64decode | trim }}"
+        provider_request_dir: "{{ install_request_dir }}"
+
+    - name: Check each prepared machine without a provider mutation
+      ansible.builtin.include_tasks: tasks/qualify-private-machine.yml
+      loop: "{{ machines }}"
+      loop_control:
+        loop_var: install_machine
+        label: "{{ install_machine.name }} ({{ install_machine.server_id }})"

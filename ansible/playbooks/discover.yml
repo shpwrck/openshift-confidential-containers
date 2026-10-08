@@ -1,8 +1,5 @@
 ---
-# MACs belong to a physical unit. Discover again after reprovisioning. The cache
-# holds only name/server_id/MAC bindings, outside the checkout in COCO_STATE_DIR.
-# Current disk, network and interface-name inputs are never replaced by a cache.
-- name: Discover node interface MACs from the Latitude API
+- name: Discover and verify provider node interfaces
   hosts: localhost
   gather_facts: false
   vars_files:
@@ -12,53 +9,55 @@
       ansible.builtin.command:
         argv:
           - python3
-          - "{{ playbook_dir }}/../../scripts/discover-node-macs.py"
+          - '{{ playbook_dir }}/../../scripts/discover-node-macs.py'
           - begin
-        stdin: "{{ {'machines': machines} | to_json }}"
+        stdin: '{{ {''machines'': machines} | to_json }}'
       register: discovery_begin
       changed_when: discovery_begin.rc == 0 and (discovery_begin.stdout | from_json).changed
-
-    - name: Assert the Latitude token is present
-      ansible.builtin.assert:
-        that:
-          - latitude_token is defined
-          - latitude_token | length > 0
-        fail_msg: "Set LATITUDESH_AUTH_TOKEN (or LATITUDE_API_TOKEN) in the environment before running discover.yml."
-      no_log: true
-
-    - name: Query the Latitude API for each server
-      ansible.builtin.uri:
-        url: "{{ latitude_api_base }}/servers/{{ item.server_id }}"
-        method: GET
-        follow_redirects: none
-        headers:
-          Authorization: "Bearer {{ latitude_token }}"
-          Accept: "application/vnd.api+json"
-        status_code: [200]
-      loop: "{{ machines }}"
-      loop_control:
-        label: "{{ item.name }} ({{ item.server_id }})"
-      register: lat_servers
-      no_log: true
-
-    - name: Validate exact server identities and persist only current MAC bindings
-      ansible.builtin.command:
-        argv:
-          - python3
-          - "{{ playbook_dir }}/../../scripts/discover-node-macs.py"
-          - capture
-        stdin: "{{ {'machines': machines, 'servers': lat_servers.results | map(attribute='json') | list} | to_json }}"
-      register: discovery_validation
-      changed_when: discovery_validation.rc == 0 and (discovery_validation.stdout | from_json).changed
-      failed_when: false
-      # The URI result is protected, including provider response contents.
-      no_log: true
-
-    - name: Require validated internal and configured public NIC identities
-      ansible.builtin.assert:
-        that: discovery_validation.rc == 0
-        fail_msg: "{{ discovery_validation.stderr }}"
-
-    - name: Show validated MAC bindings saved outside the checkout
-      ansible.builtin.debug:
-        var: (discovery_validation.stdout | from_json).bindings
+    - name: Discover Latitude NIC identities
+      when: infra_provider | default('latitude') == 'latitude'
+      block:
+        - name: Assert the Latitude token is present
+          ansible.builtin.assert:
+            that:
+              - latitude_token is defined
+              - latitude_token | length > 0
+            fail_msg: Set LATITUDESH_AUTH_TOKEN (or LATITUDE_API_TOKEN) in the environment before running discover.yml.
+          no_log: true
+        - name: Query the Latitude API for each server
+          ansible.builtin.uri:
+            url: '{{ latitude_api_base }}/servers/{{ item.server_id }}'
+            method: GET
+            follow_redirects: none
+            headers:
+              Authorization: Bearer {{ latitude_token }}
+              Accept: application/vnd.api+json
+            status_code:
+              - 200
+          loop: '{{ machines }}'
+          loop_control:
+            label: '{{ item.name }} ({{ item.server_id }})'
+          register: lat_servers
+          no_log: true
+        - name: Validate exact server identities and persist only current MAC bindings
+          ansible.builtin.command:
+            argv:
+              - python3
+              - '{{ playbook_dir }}/../../scripts/discover-node-macs.py'
+              - capture
+            stdin: '{{ {''machines'': machines, ''servers'': lat_servers.results | map(attribute=''json'') | list}
+              | to_json }}'
+          register: discovery_validation
+          changed_when: discovery_validation.rc == 0 and (discovery_validation.stdout | from_json).changed
+          failed_when: false
+          no_log: true
+        - name: Require validated internal and configured public NIC identities
+          ansible.builtin.assert:
+            that: discovery_validation.rc == 0
+            fail_msg: '{{ discovery_validation.stderr }}'
+        - name: Show validated MAC bindings saved outside the checkout
+          ansible.builtin.debug:
+            var: (discovery_validation.stdout | from_json).bindings
+    - name: Discover Cherry bond identities through pinned SSH
+      ansible.builtin.include_tasks: tasks/discovery-cherry.yml
+      when: infra_provider | default('latitude') == 'cherry'

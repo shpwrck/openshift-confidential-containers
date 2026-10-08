@@ -1,13 +1,13 @@
 {
-  "observedAt": "2026-10-08T16:14:52.829666+00:00",
-  "phase": "Cherry hardware qualification",
+  "observedAt": "2026-10-08T17:38:32.376145+00:00",
+  "phase": "Fresh disconnected installation",
   "clusterInstalled": false,
   "providerServerId": 1025551,
   "region": "US-Chicago",
   "advertisedPlan": "amd-epyc-9124p",
   "prebuiltId": 850,
   "state": "allocated",
-  "status": "host-snp-passed",
+  "status": "installing-control-plane-bootstrap",
   "rate": {
     "currency": "EUR",
     "unit": "Hours",
@@ -16,7 +16,7 @@
   },
   "deadlineUTC": "2026-10-08T19:38:10.098548+00:00",
   "fourHourHostEstimateEUR": 2.12,
-  "helperAllocated": false,
+  "helperAllocated": true,
   "hardwareResults": {
     "actualCPU": "AMD EPYC 9124",
     "UEFI": true,
@@ -43,17 +43,63 @@
       "SMEE": "Enabled",
       "IOMMU": "Enabled",
       "SEV-SNP Support": "Enabled"
-    }
+    },
+    "rawHostVCEKDownload": "validated; RHCOS binding still required"
   },
   "networkResults": {
     "providerPrivateAddressAssigned": true,
-    "privateConnectivity": null,
-    "internetIsolation": null
+    "privateConnectivity": true,
+    "internetIsolation": null,
+    "rawHostIsolationRehearsal": {
+      "freshPublicIPv4Blocked": true,
+      "freshPublicIPv6Blocked": true,
+      "privatePeerReachable": true,
+      "rulesRemoved": true,
+      "publicIPv4AndIPv6Restored": true
+    },
+    "isolationMaintained": false,
+    "serviceGate": "PASS",
+    "privateForwardingIsolation": {
+      "helperIPv4ForwardingEnabled": true,
+      "forcedPrivateRouteToPublicEndpoint": "BLOCKED",
+      "attributableDropPackets": 4,
+      "attributableDropBytes": 240,
+      "temporaryRouteRemoved": true
+    },
+    "privateDNSUpstreamForwarding": false,
+    "agentLiveIsolation": {
+      "onlyPrivateIPv4": true,
+      "globalPublicIPv6": false,
+      "publicIPv4TCP": "BLOCKED",
+      "publicIPv6": "UNREACHABLE",
+      "publicRegistryDNS": "DENIED",
+      "privateRegistryTCP": "REACHABLE"
+    }
   },
   "limits": [
     "Provider assignment is not connectivity evidence.",
-    "Ubuntu raw-host prerequisites passed; no RHCOS, guest attestation or disconnected install proof yet.",
+    "Ubuntu and Agent-live RHCOS host prerequisites passed; installed RHCOS, guest attestation and completed disconnected install remain pending.",
     "Cleanup guard runs in the local WSL user systemd instance and requires it to remain running.",
-    "Overall $150 cap across providers remains; the qualification budget is $20."
-  ]
+    "Overall $150 cap across providers remains; the qualification budget is $20.",
+    "Raw-host isolation rehearsal was rolled back. Agent-live isolation passed; running-cluster and guest isolation remain pending.",
+    "AlmaLinux 9.8 is the trial helper OS, not the supported RHEL mirror-registry host.",
+    "Fresh lab installation does not establish an upgrade path for an existing customer cluster."
+  ],
+  "helperServerId": 1025601,
+  "installationResults": {
+    "mirrorRegistry": "2.0.12",
+    "mirrorBootstrap": "PASS after curl-package and firewalld corrections",
+    "registryTLS": "PASS after replacement of malformed generated leaf certificate",
+    "immutablePayloadMirror": "PASS; oc-mirror completed selected payload and Operator content",
+    "freshClusterInstall": "in progress; Agent Installer reached Waiting for bootkube",
+    "agentLiveEnvironment": {
+      "RHCOS": "9.6.20260818-0",
+      "kernel": "5.14.0-570.135.1.el9_6.x86_64",
+      "UEFI": true,
+      "hostSNPGateExit": 0,
+      "SEVSNPAPI": "1.58 build 2",
+      "RMPPhysicalRange": "0x93700000 - 0xa3cfffff",
+      "installedNodeCheck": null
+    }
+  }
 }

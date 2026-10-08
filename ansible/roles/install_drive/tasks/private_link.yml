@@ -14,7 +14,9 @@
     private_link_raw_key: "{{ install_machine.raw_ssh_key | default(raw_node_ssh_key | default('')) }}"
     private_link_bastion_key: "{{ bastion_ssh_key | default('') }}"
     private_link_pins: "{{ private_link_known_hosts | default('') }}"
-    private_link_raw_address: "{{ provider_machine.json.data.attributes.primary_ipv4 | default('') }}"
+    private_link_raw_address: >-
+      {{ provider_identity.public_ipv4 if provider_identity is defined
+         else provider_machine.json.data.attributes.primary_ipv4 | default('') }}
     private_link_profile: "{{ network_profile | default('private-vlan') }}"
     private_link_raw_parent: >-
       {{ install_machine.raw_external_if | default(install_machine.external_if | default(''))
@@ -173,14 +175,18 @@
       {{ (private_link_sources.results[1].content | b64decode | from_yaml).imageDigestSources | default([])
          | map(attribute='mirrors') | flatten | map('regex_replace', '/.*$', '') | unique | list }}
     private_link_provider_nic: >-
-      {{ provider_machine.json.data.attributes.interfaces | default([])
+      {{ [{'mac_address': install_machine.parent_mac}]
+         if infra_provider | default('latitude') == 'cherry'
+         else provider_machine.json.data.attributes.interfaces | default([])
          | selectattr('role', 'equalto', 'external' if private_link_profile == 'public-routed-lab' else 'internal') | list }}
   no_log: true
 
 - name: Require exact prepared machine and trust identities
   ansible.builtin.assert:
     that:
-      - provider_machine.json.data.id == install_machine.server_id
+      - >-
+        provider_identity.id == install_machine.server_id if provider_identity is defined
+        else provider_machine.json.data.id == install_machine.server_id
       - private_link_prepared_hosts | length == 1
       - private_link_provider_nic | length == 1
       - private_link_ca | trim == private_link_prepared_ca | trim
@@ -225,7 +231,9 @@
   ansible.builtin.set_fact:
     private_link_parent: "{{ private_link_raw_links.stdout | from_json | selectattr('ifname', 'equalto', private_link_raw_parent) | list }}"
     private_link_vlan: "{{ private_link_raw_links.stdout | from_json | selectattr('ifname', 'equalto', private_link_raw_parent ~ '.' ~ vlan_vid) | list }}"
-    private_link_prepared_parent: "{{ private_link_prepared_hosts[0].interfaces | selectattr('name', 'equalto', install_machine.parent_if) | list }}"
+    private_link_prepared_parent: "{{ private_link_prepared_hosts[0].networkConfig.interfaces | selectattr('name', 'equalto', install_machine.parent_if) | list
+         if install_machine.bond_ports | default([]) else private_link_prepared_hosts[0].interfaces
+         | selectattr('name', 'equalto', install_machine.parent_if) | list }}"
     private_link_prepared_vlan: >-
       {{ private_link_prepared_hosts[0].networkConfig.interfaces
          | selectattr('name', 'equalto', install_machine.parent_if ~ '.' ~ vlan_vid) | list }}
@@ -239,7 +247,9 @@
       - private_link_prepared_parent | length == 1
       - private_link_prepared_vlan | length == 1
       - private_link_parent[0].address | lower == private_link_provider_nic[0].mac_address | lower
-      - private_link_prepared_parent[0].macAddress | lower == private_link_provider_nic[0].mac_address | lower
+      - >-
+        private_link_prepared_parent[0].type == 'bond' if install_machine.bond_ports | default([])
+        else private_link_prepared_parent[0].macAddress | lower == private_link_provider_nic[0].mac_address | lower
       - >-
         private_link_vlan[0].get('link_index', -1) == private_link_parent[0].ifindex
         or private_link_vlan[0].get('link', '') == private_link_raw_parent
@@ -252,6 +262,49 @@
       Raw private NIC/VLAN or prepared network inputs do not match. Configure the reviewed temporary
       raw-OS VLAN profile with autoconnect off and no public route/DNS changes, then retry.
       This gate does not create interfaces, alter routes or fall back to an installed RHCOS endpoint.
+
+- name: Recheck the selected provider bond members and exact prepared configuration
+  when: install_machine.bond_ports | default([]) | length > 0
+  block:
+    - name: Select prepared and current bond members
+      ansible.builtin.set_fact:
+        private_link_raw_bond_members: >-
+          {{ private_link_raw_links.stdout | from_json | selectattr('master', 'defined')
+             | selectattr('master', 'equalto', private_link_raw_parent) | list }}
+        private_link_prepared_members: >-
+          {{ private_link_prepared_hosts[0].interfaces }}
+
+    - name: Verify LACP membership and exclusively private prepared addressing
+      ansible.builtin.assert:
+        that:
+          - private_link_parent[0].linkinfo.info_kind == 'bond'
+          - private_link_parent[0].linkinfo.info_data.mode == '802.3ad'
+          - private_link_raw_bond_members | length == 2
+          - private_link_prepared_members | length == 2
+          - >-
+            private_link_prepared_members | map(attribute='name') | sort
+            == install_machine.bond_ports | map(attribute='name') | sort
+          - >-
+            private_link_prepared_parent[0]['link-aggregation'].port | sort
+            == install_machine.bond_ports | map(attribute='name') | sort
+          - private_link_prepared_parent[0]['link-aggregation'].mode == '802.3ad'
+          - not private_link_prepared_parent[0].ipv4.enabled | bool
+          - not private_link_prepared_parent[0].ipv6.enabled | bool
+          - provider_identity.private_ipv4 == install_machine.vlan_ip
+        fail_msg: "Provider address, raw LACP bond and prepared private network disagree; no reinstall was sent."
+
+    - name: Verify every permanent member MAC before reinstall
+      ansible.builtin.assert:
+        that:
+          - >-
+            (private_link_raw_bond_members | selectattr('ifname', 'equalto', item.name) | first).get('permaddr',
+             (private_link_raw_bond_members | selectattr('ifname', 'equalto', item.name) | first).address) | lower == item.mac | lower
+          - >-
+            (private_link_prepared_members | selectattr('name', 'equalto', item.name) | first).macAddress | lower == item.mac | lower
+        fail_msg: "Bond member MAC differs between the raw host and prepared installation."
+      loop: "{{ install_machine.bond_ports }}"
+      loop_control:
+        label: "{{ item.name }}"
 
 - name: Select the current public NIC and prepared public network
   ansible.builtin.set_fact:

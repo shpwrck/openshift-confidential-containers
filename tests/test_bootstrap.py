@@ -278,6 +278,10 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:f.write(json.dumps({'tool':'ansi
         fixture = self.base / 'fixture'
         playbook_dir = fixture / 'ansible/playbooks'
         playbook_dir.mkdir(parents=True, exist_ok=True)
+        scripts = fixture / 'scripts'
+        (scripts / 'lib').mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / 'scripts/provider-identity.py', scripts)
+        shutil.copy2(ROOT / 'scripts/lib/provider.py', scripts / 'lib')
         (fixture / 'install').mkdir(exist_ok=True)
         src = ROOT / task_file
         dest = fixture / 'tasks'

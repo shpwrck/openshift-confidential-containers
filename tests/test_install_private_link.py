@@ -26,6 +26,10 @@ class PrivateLinkInstallTests(unittest.TestCase):
         self.fixture = self.base / 'repo'
         self.playdir = self.fixture / 'ansible/playbooks'
         self.playdir.mkdir(parents=True)
+        identity_scripts = self.fixture / 'scripts'
+        (identity_scripts / 'lib').mkdir(parents=True)
+        shutil.copy2(ROOT / 'scripts/provider-identity.py', identity_scripts)
+        shutil.copy2(ROOT / 'scripts/lib/provider.py', identity_scripts / 'lib')
         self.tasks = self.base / 'tasks'
         self.tasks.mkdir()
         self.bin = self.base / 'bin'
@@ -42,6 +46,7 @@ class PrivateLinkInstallTests(unittest.TestCase):
                         PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
                         FIXTURE_EVENTS=str(self.events), FIXTURE_JOURNAL=str(self.journal))
         self.requests = []
+        self.request_bodies = []
         self.provider_interfaces = [{'role': 'internal', 'mac_address': '02:00:00:00:00:11'},
                                     {'role': 'external', 'mac_address': '02:00:00:00:00:12'}]
         owner = self
@@ -55,12 +60,13 @@ class PrivateLinkInstallTests(unittest.TestCase):
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'data': {'id': 'sv_fixture', 'attributes': {
-                    'hostname': 'fixture', 'primary_ipv4': '192.0.2.11', 'interfaces': owner.provider_interfaces}}}).encode())
+                payload = getattr(owner, 'provider_payload', {'data': {'id': 'sv_fixture', 'attributes': {
+                    'hostname': 'fixture', 'primary_ipv4': '192.0.2.11', 'interfaces': owner.provider_interfaces}}})
+                self.wfile.write(json.dumps(payload).encode())
 
             def do_POST(self):
                 owner.requests.append('POST')
-                self.rfile.read(int(self.headers['Content-Length']))
+                owner.request_bodies.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
                 owner.assertEqual(json.loads(owner.journal.read_text())['state'], 'sending')
                 self.send_response(202)
                 self.end_headers()
@@ -130,6 +136,37 @@ class PrivateLinkInstallTests(unittest.TestCase):
                                 cwd=self.base, env=self.env, capture_output=True, text=True, timeout=90)
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result.stdout + result.stderr
+
+    def cherry(self):
+        self.journal = self.base / 'provider-requests/.coco-reinstall-123.json'
+        self.env['FIXTURE_JOURNAL'] = str(self.journal)
+        self.variables.update(infra_provider='cherry', cherry_token='fixture-token',
+                              cherry_api_base=self.variables['latitude_api_base'])
+        self.variables['install_machine'].update(server_id='123', provider_hostname='allocated-node',
+                                                 provider_project_id='456')
+        self.provider_payload = {'id': 123, 'hostname': 'allocated-node', 'project': {'id': 456},
+                                 'ip_addresses': [
+                                     {'type': 'primary-ip', 'address_family': 4, 'address': '192.0.2.11'},
+                                     {'type': 'private-ip', 'address_family': 4, 'address': '10.1.2.11'}]}
+
+    def test_cherry_rebuild_posts_encoded_ipxe_after_gate_and_journal(self):
+        import base64
+        self.cherry()
+        self.run_role()
+        self.assertEqual(self.requests, ['GET', 'POST'])
+        body = self.request_bodies[0]
+        self.assertEqual(body['type'], 'rebuild')
+        self.assertEqual(body['image'], 'custom_ipxe_install')
+        self.assertEqual(body['hostname'], 'allocated-node')
+        self.assertEqual(base64.b64decode(body['ipxe']).decode(), '#!ipxe\nchain --autofree http://example.invalid/fixture.ipxe\n')
+        self.assertEqual(json.loads(self.journal.read_text())['state'], 'requested')
+
+    def test_cherry_wrong_project_prevents_intent_and_post(self):
+        self.cherry()
+        self.provider_payload['project']['id'] = 999
+        self.run_role(2)
+        self.assertEqual(self.requests, ['GET'])
+        self.assertFalse(self.journal.exists())
 
     def write_journal(self, state, identity=None):
         self.journal.parent.mkdir(exist_ok=True)
@@ -251,7 +288,7 @@ print(json.dumps([{'ifname':'eno2','ifindex':2,'address':os.environ.get('FIXTURE
 ''')
         ip.chmod(0o755)
         scripts = self.fixture / 'scripts'
-        scripts.mkdir()
+        scripts.mkdir(exist_ok=True)
         (scripts / 'check-private-link.py').write_text('''import json,os,pathlib,sys
 args=sys.argv[1:]
 status=os.environ.get('FIXTURE_PROOF_STATUS','PASS')

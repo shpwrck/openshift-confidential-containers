@@ -1,6 +1,6 @@
 # Capability status and next experiments
 
-Checked **2026-10-05**. The target is CPU confidential containers with OSC 1.13 / Trustee 1.2. The selected OCP payload is 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. The Latitude bastion and mirror are prepared, and host signature verification passed. The Miami replacement passed [raw-host SNP prerequisites](validation/latitude-mia2-host-2026-10-05.json), with an explicit old-firmware security gap. Its [private connection to the mirror currently fails](validation/latitude-mia2-network-2026-10-05.json), blocking installation. RHCOS and guest proofs remain pending; no guest rung is validated for this release set.
+Checked **2026-10-08**. The target is AMD CPU confidential containers with OSC 1.13.1 / Trustee 1.2.1 and OCP 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. Latitude was retired after its private-network qualification failed. The active [Cherry trial](cherry-validation.md) has passed the Ubuntu and Agent-live RHCOS SNP checks, bidirectional private networking, private DNS/NTP/registry TLS, and Agent-live isolation probes. Mirroring completed and fresh OpenShift installation is in control-plane bootstrap. Installed-node and guest proofs remain pending; no guest rung is validated for this release set.
 
 ## What changed enough to retest
 
@@ -31,11 +31,11 @@ The old July result described measured-initdata enforcement under rung B. Preser
 
 ## Run a proof
 
-First complete [Trustee setup](trustee-current.md), artifact resolution, workload namespace creation and [Latitude acceptance preflights](latitude-validation.md). Use only a disposable environment. The runner requires both its workload namespace and Trustee namespace to have `coco.openshift.io/disposable=true`, plus `COCO_DISPOSABLE_TEST=1`. It checks exact worker payload and successful OSC/Trustee CSVs before mutation. Co-location requires explicit lab selection; HTTP and omitted agent policy additionally require `TRUSTEE_PROFILE=Permissive`. Neither is evidence of customer isolation.
+First complete [Trustee setup](trustee-current.md), artifact resolution, workload namespace creation and [the current rig preflights](cherry-validation.md). Use only a disposable environment. The runner requires both its workload namespace and Trustee namespace to have `coco.openshift.io/disposable=true`, plus `COCO_DISPOSABLE_TEST=1`. It checks exact worker payload and successful OSC/Trustee CSVs before mutation. Co-location requires explicit lab selection; HTTP and omitted agent policy additionally require `TRUSTEE_PROFILE=Permissive`. Neither is evidence of customer isolation.
 
 ```bash
-export WORKER_CONTEXT=latitude-workers
-export TRUSTEE_CONTEXT=latitude-trustee
+export WORKER_CONTEXT=validation-workers
+export TRUSTEE_CONTEXT=validation-trustee
 export COCO_DISPOSABLE_TEST=1
 export TRUSTEE_PROFILE=Restricted
 export KBS_URL=https://trustee.example.internal

@@ -142,14 +142,26 @@ public_console_proxy_probe_address: "127.0.0.1"
 # additionalNTPSources MUST go in agent-config (the installer drops it from install-config).
 additional_ntp_sources:
   - "{{ bastion_service_ip }}"
+dnsmasq_allow_upstream: false
 
 # ---- Bastion egress hardening (hard-won fix #1) ----------------------------
 # A fresh Latitude bastion's IPv6 egress to quay's CDN blackholes large oc-mirror blobs.
 # oc-mirror is a Go binary so /etc/gai.conf IPv4-preference is IGNORED — remove v6 reachability,
 # clamp the v4 path MTU, and SYN-MSS-clamp via nftables.
+# Enable the observed Latitude CDN workaround only where that path needs it.
+bastion_egress_enabled: "{{ infra_provider == 'latitude' }}"
+bastion_node_isolation_enabled: "{{ infra_provider == 'cherry' }}"
+bastion_private_if: ""
+bastion_external_if: ""
 bastion_egress_mtu: 1400
 bastion_egress_mss_clamp: 1360
 bastion_egress_nft_table: "egress_clamp"
+
+# Provider selection affects identity discovery and the journaled reinstall request.
+# Cherry currently supports a single SNO with a verified two-port LACP bond.
+infra_provider: latitude
+cherry_api_base: https://api.cherryservers.com/v1
+cherry_token: "{{ lookup('ansible.builtin.env', 'CHERRY_SERVERS_API_KEY') }}"
 
 # ---- Latitude API ----------------------------------------------------------
 latitude_api_base: "https://api.latitude.sh"

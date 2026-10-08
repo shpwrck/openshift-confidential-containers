@@ -31,7 +31,6 @@ user:
 
 packages:
   - podman
-  - curl
   - tar
   - openssl
   - hostname
@@ -203,11 +202,53 @@ write_files:
       if [ ! -s "$CA_SRC" ]; then
         echo "FATAL: quay CA not found at $CA_SRC (version-specific path?) — not marking ready"; exit 1
       fi
+      /usr/local/bin/ensure-mirror-tls.sh "$QUAY_ROOT" "${registry_dns_name}"
       install -D -m0644 "$CA_SRC" "$MIRROR_ROOT/ca/rootCA.pem"
       # Clear an earlier failed attempt only after this retry completed and its CA
       # was installed. Phase A deliberately gives FAILED precedence over READY.
       rm -f "$MIRROR_ROOT/MIRROR_FAILED"
       date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_READY"
+
+  - path: /usr/local/bin/ensure-mirror-tls.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      # Repair only the malformed generated lab leaf, retaining its key and CA.
+      set -euo pipefail
+      umask 077
+      QUAY_ROOT="$1"
+      DNS_NAME="$2"
+      [[ "$QUAY_ROOT" == /* && "$DNS_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]]
+      CA="$QUAY_ROOT/quay-rootCA/rootCA.pem"
+      LEAF="$QUAY_ROOT/quay-config/ssl.cert"
+      KEY="$QUAY_ROOT/quay-config/ssl.key"
+      if openssl verify -x509_strict -verify_hostname "$DNS_NAME" -CAfile "$CA" "$LEAF"; then
+        exit 0
+      fi
+      # Do not turn arbitrary trust/expiry failures into automatic CA replacement.
+      openssl x509 -in "$LEAF" -noout -ext keyUsage | grep -q 'Certificate Sign'
+      test -s "$QUAY_ROOT/quay-rootCA/rootCA.key"
+      WORK="$QUAY_ROOT/tls-repair"
+      mkdir -p "$WORK"
+      if [ ! -e "$WORK/original-ssl.cert" ]; then cp "$LEAF" "$WORK/original-ssl.cert"; fi
+      cat > "$WORK/server.ext" <<EOF
+      basicConstraints=critical,CA:FALSE
+      keyUsage=critical,digitalSignature,keyEncipherment
+      extendedKeyUsage=serverAuth
+      subjectAltName=DNS:$DNS_NAME
+      subjectKeyIdentifier=hash
+      authorityKeyIdentifier=keyid,issuer
+      EOF
+      openssl req -new -key "$KEY" -subj "/CN=$DNS_NAME" -out "$WORK/server.csr"
+      openssl x509 -req -in "$WORK/server.csr" -CA "$CA" \
+        -CAkey "$QUAY_ROOT/quay-rootCA/rootCA.key" -CAcreateserial \
+        -days 365 -sha256 -extfile "$WORK/server.ext" -out "$WORK/server.crt"
+      openssl verify -x509_strict -verify_hostname "$DNS_NAME" -CAfile "$CA" "$WORK/server.crt"
+      # The upgrade command checks the certificate against targetHostname.
+      /opt/mirror-registry/mirror-registry upgrade --quayRoot "$QUAY_ROOT" \
+        --targetHostname "$DNS_NAME" --targetUsername root -k /root/.ssh/id_rsa \
+        --sslCert "$WORK/server.crt" --sslKey "$KEY" > "$WORK/rotation.log" 2>&1
+      openssl verify -x509_strict -verify_hostname "$DNS_NAME" -CAfile "$CA" "$LEAF"
 
 runcmd:
   # Run these dependent steps together: separate runcmd entries can continue after
@@ -220,13 +261,18 @@ runcmd:
       MIRROR_ROOT="${mirror_root}"
       mkdir -p "$MIRROR_ROOT"
       trap 'date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_FAILED"' ERR
+      # RHEL-compatible images can supply curl-minimal. Reuse its curl command
+      # rather than requesting a conflicting full curl package.
+      if ! command -v curl >/dev/null 2>&1; then dnf -y install curl; fi
       /usr/local/bin/setup-rig-vlan.sh
       /usr/local/bin/setup-rig-ntp.sh
       systemctl enable --now chronyd dnsmasq
       # enable --now leaves an already-running chronyd on its old configuration.
       systemctl restart chronyd
       if systemctl is-active --quiet firewalld; then
-        firewall-cmd --permanent --add-service=dns --add-service=ntp --add-port=8443/tcp
+        firewall-cmd --permanent --add-service=dns
+        firewall-cmd --permanent --add-service=ntp
+        firewall-cmd --permanent --add-port=8443/tcp
         firewall-cmd --reload
       fi
       # pipefail preserves bootstrap errors through the log tee.

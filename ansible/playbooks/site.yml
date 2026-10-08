@@ -19,7 +19,7 @@
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
-  tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp, render, pxe, drive, install]
+  tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp, isolation, render, pxe, drive, install]
   tasks:
     - name: Validate the effective Ansible release and profile inputs
       ansible.builtin.command:
@@ -112,14 +112,18 @@
         success_msg: "mirror bootstrap READY — safe to prep the bastion"
       tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
   roles:
-    - role: bastion_egress   # fix #1 — drop v6 default, clamp MTU 1400 + SYN MSS 1360. FIRST.
+    - role: bastion_egress   # observed provider CDN workaround, before mirror traffic when enabled
       tags: [egress, bastion-prep]
+      when: bastion_egress_enabled | default(true) | bool
     - role: mirror_tools     # tools to /usr/local/bin, trust CA, nmstate, merged docker config
       tags: [tools, bastion-prep]
     - role: mirror_push      # fix #2 — oc-mirror v2 push with resume-on-retry
       tags: [mirror, bastion-prep]
     - role: dns_ntp          # fix #10 — cluster dnsmasq records + chrony allow
       tags: [dns, dns-ntp, bastion-prep]
+    - role: bastion_isolation
+      tags: [isolation, bastion-prep]
+      when: bastion_node_isolation_enabled | default(false) | bool
 
 # =====================================================================================
 # STOP-GATE — acknowledge evidence for this node before its destructive reinstall.
