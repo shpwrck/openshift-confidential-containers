@@ -53,7 +53,8 @@ check_disposable_scope() {
   for ns in "${target_namespaces[@]}" "$WORKLOAD_NS"; do
     object="$(get_object namespaces "$ns")" || die "cannot inspect namespace $ns"
     [[ -n "$object" ]] || continue
-    jq -e --arg label "$DISPOSABLE_LABEL" '.metadata.labels[$label] == "true"' <<<"$object" >/dev/null || die "namespace $ns lacks $DISPOSABLE_LABEL=true; refusing shared-resource teardown"
+    # jq 1.6 (RHEL 9) treats `label` as a reserved identifier, including `$label`.
+    jq -e --arg scope_label "$DISPOSABLE_LABEL" '.metadata.labels[$scope_label] == "true"' <<<"$object" >/dev/null || die "namespace $ns lacks $DISPOSABLE_LABEL=true; refusing shared-resource teardown"
     count=$((count+1))
   done
   (( count > 0 )) || die "no labeled disposable namespace exists to establish reset scope"
