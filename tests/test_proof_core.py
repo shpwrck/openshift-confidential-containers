@@ -61,6 +61,9 @@ class ProofOracles(unittest.TestCase):
                 self.assertFalse(denial_matches("rung-signed", text))
         self.assertTrue(denial_matches("rung-signed", "signature verification failed: key mismatch"))
         self.assertTrue(denial_matches("rung-signed", "no matching signatures"))
+        self.assertTrue(denial_matches("rung-signed", "Image policy rejected: Denied by policy: rejected by `sigstoreSigned` rule"))
+        self.assertFalse(denial_matches("rung-signed", "Image policy rejected: default policy rejects image"))
+        self.assertFalse(denial_matches("rung-signed", "Fetched sigstoreSigned rule"))
 
     def test_generic_vcek_or_measurement_text_is_not_denial(self):
         self.assertFalse(denial_matches("air-gap", "VCEK offline verifier initialized"))

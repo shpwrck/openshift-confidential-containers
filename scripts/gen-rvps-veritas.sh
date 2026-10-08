@@ -37,6 +37,8 @@
 # REGISTRY_CERTS_DIR=<dir>/<mirror-host:port>/ca.crt. Then the tags-list authenticates to quay while
 # the heavy component-image pulls come from the mirror.
 set -euo pipefail
+command -v python3 >/dev/null || { echo 'ERROR: Python 3.12+ is required on the controller/bastion' >&2; exit 1; }
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else "ERROR: Python 3.12+ is required on the controller/bastion")'
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/release.sh
 source "$REPO_ROOT/scripts/lib/release.sh"

@@ -111,7 +111,7 @@ DENIALS = {
     "rung-kbs": re.compile(r"(?i)(?:failed to connect|connection refused|ECONNREFUSED).*?(?:127\.0\.0\.1|8006)|curl: \(7\)"),
     "rung-initdata": re.compile(r"(?i)\bPolicyDeny\b|(?:resource|policy|request|attest)[^\n]*(?:\b403\b|forbidden|denied)|returned error: 403"),
     "rung-rvps": re.compile(r"(?i)\bPolicyDeny\b|(?:resource|policy|request|attest)[^\n]*(?:\b403\b|forbidden|denied)|returned error: 403"),
-    "rung-signed": re.compile(r"(?i)(?:signature|sigstore)[^\n]*(?:verification failed|not found|missing|invalid|rejected|mismatch)|(?:no signatures|no matching signatures|signature verification failed)"),
+    "rung-signed": re.compile(r"(?i)(?:signature|sigstore)[^\n]*(?:verification failed|not found|missing|invalid|rejected|mismatch)|(?:no signatures|no matching signatures|signature verification failed)|(?:denied|rejected) by `?sigstoreSigned`? rule"),
     "air-gap": re.compile(r"(?i)(?:certificate chain|VCEK|TEE evidence|endorsement)[^\n]*(?:failed|invalid|reject|does not sign)|attestation[^\n]*(?:failed|denied|\b401\b)"),
 }
 
