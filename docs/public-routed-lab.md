@@ -1,5 +1,10 @@
 # Experimental public routed lab profile
 
+**Abandoned experiment.** Work on this profile stopped on October 5, 2026 because
+the validation goal requires disconnected installation over private networking.
+The [Latitude rig was retired](validation/latitude-retirement-2026-10-05.json).
+The material below records the implementation and its limits; it is not the active deployment plan.
+
 `public-routed-lab` currently supports configuration rendering and isolated installer
 manifest validation. **Boot artifact publication and new reinstall requests are blocked.**
 Protection for both the agent live environment and installed RHCOS must be implemented and
