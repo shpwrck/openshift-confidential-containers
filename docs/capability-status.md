@@ -10,7 +10,7 @@ Checked **2026-10-08**. The target is AMD CPU confidential containers with OSC 1
 
 **Encrypted images:** [OpenShift CRI-O PR 82](https://github.com/openshift/cri-o/pull/82) merged into `release-5.0` on October 5, 2026, at 08:20 UTC (merge commit `694532bb98d6a89cf999cd2969ccda8d4db561d1`). This is progress on the host-side encrypted-layer pull blocker. It does not establish inclusion in OCP 4.20.39 or supported encrypted-image operation with OSC 1.13. The [5.0.0-rc.0 release record](https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/5.0.0-rc.0/release.txt) predates that merge. The experiment needs a payload containing the change, its actual RHCOS/CRI-O build identity, compatible OSC operands and the allow/deny/recovery result. The default release inventory remains on the supported CPU matrix.
 
-Signed-image verification is not presented as a newly introduced OSC 1.13 capability. The unresolved local question is whether the selected registry serves signatures in a format the shipped guest image verifier can retrieve. A host-side `cosign verify` pass is necessary preparation, not the guest proof. On October 5, mirror-registry 2.0.12 accepted the signed control and host verification rejected the same-content unsigned control for a signature-specific reason. The October 8 Cherry guest control ran the signed image and rejected the same-content unsigned repository by its `sigstoreSigned` rule; recovery passed. This qualifies the tested registry and payload, without treating signing as a newly introduced 1.13 feature.
+Signed-image verification is not presented as a newly introduced OSC 1.13 capability. The registry qualification checks whether signatures can be retrieved in a format the shipped guest image verifier understands; the selected Cherry registry passed that check. A host-side `cosign verify` pass is necessary preparation, not the guest proof. On October 5, mirror-registry 2.0.12 accepted the signed control and host verification rejected the same-content unsigned control for a signature-specific reason. The October 8 Cherry guest control ran the signed image and rejected the same-content unsigned repository by its `sigstoreSigned` rule; recovery passed. This qualifies the tested registry and payload, without treating signing as a newly introduced 1.13 feature.
 
 The [Miami restoration check](validation/latitude-mia2-signed-controls-2026-10-05.json)
 also passed an unchanged rerun using the preserved image/signature digests and public key.
@@ -112,7 +112,7 @@ Raw negative evidence remains outside the checkout; public receipts record hashe
 1. A repeatable installation checkpoint: run verification twice, showing that the second pass neither reinstalls the node nor regenerates unchanged assets.
 2. Secret release followed by measured-initdata rejection and recovery, with no secret value printed in logs.
 3. Actual RVPS reference removal and restoration, clearly distinguished from the initdata demo.
-4. Signed versus unsigned guest pulls through the chosen registry, if transport validation succeeds.
+4. Signed versus unsigned guest pulls through the qualified registry, showing the actual signature-specific rejection.
 5. SNP endorsement rejection and recovery with the selected worker pinned, alongside independent evidence that AMD KDS egress is blocked.
 
 Keep encrypted images as an engineering experiment until a compatible payload and hardware evidence exist. Omit GPU material for this customer.
