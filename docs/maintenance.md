@@ -10,7 +10,7 @@ HWID alone does not establish that an older certificate matches the current TCB.
 The collector records source identity, certificate validity and hashes.
 
 ```bash
-make collect-vcek NODE=<actual-worker>
+make collect-vcek NODE='<actual-worker>'
 ```
 
 If the worker is disconnected, transfer the collected URL bundle to a connected

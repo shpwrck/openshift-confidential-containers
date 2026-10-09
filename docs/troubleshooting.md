@@ -41,7 +41,7 @@ Check pod/admission events, then Trustee and registry logs for the same attempt.
 A `DeadlineExceeded` or `ttrpc` message alone does not identify the failed component.
 
 ```bash
-oc --context="$WORKER_CONTEXT" -n coco-validation describe pod <pod>
+oc --context="$WORKER_CONTEXT" -n coco-validation describe pod '<pod>'
 oc --context="$WORKER_CONTEXT" -n coco-validation get events --sort-by=.lastTimestamp
 oc --context="$TRUSTEE_CONTEXT" -n trustee-operator-system \
   logs deploy/trustee-deployment --all-containers --since=30m
@@ -65,7 +65,7 @@ Replace namespace/deployment names with the actual objects. Then locate the stag
 See [guest registry access](guest-images.md) for CA chains and Artifactory. Discover
 host configuration from the installed runtime before reading logs; do not edit
 MCO-managed files to make an experiment pass. The narrow
-`make repair-sno-baseline NODE=<node>` helper handles only the explicitly diagnosed
+`make repair-sno-baseline NODE='<node>'` helper handles only the explicitly diagnosed
 `/etc/kubernetes/kubelet.conf` content mismatch, with a backup and baseline recheck.
 
 ## Failed proof or stale configuration

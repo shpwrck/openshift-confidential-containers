@@ -13,7 +13,7 @@ Applying a complete overlay directly bypasses dependency waits and inventory che
 Co-located Permissive HTTP testing is selected through the scripts, not inferred
 from an overlay name. The customer overlays are starting manifests and remain
 unvalidated in the [completed SNO trial](../docs/validation/README.md).
-`make render-overlay OVERLAY=<name>` inspects them without applying.
+`make render-overlay OVERLAY='<name>'` inspects them without applying.
 
 Versions come from [the release manifest](../install/release-manifest.json).
 Worker installation waits for NFD discovery, scoped Kata convergence, `kata-cc`
