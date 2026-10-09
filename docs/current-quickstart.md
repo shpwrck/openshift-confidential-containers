@@ -1,100 +1,109 @@
-# Current quickstart
+# Quickstart
 
-> **Trial retired:** the two Cherry servers, task project and SSH key were deleted after validation. [The retirement receipt](validation/cherry-retirement-2026-10-08.json) records verified absence and protected backups. A future run needs fresh allocations and inputs.
-
-This checkout targets **OCP 4.20.39, OSC 1.13, and Trustee 1.2** for CPU confidential containers. The OCP payload and authenticated catalog, bundle, related-image, and helper-image identities are verified. See [the resolution procedure and evidence](release-resolution.md) before refreshing these pins. The Cherry run completed a healthy platform and all five individual CPU allow/deny/recovery proofs. All five also passed a fresh combined proof run; a clean CoCo software reset/reinstall also passed with fresh combined proofs. Historical OCP 4.20.18 results do not validate this release set.
-
-The authoritative inputs are [the release manifest](../install/release-manifest.json). Start here instead of copying commands with older pins from historical runbooks. See [Cherry validation](cherry-validation.md) for the active supplied-rig path and [Latitude validation](latitude-validation.md) for the retired environment and acceptance criteria.
-
-## Choose the operation
-
-| Need | Entry point | Behavior |
-|---|---|---|
-| Check repository consistency | `python3 scripts/verify-release.py` | Local checks; does not establish deployment readiness. |
-| Check deployment inputs | `python3 scripts/verify-release.py --require-resolved` | Fails while any required artifact identity remains unresolved. |
-| Prepare a supplied bastion | `bash ansible/up.sh --mode prepare` | Mirror/tools/DNS preparation; the default mode. |
-| Plan disposable infrastructure | `bash ansible/up.sh --mode prepare --plan-tf` | Terraform init/plan only; no apply or Ansible work. |
-| Fresh install on the disposable rig | `bash ansible/up.sh --mode fresh-install` | Explicit machine reinstall, health/version checks, endpoint closure. |
-| Finish an accepted installation | `bash ansible/up.sh --mode resume-install` | Reuse accepted request and prepared assets; no raw-OS discovery, new rebuild or Terraform. |
-| Verify an installed cluster | `bash ansible/up.sh --mode verify` | Checks the selected OCP version, payload and health; no reinstall or Terraform. |
-
-Prepare and fresh-install stop at the unresolved-release check before making changes. Resolve the recorded identities from the selected authenticated catalogs; do not mark entries verified merely to bypass this check. `--plan-tf` also requires resolved release inputs before infrastructure planning.
-
-**Existing customer clusters need the separate upgrade procedure.** The provider reinstall path replaces the machine's installed OS. OCP 4.20.39 is a target, not a verified update edge from every 4.20.18 cluster. Preserve the customer's cluster ID, update graph, operator state, Trustee resources and storage before scheduling an upgrade. The [adjustment plan](design/current-version-adjustment-plan.md) records the migration work still needed.
+This is the fresh-install path for a **disposable AMD single-node OpenShift rig**.
+It targets the [validated release set](validation/README.md). The previous rig is
+retired; allocate and qualify new hardware before using these commands.
+For an existing customer cluster, use [customer planning](design/customer-scoping.md).
 
 ## Prepare the controller
 
-Use a Linux controller with Python 3.12+, the development requirements, Ansible, Terraform, and the required shell tools. Run commands from the checkout root unless a path is absolute. The wrapper also works from another working directory.
+Use Linux with Bash, Python 3.12+, `jq`, SSH and Ansible. Terraform is needed only
+for the Latitude modules. Run commands from the checkout root.
 
 ```bash
-python3 -m venv "$HOME/.local/state/coco-dev-venv"
-source "$HOME/.local/state/coco-dev-venv/bin/activate"
-python3 -m pip install -r requirements-dev.txt
-export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"
 umask 077
+export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"
 mkdir -p "$COCO_STATE_DIR"
-python3 scripts/verify-release.py
-python3 scripts/verify-release.py --require-resolved
+python3 -m venv "$COCO_STATE_DIR/controller-venv"
+source "$COCO_STATE_DIR/controller-venv/bin/activate"
+python3 -m pip install -r requirements-dev.txt
+make preflight
+make fetch-cli-tools
+export PATH="$COCO_STATE_DIR/bin:$PATH"
 ```
 
-Keep pull secrets, private keys, kubeconfigs, Terraform state and proof evidence outside the checkout and outside Homelab. `COCO_STATE_DIR` is rejected when it resolves inside either location. The wrapper keeps Terraform state and provider data in separate `terraform/bastion` and `terraform/node` directories there. It refuses to provision when it finds in-checkout state, even if external state also exists. Reconcile the resource identities and preserve the authoritative state outside the checkout before continuing so existing servers are not duplicated; do not overwrite either state blindly.
+`make preflight` checks recorded identities and agreement between repository files.
+It does not contact registries, establish a supported upgrade path or test hardware.
+Use [release resolution](release-resolution.md) when selecting new versions.
 
-An existing bastion can keep its remote pull secret. A new bastion can receive a controller file through `pull_secret_src`. Put environment-specific Ansible values in a private external YAML file, for example `$COCO_STATE_DIR/rig.yml`. Review [the defaults](../ansible/group_vars/all.yml) and set:
+## Supply the rig inputs
 
-- Bastion SSH target/user/key and public IP, VLAN VID, selected server ID, NIC names and install disk.
-- Cluster name/domain, network and mirror endpoint matching the selected environment.
-- `pull_secret_src`: the absolute external Red Hat pull-secret path, if staging it from this controller.
-- `node_ssh_pubkey_src`: the public key to embed in the node.
-- `boot_artifacts_token`: a fresh value from `openssl rand -hex 16`, kept in that external file.
+Keep secrets and generated state outside both the checkout and Homelab, including
+Git-ignored files. Put environment values in `$COCO_STATE_DIR/rig.yml`; use
+[the Ansible defaults](../ansible/group_vars/all.yml) as the field reference.
 
-Select the installation disk explicitly. Prefer its verified `/dev/disk/by-path/` path for
-`node_root_device` (or each machine's `root_device`), as recommended by the
-[Agent-based Installer root-device guidance](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/observability/installing_an_on-premise_cluster_with_the_agent-based_installer/index).
-The Miami validation node's OS disk changed from `nvme0n1` to `nvme1n1` after a firmware reboot.
-Match the stable path to the intended disk serial and boot target before installation; do not
-reuse a previous allocation's disk path.
+| Input | Required values |
+|---|---|
+| Ownership and access | Provider, current server/project/hostname, helper SSH target/user/key, pinned host keys |
+| Network | Private addresses/subnet, VLAN wire tag, actual NIC names/MACs, DNS/NTP and mirror hostname |
+| Installation | Verified disk serial and stable `/dev/disk/by-path/` path, cluster name/domain, node public SSH key |
+| Credentials | External `pull_secret_src` and `node_ssh_pubkey_src` paths; fresh private `boot_artifacts_token` |
 
-Select `infra_provider: cherry` and load `CHERRY_SERVERS_API_KEY` for a supplied Cherry rig; see [the Cherry guide](cherry-validation.md). The Terraform modules remain Latitude-specific. For a Latitude rig, load the API credential through the environment (`LATITUDESH_AUTH_TOKEN`), without placing its value in shell history or checked-in files. No credentials are included in this checkout.
+[Cherry setup](cherry-validation.md) covers its supplied-rig inputs and manual
+provisioning/BIOS prerequisites. [Latitude modules](../infra/latitude/README.md)
+are retained for provisioning, but their private network failed qualification.
+Cherry cannot use the Latitude `--plan-tf` or `--apply-tf` options.
 
-## Prepare, install, verify
+## Prepare and install
 
-Once release inputs are resolved and the external environment file is complete:
+First complete [firmware preflight](amd-firmware-preflight.md). While the raw
+provider OS is still running, configure the intended private link and prove that
+the node reaches the helper's registry, DNS and NTP. A helper readiness marker or
+provider VLAN assignment alone does not prove this path.
 
 ```bash
 bash ansible/up.sh --mode prepare -e "@$COCO_STATE_DIR/rig.yml"
-# Continue only after the firmware/SNP and private-link checks pass:
+```
+
+Prepare verifies tools, mirror content and private services. Changed inputs invalidate
+completion markers; unchanged inputs reuse the artifacts. Build boot files and run
+the standalone private-link check using [the Cherry sequence](cherry-validation.md#install).
+Then install explicitly:
+
+```bash
 bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-These commands reuse infrastructure. `--apply-tf` explicitly adds Terraform provisioning; review [the infrastructure plan](latitude-validation.md) first. The wrapper reads non-secret bastion IP, VLAN VID and server ID outputs after apply and passes them to Ansible. Explicit Ansible overrides still win. Fresh installation retains the existing BIOS acknowledgement gate. Complete [AMD firmware preflight](amd-firmware-preflight.md) for the actual board, firmware security fixes, UEFI boot path and raw-host SNP result before continuing. Do not use `skip_bios_pause` as a substitute for that verification.
+Fresh install **replaces the selected node's OS**. It checks hardware identity and
+the private link before submitting a journaled rebuild. Completion verifies the
+actual OCP version/digest and health, applies mirror resources and closes boot publication.
+`verify` checks the installed platform without submitting a rebuild.
 
-Before reinstalling, also complete the [private-link check](latitude-validation.md#prove-the-private-link-before-reinstall)
-from the raw node. Apply VLAN assignments separately so the provider OS remains available for
-these probes. A successful bastion mirror run or provider `connected` status cannot establish
-that the node reaches the mirror, DNS and NTP. Temporary VLAN preparation remains manual;
-fresh install requires the documented pinned SSH inputs and runs a fresh check before every
-new reinstall request. Accepted requests resume without trying to reconnect to the provider OS.
-
-Tools are verified against the requested release's published checksums. Existing binaries are reused only when their recorded hashes match. A changed ImageSet, tool, destination or release invalidates the mirror completion marker. A changed installer, payload or rendered configuration invalidates PXE assets. Rebuilding assets belonging to an existing cluster requires deliberate `reinstall_existing=true` or a new assets directory; it is not an upgrade shortcut.
-
-After the provider OS has been replaced, use `--mode resume-install` to finish an interrupted accepted request with the same external inputs. This requires the unchanged accepted journal and skips raw-host discovery and artifact regeneration. A missing, ambiguous or changed journal stops before any provider request. It still finishes health/mirror-resource checks and closes boot publication. Do not restart the full fresh-install workflow merely to resume its wait.
-
-A provider request is recorded before submission. If a timeout leaves the request ambiguous, inspect provider state before using `retry_reinstall=true`. A successful request for unchanged boot inputs is not automatically sent again.
-
-Provider request journals live outside generated assets (by default `/opt/install/provider-requests`) and survive PXE regeneration. A legacy journal inside the assets directory stops regeneration until its state is inspected and the record is moved to the durable directory.
-
-PXE publication copies artifacts to `/var/www/coco-boot-artifacts`. The installer source and assets remain private under `/opt/install`; only the published copies need nginx access. Preparation verifies nginx readability and public HTTP Range behavior before a provider reinstall can proceed.
-
-Successful fresh installation checks the actual ClusterVersion version and digest, applies the generated mirror resources, and closes the boot endpoint. If an install stops midway, inspect whether the node still needs the boot files; once it does not, close the endpoint explicitly:
+If the controller stops after the provider accepts the request, retain the same
+inputs, assets and accepted journal, then run:
 
 ```bash
-ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
-  ansible/playbooks/site.yml --tags pxe-stop -e "@$COCO_STATE_DIR/rig.yml"
+bash ansible/up.sh --mode resume-install -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-## Continue to confidential-container validation
+Resume sends no new rebuild and does not reconnect to the replaced provider OS.
+An ambiguous request requires provider-state inspection before a deliberate retry.
+See [troubleshooting](troubleshooting.md) for publication cleanup and recovery.
 
-A healthy OCP install is only the platform checkpoint. Install the resolved operator set, verify the selected runtime handler, collect target-hardware endorsement collateral, and configure Trustee using its generated resources. Trustee 1.2 ownership, TLS, policy and RVPS inputs require the updated flow; a historical standalone `KbsConfig` is not silently adopted.
+## Install CoCo and Trustee
 
-Use the isolated proof runner only on the disposable validation environment. Record a working control, the intended denial, and successful recovery for every selected proof. A pod that merely fails to start is not evidence of policy enforcement. Encrypted images remain an explicit experiment; CPU validation does not establish GPU support. See [the validation acceptance record](latitude-validation.md#acceptance-evidence).
+Load the new cluster's protected kubeconfig and confirm the context identifies the
+intended rig. Select it explicitly; `validation` below is an example context name.
+For the co-located disposable SNO lab:
+
+```bash
+export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
+export TRUSTEE_LAB=1 INSTALL_TOPOLOGY=sno
+make validate-sno-baseline
+make install-coco-operators
+```
+
+The installer stops at pending Manual InstallPlans. Inspect the selected plans,
+then rerun with `APPROVE_INSTALLPLANS=1` to approve only matching inventory entries.
+It waits for NFD, the scoped Kata rollout and `kata-cc` with handler `kata-snp`.
+
+Collect fresh worker collateral and follow [Trustee setup](trustee-current.md) to
+bootstrap, calculate approved launch/TCB references, bind initdata and configure
+resource release. The lab's Permissive profile must be selected explicitly and
+still needs an enforcing resource policy for the initdata/RVPS tests.
+
+Finally run [the capability tests](capability-status.md). Each proof requires a
+working control, the intended denial and successful restoration/recovery. Record
+host, ordinary-pod and guest isolation separately. A healthy platform alone does
+not establish confidential-container acceptance.

@@ -23,7 +23,7 @@ spec:
   containers:
     - name: app
       # FILL: signed image, digest-pinned, e.g. ARTIFACTORY_REGISTRY/coco/rung-b@sha256:... (legacy MIRROR_REGISTRY).
-      # Placeholder only: scripts/apply-rung-signed.sh overwrites this image (oc patch) at apply time, and this
+      # Placeholder only: scripts/apply-rung-signed.sh renders the selected image at apply time, and this
       # manifest is intentionally not in any kustomization — it is never applied or pulled as-is.
       image: ARTIFACTORY_REGISTRY/coco/rung-b:signed
       imagePullPolicy: Always

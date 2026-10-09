@@ -1,6 +1,0 @@
-# Historical low-level Trustee 1.1 template is retained at Git commit
-# 2fec0a4a132f1c201696537fd7737b0907a5cfd3.
-# Trustee 1.2 generates KbsConfig from trusteeconfig.yaml. Customizations belong
-# on that generated resource after migration; scripts/apply-trustee.sh preserves
-# existing resources and certificate mounts. Never apply an independent KbsConfig
-# beside the generated one: the Operator uses fixed service/deployment names.

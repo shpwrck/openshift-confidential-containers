@@ -10,7 +10,7 @@ kind: Kustomization
 # Before any air-gap proof, inspect effective rules and attribute fresh public-connection
 # denials to enforcement from the host, Trustee and relevant workload/guest contexts. A failed
 # curl caused by DNS, TLS or routing is insufficient. Verify working private mirror TLS,
-# DNS/NTP and cluster health; repeat after reinstall/reboot. See docs/latitude-validation.md.
+# DNS/NTP and cluster health; repeat after reinstall/reboot. See docs/validation/README.md.
 # airgap-egress.nft documents the executable rules embedded (base64) in the MachineConfig,
 # with current validation guidance in its comments. It is not a kustomize resource.
 resources:

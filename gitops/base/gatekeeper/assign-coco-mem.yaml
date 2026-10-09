@@ -7,7 +7,7 @@
 #  - Gatekeeper `match` cannot select on spec.runtimeClassName (no arbitrary field-value match),
 #    so CoCo pods are targeted by a LABEL (coco-resource-default: "true") — apply it via the
 #    workload's pod template, or scope by a confidential namespace via match.namespaces instead.
-#    WHO SETS IT (#68): gitops/base/workloads/*.yaml and docs/templates/customer-artifactory/,
+#    WHO SETS IT (#68): gitops/base/workloads/*.yaml and the workload renderers,
 #    inherited by the rung scripts that render from those bases via `oc patch --local`.
 #    scripts/check-coco-workload-labels.sh (in `make lint`) fails the build if a shipped CoCo
 #    manifest drops it. Between this policy landing and #68 NOTHING set the label, so both halves

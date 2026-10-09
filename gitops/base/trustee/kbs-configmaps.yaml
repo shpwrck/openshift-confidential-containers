@@ -1,7 +1,0 @@
-# Historical Trustee 1.1 TOML and permissive/empty ConfigMaps are retained at Git
-# commit 2fec0a4a132f1c201696537fd7737b0907a5cfd3. They are not target 1.2 payloads.
-# TrusteeConfig generates the correct target storage layout and policy keys:
-#   kbs-config.toml, resource-policy.rego, default_cpu.rego, default_gpu.rego,
-#   reference_value (JSON object containing base64-encoded reference records).
-# scripts/apply-trustee.sh waits for Operator migration before customizing them.
-# Ordinary reruns must never reset approved policy or references to lab defaults.

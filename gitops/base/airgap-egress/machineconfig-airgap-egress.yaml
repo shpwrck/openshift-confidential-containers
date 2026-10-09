@@ -9,7 +9,7 @@
 # rules and attribute fresh public-connection denials to enforcement from the host, Trustee
 # and relevant workload/guest contexts. DNS/TLS/routing errors alone are not denial evidence.
 # Verify private mirror TLS, DNS/NTP and cluster health; repeat after reinstall/reboot.
-# See docs/latitude-validation.md for network acceptance requirements.
+# See docs/validation/README.md for network acceptance requirements.
 # Roll back: oc delete -k gitops/base/airgap-egress  (stops dropping on next boot),
 # or on the node: nft delete table inet airgap  (clears immediately).
 #

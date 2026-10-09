@@ -7,7 +7,7 @@
 # Before relying on isolation, inspect effective rules and attribute fresh public-connection
 # denials to enforcement from the host, Trustee and relevant workload/guest contexts.
 # DNS/TLS/routing failures alone are insufficient. Verify private mirror TLS, DNS/NTP and
-# cluster health; repeat after reinstall/reboot. See docs/latitude-validation.md.
+# cluster health; repeat after reinstall/reboot. See docs/validation/README.md.
 # Tighten private ranges only after confirming all required machine-network traffic.
 table inet airgap {
   chain output {

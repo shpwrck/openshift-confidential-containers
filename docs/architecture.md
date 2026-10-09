@@ -1,101 +1,71 @@
-# Architecture and operational flow
+# Architecture
 
-This is the current workflow for OSC 1.13 / Trustee 1.2. Follow [the quickstart](current-quickstart.md) and [release inventory](../install/release-manifest.json). The Cherry lab has passed the platform and individual CPU proofs; a clean CoCo software reset/reinstall also passed with fresh combined proofs. The separate customer trust domains below are design boundaries, not a deployment established by the co-located lab.
+A confidential pod is a VM on the AMD worker. Kata's guest attestation agent
+sends evidence to Trustee; approved evidence permits resource release to the
+confidential data hub. The guest uses those resources for registry access and
+the protected workload.
 
-## Components and trust domains
+## Components
 
 ```mermaid
 flowchart LR
-  subgraph Connected[Connected preparation]
-    Sources[Red Hat catalogs and release payload]
-    Vendor[AMD KDS]
-    Tools[Resolve digests and collect collateral]
-    Sources --> Tools
-    Vendor --> Tools
+  Sources[Connected artifact and VCEK preparation] --> Mirror[Private image registry]
+  Sources --> Collateral[Offline endorsement collateral]
+  subgraph Workers[Worker trust domain]
+    Host[RHCOS and Kata] --> Guest[Confidential pod VM]
+    Guest --> Agents[Attestation agent and data hub]
   end
-  subgraph WorkerDomain[Worker cluster]
-    Mirror[Private image registry]
-    Host[RHCOS and Kata runtime]
-    Guest[Confidential pod VM]
-    AA[Attestation agent and data hub]
-    Host --> Guest
-    Guest --> AA
-    Guest -->|Guest image pull| Mirror
+  subgraph Trust[Separate customer Trustee trust domain]
+    KBS[Key Broker Service] --> AS[Attestation service]
+    AS --> Refs[Approved launch and hardware references]
+    AS --> Collateral
   end
-  subgraph TrusteeDomain[Separate Trustee cluster]
-    TC[TrusteeConfig and generated configuration]
-    KBS[Key Broker Service]
-    AS[Attestation service]
-    RVPS[Approved reference values]
-    Offline[Offline endorsement collateral]
-    TC --> KBS
-    KBS --> AS
-    AS --> RVPS
-    AS --> Offline
-  end
-  Tools -->|Mirrored artifacts| Mirror
-  Tools -->|Controlled transfer| Offline
-  AA -->|Evidence over HTTPS| KBS
-  KBS -->|Policy-approved resource release| AA
+  Guest -->|Guest image pull| Mirror
+  Agents -->|Evidence over HTTPS| KBS
+  KBS -->|Policy-approved resources| Agents
 ```
 
-Customer operations select `WORKER_CONTEXT` and `TRUSTEE_CONTEXT` independently. Co-located HTTP Trustee is an explicit disposable-lab mode. Runtime selection is `kata-cc`, with the `kata-snp` handler checked explicitly. VCEK collection runs against the selected AMD worker; offline endorsement verification runs in the Trustee cluster.
+`WORKER_CONTEXT` and `TRUSTEE_CONTEXT` select the domains independently.
+`kata-cc` must resolve to handler `kata-snp`. The completed trial instead used
+an explicitly selected co-located Permissive HTTP lab; the separate customer
+boundary in this diagram remains unvalidated.
 
-## Installation checkpoints
+## Install sequence
 
 ```mermaid
 flowchart TD
-  BOM[Review product matrix and resolve release inventory] --> Plan[Select a supplied private-network rig]
-  Plan --> Hardware[Verify UEFI and raw-host SNP]
-  Hardware --> Prepare[Prepare bastion, mirror, DNS and checked tools]
-  Prepare --> Artifacts[Build reviewed private-network boot configuration]
-  Artifacts --> Private{Raw node reaches private mirror, DNS and NTP?}
-  Private -->|Pass| Isolation[Verify node and helper isolation configuration]
-  Isolation --> Fresh[Explicit fresh install]
-  Private -->|Fail| Network[Keep provider OS and diagnose private link]
-  Network --> Private
-  Fresh --> OCP[Verify actual OCP payload and cluster health]
-  OCP --> Installed[Verify installed-node SNP and isolation]
-  Installed --> Operators[Install reviewed operator plans and wait for CRDs]
-  Operators --> SNP[Verify SNP host and scoped NFD labels]
-  SNP --> Kata[Apply scoped KataConfig and wait through node changes]
-  Kata --> Trustee[Bootstrap TrusteeConfig and wait for migration]
-  Trustee --> References[Calculate launch references from artifacts and reviewed command line]
-  References --> Policy[Validate collateral, hardware TCB and enforcing policies]
-  Policy --> Serving[Refresh identified pods and verify current mounts]
-  Serving --> Proof[Run independent capability proofs]
-  Proof --> Repeat[Repeat from clean infrastructure]
-  Repeat --> Customer[Review evidence for customer rollout]
+  Inventory[Resolve release inventory] --> Hardware[Verify actual hardware, UEFI and SNP]
+  Hardware --> Helper[Prepare mirror, private DNS and NTP]
+  Helper --> Link{Raw node private-service checks pass?}
+  Link -->|No| Diagnose[Keep provider OS and diagnose networking]
+  Diagnose --> Link
+  Link -->|Yes| Install[Explicit fresh OpenShift install]
+  Install --> Platform[Verify payload, health, installed SNP and isolation]
+  Platform --> Operators[Install checked Operators and scoped Kata runtime]
+  Operators --> Trustee[Bootstrap Trustee and offline collateral]
+  Trustee --> Policy[Calculate references and publish reviewed policies]
+  Policy --> Proof[Run five CPU proofs and network controls]
+  Proof --> Repeat[Remove and reinstall CoCo software; repeat proofs]
 ```
 
-Preparation is the wrapper's default. Fresh installation is a separate operation and may replace the selected node's OS. It is not the customer upgrade procedure. A provider action with an ambiguous result requires inspection before retry; completion markers depend on the current inputs. Successful installation closes the temporary boot endpoint.
+Fresh install replaces the node OS; it is not a customer upgrade. Successful
+installation closes temporary boot publication. The trial used public iPXE before
+the private Agent OS. Its clean repeat retained OpenShift and physical allocations.
+See [the results and limits](validation/README.md).
 
-The [private-link check](cherry-validation.md) runs
-from the raw node using the intended VLAN and trusted mirror CA. Mirror readiness on the
-bastion alone cannot establish that path. Keep raw-host, Agent-live, installed RHCOS and guest evidence separate. The Cherry trial uses public, tokenized provider iPXE delivery for boot artifacts; the running Agent OS uses only the private VLAN. This does not demonstrate fully private boot-artifact delivery from power-on.
-
-## Each proof has four controls
+## Proof sequence
 
 ```mermaid
 flowchart TD
-  Ready[Check release, contexts, disposable labels and policies] --> Lock[Acquire Trustee namespace lock]
-  Lock --> Allow[Positive workload succeeds]
-  Allow --> Change[Change one input or reference]
-  Change --> Deny[Require attributable guest or same-peer Trustee denial]
-  Deny --> Remove[Remove denied pod and verify deletion]
-  Remove --> Restore[Restore exact prior policy or collateral]
-  Restore --> Rotate[Verify new serving pods use restored configuration]
-  Rotate --> Recovery[Recovery workload succeeds]
-  Recovery --> Cleanup[Verify cleanup and release lock]
-  Cleanup --> Pass[Record PASS with provenance]
-  Allow -->|Unavailable| Incomplete[Record INCOMPLETE]
-  Deny -->|Unrelated startup error| Incomplete
-  Deny -->|Application started| Fail[Record FAIL]
-  Restore -->|Concurrent change or failed restore| Stop[Record FAIL and retain recovery material and lock]
+  Gate[Check inputs and lock Trustee namespace] --> Allow[Positive workload succeeds]
+  Allow --> Deny[Change one input and require attributable denial]
+  Deny --> Restore[Delete denied pod and restore exact configuration]
+  Restore --> Ready[Verify refreshed serving pods]
+  Ready --> Recover[Recovery workload succeeds]
+  Recover --> Cleanup[Verify cleanup, release lock and record result]
 ```
 
-Error paths still attempt safe cleanup/restoration. A missing reference, registry transport failure or absent runtime cannot be converted into a pass. The runner preserves unrelated Trustee data and refuses to overwrite a concurrent edit. The [capability guide](capability-status.md) defines each negative and its limits.
-
-## Updating an existing customer deployment
-
-Check the live OSC matrix and available OCP update path before selecting a target. Update the platform/runtime prerequisites before OSC where the product procedure requires it. Export existing Trustee resources and preserve their ownership; a standalone 1.1 KbsConfig is not silently adopted. Regenerate target-hardware references after changes to platform, guest artifacts or firmware, then rerun the relevant proofs. Consult [the OSC update procedure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.13/html/deploying_confidential_containers_on_bare-metal_servers/update-osc-cc-overview_metal-cc-update) and [the Trustee guide](trustee-current.md).
+Unrelated errors or skipped controls cannot pass. Failed restoration retains
+recovery material and the lock for inspection. [Capability tests](capability-status.md)
+define each negative control; [customer planning](design/customer-scoping.md)
+covers deployment and upgrade decisions.

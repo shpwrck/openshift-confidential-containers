@@ -1,180 +1,127 @@
-# Trustee 1.2 bootstrap, configuration and proof
+# Trustee setup
 
-This AMD SEV-SNP workflow targets the version selected by `install/release-manifest.json`.
-Its Operator and catalog identities are resolved; rerun the release gate before deployment. It has offline tests; no hardware appraisal or customer upgrade is claimed.
-Python 3.12+, `requirements-dev.txt`, `jq`, and the selected `oc` are required.
+This workflow uses Trustee 1.2.1 on AMD SEV-SNP. Customer defaults are
+**Restricted, HTTPS and a separate trust domain**. The completed
+[lab proofs](validation/README.md) used co-located Permissive HTTP with enforcing
+resource policy; they do not validate the customer topology.
 
-## Ownership and upgrade boundary
+Use Python 3.12+, the development requirements, `jq` and the selected `oc`.
+Set `TRUSTEE_CONTEXT` explicitly. Keep credentials and generated files in external
+`COCO_STATE_DIR` storage as described in the [quickstart](current-quickstart.md).
 
-Use `scripts/apply-trustee.sh`, with an explicit `TRUSTEE_CONTEXT` for the customer.
-The default `Restricted` TrusteeConfig generates its KbsConfig, configuration and
-CPU/GPU/resource/RVPS ConfigMaps. The script resolves those names through the actual
-KbsConfig, waits for all five migration markers and validates their owning UID.
-It then changes only the intended fields with resource-version preconditions.
+## Bootstrap
 
-An existing independent KbsConfig is refused. This is a fresh bootstrap and
-configuration entry point, **not an automatic 1.1-to-1.2 upgrade**. Before upgrading
-an existing deployment, capture its CR/CSV/CRD identities, policies, resources,
-collateral, TLS and signer identities in protected storage outside Homelab; rehearse
-the product migration in an isolated clone. Do not delete configuration or set
-migration annotations by hand to bypass the guard. Operator 1.2 migration can
-replace old policy/configuration maps, and its plugin merge does not preserve all
-custom verifier settings.
+Install the selected Trustee Operator on the intended cluster. Provision the namespace
+and these Secrets through the customer's credential/certificate process:
 
-The script preserves unrelated TOML and existing KbsConfig resource/cache entries.
-It never reassigns an existing TrusteeConfig profile or TLS references. Pruning old
-resource references and rotating TLS/signing identities need a separate reviewed
-procedure. There is one Trustee deployment/service identity per namespace.
+- `kbs-https-cert`: endpoint TLS certificate/key (`tls.crt`, `tls.key`).
+- `kbs-token-cert`: attestation token signing/trust certificate/key.
+- VCEK Secrets for the approved workers. [Collection and refresh](maintenance.md#collateral-and-references)
+  use current host/TCB evidence; collection does not publish Secrets automatically.
 
-## Customer bootstrap
+The TLS names can be overridden with `TRUSTEE_HTTPS_SECRET` and
+`TRUSTEE_TOKEN_SECRET`. Rerunning bootstrap does not rotate these identities.
+Set `HWIDS` to the approved lowercase 128-hex-digit worker identities:
 
-First resolve the selected artifact inventory and pass:
-
-```sh
-python3 scripts/verify-release.py --require-resolved
-```
-
-Provision the namespace, Operator and these resources through the approved
-credential/certificate process outside the checkout:
-
-- `kbs-https-cert`: a TLS Secret with `tls.crt` and `tls.key` for the Trustee endpoint.
-- `kbs-token-cert`: a TLS Secret with `tls.crt` and `tls.key` for token signing/trust.
-- SNP: collected VCEK Secrets for the actual approved `HWIDS`.
-
-The two TLS Secret names can be selected with `TRUSTEE_HTTPS_SECRET` and
-`TRUSTEE_TOKEN_SECRET`. These are inputs to Operator-generated Secret identities;
-rerunning the script is not a certificate rotation mechanism.
-
-Render the nonsecret TrusteeConfig without any cluster action:
-
-```sh
-TRUSTEE_CONTEXT=customer-trustee RENDER_ONLY=1 scripts/apply-trustee.sh bootstrap
-```
-
-For SNP, set the actual 128-hex-digit HWIDs, then bootstrap:
-
-```sh
-export TRUSTEE_CONTEXT=customer-trustee TRUSTEE_PROFILE=Restricted TEE=snp
+```bash
+export TRUSTEE_CONTEXT=customer-trustee TRUSTEE_PROFILE=Restricted TRUSTEE_LAB=0 TEE=snp
 export HWIDS='<approved-hwid>'
+make preflight
 scripts/apply-trustee.sh bootstrap
 ```
 
-SNP bootstrap selects only `OfflineStore`, retaining the existing cache path.
-The workflow does not download new collateral or renew it automatically.
-Bootstrap attaches no new customer workload-resource names. Generated Operator
-sample resources and any previously attached resource names remain present.
+Use `RENDER_ONLY=1` to inspect TrusteeConfig without a cluster action. Bootstrap
+waits for Operator-owned KbsConfig/ConfigMaps and migration markers, checks their
+ownership, and selects SNP `OfflineStore`. It retains the cache path and existing
+resource entries but attaches no new customer workload resources.
 
-## Publish the reviewed policy and references
+An independent older KbsConfig stops the workflow. This is a fresh bootstrap,
+not an automatic Trustee 1.1 upgrade. See [customer planning](design/customer-scoping.md)
+before migrating an existing deployment. Do not delete configuration or set migration
+markers by hand to bypass that check.
 
-Freeze the final initdata first. Generate expected launch references from the
-selected release artifacts using the resolved coco-tools image. Keep registry
-credentials outside Homelab. Supply the exact reviewed runtime kernel command line
-with `VERITAS_KERNEL_CMDLINE` when it differs from the generator's defaults:
+## Calculate the approved references
 
-```sh
-PULL_SECRET="$HOME/.local/state/coco/pull-secret.json" \
-  INITDATA=/path/to/frozen-initdata.toml OUT=/path/to/reviewed-rvps.json \
+Freeze the exact workload initdata bytes, including the complete reviewed agent
+policy. Then generate launch references from the selected release artifacts:
+
+```bash
+PULL_SECRET="$COCO_STATE_DIR/credentials/pull-secret.json" \
+  INITDATA="$COCO_STATE_DIR/initdata.toml" \
+  OUT="$COCO_STATE_DIR/rvps-generated.yaml" \
+  VERITAS_KERNEL_CMDLINE='<exact reviewed runtime command line>' \
   scripts/gen-rvps-veritas.sh
 ```
 
-The generator accepts Veritas records only when they conform to Trustee 1.2:
-`reference_value` maps each record name to base64 of the complete JSON record,
-including `name`, UTC-seconds `expiration`, and typed `value`. It rejects duplicate,
-empty, malformed or expired records. Generation alone does not publish references
-or prove that they match the installed CPU policy.
+The tested coco-tools default omitted `agent.launch_process_timeout=6`, which was
+present in the actual Kata launch string. Supply the reviewed full string; the
+independently calculated launch value must match the verified guest quote.
+Reference generation can need connected registry access; stage its results before isolation.
 
-The Cherry run found `agent.launch_process_timeout=6` in Kata's actual launch
-string, absent from coco-tools 0.5.1's default. Computing with the exact string
-produced the measurement in the independently verified guest quote; accepting
-the default values would have left the executables appraisal failing. Supplying
-an explicit command line also selects only the non-GPU initrd by default.
+Review the output and build the **complete** approved reference set:
 
-Veritas's bare-metal calculation does not collect SNP hardware TCB records. Add
-`snp_bootloader`, `snp_microcode`, `snp_snp_svn` and `snp_tee_svn` from the actual
-approved platform, with typed integer values and deliberate expiry. Validate them
-against the host and verified quote before publication. The pinned generator also
-computes its `init_data` record with SHA-384 regardless of the file's declared
-algorithm. Do not publish that unused record as a SHA-256 binding; this workflow
-enforces the exact SHA-256 bytes through the separate CPU-policy extension below.
+- Trustee 1.2 `reference_value` maps names to base64-encoded JSON records with
+  `name`, UTC-seconds `expiration` and typed `value`. Malformed, duplicate or expired
+  records are rejected.
+- Add `snp_bootloader`, `snp_microcode`, `snp_snp_svn` and `snp_tee_svn` as integers
+  from the approved platform/verified quote. The generator does not collect hardware TCB.
+- Omit coco-tools 0.5.1's unused SHA-384 `init_data` record when binding SHA-256 initdata
+  through the CPU-policy extension below.
 
-Provide an approved resource policy that defaults to deny and enforces the required
-hardware, executable and configuration appraisals for the intended resource paths.
-Provision the corresponding resource Secrets out of band, retaining their names and
-keys because these determine `kbs:///default/<secret>/<key>` identities. Then run:
+Generating or observing a value does not approve it. Confirm its source, expected
+platform and expiry before publication.
 
-```sh
-TRUSTEE_RESOURCE_POLICY_FILE=/path/to/approved-resource-policy.rego \
-  TRUSTEE_RVPS_FILE=/path/to/reviewed-rvps.json \
-  KBS_RESOURCE_NAMES='credential sample security-policy sig-public-key' \
+## Bind initdata and publish resource policy
+
+The default CPU policy does not bind the complete initdata digest. Render the
+extension from the actual vendor CPU policy and the generated ConfigMap name found
+in `KbsConfig.spec.kbsAttestationPolicyConfigMapName`:
+
+```bash
+BASE_CPU_POLICY_FILE="$COCO_STATE_DIR/default_cpu.rego" \
+  CPU_CONFIGMAP_NAME='<actual-generated-cpu-configmap>' \
+  scripts/render-measurement-policy.sh "$COCO_STATE_DIR/initdata.toml" \
+  > "$COCO_STATE_DIR/cpu-policy.yaml"
+```
+
+Review and apply this ConfigMap in the Trustee context. It retains hardware and
+launch appraisals and adds the initdata condition. It does not create the resource
+policy: that policy must default to deny and require the relevant appraisals for
+each resource path.
+
+Provision workload-resource Secrets out of band. Their names/keys form
+`kbs:///default/<secret>/<key>` identities. Then publish the reviewed resource
+policy, complete reference set and explicit resource names:
+
+```bash
+TRUSTEE_RESOURCE_POLICY_FILE="$COCO_STATE_DIR/resource-policy.rego" \
+  TRUSTEE_RVPS_FILE="$COCO_STATE_DIR/rvps-reviewed.yaml" \
+  KBS_RESOURCE_NAMES='credential sample security-policy registry-configuration' \
   scripts/apply-trustee.sh configure
 ```
 
-The supplied RVPS set replaces the active reference set; include every approved
-record required by this deployment. The script checks native Restricted TLS/token
-references, conservative CPU defaults, and core platform reference names. These are
-structural checks, not a Rego execution proof. A reviewed custom CPU policy outside
-the recognized structure stops for review rather than being overwritten.
+The RVPS input **replaces the active reference set**. Include all required records.
+Configuration preserves unrelated fields/resources, publishes policy/references before
+attaching names, and refreshes serving pods. It checks structural defaults and ownership;
+the [allow/deny/recovery proofs](capability-status.md) establish enforcement.
 
-Configuration publishes approved policy/references before attaching resource names,
-preserves unrelated resource/cache entries, and rotates serving pods. Completion
-requires current ConfigMap resource-version annotations, resource/cache mounts and
-new Ready pod UIDs. This includes the Secret converter lifecycle; an event alone
-does not prove refreshed resource contents are served.
+Trustee 1.2.1 removes `oc rollout restart` annotations during reconciliation. The
+shared refresh step replaces only identified Operator-owned pods with UID checks,
+then verifies new Ready UIDs, current ConfigMap versions and mounts. Use
+`scripts/refresh-trustee.py` after a separately applied CPU-policy change; do not
+infer refresh from a sleep or an event.
 
-The refresh command replaces only pods whose ReplicaSet belongs to the selected
-Operator-owned deployment, using UID preconditions and normal termination. Trustee
-1.2.1 reconciles the complete pod template and removes `oc rollout restart`'s
-annotation; that command alone can leave the old serving pod running. The shared
-refresh step verifies replacement UIDs and current ConfigMap versions before
-configuration or a recovery proof can complete.
+## Disposable lab
 
-An explicitly selected Permissive lab can also publish an enforcing resource
-policy and reference set using these same two file inputs and explicit
-`KBS_RESOURCE_NAMES`. Supply both files together. The ordinary Permissive resource
-policy permits resource access regardless of CPU appraisal, so it cannot establish
-initdata or RVPS enforcement. Adding enforcement does not change the profile's
-HTTP/token-trust settings or turn a co-located lab into the customer trust domain.
+For a co-located test, explicitly set `TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1`
+and use the same bootstrap/configure sequence. Configure invokes the synthetic
+resource seeder; Restricted mode never does.
 
-## Initdata binding and isolated validation
+The ordinary Permissive resource policy does not enforce CPU appraisals. For
+initdata/RVPS proofs, supply **both** enforcing policy and reviewed reference files,
+plus `KBS_RESOURCE_NAMES`. This does not change HTTP/token trust or establish
+customer separation. Continue with [capability tests](capability-status.md).
 
-The installed default CPU policy does not itself bind a complete initdata digest.
-To render an extension, supply the actual reviewed CPU policy and the actual
-ConfigMap name from `KbsConfig.spec.kbsAttestationPolicyConfigMapName`:
-
-```sh
-BASE_CPU_POLICY_FILE=/path/to/installed-default_cpu.rego \
-  CPU_CONFIGMAP_NAME=<actual-generated-cpu-configmap> \
-  scripts/render-measurement-policy.sh /path/to/frozen-initdata.toml
-```
-
-This emits only a CPU ConfigMap, preserving vendor hardware/launch/configuration
-appraisals and adding an initdata condition. It emits no resource policy. The
-resource policy must enforce the resulting appraisal. Validate the measured byte
-contract with the allow/tamper/recovery proof before depending on it. Signature
-verification of container images is a separate guest policy; encryption remains an
-explicit experimental path.
-
-Use the proof runner only in a dedicated environment with
-`COCO_DISPOSABLE_TEST=1`, explicit worker/Trustee contexts, and both namespaces
-labeled `coco.openshift.io/disposable=true`. It snapshots protected recovery data
-outside the checkout and requires attributable denial plus restoration/recovery.
-A `Permissive` lab result is not evidence for the customer's Restricted profile.
-
-## Disposable lab resources
-
-A co-located disposable lab must explicitly select
-`TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1`; the seeder additionally checks the actual
-TrusteeConfig profile. Use the same bootstrap/configure order. The lab seeder keeps
-existing omitted Secret keys, including signed-image policy keys, on a plain rerun.
-The seeder loads the external VCEK bundle. Customer mode never invokes the demonstration seeder.
-
-## Implementation references
-
-- [Operator 1.2.1 migration](https://github.com/openshift/trustee-operator/blob/v1.2.1/internal/controller/migration.go)
-- [TrusteeConfig generation and ownership](https://github.com/openshift/trustee-operator/blob/v1.2.1/internal/controller/trusteeconfig_controller.go)
-- [KbsConfig serving mounts and configuration versions](https://github.com/openshift/trustee-operator/blob/v1.2.1/internal/controller/kbsconfig_controller.go)
-- [Restricted CPU policy](https://github.com/openshift/trustee-operator/blob/v1.2.1/config/templates/ear_default_attestation_policy_cpu.rego)
-- [Target reference-value type](https://github.com/openshift/trustee/blob/v1.2.1/rvps/src/reference_value.rs)
-
-Installed CRDs/CSV and resolved downstream images remain the deployment authority;
-a source tag alone does not establish a supported catalog inventory or hardware proof.
+Implementation references: [Operator ownership/migration](https://github.com/openshift/trustee-operator/tree/v1.2.1/internal/controller)
+and [reference-value format](https://github.com/openshift/trustee/blob/v1.2.1/rvps/src/reference_value.rs).
+Installed CRDs/CSV and the resolved downstream images remain the deployment authority.

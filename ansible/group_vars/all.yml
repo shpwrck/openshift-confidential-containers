@@ -37,7 +37,7 @@ base_domain: "coco.lab.local"
 # ---- Networking ------------------------------------------------------------
 # public-routed-lab is an experimental render/preflight profile, not an air gap.
 # Reinstall remains blocked until early-boot ingress protection is validated.
-# See docs/public-routed-lab.md. These inputs never infer a provider netmask/gateway.
+# See docs/troubleshooting.md. These inputs never infer a provider netmask/gateway.
 network_profile: "private-vlan"
 node_public_ipv4: ""
 node_public_prefix: ""            # public-routed-lab requires an explicit 31

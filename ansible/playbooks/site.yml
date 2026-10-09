@@ -1,6 +1,6 @@
 ---
 # site.yml — orchestrates the disconnected SNO air-gapped bring-up in PHASE ORDER, faithfully
-# reproducing docs/runbooks/disconnected-sno-bringup.md and scripts/*.sh.
+# following docs/current-quickstart.md and scripts/*.sh.
 #
 # TF/Ansible boundary: Terraform OWNS the infrastructure (bastion, node, VLAN, firewall, netboot
 # OS=ipxe). Ansible OWNS the bastion host config + the OpenShift install. `make up` interleaves
@@ -156,7 +156,7 @@
           Missing RMP controls and IOMMU errors require board-specific diagnosis.
           Recheck after reprovisioning; do not assume firmware settings were preserved.
 
-          docs/notes/latitude-snp-bringup.md records the historical H13 recipe.
+          docs/amd-firmware-preflight.md records the tested H13 settings and their limits.
           It is not a universal H12/H13 BIOS configuration or a current security baseline.
 
           Type SNP-SET (then ENTER) only after completing this preflight, to continue

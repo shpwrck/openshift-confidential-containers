@@ -4,80 +4,93 @@ state-scope: cherry-qualification
 status: current
 ---
 
-# Cherry validation leave-behind
+# Cherry trial leave-behind
 
 ## Operability
 
 ### State and access
 
-The Cherry validation rig is retired. On October 08, 2026 at 20:36 EDT, independent provider reads returned 404 for node 1025551, helper 1025601, task SSH key 19635 and task project 295533 (`coco-qualification-20261008`). Pre-existing project 295530 remains present and was not changed. [The retirement receipt](../../validation/cherry-retirement-2026-10-08.json) records absence verification and the recovery archive hash. Do not connect to the released addresses or treat these identities as reusable live inputs.
+**Retired October 8, 2026, at 20:36 EDT.** Fresh provider reads confirmed node
+1025551, helper 1025601, task SSH key 19635 and task project 295533 absent.
+Pre-existing project 295530 was preserved. [Retirement receipt](../../validation/cherry-retirement-2026-10-08.json).
+There is no live cluster or SSH/API endpoint to operate.
 
-Before retirement, the exact OCP 4.20.39 / OSC 1.13.1 / Trustee 1.2.1 AMD lab passed its fresh OpenShift install, all five CPU proofs individually and combined, and a clean CoCo software reset/reinstall with five fresh proofs. The clean attempt passed from `d5915bda5c9e43edfcfa599b837a22a9cbe30e1f`; all six Operator/operand namespaces were recreated. Final live checks reconfirmed all 34 core Operators stable, the node Ready, the master pool converged and no proof lock or workload Pods. Linux, macOS and Terraform checks passed at pre-teardown head `a9cecee8134fac091a76e48688b64cba235e624b`. This establishes the AMD lab workflow; it does not establish a second complete OpenShift/infrastructure install, customer upgrade or separate Restricted Trustee domain.
-
-Retained protected controller state is `/home/jskrzypek/.local/state/openshift-confidential-containers/cherry/trial/`. It contains `id_ed25519`, pinned host-key files, console credentials, `rig.json`, kubeconfigs, logs and `deployment/` (`COCO_STATE_DIR`). `rig.json` includes the boot publication token. The API key is supplied by `CHERRY_SERVERS_API_KEY` in the owner's interactive shell. No secret values belong in Homelab, Git, receipts or this runbook.
-
-Historical node private IP was 10.182.89.36 and helper 10.182.89.26 on VLAN wire tag 2064 (API object ID 1213). Both used `bond0`, 802.3ad, with `enp5s0f0`/`enp5s0f1`. Installed RHCOS used br-ex over bond0.2064 and has no public/global IPv6 address. The helper provided DNS, NTP and `mirror.rig.local:8443`, with upstream DNS and private-to-public forwarding blocked. AlmaLinux 9.8 is an explicit helper compatibility test, not the supported RHEL mirror-registry host.
-
-The historical access procedure used pinned SSH through the helper, without copying the task private key there. Both servers are absent; that procedure and the remaining connection files are retained for evidence, not live access. `node-installed-known_hosts` was independently checked on the authenticated, certificate-pinned BMC console. `node-ssh.py` uses that pin and the helper proxy. The protected `cluster-kubeconfig` selects `cherry-validation`, tunneled at 127.0.0.1:26443 while retaining the real API TLS server name. `cluster-env.sh` and `rung-env.sh` select the exact contexts, mirror inputs and immutable signed/unsigned controls. Public key files are in `deployment/rung-image-artifacts`; the private signing key and password were exported from the helper's `/opt/coco-state` to protected controller recovery storage. A verified protected controller backup is now in `signing-recovery/helper-signing-artifacts.tar.gz`, with its member/hash manifest. The verified final controller archive `pre-retirement/helper-recovery.tar.gz` additionally preserves 612 files (1,462,862,564 bytes): original signed/unsigned/signature artifacts with verified manifest digests, signing identity/password, mirror CA/server keys and configuration, current Trustee/platform snapshots, installer assets and complete proof/attempt evidence. Its hash and limits are in `pre-retirement/recovery-verification.json`. It excludes the registry cache, Quay database, Python environment and a full etcd recovery proof; a future trial must reconstruct those deliberately. No private archive was published. The task API tunnel was closed after retirement. The software reset used a real Git clone at helper `/opt/coco-repo`, pinned to `d5915bda5c9e43edfcfa599b837a22a9cbe30e1f`, and the external Python 3.12 virtual environment `/opt/coco-state/controller-venv`. The earlier archive-only checkout was preserved at helper `/opt/coco-state/archive-source-d3c2eff` and included in the final controller archive. Former helper `/opt/coco-state/repro-loop` held its kubeconfig, inputs, driver, logs and status, now retained in the controller archive; protected controller `pre-software-reset` holds the pre-removal identities, configuration and Secrets.
+Protected controller state is
+`/home/jskrzypek/.local/state/openshift-confidential-containers/cherry/trial/`.
+It retains ownership records, historical inputs, kubeconfigs and evidence.
+Do not replay retired addresses, host keys, boot tokens or provider IDs for a new allocation.
+The API tunnel is closed; controller `coco-cherry-budget` timer/service remain masked
+and inactive. Do not rearm the retired trial's timer.
 
 ### Template map
 
-ansible/roles/render_configs/templates/agent-config.yaml.j2 -> helper /opt/install/cluster-assets/agent-config.yaml and protected PXE assets
+ansible/roles/render_configs/templates/agent-config.yaml.j2 -> former helper /opt/install/cluster-assets/agent-config.yaml
 
-infra/latitude/bastion/cloud-init/mirror-registry.yaml -> helper bootstrap and /usr/local/sbin/ensure-mirror-tls.sh
+ansible/roles/bastion_isolation/templates/bastion-isolation.sh.j2 -> former helper /usr/local/sbin/coco-bastion-isolation.sh
 
-ansible/roles/bastion_isolation/templates/bastion-isolation.sh.j2 -> helper /usr/local/sbin/coco-bastion-isolation.sh
+scripts/apply-trustee.sh -> Operator-owned Trustee configuration and checked serving pods
 
-ansible/roles/dns_ntp/templates/dnsmasq-cluster.conf.j2 -> helper /etc/dnsmasq.d/cluster.conf
-
-scripts/apply-trustee.sh and scripts/lib/trustee_config.py -> TrusteeConfig-owned KbsConfig/ConfigMaps and checked serving pods
-
-scripts/run-proofs.py -> protected deployment/proofs/<new-run>/results.json and recovery/denial evidence
-
-Private trial/control.py -> owned provider objects and protected trial/state.json
+scripts/run-proofs.py -> protected deployment/proofs/<run>/results.json and recovery evidence
 
 ### Re-run
 
-There is no live rig to rerun. A future trial requires new authorized allocations, fresh ownership/IP/NIC/host-key checks and new external inputs; do not replay the retired `rig.json`, kubeconfigs or boot tokens. Check provider ownership, costs and automatic-retirement state first. The supplied-rig installation sequence is in [Cherry validation](../../cherry-validation.md): prepare, fresh artifacts, private-link qualification, explicit fresh-install, then verify. The accepted installation completed; boot publication is closed. Do not issue another provider rebuild to rerun a proof or verify the existing cluster. An interrupted accepted request resumes through `--mode resume-install` with unchanged inputs and its accepted journal. Changed installs require deliberate new inputs and the documented reinstall gate. Cherry provisioning is not implemented by the Latitude Terraform modules.
+A future trial needs new authorized allocations, budget, pinned access, actual
+hardware/NIC/disk facts and fresh external inputs. Provision Cherry manually,
+complete the [firmware gate](../../amd-firmware-preflight.md), then follow
+[Cherry setup](../../cherry-validation.md) and [the quickstart](../../current-quickstart.md).
+Cherry provisioning is not implemented by the Latitude Terraform modules.
 
-BIOS setup is an accepted manual prerequisite. Saved values are SMEE Enabled, full-memory SNP/RMP Coverage Enabled, IOMMU Enabled, SEV-SNP Support Enabled and SEV-ES ASID Space Limit 100. SVM/SEV were already Enabled. No firmware flash, defaults reset, interleaving or boot-order change was performed. The Redfish BIOS endpoint requires a licence and rejected reads; the included console was used. Repeat the host SNP gate after any reinstall, firmware change or Kata rollout.
+The tested node was EPYC 9124 / H13SST-G / BIOS 3.7 with UEFI. Manual console setup
+enabled SMEE, full-memory RMP, IOMMU and SNP, with SEV-ES ASID limit 100.
+Recheck saved settings and running SNP after changes; these values are not a
+universal recipe for other boards.
 
-For a future allocated rig, create fresh protected environment inputs before running maintained entry points. The retired environment scripts are evidence only. The validated lab deliberately used `TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1`, co-located HTTP, plus the vendor restrictive EAR resource policy. `deployment/rvps-reviewed.json` contains the independently computed non-GPU launch and current typed hardware TCB values with a 30-day expiry. `deployment/enforcing-resource-policy.rego` is the vendor policy. Both policy/reference files and explicit `KBS_RESOURCE_NAMES` are required when publishing this enforcement. Missing one file was tested to stop without changing ConfigMap versions. Permissive's default resource policy alone cannot prove initdata/RVPS enforcement.
-
-Reference generation ran on the connected helper with Python 3.12.14 and an external virtual environment. The exact reviewed runtime command line includes `agent.launch_process_timeout=6`, absent from coco-tools 0.5.1's default. Pass it as one `VERITAS_KERNEL_CMDLINE` argument. The independent result matched the verified SNP quote. Do not copy an observed launch hash into the approved set without calculating it from the selected artifacts. Add actual approved hardware TCB records separately. The generator's unused SHA-384 initdata record was omitted; this workflow binds the declared SHA-256 bytes through the CPU extension.
-
-For proofs, select `NS=coco-workloads`, `TRUSTEE_NS=trustee-operator-system`, `COCO_DISPOSABLE_TEST=1` and `PROOF_NODE=sno-coco-node`. Both namespaces are explicitly marked disposable. Derive `VCEK_SECRET_NAME` from the selected KbsConfig's current cache entry for this worker before the endorsement test. Run `scripts/test-rung.sh <case>` or `all`; each run acquires the Trustee namespace lock and uses new workloads. Do not run another shared-policy mutation while the lock is held. The combined run uses a 90-second negative observation window and excludes encryption.
-
-The detached software-repeat driver is helper `/opt/coco-state/repro-loop/driver.sh`, completed as `coco-software-repro-v4.service`. It verifies the exact cluster/source, removes the five selected Operators and their operands with disposable-scope guards, waits for the platform baseline, reinstalls through `apply-sno.sh`, recollects the installed-worker VCEK, configures Trustee, repeats all five CPU proofs and checks guest isolation with its failure calibration. Existing OpenShift, mirrors and physical allocations remain. Poll `repro-status.json`, `SPRINT_STATUS.md`, `driver-v4.log` and the current phase log in that protected directory. Each phase stops on failure; only a complete run emits `ITER2_DONE=PASS`. The successful retained unit uses `RemainAfterExit`; verify `SubState=exited` and `ExecMainStatus=0` along with its complete PASS status. Do not start another driver or policy mutation during an active run. The helper `bin/oc` wrapper supplies an external `--cache-dir`, preventing background-client caches from making the source checkout dirty.
+The lab used co-located `TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1` with the vendor
+restrictive EAR resource policy. Recalculate launch references from selected artifacts
+and the exact command line, add approved hardware TCB values and bind initdata separately.
+[Trustee setup](../../trustee-current.md) describes the required order.
 
 ### Verify and recover
 
-Verified October 8, 2026: EPYC 9124, H13SST-G, BIOS 3.7 built January 23, 2026, UEFI, SNP API 1.58 build 2. Raw Ubuntu/snphost 0.7.0, Agent-live RHCOS, installed RHCOS and post-Kata gates passed. Installed RHCOS is 9.6.20260914-0, kernel 5.14.0-570.141.1.el9_6.x86_64, with `/dev/sev`, `sev_snp=Y` and initialized RMP `0x93700000–0xa3cfffff`. Verified guest TCB is bootloader 12, microcode 88, SNP 28, TEE 0. The archived lower-case VCEK bundle was re-collected on installed RHCOS; an uppercase raw-Ubuntu copy is preserved outside the active bundle, without weakening seed validation.
+[Validation results](../../validation/README.md) link the platform, five CPU proofs,
+clean software repeat and retirement receipts. Hardware SNP, exact OCP/Operator/runtime
+identities, private-service controls and host/pod/guest isolation passed before retirement.
+The repeat recreated CoCo software on the existing platform; it did not reinstall
+OpenShift or allocate a second infrastructure set.
 
-Installer completed at 18:14:28 UTC. Exact OCP payload is `sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850`. Before software removal, all 34 core Operators were Available with none Progressing/Degraded; master MCP had one Ready machine and no degradation. All five selected CSVs succeeded: OSC 1.13.1, Trustee 1.2.1, NFD 4.20.0-202609201357, cert-manager 1.20.1, Gatekeeper 3.21.1. `kata-cc` used `kata-snp`. Those identities and health checks were reconfirmed at the end of the clean software repeat. A protected boot observation at `software-repeat-boot-network.log` recorded a 60-second `NetworkManager-wait-online` failure, followed by native CRI-O/kubelet/API recovery; no networking change was made. The observed extra USB interface had only a link-local IPv6 address and no public route. The cause of the wait timeout is not established. OSC and Trustee must-gather images ran successfully through the mirrors; protected diagnostics are under `deployment/diagnostics`.
+The verified final archive is `pre-retirement/helper-recovery.tar.gz` under the
+protected controller state: 612 files, 1,462,862,564 bytes. SHA-256:
+`737f005aa23ae5a46901e4ccf0d0a4381d59477d7525fa668e8a654a7358a1df`.
+`pre-retirement/recovery-verification.json` records member/hash checks.
 
-Offline SNP resource release, measured-initdata rejection, launch-reference removal, guest signature enforcement and corrupted-VCEK rejection each passed positive, attributable negative and recovery controls. [The CPU receipt](../../validation/cherry-cpu-proofs-2026-10-08.json) records source/implementation/report hashes. Protected case directories retain recovery data and negative evidence. The runner correlates generic guest errors with a specific Trustee denial beside a request from that guest IP since pod creation. A bare startup failure or unrelated peer error cannot pass.
+It preserves original signed/unsigned/signature artifacts, signing identity/password,
+mirror CA/server keys and configuration, final Trustee/platform snapshots, installer
+assets and complete proof/attempt evidence. It excludes registry image cache, Quay DB,
+Python environment and a full etcd restore proof. Never publish it. Restore only into
+protected storage and reconstruct the excluded services deliberately.
 
-Trustee's Operator replaces the complete pod template and removes `oc rollout restart` annotations. The maintained refresh command verifies deployment/ReplicaSet ownership, replaces identified pods with UID preconditions and normal termination, then verifies new Ready UIDs, mounted ConfigMap versions and collateral/resources. Never infer resource refresh from an event or fixed sleep. On failed restoration, inspect protected recovery files and the namespace lock before removing it; do not overwrite a concurrent change or clear finalizers blindly.
-
-Installed-node, ordinary-pod and confidential-guest fresh TCP/DNS probes passed, with trusted private registry TLS/401 as positive control. A guest calibration substituted the reachable private registry and correctly exited 42. Guest `ExecProcessRequest` was denied; startup exit probes retained that agent restriction. Guest stdout was empty; no cause is asserted. Temporary diagnostic/retained incomplete-control pods were preserved locally and removed. Provider iPXE fetched tokenized public boot artifacts before the private-only Agent OS; fully private delivery from power-on is not established. The published copies/nginx stanza were removed and port 8080 was closed; protected source assets and kubeconfig remain.
-
-The update graph is unreachable as expected in this isolated cluster. CVO's next-minor `Upgradeable=False` is the 4.21 Sigstore-release-signature AdminAck gate, not a failing current payload. No acknowledgement or upgrade was performed. Existing customer upgrade, separate Trustee trust domain, encrypted images, Intel and GPU validation are outside these demonstrated results. The clean software repeat passed for CoCo installation on the existing platform. It does not establish a second clean OpenShift or physical-infrastructure installation. [Its receipt](../../validation/cherry-software-repeat-2026-10-08.json) records exact source/driver/report hashes, new namespace identities, fresh proofs and network controls.
-
-Automatic retirement was disabled at owner direction on October 8. Fresh read-back at 20:12 UTC confirmed the controller user timer/service remain masked and inactive and private deadline fields are unset. These are controller user units, not helper system units. The former 19:38:10 UTC deadline is not armed; do not restore it without a new explicit instruction. At 20:11 EDT on October 8, both `pricing.unit_price` values were €0.53/hour before extras (€1.06/hour total). `price_total` is accrued billing: node €4.73 plus helper €4.20 at that check; it is not an hourly-rate increase or a final invoice. The overall $150 cap governed the trial; no provider-side cap existed. The cited prices are historical observations, not a final invoice. Both task servers are now absent.
-
-Manual retirement completed through `control.py cleanup-plan` and `cleanup` after the verified recovery archive and ready-for-review PR. Fresh GETs independently confirmed all four objects absent. No recharge settings or pre-existing project changes were made. Keep the masked controller retirement units inactive; retained scripts and provider IDs are historical evidence, not instructions to operate another tenant's released address.
+For an interrupted future proof, inspect recovery files, object versions and the
+namespace lock before modifying them. Verify restored configuration is served by new
+Ready pods before recovery. Do not clear locks/finalizers blindly or reuse a historical PASS.
 
 ## Decision log
 
 ### Decisions
 
-Keep one hourly Genoa node and its mirror/admin helper as the test environment. Real private VLAN/LACP networking resolved the prerequisite that failed at Latitude. Connected preparation and firmware/BMC boot delivery are recorded separately from private Agent/RHCOS/pod/guest operation. The manual BIOS step is accepted; no engineering engagement or BIOS API licence is required for the demonstrated path.
+Cherry's private VLAN/LACP path met the requirement that failed at Latitude. Manual
+BIOS setup was accepted. Connected preparation and public tokenized iPXE delivery were
+separate from private Agent/RHCOS/pod/guest operation; fully private power-on boot remains unproved.
 
-Repairs were driven by live failures: curl/curl-minimal conflict, separate firewalld operations, malformed mirror-registry 2.0.12 leaf with strict-valid rotation preserving CA/key, helper API mapping before installer wait, bundle-lookup OLM provenance, accepted-request resume, Operator-safe Trustee refresh, exact runtime command line and attributable policy/signature error matching. The reset also exposed a jq 1.6 reserved-variable incompatibility in the disposable guard, corrected in source before any deletion. An initial background `oc` cache in the checkout caused the next preflight to stop before deletion; it was preserved externally and the external cache wrapper was added. Those two preflight failures and the third-attempt seeding failure are recorded in protected helper state. The seeder now forbids the actual repository and Homelab roots rather than every sibling of an external checkout. Default customer configuration remains Restricted. The trial's stronger EAR enforcement within Permissive is explicitly scoped to disposable lab validation.
-
-Unused untracked scripts/tests for the discontinued public-routed workaround were backed up with hashes under protected `abandoned-public-experiment` state and removed from the checkout. Historical evidence remains labelled. Public receipts contain identifiers, hashes and outcomes; credential-bearing assets/logs remain protected.
+Live repairs addressed mirror TLS/bootstrap, API DNS, OLM bundle provenance,
+accepted-request resume, Trustee pod refresh, exact launch calculation and attributable
+denials. The passing software repeat needed no manual repairs. Customer Restricted HTTPS,
+a separate Trustee trust domain, customer upgrades and encryption remain unvalidated.
 
 ### How to drive it
 
-The clean software reset/reinstall and fresh combined proof run passed with cleanup/lock release verified. The owner stopped further experiments and authorized retirement; all four task provider objects are absent. Protected complete evidence is under controller `software-repeat` and helper `repro-loop`; failed attempt three remains archived separately. Preserve this verified baseline before an encryption experiment. The validated CRI-O was `1.33.13-7.rhaos4.20.gitd6a41c4.el9`; it does not contain the newly merged VM image-service implementation. Published 5.0 candidates through rc.5 predate that merge. The accepted October 6 nightly is a possible lead, but its payload registry rejected unauthenticated access and its CRI-O/OSC/RHCOS compatibility is unqualified. Image/key-provider preparation and a matching runtime inventory remain before an end-to-end encryption proof. No 5.0 install, cluster upgrade or runtime replacement has occurred. For a future failed run, inspect its phase log and actual cluster state, fix the maintained source with an appropriate check, push and pin that exact revision on the helper, then start a new bounded driver. Keep each failed attempt and its evidence. Do not bypass a finalizer, resume a stale PASS or declare convergence from manual repairs. A software reset is distinct from a second fresh OCP/physical-infrastructure installation; report that limit. Recheck host SNP, exact CSV/runtime identities, configuration serving and isolation after reinstallation. Update this complete runbook and the dated receipts at material checkpoints. Keep the draft PR's validation and remaining acceptance aligned with the live state; do not present the lab as a customer upgrade or full separate-trust-domain deployment.
+The owner ended experiments and authorized retirement after backups, checks and PR
+creation. Preserve the protected archive and dated receipts. There is no remaining
+cloud action for this rig. For a new run, start with fresh identity/network/collateral
+inputs, record each checkpoint and failed attempt, and update this state record only
+when new infrastructure is actually verified. Documentation edits do not change the
+October 8 verification date.

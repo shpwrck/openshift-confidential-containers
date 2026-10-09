@@ -1,69 +1,68 @@
-# Capability status and next experiments
+# Capability tests
 
-> **Trial retired:** the two Cherry servers, task project and SSH key were deleted after validation. [The retirement receipt](validation/cherry-retirement-2026-10-08.json) records verified absence and protected backups. A future run needs fresh allocations and inputs.
+All five AMD CPU tests passed allow/deny/recovery on October 8, 2026, and again
+after a clean CoCo software reinstall. See [validation results](validation/README.md)
+for exact versions, receipts and limits. The rig is retired; new runs need new inputs.
 
-Checked **2026-10-08**. The target is AMD CPU confidential containers with OSC 1.13.1 / Trustee 1.2.1 and OCP 4.20.39. Exact catalog/bundle/helper identities are recorded in [the release manifest](../install/release-manifest.json); unresolved entries block deployment. Latitude was retired after its private-network qualification failed. The completed [Cherry trial](cherry-validation.md) has a healthy exact-payload cluster, all five selected Operators and a converged `kata-snp` runtime. Offline SNP attestation and each of the five CPU allow/deny/recovery tests passed individually, including actual launch-reference enforcement and guest signature verification through mirror-registry 2.0.12. Host, ordinary pod and confidential guest isolation passed. All five passed again in one fresh combined run; the clean CoCo software reset/reinstall and fresh proofs also passed; customer upgrade/trust-domain validation remain pending. See [the CPU evidence record](validation/cherry-cpu-proofs-2026-10-08.json).
+## What each test proves
 
-## What changed enough to retest
-
-**AMD remains the target.** The work focuses on repeatable SNP installation, VCEK refresh after firmware/TCB changes, strict Trustee setup and the higher workload rungs. Intel and GPU validation are outside this effort.
-
-**Trustee lifecycle:** the current automation follows TrusteeConfig ownership and waits for generated configuration migration before editing it. It checks that the serving pods actually mount the expected configuration versions. Bootstrap and resource release are separate steps. See [the Trustee workflow](trustee-current.md) and [the downstream 1.2.1 source](https://github.com/openshift/trustee/tree/v1.2.1).
-
-**Encrypted images:** [OpenShift CRI-O PR 82](https://github.com/openshift/cri-o/pull/82) merged into `release-5.0` on October 5, 2026, at 08:20 UTC (merge commit `694532bb98d6a89cf999cd2969ccda8d4db561d1`). This is progress on the host-side encrypted-layer pull blocker. It does not establish inclusion in OCP 4.20.39 or supported encrypted-image operation with OSC 1.13. The published [5.0.0-rc.5 release record](https://mirror.openshift.com/pub/openshift-v4/amd64/clients/ocp/5.0.0-rc.5/release.txt) is dated October 1 and also predates that merge. A post-merge 5.0 nightly is a lead, but its payload requires registry authentication and its CRI-O/OSC compatibility has not been qualified. The experiment needs a payload containing the change, its actual RHCOS/CRI-O build identity, compatible OSC operands and the allow/deny/recovery result. The default release inventory remains on the supported CPU matrix.
-
-Signed-image verification is not presented as a newly introduced OSC 1.13 capability. The registry qualification checks whether signatures can be retrieved in a format the shipped guest image verifier understands; the selected Cherry registry passed that check. A host-side `cosign verify` pass is necessary preparation, not the guest proof. On October 5, mirror-registry 2.0.12 accepted the signed control and host verification rejected the same-content unsigned control for a signature-specific reason. The October 8 Cherry guest control ran the signed image and rejected the same-content unsigned repository by its `sigstoreSigned` rule; recovery passed. This qualifies the tested registry and payload, without treating signing as a newly introduced 1.13 feature.
-
-The [Miami restoration check](validation/latitude-mia2-signed-controls-2026-10-05.json)
-also passed an unchanged rerun using the preserved image/signature digests and public key.
-It did not transfer the private signing key or re-sign either control.
-
-## Keep the measurements distinct
-
-| Proof | Change made for the negative | What a pass establishes |
+| Test | Negative control | Meaning of a pass |
 |---|---|---|
-| `rung-kbs` | Use an ordinary runtime without the in-guest data hub | This workload's secret gate cannot complete outside the confidential runtime; it is not a remote KBS authentication attack test |
-| `rung-initdata` | Append a harmless comment to the exact measured initdata bytes | The approved configuration digest matters; installed CPU/TCB checks are preserved |
-| `rung-rvps` | Remove only `snp_launch_measurement` from the actual Trustee 1.2 RVPS map | Guest launch reference enforcement, independently of initdata binding |
-| `rung-signed` | Use a distinct accessible unsigned/wrong-key image digest under the same guest policy | The guest rejects that image because of its signature |
-| `air-gap` | Replace the selected worker's VCEK with a different certificate | Endorsement verification matters; it does not prove the network is disconnected |
-| `rung-encrypted` | Change measured initdata while keeping the encrypted digest and key identifier | For a compatible experimental payload, key release depends on attested configuration |
+| `rung-kbs` | Ordinary runtime without the guest data hub | This workload's secret gate cannot complete outside the confidential runtime; not a remote KBS authentication attack test |
+| `rung-initdata` | Append a harmless comment to measured initdata | Changed bytes are rejected while CPU/TCB checks remain active |
+| `rung-rvps` | Remove only `snp_launch_measurement` from Trustee's actual RVPS map | Launch-reference enforcement, independent of initdata binding |
+| `rung-signed` | Pull a distinct accessible unsigned repository under the same key requirement | Guest signature enforcement; transport/authentication failures are inconclusive |
+| `air-gap` | Substitute the selected worker's VCEK certificate | Endorsement enforcement; network isolation is tested separately |
+| `rung-encrypted` | Change initdata while retaining the encrypted image/key identifier | Experimental key-release test; **not validated** on the selected payload |
 
-The old July result described measured-initdata enforcement under rung B. Preserve it as historical initdata evidence; do not relabel it as a completed launch-measurement RVPS proof.
+Each proof uses a new positive workload, one controlled change, an attributable
+denial, exact restoration and a successful recovery workload. Skips and unrelated
+startup errors never count as passes.
 
-## Run a proof
+## Prepare the environment
 
-First complete [Trustee setup](trustee-current.md), artifact resolution, workload namespace creation and [the current rig preflights](cherry-validation.md). Use only a disposable environment. The runner requires both its workload namespace and Trustee namespace to have `coco.openshift.io/disposable=true`, plus `COCO_DISPOSABLE_TEST=1`. It checks exact worker payload and successful OSC/Trustee CSVs before mutation. Co-location requires explicit lab selection; HTTP and omitted agent policy additionally require `TRUSTEE_PROFILE=Permissive`. Neither is evidence of customer isolation.
+Complete [Trustee setup](trustee-current.md) and [guest registry setup](guest-images.md).
+Choose the actual contexts and namespaces. The runner requires:
+
+- `COCO_DISPOSABLE_TEST=1` and explicit worker/Trustee contexts.
+- Workload and Trustee namespaces labeled `coco.openshift.io/disposable=true`,
+  deliberately marked only after confirming they belong to this test environment.
+- The exact selected worker payload and successful OSC/Trustee CSVs.
+- Endpoint/mirror trust and the reviewed complete agent policy. Customer mode uses
+  Restricted HTTPS; co-location requires explicit `TRUSTEE_LAB=1`.
+
+For the validated co-located lab, set the same worker/Trustee context,
+`TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1`, the actual HTTP endpoint and mirror CA.
+Publish the enforcing resource policy/references before testing. Customer mode
+instead uses the following inputs (replace all example names/paths):
 
 ```bash
-export WORKER_CONTEXT=validation-workers
-export TRUSTEE_CONTEXT=validation-trustee
-export COCO_DISPOSABLE_TEST=1
-export TRUSTEE_PROFILE=Restricted
+export WORKER_CONTEXT=validation-workers TRUSTEE_CONTEXT=validation-trustee
+export COCO_DISPOSABLE_TEST=1 TRUSTEE_PROFILE=Restricted TRUSTEE_LAB=0
 export KBS_URL=https://trustee.example.internal
 export KBS_CA_FILE="$COCO_STATE_DIR/trustee-ca.pem"
 export MIRROR_CA="$COCO_STATE_DIR/mirror-ca.pem"
 export AGENT_POLICY_FILE="$COCO_STATE_DIR/approved-agent-policy.rego"
-make test-rung WHICH=rung-kbs
-make test-rung WHICH=rung-initdata
-make test-rung WHICH=rung-rvps
+make proof-plan
+make test-rung WHICH=rung-kbs WORKLOAD_NS=coco-validation NS=trustee-operator-system
 ```
 
-Names above are examples; select the actual contexts and endpoint. Namespace marking is a deliberate setup step after verifying the target, not something the proof runner adds automatically. The agent policy must be reviewed for the workload, including blocking administrator `ExecProcessRequest`; merely providing a file does not prove its restrictions. Initdata is visible in the pod annotation: put resource references and public certificates there, not secrets. `INITDATA_FILE` reuses approved bytes exactly and checks that its image policy URI matches the selected rung. `EMIT_INITDATA=1` prints the bytes used by the renderer for measurement generation.
+`WORKLOAD_NS` selects the workloads; Make's `NS` selects Trustee. For the SNP
+endorsement test, also set `PROOF_NODE` and that worker's `VCEK_SECRET_NAME`.
+Derive the Secret from the actual KbsConfig cache entry; do not select a random peer.
 
-For rung C, run on a controller or bastion with `jq`, Skopeo and Cosign installed; mirror
-preparation does not install the signing tools. The Miami host check used Skopeo 1.22.2 and
-checksum-verified Cosign 2.6.5. See the [Skopeo setup instructions](release-resolution.md)
-and record the selected Cosign binary's version and checksum before use.
+`INITDATA_FILE` reuses approved bytes and checks the rung's image-policy URI.
+`EMIT_INITDATA=1` prints the renderer's bytes for reference preparation. Initdata is
+visible in the pod annotation: include public certificates and resource references,
+never secret values. The agent policy must permit the workload while denying
+administrator `ExecProcessRequest`.
 
-Create the destination namespace and give the pushing account access before building. With
-the default Quay paths, create organization `coco` and private repositories `rung-b` and
-`rung-b-unsigned`. A missing namespace can return an authorization error even with valid
-credentials; inspect it through authenticated registry administration rather than disabling
-TLS or treating the error as signature rejection.
+## Signed images
 
-Supply the mirror's trusted CA/authentication and `COSIGN_PASSWORD` through the external
-credential workflow, then build the signed and unsigned controls without encryption tooling:
+Signing is not a newly introduced OSC 1.13 feature. The October 8 test establishes
+guest enforcement with the selected payload and mirror-registry 2.0.12.
+Prepare Skopeo, Cosign, registry CA/authentication and the external signing-key
+password. Create writable destination repositories before building.
 
 ```bash
 make build-rung-signed
@@ -71,50 +70,45 @@ source "$COCO_STATE_DIR/rung-image-artifacts/rung-signed.env"
 make verify-rung-signed-signature
 ```
 
-Configure registry trust for both tools. The tested bastion used its own
-`REGISTRY_AUTH_FILE=/root/.docker/config.json`, `DOCKER_CONFIG=/root/.docker` and
-`SSL_CERT_FILE=/opt/mirror/ca/rootCA.pem`. For host verification it additionally set
-`COSIGN_VERIFY_ARGS="--insecure-ignore-tlog=true --registry-cacert=/opt/mirror/ca/rootCA.pem --trusted-root=/path/to/prepared-trusted-root.json"`.
-The public trusted-root file was prepared on the connected controller and transferred with
-its recorded checksum. Explicit trust metadata avoids implicit TUF initialization; this host
-check did not measure network isolation. Use the paths and credentials for the current mirror.
+Use the selected `ARTIFACT_DIR` if overridden. The env file supplies immutable
+signed/unsigned images, public key and manifest. Configure the guest image policy
+and signing-key resources through [Trustee setup](trustee-current.md), then run
+`make test-rung WHICH=rung-signed`.
 
-If `ARTIFACT_DIR` was overridden, source `rung-signed.env` from that directory instead. The
-file selects the immutable image references, public key and artifact manifest. On the
-explicitly selected Permissive lab, `make deploy-trustee` seeds and attaches the image policy
-and public key, then waits for refreshed serving pods. For Restricted Trustee, provision
-those resources through the approved procedure in [the Trustee guide](trustee-current.md).
-Run `make test-rung WHICH=rung-signed` after configuration converges.
-
-The generated lab policy requires the same signing key for both configured repositories,
-using separate exact repository scopes by default. Custom `RUNG_SIGNED_POLICY_FILE` policies
-must also cover both controls with the same signature requirement; a default-reject rule
-outside the signed repository does not prove signature verification. The unsigned repository
-must be readable and free of a signature from the selected key. A DNS, TLS, registry
-authentication or invalid-image failure is inconclusive.
-
-For the SNP endorsement test also supply `PROOF_NODE` and `VCEK_SECRET_NAME` for that worker. Record the selected host, firmware/TCB, VCEK source identity and certificate hash. A matching HWID alone is not enough to reuse a certificate after a TCB change.
-
-Rung D is excluded from `all`. `EXPERIMENTAL_ENCRYPTED_IMAGES=1` permits its explicit experimental path only after the selected release inventory is resolved. It does not override release compatibility checks or make the current 4.20 payload support encrypted pulls. A future candidate experiment needs a separately reviewed matching inventory and workload/key policy. It must never be reported as a supported-product success from a skipped or failed test.
+Both repositories must be readable and covered by the **same signing-key requirement**.
+The unsigned repository must lack a signature from that key. Host `cosign verify`
+is preparation; only the guest test proves guest enforcement. Stage Cosign trust
+metadata for disconnected verification rather than relying on an implicit TUF fetch.
 
 ## Evidence and recovery
 
-The runner writes a new protected directory under `$COCO_STATE_DIR/proofs/` for every attempt. `results.json` records source and implementation hashes, release inventory hash, cluster/operator identities, policy hashes, pod UIDs, control results and denial evidence hashes. Exit codes are `0` PASS, `1` FAIL and `3` INCOMPLETE. Proofs are never resumed from old PASS records.
+Each attempt writes protected `$COCO_STATE_DIR/proofs/<new-run>/results.json`,
+recovery files and denial evidence. The report records source/release identities,
+policy hashes, pod UIDs and control results. Exit codes: `0` PASS, `1` FAIL, `3` INCOMPLETE.
 
-A namespace lock prevents concurrent runners changing the same Trustee. Policy edits use UID/resourceVersion checks, preserve unrelated fields and retain protected recovery copies. The denied pod is removed before restoring policy so it cannot retry after the resource becomes available. Restored configuration must be served by new Ready Trustee pods before the recovery control. A cleanup/restoration failure cannot produce PASS. Do not remove a stale lock until the interrupted run's resources and recovery files have been inspected.
+A Trustee namespace lock prevents concurrent mutations. Changes check UID/resourceVersion
+and preserve unrelated fields. The denied pod is deleted before restoration; restored
+configuration must be served by new Ready pods before recovery. If restoration fails,
+inspect the recovery files and actual resources before removing the lock. A generic
+guest error requires a specific, matching Trustee denial from that guest/time window.
 
-When the guest reports only a generic CDH error, the runner also checks protected
-Trustee logs fetched since the negative pod's creation. It requires a specific
-verifier or resource-policy failure beside the denied request from that pod's IP.
-An unrelated client's error or an HTTP denial by itself cannot complete the proof.
-Raw negative evidence remains outside the checkout; public receipts record hashes.
+`make test-rung WHICH=all` runs all five CPU tests with fresh controls and excludes
+encryption. It does **not** reinstall CoCo; [maintenance](maintenance.md) covers
+that separate operation. Test host, ordinary-pod and guest isolation independently,
+with working private-service controls and a deliberately failing probe calibration.
 
-## Demos worth preparing
+## Encryption and demos
 
-1. A repeatable installation checkpoint: run verification twice, showing that the second pass neither reinstalls the node nor regenerates unchanged assets.
-2. Secret release followed by measured-initdata rejection and recovery, with no secret value printed in logs.
-3. Actual RVPS reference removal and restoration, clearly distinguished from the initdata demo.
-4. Signed versus unsigned guest pulls through the qualified registry, showing the actual signature-specific rejection.
-5. SNP endorsement rejection and recovery with the selected worker pinned, alongside independent evidence that AMD KDS egress is blocked.
+The tested OCP 4.20.39 CRI-O lacks the VM image-service change merged in
+[OpenShift CRI-O PR 82](https://github.com/openshift/cri-o/pull/82) for `release-5.0`
+on October 5. That merge does not establish encrypted-image support in OSC 1.13
+on this payload. A compatible payload, matching OSC inventory and key-provider
+preparation are still needed before an end-to-end test.
 
-Keep encrypted images as an engineering experiment until a compatible payload and hardware evidence exist. Omit GPU material for this customer.
+`EXPERIMENTAL_ENCRYPTED_IMAGES=1` permits an explicitly selected experiment;
+it does not bypass compatibility checks or add encryption to `all`.
+
+Useful demos on a future rig are initdata tamper/recovery, actual RVPS reference
+removal/recovery, and signed versus unsigned guest pulls. Show their attributable
+denials and evidence reports. Do not present an encryption or customer-upgrade demo
+as validated by the completed lab.
