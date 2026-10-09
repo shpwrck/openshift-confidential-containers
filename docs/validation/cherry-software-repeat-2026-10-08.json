@@ -1,0 +1,399 @@
+{
+  "status": "CLEAN_SOFTWARE_REPEAT_PASSED",
+  "scope": "Existing OCP, mirror and physical allocations retained; clean CoCo Operator/operand reset and rebuild",
+  "sourceRevision": "d5915bda5c9e43edfcfa599b837a22a9cbe30e1f",
+  "startedAt": "2026-10-08T20:23:07.890138+00:00",
+  "finishedAt": "2026-10-08T21:00:26.803604+00:00",
+  "clusterID": "c43b52c5-9734-408e-b823-7404da86f58e",
+  "release": {
+    "image": "quay.io/openshift-release-dev/ocp-release@sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850",
+    "url": "https://access.redhat.com/errata/RHSA-2026:68541",
+    "version": "4.20.39"
+  },
+  "driverSHA256": "4b5b509c40308877f1cf92764814ea3403db2e4c43da52e79a4b80632fd3e692",
+  "driverLogSHA256": "9f6d2b6b0b98ff3d218df5f9f4a712241bb8ddba68cfba4ed5f11fe006e11c22",
+  "repeatReportSHA256": "c50a369c6747215f2d11c3c04036d0f1ddeb2b08ddc7cf0e2201b70cc927db1e",
+  "evidenceArchiveSHA256": "80d2da6f96a3f621f7fb060b98220a201e271532dd100192479aa2e6dc6d9386",
+  "namespaceReplacement": {
+    "trustee-operator-system": {
+      "beforeUID": "6affcc90-2bc3-42a7-be2f-c0173d5192e9",
+      "afterUID": "7c3bdaef-b43f-49ec-8987-dd00b7ba14d3",
+      "afterCreatedAt": "2026-10-08T20:32:57Z"
+    },
+    "openshift-sandboxed-containers-operator": {
+      "beforeUID": "0e5675c1-0d1e-4feb-9fa7-3617472ac4c1",
+      "afterUID": "dc9c85f3-01c8-4879-82cd-ebcfee7c2b44",
+      "afterCreatedAt": "2026-10-08T20:32:57Z"
+    },
+    "openshift-nfd": {
+      "beforeUID": "1dd52071-30fe-4b27-8f36-ad96d2f08453",
+      "afterUID": "0f226971-b84d-4893-9a30-248890d5c87f",
+      "afterCreatedAt": "2026-10-08T20:32:57Z"
+    },
+    "cert-manager-operator": {
+      "beforeUID": "102e2562-50b8-499b-9812-0aa34216e6d2",
+      "afterUID": "d27fa539-97bf-48ce-ab2e-40a45e2fb7b1",
+      "afterCreatedAt": "2026-10-08T20:32:57Z"
+    },
+    "cert-manager": {
+      "beforeUID": "8ffa9105-f7af-4978-b01d-0bcff8624711",
+      "afterUID": "edfee013-f789-4ec4-9008-596c5cc4df17",
+      "afterCreatedAt": "2026-10-08T20:33:30Z"
+    },
+    "openshift-gatekeeper-system": {
+      "beforeUID": "64a89172-fe60-485c-9bf5-17333c6b85fb",
+      "afterUID": "bd0a3715-2442-4816-9519-08a270e3bc57",
+      "afterCreatedAt": "2026-10-08T20:32:59Z"
+    }
+  },
+  "proofs": {
+    "cases": [
+      {
+        "case": "rung-kbs",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "54e5142f48752ea02b60f0e04675e5884c88e6b21f04d2c8f369826c763a3ce0",
+            "negative": "ba6eae08f0927cc3b52b964183e5b63ab5fc824ddfc06ed4b9a11fe95ec8a693",
+            "recovery": "7d50638c85ee903c92704f1e2f8cda2de03cc98e088d6b52c118393e723ec7e0"
+          },
+          "negative": {
+            "corpusSHA256": "bfdba37a8abf51d2d7015e05ae33f9fa345a01bf44a308e2870eac2c96c7ac49",
+            "podUID": "3e912d8b-f4bd-4a5a-88d1-f1cc3d1f5bde",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-ef30e70763-control": {
+              "node": "sno-coco-node",
+              "uid": "cef9e3e2-9946-4cb9-bb19-82b820841782"
+            },
+            "proof-ef30e70763-negative": {
+              "uid": "3e912d8b-f4bd-4a5a-88d1-f1cc3d1f5bde"
+            },
+            "proof-ef30e70763-recovery": {
+              "node": "sno-coco-node",
+              "uid": "6fc13680-ebbf-4c82-80d4-f325db9b626f"
+            }
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T20:49:33.280775+00:00",
+        "startedAt": "2026-10-08T20:47:26.900883+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "rung-initdata",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "binding-input": "b7d9e3d58e0157ae6f1d3b9ba4cefe2b069ecb2972538ac1d16750b5be975c7a",
+            "control": "b865cf2d326fa3c71404ce3533560507bc9a2f7a0d3673e92e78ee92a447ccbd",
+            "negative": "3bf4af634c8b09fa84c12af59393d21d93b70917eadcf1968ce995d95066d1be",
+            "recovery": "fb9f5b78c68f059f2522070ccfd412c28d47096386b3fdf434e7fcef894dabf9"
+          },
+          "negative": {
+            "corpusSHA256": "f0e667f9b3dba7216f84352c4e886fa9ec90c96d24f05416b176d8403079cc83",
+            "podUID": "27f13a8a-3682-4afc-855b-a39372419d33",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-3a352140d3-control": {
+              "node": "sno-coco-node",
+              "uid": "9d604fea-dcba-4c7f-a5aa-f0697222c342"
+            },
+            "proof-3a352140d3-negative": {
+              "uid": "27f13a8a-3682-4afc-855b-a39372419d33"
+            },
+            "proof-3a352140d3-recovery": {
+              "node": "sno-coco-node",
+              "uid": "d5b6592e-c044-4343-8aeb-fb1d3491538e"
+            }
+          },
+          "restoration": "PASS",
+          "serverDenial": {
+            "corpusSHA256": "805e65c1b23de2e1bb87e47121543082ad35c782b879245bce2ac9a42ff4c0f5",
+            "peer": "10.128.0.83",
+            "servingPodUID": "b9403855-b26b-4b50-8e8b-a58c2d691193",
+            "sinceTime": "2026-10-08T20:49:56Z"
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T20:51:57.087011+00:00",
+        "startedAt": "2026-10-08T20:49:33.281327+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "rung-rvps",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "db64a56b4bb8d1141fae368fe7bfe4e6a9e6f36eae64aa188dd4a2bbc0d9e6e9",
+            "negative": "adda37f0bf8901593188bda1f2a4e2fcc4d62e5b9041c50ae997ab38e70de44d",
+            "recovery": "1883b5bb9df569f56b5c9cbd057ae3829901d85c5aac1762967c6f465c8d6969"
+          },
+          "negative": {
+            "corpusSHA256": "d1cc2c21c5d10ec6b0f30b603be9f24a2ea330055547eafcb075e7eb33aed357",
+            "podUID": "708820f7-d841-4074-a462-d82b6f7b46b5",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-b173fcfb0e-control": {
+              "node": "sno-coco-node",
+              "uid": "bec31bfb-adfc-4b90-bd1e-556e21e8ce11"
+            },
+            "proof-b173fcfb0e-negative": {
+              "uid": "708820f7-d841-4074-a462-d82b6f7b46b5"
+            },
+            "proof-b173fcfb0e-recovery": {
+              "node": "sno-coco-node",
+              "uid": "9a81c979-ff21-4a23-bb6b-bd2fe1b155bc"
+            }
+          },
+          "referenceChange": {
+            "beforeSHA256": "faf930a2ca8f3f208a3560f506fcbe3d6174a1311802676a50594ab5576ed552",
+            "removedName": "snp_launch_measurement"
+          },
+          "restoration": "PASS",
+          "serverDenial": {
+            "corpusSHA256": "125237d6e021c0857982d0e3333693ac300d8c479ca3572d26503217a84d0c21",
+            "peer": "10.128.0.94",
+            "servingPodUID": "7ce0067c-b40e-4a91-83a2-f3c930cc833f",
+            "sinceTime": "2026-10-08T20:52:19Z"
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T20:54:20.802924+00:00",
+        "startedAt": "2026-10-08T20:51:57.087727+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "rung-signed",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "9f8e82014a3618f294e9bd7a2eddf20b2768b036098e9a7015edb66c60692732",
+            "negative": "d31c9158bf8ffdfaa75ffbd6e8cab8db1932de77a43594592a882f3f704b4f9b",
+            "recovery": "7a0baf1696e9d13d9517cc1de31f00f615b1767d427357b0bccf8804cd414d50"
+          },
+          "negative": {
+            "corpusSHA256": "89ff60df0ecd782d370d0ca9565fa5b4da4f9b3bf9f94913934a9e8ff2398340",
+            "podUID": "6396a304-7423-426a-9159-c0dddd7f656a",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-2e49560dd2-control": {
+              "node": "sno-coco-node",
+              "uid": "7f741621-e17b-4e82-bd65-1be765e80ded"
+            },
+            "proof-2e49560dd2-negative": {
+              "uid": "6396a304-7423-426a-9159-c0dddd7f656a"
+            },
+            "proof-2e49560dd2-recovery": {
+              "node": "sno-coco-node",
+              "uid": "8fef2d43-f132-4102-95da-7d41e0d2d9e6"
+            }
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T20:56:33.053620+00:00",
+        "startedAt": "2026-10-08T20:54:20.803734+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "air-gap",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "9d44d63230b58103c4a2acdda87d542ec38c958a0edb3a1f230998b3c4f701b4",
+            "negative": "1169953c6d60707d74070eddef4006984fc08385008dec0d764ee7359cfa7d61",
+            "recovery": "f21ec466420aabf6963ec93d04bfde819a46f296babc4f9abc88b22fd874d46b"
+          },
+          "negative": {
+            "corpusSHA256": "5dc38177556287addc872a24f9c949f938c7862d7edb51f1f17f6eecad3f9dfd",
+            "podUID": "e43ed1f6-6897-41a9-88b0-a3635e55269a",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-4cbcc44d20-control": {
+              "node": "sno-coco-node",
+              "uid": "365b0f86-c07a-423d-b6a0-4baf9803c6e5"
+            },
+            "proof-4cbcc44d20-negative": {
+              "uid": "e43ed1f6-6897-41a9-88b0-a3635e55269a"
+            },
+            "proof-4cbcc44d20-recovery": {
+              "node": "sno-coco-node",
+              "uid": "be206b47-c28c-4294-8ed8-edb8cfa98045"
+            }
+          },
+          "restoration": "PASS",
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T20:58:59.189085+00:00",
+        "startedAt": "2026-10-08T20:56:33.054369+00:00",
+        "status": "PASS"
+      }
+    ],
+    "finishedAt": "2026-10-08T21:00:00.177971+00:00",
+    "implementationSHA256": "5cd5fe5d7f713858dbd89f65a1590e178de7ee2d8e4060cf918b80a0028b62ec",
+    "notExecuted": [],
+    "provenance": {
+      "clusterID": "c43b52c5-9734-408e-b823-7404da86f58e",
+      "configMaps": {
+        "trustee-config-attestation-policy-cpu": {
+          "dataSHA256": "213716af1becb6b514a914647cc2c62ae1ca64191b1f5952d720a8278091e960",
+          "resourceVersion": "79906",
+          "uid": "73b7599a-c8c3-4c77-b3f9-5f3fee877d0a"
+        },
+        "trustee-config-attestation-policy-gpu": {
+          "dataSHA256": "6160987ebf1a70ad4a5865692c9e9bb4cbed911f5015b6cf39b18c0bcce188af",
+          "resourceVersion": "79907",
+          "uid": "e7377ebb-4fd9-419e-b3cf-c92f117b0cb1"
+        },
+        "trustee-config-kbs-config": {
+          "dataSHA256": "68f27766ffaa451b4023a3be11a1d6e1f86f1c655167fbced48efb0634aa01bb",
+          "resourceVersion": "79949",
+          "uid": "5a71648e-ecd2-4231-8529-fd8ebfcec3f2"
+        },
+        "trustee-config-resource-policy": {
+          "dataSHA256": "c25bd10530536f0ba20f3877f507466b3e47f44b4915bf3d0657e1bdfa7604d8",
+          "resourceVersion": "80105",
+          "uid": "d14760bb-635c-4939-b676-883a31662698"
+        },
+        "trustee-config-rvps-reference-values": {
+          "dataSHA256": "035439be8a1d7396c97fc3a9d95c0e29915c7dfdfd2ecf279854fd22f237e4cc",
+          "resourceVersion": "80076",
+          "uid": "ffbe5d3f-0896-4682-8ffd-ee0fe3e5cbbf"
+        }
+      },
+      "kbsConfigUID": "ef8d4894-23b6-4557-8fcf-9bc47864334e",
+      "operators": {
+        "osc": {
+          "csv": "sandboxed-containers-operator.v1.13.1",
+          "uid": "d578320c-0947-47fe-be5c-ead5c8840410",
+          "version": "1.13.1"
+        },
+        "trustee": {
+          "csv": "trustee-operator.v1.2.1",
+          "uid": "13808718-7415-40b7-a43a-5932db98099b",
+          "version": "1.2.1"
+        }
+      },
+      "release": {
+        "image": "quay.io/openshift-release-dev/ocp-release@sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850",
+        "url": "https://access.redhat.com/errata/RHSA-2026:68541",
+        "version": "4.20.39"
+      },
+      "runtimeHandler": "kata-snp",
+      "tee": "snp",
+      "trusteeConfigUID": "f9dc1c35-0b35-4b40-896a-b379b64dc435",
+      "trusteeContext": "cherry-validation",
+      "trusteeProfile": "Permissive",
+      "workerContext": "cherry-validation"
+    },
+    "releaseManifestSHA256": "9660509355a0997e905bcdbf3b553bf4984e8bbec86ddf19e0a27ddedcc474b4",
+    "schemaVersion": 1,
+    "sourceRevision": "d5915bda5c9e43edfcfa599b837a22a9cbe30e1f",
+    "startedAt": "2026-10-08T20:47:25.508871+00:00",
+    "status": "PASS"
+  },
+  "guestNetwork": {
+    "status": "PASS",
+    "results": [
+      {
+        "name": "isolation-guest-exit",
+        "uid": "71a9f7ba-a234-41e3-bfc0-81da4fc29cd3",
+        "exit": 0,
+        "expected": 0,
+        "commandSHA256": "17ef56fe703fc00bfcf90329a6508c9de9eaf4e15987615faae776e4655ef01c",
+        "status": "PASS"
+      },
+      {
+        "name": "isolation-guest-calibration",
+        "uid": "9f11b4ad-f3d5-4f12-adae-1d211a7deb89",
+        "exit": 42,
+        "expected": 42,
+        "commandSHA256": "d2508481e0a51de398569a20d4b7c41b568bb6a240b7ddc38c7eaa242d4e07e6",
+        "status": "PASS"
+      }
+    ]
+  },
+  "hostAndOrdinaryNetwork": {
+    "observedAt": "2026-10-09T00:10:24.140714+00:00",
+    "commandSHA256": "6905761f8d0f459a518cbbfe04fb08944f1ad2f715d06ba2f9f45efc1b59cebe",
+    "scope": "Fresh installed-node and ordinary-pod application probes after the CoCo software repeat; firmware boot transport excluded",
+    "host": {
+      "status": "PASS",
+      "exit": 0,
+      "stdoutSHA256": "4d6a6e1cfb8da253d208cfc957e085ab4f6afddbae2db93a4ae2c5f4984b97c2",
+      "stderrSHA256": "ab244a8793889e24d019838b72e239bc54cb8d9229f59f89b6b5679f3219410e"
+    },
+    "ordinaryPod": {
+      "name": "isolation-ordinary-repeat-f5a8c2cfdc",
+      "uid": "4f906883-a0b2-456d-9cf8-9e5cb4e5b838",
+      "node": "sno-coco-node",
+      "exit": 0,
+      "status": "PASS",
+      "logSHA256": "69f605ca65415c0ee78853f15f876f875063846fa1543f437aaec9b0ce7a9644"
+    },
+    "cleanup": "Verified ordinary probe deletion",
+    "status": "PASS"
+  },
+  "limits": [
+    "CoCo Operator/operand reset and reinstall on the existing OCP platform; not a second complete OpenShift/infrastructure installation.",
+    "Co-located Permissive HTTP lab with vendor EAR enforcement; customer upgrade and separate Restricted Trustee domain remain unvalidated.",
+    "Encrypted images excluded; an accessible compatible runtime build is still to be qualified.",
+    "A 60-second NetworkManager-wait-online failure was observed during a prior reboot, followed by native recovery; its cause is not established.",
+    "Owner-disabled automatic retirement remains disabled; overall $150 cap still applies."
+  ]
+}

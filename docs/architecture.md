@@ -1,6 +1,6 @@
 # Architecture and operational flow
 
-This is the current workflow for OSC 1.13 / Trustee 1.2. Follow [the quickstart](current-quickstart.md) and [release inventory](../install/release-manifest.json). The Cherry lab has passed the platform and individual CPU proofs; clean setup repeat remains pending. The separate customer trust domains below are design boundaries, not a deployment established by the co-located lab.
+This is the current workflow for OSC 1.13 / Trustee 1.2. Follow [the quickstart](current-quickstart.md) and [release inventory](../install/release-manifest.json). The Cherry lab has passed the platform and individual CPU proofs; a clean CoCo software reset/reinstall also passed with fresh combined proofs. The separate customer trust domains below are design boundaries, not a deployment established by the co-located lab.
 
 ## Components and trust domains
 

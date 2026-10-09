@@ -253,7 +253,14 @@
     ],
     "cleanup": "Verified all run pods deleted and namespace lock released"
   },
-  "cleanSetupRepeat": "PENDING",
+  "cleanSetupRepeat": {
+    "status": "PASS",
+    "scope": "Existing OCP, mirror and physical allocations retained; clean CoCo Operator/operand reset and rebuild",
+    "receipt": "cherry-software-repeat-2026-10-08.json",
+    "sourceRevision": "d5915bda5c9e43edfcfa599b837a22a9cbe30e1f",
+    "finishedAt": "2026-10-08T21:00:26.803604+00:00",
+    "repeatReportSHA256": "c50a369c6747215f2d11c3c04036d0f1ddeb2b08ddc7cf0e2201b70cc927db1e"
+  },
   "trusteeProfile": "Permissive, HTTP co-located lab with vendor EAR enforcement",
   "runtime": "kata-cc / kata-snp",
   "cases": {
@@ -417,7 +424,7 @@
     "scope": "Fresh application TCP/DNS probes with trusted private registry positive control; BIOS/BMC/iPXE delivery excluded"
   },
   "limits": [
-    "Platform and all five individual CPU proofs plus a fresh combined proof repeat passed. Clean setup repeat remains pending.",
+    "Platform and all five individual CPU proofs, a combined repeat, and a clean CoCo software reset/reinstall with fresh combined proofs passed; second full OCP/infrastructure installation is unproved.",
     "A co-located Permissive HTTP lab with enforcing appraisals does not establish a separate customer Trustee trust domain or an existing customer upgrade.",
     "Automatic retirement remains disabled at owner direction; monitor charges and retire exact owned resources manually within the overall $150 cap.",
     "Raw-host isolation rehearsal was rolled back; Agent-live, installed node, ordinary pod and confidential guest fresh probes passed.",

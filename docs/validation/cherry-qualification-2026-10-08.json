@@ -7,7 +7,7 @@
   "advertisedPlan": "amd-epyc-9124p",
   "prebuiltId": 850,
   "state": "allocated",
-  "status": "healthy-platform-and-five-cpu-proofs-repeated",
+  "status": "healthy-platform-and-clean-coco-software-repeat-passed",
   "rate": {
     "currency": "EUR",
     "unit": "Hours",
@@ -198,5 +198,11 @@
     "rigHourlyEstimateEUR": 1.06,
     "serverAccumulatedSubtotalEUR": 3.68,
     "limit": "price_total is accumulated billing; unit_price is the hourly rate. This is not a final invoice or an overall-provider spend total."
+  },
+  "softwareRepeat": {
+    "status": "PASS",
+    "receipt": "cherry-software-repeat-2026-10-08.json",
+    "sourceRevision": "d5915bda5c9e43edfcfa599b837a22a9cbe30e1f",
+    "finishedAt": "2026-10-08T21:00:26.803604+00:00"
   }
 }
