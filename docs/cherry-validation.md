@@ -12,13 +12,16 @@ the repository automates preparation and installation after the helper is ready.
   H13SST-G needed manual setup; its Redfish BIOS API required a licence.
 - A prepared TLS mirror registry on the helper. Red Hat documents RHEL as its supported
   host; the trial's AlmaLinux 9.8 helper was a compatibility test.
+  The shared [cloud-init bootstrap](../ansible/bootstrap/mirror-registry.yaml.j2) uses
+  Jinja inputs for the actual helper network, registry archive/checksum and SSH user;
+  render it with protected external values before uploading it to the provider.
 - Private DNS and NTP, no upstream DNS forwarding for the node, and no private-to-public
   forwarding through the helper. The helper may remain connected for staging content.
 - External credentials, pinned SSH access and environment inputs from the [quickstart](current-quickstart.md).
 
 Load the provider key through `CHERRY_SERVERS_API_KEY` without putting its value in
 shell history or the checkout. Select `infra_provider: cherry` and
-`network_profile: private-vlan`. Do not use `--plan-tf` or `--apply-tf`.
+`network_profile: private-vlan`. Allocation is separate from the repository installation wrapper.
 
 ## Network and identity inputs
 

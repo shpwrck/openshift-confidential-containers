@@ -205,7 +205,6 @@ import json,os,sys
 with open(os.environ['FIXTURE_CALLS'],'a') as f:
  f.write(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),'config':os.environ['ANSIBLE_CONFIG']})+'\\n')
 ''')
-        write_executable(self.bin / 'terraform', '#!/bin/sh\nexit 97\n')
         self.env.pop('ANSIBLE_CONFIG', None)
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify'])
         record = json.loads(self.log.read_text())
@@ -226,65 +225,28 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:
         out = self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify'], 1)
         self.assertIn('outside', out)
 
-    def test_wrapper_rejects_checkout_state_even_when_external_state_exists(self):
-        repo = self.base / 'wrapper-repo'
-        (repo / 'ansible').mkdir(parents=True)
-        (repo / 'scripts/lib').mkdir(parents=True)
-        module = repo / 'infra/latitude/bastion'
-        module.mkdir(parents=True)
-        shutil.copyfile(ROOT / 'ansible/up.sh', repo / 'ansible/up.sh')
-        (repo / 'scripts/lib/release.sh').write_text(
-            'load_release_defaults() { :; }\nrequire_resolved_release() { :; }\n')
-        checkout_state = module / 'terraform.tfstate'
-        external_state = Path(self.env['COCO_STATE_DIR']) / 'terraform/bastion/terraform.tfstate'
-        external_state.parent.mkdir(parents=True)
-        checkout_state.write_text('{"serial":2}')
-        external_state.write_text('{"serial":1}')
-        for tool in ('terraform', 'ansible-playbook'):
-            write_executable(self.bin / tool, '#!/bin/sh\necho unexpected >> "$FIXTURE_CALLS"\nexit 97\n')
-        for action in ('--plan-tf', '--apply-tf'):
-            with self.subTest(action=action):
-                out = self.run_cmd(['bash', str(repo / 'ansible/up.sh'), action], 2)
-                self.assertIn('reconcile', out)
-                self.assertFalse(self.log.exists())
-                self.assertEqual(checkout_state.read_text(), '{"serial":2}')
-                self.assertEqual(external_state.read_text(), '{"serial":1}')
+    def test_removed_provisioning_flags_fail_before_any_operation(self):
+        write_executable(self.bin / 'ansible-playbook', '#!/bin/sh\necho unexpected >> "$FIXTURE_CALLS"\nexit 97\n')
+        for mode in ('prepare', 'fresh-install', 'verify', 'resume-install'):
+            for flag in ('--plan-tf', '--apply-tf'):
+                with self.subTest(mode=mode, flag=flag):
+                    self.assertIn('removed', self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', mode, flag], 2))
+                    self.assertFalse(self.log.exists())
 
-    def test_wrapper_plan_never_applies_or_runs_ansible_and_fresh_closes_endpoint(self):
-        # A resolved release fixture isolates orchestration from registry credentials.
+    def test_wrapper_fresh_install_uses_supplied_inputs_and_closes_endpoint(self):
         repo = self.base / 'wrapper-repo'
         (repo / 'ansible').mkdir(parents=True)
         (repo / 'scripts/lib').mkdir(parents=True)
-        (repo / 'infra/latitude/bastion').mkdir(parents=True)
         shutil.copyfile(ROOT / 'ansible/up.sh', repo / 'ansible/up.sh')
-        (repo / 'scripts/lib/release.sh').write_text(
-            'load_release_defaults() { :; }\nrequire_resolved_release() { :; }\n')
-        write_executable(self.bin / 'terraform', '''#!/usr/bin/env python3
-import json,os,sys
-args=sys.argv[1:]
-with open(os.environ['FIXTURE_CALLS'],'a') as f:f.write(json.dumps({'tool':'terraform','args':args})+'\\n')
-if 'output' in args:
- print({'bastion_public_ipv4':'192.0.2.1','virtual_network_vid':'123','server_id':'sv_fixture'}[args[-1]])
-''')
-        write_executable(self.bin / 'ansible-playbook', '''#!/usr/bin/env python3
-import json,os,sys
-with open(os.environ['FIXTURE_CALLS'],'a') as f:f.write(json.dumps({'tool':'ansible','args':sys.argv[1:]})+'\\n')
-''')
-        script = str(repo / 'ansible/up.sh')
-        self.run_cmd(['bash', script, '--mode', 'fresh-install', '--plan-tf'])
-        calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        self.assertTrue(all(c['tool'] == 'terraform' for c in calls))
-        self.assertEqual(sum('plan' in c['args'] for c in calls), 2)
-        self.assertFalse(any('apply' in c['args'] for c in calls))
-        self.log.unlink()
-        self.run_cmd(['bash', script, '--mode', 'fresh-install', '--apply-tf'])
-        calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        plays = [c['args'] for c in calls if c['tool'] == 'ansible']
+        (repo / 'scripts/lib/release.sh').write_text('load_release_defaults() { :; }\nrequire_resolved_release() { :; }\n')
+        write_executable(self.bin / 'ansible-playbook', '#!' + shutil.which('python3') +
+            '\nimport json,os,sys\nwith open(os.environ["FIXTURE_CALLS"],"a") as f: print(json.dumps(sys.argv[1:]),file=f)\n')
+        self.run_cmd(['bash', str(repo / 'ansible/up.sh'), '--mode', 'fresh-install', '-e', 'rig=reviewed'])
+        plays = [json.loads(line) for line in self.log.read_text().splitlines()]
         self.assertEqual(len(plays), 3)
-        self.assertIn('bastion_ansible_host=192.0.2.1', plays[0])
-        self.assertIn('node_server_id=sv_fixture', plays[1])
-        self.assertIn('pxe-stop', plays[2])
-        self.assertEqual(sum('apply' in c['args'] for c in calls), 2)
+        self.assertEqual(plays[0], ['playbooks/site.yml', '--tags', 'bastion-prep', '-e', 'rig=reviewed'])
+        self.assertIn('install_mode=fresh', plays[1])
+        self.assertEqual(plays[2], ['playbooks/site.yml', '--tags', 'pxe-stop', '-e', 'rig=reviewed'])
 
     def ansible(self, task_file, variables, expected=0):
         if shutil.which('ansible-playbook') is None:
@@ -434,7 +396,7 @@ else:
         variables = self.pxe_variables()
         task = 'ansible/roles/pxe_serve/tasks/prepare.yml'
         self.ansible(task, variables)
-        journal = self.base / 'provider-requests/.coco-reinstall-sv_fixture.json'
+        journal = self.base / 'provider-requests/.coco-reinstall-123.json'
         journal.parent.mkdir()
         journal.write_text(json.dumps({'state': 'requested', 'identity': 'e' * 64}))
         original = journal.read_bytes()
@@ -451,7 +413,7 @@ else:
 
     def provider_fixture(self):
         requests = []
-        response = {'id': 'sv_fixture', 'post_status': 202}
+        response = {'id': 123, 'post_status': 202}
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
@@ -462,8 +424,9 @@ else:
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'data': {'id': response['id'],
-                    'attributes': {'hostname': 'fixture'}}}).encode())
+                self.wfile.write(json.dumps({'id': response['id'], 'hostname': 'allocated-node', 'project': {'id': 456},
+                    'ip_addresses': [{'type': 'primary-ip', 'address_family': 4, 'address': '192.0.2.11'},
+                                     {'type': 'private-ip', 'address_family': 4, 'address': '192.168.66.11'}]}).encode())
 
             def do_POST(self):
                 requests.append(('POST', self.path))
@@ -479,10 +442,10 @@ else:
         assets = self.base / 'assets'
         assets.mkdir()
         variables = dict(cluster_assets_dir=str(assets), install_identity='c' * 64,
-                         install_machine={'name': 'fixture', 'server_id': 'sv_fixture'},
+                         install_machine={'name': 'fixture', 'server_id': '123', 'provider_hostname': 'allocated-node', 'provider_project_id': '456'},
                          retry_reinstall=False, reinstall_existing=False,
-                         latitude_api_base='http://127.0.0.1:' + str(server.server_port),
-                         latitude_token='fixture-not-a-secret', ocp_version=VERSION,
+                         cherry_api_base='http://127.0.0.1:' + str(server.server_port),
+                         cherry_token='fixture-not-a-secret', ocp_version=VERSION,
                          ipxe_url='http://example.invalid/fixture.ipxe')
         return variables, requests, response
 
@@ -491,7 +454,7 @@ else:
         task = 'ansible/roles/install_drive/tasks/reinstall.yml'
         response['post_status'] = 500
         self.ansible(task, variables, 2)
-        record = self.base / 'provider-requests/.coco-reinstall-sv_fixture.json'
+        record = self.base / 'provider-requests/.coco-reinstall-123.json'
         self.assertEqual(json.loads(record.read_text())['state'], 'sending')
         self.assertIn('ambiguous', self.ansible(task, variables, 2))
         self.assertEqual(len(requests), 2, 'ambiguous action was retried automatically')
@@ -508,15 +471,15 @@ else:
 
     def test_reinstall_wrong_provider_identity_never_posts(self):
         variables, requests, response = self.provider_fixture()
-        response['id'] = 'sv_other'
+        response['id'] = 124
         self.assertIn('Provider identity does not match', self.ansible(
             'ansible/roles/install_drive/tasks/reinstall.yml', variables, 2))
-        self.assertEqual(requests, [('GET', '/servers/sv_fixture')])
-        self.assertFalse((self.base / 'provider-requests/.coco-reinstall-sv_fixture.json').exists())
+        self.assertEqual(requests, [('GET', '/servers/123')])
+        self.assertFalse((self.base / 'provider-requests/.coco-reinstall-123.json').exists())
 
     def test_verify_checks_actual_payload_without_provider_calls(self):
         variables = dict(install_mode='verify', install_trigger_reinstall=False,
-                         machines=[{'name': 'test-node', 'server_id': 'sv_fixture'}],
+                         machines=[{'name': 'test-node', 'server_id': '123'}],
                          ocp_release_image=PAYLOAD, ocp_version=VERSION,
                          cluster_assets_dir=str(self.base / 'assets'), mirror_workspace=str(self.base / 'workspace'),
                          tool_path=self.env['PATH'], clusterversion_poll_retries=1, clusterversion_poll_delay=0,

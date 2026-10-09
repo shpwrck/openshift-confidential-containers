@@ -1,13 +1,11 @@
 ---
 - name: Read the selected provider machine
   ansible.builtin.uri:
-    url: >-
-      {{ (cherry_api_base if infra_provider | default('latitude') == 'cherry' else latitude_api_base)
-         ~ '/servers/' ~ install_machine.server_id }}
+    url: "{{ cherry_api_base }}/servers/{{ install_machine.server_id }}"
     method: GET
     headers:
-      Authorization: "Bearer {{ cherry_token if infra_provider | default('latitude') == 'cherry' else latitude_token }}"
-      Accept: "{{ 'application/json' if infra_provider | default('latitude') == 'cherry' else 'application/vnd.api+json' }}"
+      Authorization: "Bearer {{ cherry_token }}"
+      Accept: "application/json"
     return_content: true
     follow_redirects: none
     status_code: 200
@@ -22,7 +20,7 @@
       - python3
       - "{{ playbook_dir }}/../../scripts/provider-identity.py"
       - --provider
-      - "{{ infra_provider | default('latitude') }}"
+      - "{{ infra_provider | default('cherry') }}"
       - --server-id
       - "{{ install_machine.server_id }}"
       - --hostname

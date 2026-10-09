@@ -4,14 +4,6 @@ import re
 
 
 def server_identity(kind, document, server_id, expected_hostname="", project_id=""):
-    if kind == "latitude":
-        data = document.get("data", {})
-        if data.get("id") != server_id:
-            raise ValueError("Provider server identity mismatch")
-        attrs = data.get("attributes", {})
-        return {"id": server_id, "hostname": attrs.get("hostname", ""),
-                "public_ipv4": attrs.get("primary_ipv4", ""),
-                "interfaces": attrs.get("interfaces", attrs.get("specs", {}).get("nics", []))}
     if kind != "cherry" or not re.fullmatch(r"[1-9][0-9]*", str(server_id)):
         raise ValueError("Unsupported provider or invalid server ID")
     if type(document.get("id")) is not int or str(document["id"]) != str(server_id):

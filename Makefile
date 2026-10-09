@@ -62,11 +62,9 @@ test: lint ## Alias for the complete hardware-free check suite
 fetch-cli-tools: ## Fetch checksum-verified CLIs for the selected OCP version
 	bash scripts/install-tools.sh
 
-.PHONY: bringup-sno-airgapped plan-latitude ansible-lint pxe-stop mirror-content
+.PHONY: bringup-sno-airgapped ansible-lint pxe-stop mirror-content
 bringup-sno-airgapped: ## Prepare by default; ARGS='--mode fresh-install ...' explicitly installs
 	bash ansible/up.sh $(ARGS)
-plan-latitude: ## Create Terraform plans only using external state and tfvars
-	bash ansible/up.sh --plan-tf $(ARGS)
 ansible-lint: ## Validate Ansible syntax and lint (requires development dependencies)
 	cd ansible && ANSIBLE_CONFIG="$(CURDIR)/ansible/ansible.cfg" ansible-lint
 	cd ansible && ANSIBLE_CONFIG="$(CURDIR)/ansible/ansible.cfg" ansible-playbook --syntax-check playbooks/site.yml
@@ -136,7 +134,7 @@ verify-rung-signed-signature: ## Check published image signatures before guest t
 verify-rung-encrypted-key-wrap: ## Check encrypted layers and key wrapping before guest testing
 	RUNG_ENCRYPTED_KEY_FILE="$(RUNG_ENCRYPTED_KEY_FILE)" bash scripts/verify-rung-encrypted-key-wrap.sh
 
-.PHONY: run-rung-kbs run-rung-signed run-rung-encrypted test-rung negative-test repro-loop proof-plan
+.PHONY: run-rung-kbs run-rung-signed run-rung-encrypted test-rung proof-plan
 run-rung-kbs: ## Render or create a secret-release workload (RENDER_ONLY=1 supported)
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" bash scripts/apply-rung-kbs.sh
 run-rung-signed: ## Render or create a signed workload (immutable image required)
@@ -147,9 +145,6 @@ proof-plan: ## List proof cases without cluster access
 	python3 scripts/run-proofs.py --list
 test-rung: ## Fresh allow/deny/restore/recovery proof; WHICH=all or a named case
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" python3 scripts/run-proofs.py "$(WHICH)"
-negative-test: test-rung ## Compatibility alias; a denial always includes positive/recovery controls
-repro-loop: ## Re-run current proof suite; never reuse historical PASS results
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" python3 scripts/run-proofs.py all
 
 .PHONY: uninstall-coco validate-coco-uninstalled
 uninstall-coco: ## Remove the explicitly selected disposable rig stack

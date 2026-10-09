@@ -8,7 +8,7 @@
     - name: Require a supported provider and explicit prepared machines
       ansible.builtin.assert:
         that:
-          - infra_provider in ['latitude', 'cherry']
+          - infra_provider == 'cherry'
           - machines | length > 0
         fail_msg: "Select the provider and prepared machines explicitly."
 

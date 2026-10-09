@@ -30,15 +30,10 @@ ansible/*.retry
 ansible/.vault-pass
 ansible/.ansible/
 
-# Terraform
-infra/**/.terraform/
-infra/**/terraform.tfvars
-infra/**/*.tfstate
-infra/**/*.tfstate.*
-infra/**/crash.log
-infra/**/.env
+# Secret-bearing local environment and state
 .env
-infra/latitude/IPMI-ACCESS.md
+*.tfstate
+*.tfstate.*
 
 # Local Python tooling
 __pycache__/

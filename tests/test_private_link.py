@@ -209,6 +209,20 @@ class DeviceBindingTests(unittest.TestCase):
 
 
 class PathTests(unittest.TestCase):
+    def test_removed_routed_options_fail_before_network_probes(self):
+        argv = ['--interface', 'eno2.2032', '--vid', '2032', '--node-ip', '192.168.66.11',
+                '--bastion-ip', '192.168.66.10', '--mirror-hostname', 'mirror.fixture.invalid',
+                '--ca-file', '/unused-fixture-ca.pem']
+        for option in (['--network-mode', 'public-routed-lab'], ['--gateway', '192.168.66.1'],
+                       ['--prefix-length', '31'], ['--expected-mac', '02:00:00:00:00:01']):
+            error = io.StringIO()
+            with self.subTest(option=option), patch.object(link, 'check_path') as probe, contextlib.redirect_stderr(error):
+                with self.assertRaises(SystemExit) as denied:
+                    link.main(argv + option)
+                self.assertEqual(denied.exception.code, 2)
+                self.assertIn('unrecognized arguments', error.getvalue())
+                probe.assert_not_called()
+
     def setUp(self):
         self.links = [{'ifname': 'eno2.2032', 'flags': ['UP'], 'operstate': 'UP',
                        'linkinfo': {'info_kind': 'vlan', 'info_data': {'id': 2032}}}]

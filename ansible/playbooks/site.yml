@@ -1,16 +1,6 @@
 ---
-# site.yml — orchestrates the disconnected SNO air-gapped bring-up in PHASE ORDER, faithfully
-# following docs/current-quickstart.md and scripts/*.sh.
-#
-# TF/Ansible boundary: Terraform OWNS the infrastructure (bastion, node, VLAN, firewall, netboot
-# OS=ipxe). Ansible OWNS the bastion host config + the OpenShift install. `make up` interleaves
-# the two (TF apply bastion -> ansible bastion prep -> TF apply node -> ansible discover+install).
-# This playbook covers ONLY the Ansible halves; run it after the matching TF apply (see Makefile
-# `up` target / ansible/README.md). Tags let you run a single phase: --tags egress,mirror etc.
-#
-# Firmware preflight happens between bastion preparation and installation. The acknowledgement
-# covers the actual node identity, firmware, UEFI boot path and raw-host SNP checks; it is not
-# an automated hardware test. See docs/amd-firmware-preflight.md before acknowledging.
+# Prepare supplied private-network infrastructure, then explicitly install and verify.
+# Complete docs/amd-firmware-preflight.md before acknowledging the BIOS gate.
 
 # Validate the controller's release inputs before any selected preparation/install writes.
 # Cleanup stays available even when the BOM is unresolved. Verify mode reads cluster state only.
@@ -19,8 +9,15 @@
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
-  tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp, isolation, render, pxe, drive, install, api-resolver]
+  tags: [bastion-prep, tools, mirror, dns, dns-ntp, isolation, render, pxe, drive, install, api-resolver]
   tasks:
+    - name: Require the supported provider and private network
+      ansible.builtin.assert:
+        that:
+          - infra_provider == 'cherry'
+          - network_profile == 'private-vlan'
+        fail_msg: "Only supplied Cherry rigs on private-vlan are supported."
+
     - name: Validate the effective Ansible release and profile inputs
       ansible.builtin.command:
         argv:
@@ -54,33 +51,26 @@
       when: (install_mode | default('fresh')) != 'verify'
 
 # =====================================================================================
-# PHASE A — Bastion preparation (egress hardening -> tools -> mirror push -> dns/ntp).
-# Run AFTER `terraform apply` of the bastion module, BEFORE the node is provisioned.
+# PHASE A — Bastion preparation (tools -> mirror push -> dns/ntp).
+# Start with an allocated helper whose mirror bootstrap has completed.
 # =====================================================================================
-- name: "Phase A — bastion preparation (egress, tools, mirror, dns/ntp)"
+- name: "Phase A — bastion preparation (tools, mirror, dns/ntp)"
   hosts: bastions
   # A new server can be reported as running before SSH accepts connections.
   # Automatic setup runs before pre_tasks, so gather only after the wait below.
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
-  # Gate the whole phase on the bastion's first-boot mirror bootstrap (#71). `terraform apply`
-  # returns as soon as Latitude reports the server `on`, but cloud-init still has to dnf-install
-  # packages, pull the ~GB mirror-registry tarball and install quay. mirror_tools consumes
-  # {{ mirror_ca_path }} and {{ mirror_password_path }}, which cloud-init writes at the very END
-  # of that chain, one line before it stamps MIRROR_READY. Prior cycles never hit this because
-  # they reused an already-bootstrapped bastion; it bites every from-zero rebuild.
-  # These are pre_tasks, not a role, so they run BEFORE bastion_egress — which otherwise fights
-  # cloud-init for the dnf lock and rewrites the default route while the tarball is still in flight.
+  # Wait for SSH and the protected mirror readiness marker before using registry inputs.
   pre_tasks:
     - name: Wait for the bastion to accept SSH (fresh cloud-init boot)
       ansible.builtin.wait_for_connection:
         timeout: "{{ bastion_ssh_wait_timeout | default(900) }}"
-      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
 
     - name: Gather bastion facts after SSH is ready
       ansible.builtin.setup:
-      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
 
     - name: Wait for the first-boot mirror bootstrap to settle
       ansible.builtin.shell: |
@@ -98,7 +88,7 @@
       retries: "{{ mirror_bootstrap_retries | default(160) }}"
       delay: "{{ mirror_bootstrap_delay | default(15) }}"
       until: mirror_bootstrap_state.stdout != 'PENDING'
-      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
 
     - name: Fail closed if the mirror bootstrap did not succeed
       ansible.builtin.assert:
@@ -110,11 +100,8 @@
           cloud-init does NOT re-run on its own — inspect /var/log/mirror-bootstrap.log on the
           bastion, then re-run /usr/local/bin/bootstrap-mirror.sh before retrying this phase.
         success_msg: "mirror bootstrap READY — safe to prep the bastion"
-      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
   roles:
-    - role: bastion_egress   # observed provider CDN workaround, before mirror traffic when enabled
-      tags: [egress, bastion-prep]
-      when: bastion_egress_enabled | default(true) | bool
     - role: mirror_tools     # tools to /usr/local/bin, trust CA, nmstate, merged docker config
       tags: [tools, bastion-prep]
     - role: mirror_push      # fix #2 — oc-mirror v2 push with resume-on-retry
@@ -186,10 +173,10 @@
       when: not (skip_bios_pause | default(false) | bool)
 
 # =====================================================================================
-# PHASE B — Discover node MACs from the Latitude API (fix #4). Run AFTER `terraform apply`
-# of the node module (the server must exist). Saves MAC bindings in external state.
+# PHASE B — Verify allocated Cherry identity and NICs through pinned SSH.
+# Save only current MAC bindings in external state.
 # =====================================================================================
-- name: "Phase B — discover node interface MACs (Latitude API)"
+- name: "Phase B — discover Cherry node interface MACs"
   ansible.builtin.import_playbook: discover.yml
   tags: [discover, install]
 

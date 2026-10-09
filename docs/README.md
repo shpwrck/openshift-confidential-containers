@@ -20,4 +20,4 @@ Start with the [quickstart](current-quickstart.md). The
 | Find trial backups and retirement details | [Cherry leave-behind](runbooks/cherry-qualification/README.md) |
 
 Component references: [Ansible](../ansible/README.md), [installer artifacts](../install/README.md),
-[GitOps](../gitops/README.md), and [Latitude Terraform](../infra/latitude/README.md).
+and [GitOps](../gitops/README.md).

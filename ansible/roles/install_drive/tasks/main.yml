@@ -1,6 +1,6 @@
 ---
 # install_drive — hard-won fixes #5 + #9.
-# 1. (Re)trigger the netboot via the Latitude reinstall API (NOT a power reboot — a reboot boots
+# 1. (Re)trigger the netboot via the Cherry rebuild API (NOT a power reboot — a reboot boots
 #    the stale local disk; you must reinstall to re-netboot).
 # 2. openshift-install agent wait-for install-complete; a bootstrap-complete timeout is NON-fatal.
 # 3. ALSO poll `oc get clusterversion` until Available=True / Progressing=False.
@@ -20,10 +20,8 @@
 - name: Validate each provider machine ID
   ansible.builtin.assert:
     that:
-      - infra_provider | default('latitude') in ['latitude', 'cherry']
-      - >-
-        item.server_id is match('^[1-9][0-9]*$') if infra_provider | default('latitude') == 'cherry'
-        else item.server_id is match('^sv_[A-Za-z0-9]+$')
+      - infra_provider | default('cherry') == 'cherry'
+      - item.server_id is match('^[1-9][0-9]*$')
     fail_msg: "Expected an explicit selected-provider server ID for {{ item.name }}."
   loop: "{{ machines }}"
   loop_control:
@@ -62,7 +60,7 @@
     marker: "# {mark} ANSIBLE coco cluster records ({{ cluster_name }})"
     block: |
       {% for m in machines if m.role == 'master' %}
-      {% set cluster_host_ip = node_public_ipv4 if network_profile | default('private-vlan') == 'public-routed-lab' else m.vlan_ip %}
+      {% set cluster_host_ip = m.vlan_ip %}
       {{ cluster_host_ip }} api.{{ cluster_name }}.{{ base_domain }}
       {{ cluster_host_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
       {{ cluster_host_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}

@@ -1,5 +1,4 @@
 ---
-# mirror_tools — translates scripts/bastion-mirror-setup.sh.
 # Installs pinned oc/kubectl/openshift-install/oc-mirror to /usr/local/bin, trusts the mirror CA,
 # installs nmstate (needed before `agent create pxe-files`, fix #7), and builds the merged
 # /root/.docker/config.json (RH pull-secret + mirror creds). Idempotent.

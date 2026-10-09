@@ -1,11 +1,10 @@
 ---
-# mirror_push — translates scripts/bastion-mirror-push.sh (hard-won fix #2).
 #
 # oc-mirror v2 push to the local mirror registry. The v2 workspace is CACHEABLE so each retry
 # resumes, but oc-mirror aborts the whole run on the first failed blob — so we wrap it in a
 # retry loop (retries/delay). MUST `unset REGISTRY_AUTH_FILE` (v2 embeds a distribution registry
 # that hijacks REGISTRY_* -> panic). Runs as root (reads /root/.docker/config.json). Run AFTER
-# bastion_egress so the IPv6 blackhole / MTU fixes are in effect.
+# the helper network and registry bootstrap have passed their checks.
 
 - name: Stage the imageset-config on the bastion
   ansible.builtin.copy:

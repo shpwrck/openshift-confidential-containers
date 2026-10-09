@@ -42,11 +42,10 @@ make proof-plan     # list tests without cluster access
 | `ansible/` | Bastion preparation, explicit installation and verification |
 | `gitops/` | Worker and Trustee manifests |
 | `scripts/` | Setup, artifact preparation and proof runner |
-| `infra/latitude/` | Latitude Terraform modules; private networking failed qualification |
 | `tests/` | Hardware-free regression tests |
 | `docs/` | Operating guides and dated validation receipts |
 
-Keep credentials, keys, kubeconfigs, Terraform state and recovery files outside
+Keep credentials, keys, kubeconfigs, generated state and recovery files outside
 this checkout and Homelab. The default state directory is
 `$HOME/.local/state/openshift-confidential-containers`.
 See [contributor setup](docs/contributing.md) for local checks.

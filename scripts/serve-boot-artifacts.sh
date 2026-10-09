@@ -177,6 +177,6 @@ fi
 echo "OK: initrd NOT reachable at the guessable root (HTTP $ROOTCODE)"
 
 echo
-echo "Boot artifacts published under the tokenized path. Feed Latitude this iPXE URL:"
+echo "Boot artifacts published under the tokenized path. Use this iPXE URL for the selected rebuild:"
 echo "  http://<bastion_public_ipv4>:$PORT/${PREFIX:+$PREFIX/}agent.x86_64.ipxe"
 printf 'AFTER the node has booted, CLOSE the endpoint: %q stop %q\n' "$0" "$ART_DIR"

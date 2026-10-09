@@ -31,9 +31,7 @@ ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
   ansible/playbooks/site.yml --tags pxe-stop -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-Confirm the old endpoint is unreachable without printing its token. The experimental
-`public-routed-lab` profile is not a disconnected workaround; fresh reinstall in
-that mode is blocked. Use the qualified private-network path.
+Confirm the old endpoint is unreachable without printing its token. Only the qualified private-network path is supported.
 
 ## A confidential workload will not start
 

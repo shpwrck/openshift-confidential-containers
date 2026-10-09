@@ -36,17 +36,3 @@ jobs:
       - name: Run required offline checks
         shell: bash
         run: bash scripts/lint.sh
-  terraform:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: '1.15.7'
-      - name: Format and validate without provider credentials
-        run: |
-          terraform fmt -check -recursive infra
-          for module in infra/latitude/bastion infra/latitude; do
-            terraform -chdir="$module" init -backend=false -input=false
-            terraform -chdir="$module" validate
-          done

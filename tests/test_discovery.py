@@ -23,69 +23,53 @@ spec.loader.exec_module(module)
 
 
 def machine(**values):
-    return dict(name='sno-node', server_id='sv_fixture', parent_if='eno2',
+    return dict(name='sno-node', server_id='123', parent_if='eno2',
                 external_if='eno1', parent_mac='', external_mac='',
                 root_device='/dev/sda', vlan_ip='192.0.2.11', role='master', **values)
 
 
-def response(server_id='sv_fixture', internal='02:00:00:00:00:01', external='02:00:00:00:00:02'):
-    return {'data': {'id': server_id, 'attributes': {'interfaces': [
-        {'role': 'internal', 'mac_address': internal},
-        {'role': 'external', 'mac_address': external},
-    ]}}}
+def cached_bindings(machines):
+    return {'version': 1, 'bindings': [dict(name=m['name'], server_id=m['server_id'],
+        parent_mac='02:00:00:00:00:01', external_mac='02:00:00:00:00:02' if m.get('external_if') else '')
+        for m in machines]}
+
+
+def response(server_id=123):
+    return {'id': server_id, 'hostname': 'allocated-node', 'project': {'id': 456}, 'ip_addresses': [
+        {'type': 'primary-ip', 'address_family': 4, 'address': '198.51.100.11'},
+        {'type': 'private-ip', 'address_family': 4, 'address': '192.0.2.11'}]}
 
 
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.machines = [machine()]
-        self.servers = [response()]
 
     def rejected(self, text, operation):
         with self.assertRaisesRegex(module.InvalidDiscovery, text):
             operation()
 
     def test_cache_stores_only_identity_and_macs(self):
-        cache = module.capture(self.machines, self.servers)
+        cache = cached_bindings(self.machines)
         self.assertEqual(set(cache['bindings'][0]), {'name', 'server_id', 'parent_mac', 'external_mac'})
         self.assertEqual(module.merge(self.machines, cache)[0]['parent_mac'], '02:00:00:00:00:01')
 
-    def test_response_count_must_match_exactly(self):
-        for servers in ([], self.servers * 2):
-            self.rejected('count', lambda: module.capture(self.machines, servers))
-
-    def test_missing_wrong_and_duplicate_server_identity_fail(self):
-        for server_id in (None, 'sv_wrong'):
-            self.rejected('identit', lambda: module.capture(self.machines, [response(server_id=server_id)]))
-        second = dict(machine(), name='node-two', server_id='sv_second')
-        self.rejected('duplicate', lambda: module.capture([machine(), second], self.servers * 2))
-
     def test_machine_identity_must_be_unique_and_real(self):
         self.rejected('unique', lambda: module.check_machines(self.machines * 2))
-        for bad_id in ('', 'REPLACE_WITH_LATITUDE_SERVER_ID', '../servers'):
+        for bad_id in ('', 'REPLACE_WITH_CHERRY_SERVER_ID', '../servers'):
             self.rejected('server_id', lambda: module.check_machines([dict(machine(), server_id=bad_id)]))
 
     def test_malformed_zero_multicast_and_duplicate_macs_fail(self):
         for bad in ('', '00:00:00:00:00:00', 'ff:ff:ff:ff:ff:ff', '01:00:00:00:00:01', 'not-a-mac'):
-            self.rejected('MAC', lambda: module.capture(self.machines, [response(internal=bad)]))
-        self.rejected('unique', lambda: module.capture(self.machines, [response(external='02:00:00:00:00:01')]))
-
-    def test_duplicate_role_is_ambiguous_even_when_macs_equal(self):
-        self.servers[0]['data']['attributes']['interfaces'].append(
-            {'role': 'internal', 'mac_address': '02:00:00:00:00:01'})
-        self.rejected('exactly one internal', lambda: module.capture(self.machines, self.servers))
+            self.rejected('MAC', lambda: module.mac(bad))
+        duplicate = dict(machine(), parent_mac='02:00:00:00:00:01', external_mac='02:00:00:00:00:01')
+        self.rejected('unique', lambda: module.merge([duplicate]))
 
     def test_missing_configured_public_nic_fails(self):
-        self.servers[0]['data']['attributes']['interfaces'].pop()
-        self.rejected('external-role', lambda: module.capture(self.machines, self.servers))
         manual = dict(machine(), parent_mac='02:00:00:00:00:01')
         self.rejected('Configured public NIC', lambda: module.merge([manual]))
 
-    def test_api_public_mac_requires_current_interface_name(self):
-        self.machines[0]['external_if'] = ''
-        self.rejected('no external_if', lambda: module.capture(self.machines, self.servers))
-
     def test_cached_public_mac_cannot_be_omitted_by_clearing_interface_name(self):
-        cache = module.capture(self.machines, self.servers)
+        cache = cached_bindings(self.machines)
         self.machines[0]['external_if'] = ''
         self.rejected('no external_if', lambda: module.merge(self.machines, cache))
 
@@ -100,33 +84,22 @@ class DiscoveryTests(unittest.TestCase):
         manual['external_mac'] = ''
         self.assertEqual(module.merge([manual]), [manual])
 
-    def test_unconfigured_public_nic_can_be_absent(self):
-        self.machines[0]['external_if'] = ''
-        self.servers[0]['data']['attributes']['interfaces'].pop()
-        cache = module.capture(self.machines, self.servers)
-        self.assertEqual(module.merge(self.machines, cache)[0]['external_mac'], '')
-
-    def test_specs_fallback_and_case_normalization(self):
-        interfaces = response(internal='0A:00:00:00:00:AA')['data']['attributes']['interfaces']
-        fallback = {'data': {'id': 'sv_fixture', 'attributes': {'specs': {'nics': interfaces}}}}
-        self.assertEqual(module.capture(self.machines, [fallback])['bindings'][0]['parent_mac'], '0a:00:00:00:00:aa')
-
     def test_duplicate_macs_across_different_servers_fail(self):
-        second = dict(machine(), name='node-two', server_id='sv_second')
-        self.rejected('unique', lambda: module.capture([machine(), second], [response(), response(server_id='sv_second')]))
+        second = dict(machine(), name='node-two', server_id='124')
+        self.rejected('unique', lambda: module.merge([machine(), second], cached_bindings([machine(), second])))
 
     def test_changed_name_or_server_rejects_stale_cache(self):
-        cache = module.capture(self.machines, self.servers)
-        for field, value in (('server_id', 'sv_replaced'), ('name', 'renamed-node')):
+        cache = cached_bindings(self.machines)
+        for field, value in (('server_id', '125'), ('name', 'renamed-node')):
             self.rejected('different machines', lambda: module.merge([dict(machine(), **{field: value})], cache))
 
     def test_cache_cannot_supply_disk_or_network_settings(self):
-        cache = module.capture(self.machines, self.servers)
+        cache = cached_bindings(self.machines)
         cache['bindings'][0]['root_device'] = '/dev/old-disk'
         self.rejected('only server identity', lambda: module.merge(self.machines, cache))
 
     def test_current_disk_network_and_nic_names_are_preserved(self):
-        cache = module.capture(self.machines, self.servers)
+        cache = cached_bindings(self.machines)
         current = dict(machine(), root_device='/dev/new-disk', vlan_ip='192.0.2.99',
                        parent_if='private0', external_if='public0')
         merged = module.merge([current], cache)[0]
@@ -137,16 +110,15 @@ class DiscoveryTests(unittest.TestCase):
     def test_explicit_macs_work_without_cache_and_win_over_cached_values(self):
         explicit = dict(machine(), parent_mac='02:00:00:00:01:01', external_mac='02:00:00:00:01:02')
         self.assertEqual(module.merge([explicit]), [explicit])
-        cache = module.capture(self.machines, self.servers)
+        cache = cached_bindings(self.machines)
         self.assertEqual(module.merge([explicit], cache), [explicit])
-        self.rejected('disagrees', lambda: module.capture([explicit], self.servers))
 
     def test_begin_validates_inputs_before_invalidating_cache(self):
         with tempfile.TemporaryDirectory() as directory:
             env = dict(os.environ, COCO_STATE_DIR=directory)
             with patch.dict(os.environ, COCO_STATE_DIR=directory):
                 path = module.cache_path()
-                module.write_cache(path, module.capture(self.machines, self.servers))
+                module.write_cache(path, cached_bindings(self.machines))
             for machines, expected, exists in (([], 1, True), (self.machines, 0, False)):
                 result = subprocess.run([sys.executable, str(SCRIPT), 'begin'],
                                         input=json.dumps({'machines': machines}), env=env,
@@ -157,7 +129,7 @@ class DiscoveryTests(unittest.TestCase):
     def test_external_cache_write_is_atomic_private_and_idempotent(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, COCO_STATE_DIR=directory):
             path = module.cache_path()
-            cache = module.capture(self.machines, self.servers)
+            cache = cached_bindings(self.machines)
             self.assertTrue(module.write_cache(path, cache))
             self.assertFalse(module.write_cache(path, cache))
             self.assertEqual(json.loads(path.read_text()), cache)
@@ -182,6 +154,8 @@ class DiscoveryAnsibleTests(unittest.TestCase):
     def run_play(self, tasks, extra=None, expected=0):
         # Only the helper's location is adjusted; the tasks and Jinja data flow are production code.
         encoded = yaml.safe_dump(tasks).replace('{{ playbook_dir }}/../../scripts/discover-node-macs.py', str(SCRIPT))
+        encoded = encoded.replace('tasks/discovery-cherry.yml', str(ROOT / 'ansible/playbooks/tasks/discovery-cherry.yml'))
+        encoded = encoded.replace('{{ playbook_dir }}/../../scripts/provider-identity.py', str(ROOT / 'scripts/provider-identity.py'))
         tasks = yaml.safe_load(encoded)
         play = self.base / 'play.yml'
         play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
@@ -214,7 +188,15 @@ class DiscoveryAnsibleTests(unittest.TestCase):
         return f'http://127.0.0.1:{server.server_port}', calls
 
     def discovery_tasks(self):
-        return yaml.safe_load((ROOT / 'ansible/playbooks/discover.yml').read_text())[0]['tasks']
+        tasks = yaml.safe_load((ROOT / 'ansible/playbooks/discover.yml').read_text())[0]['tasks']
+        # Inline the included production tasks so fixture path normalization reaches their CLIs.
+        expanded = []
+        for task in tasks:
+            if task.get('ansible.builtin.include_tasks') == 'tasks/discovery-cherry.yml':
+                expanded.extend(yaml.safe_load((ROOT / 'ansible/playbooks/tasks/discovery-cherry.yml').read_text()))
+            else:
+                expanded.append(task)
+        return expanded
 
     def merge_and_render_tasks(self):
         phase = next(play for play in yaml.safe_load((ROOT / 'ansible/playbooks/site.yml').read_text())
@@ -254,7 +236,7 @@ class DiscoveryAnsibleTests(unittest.TestCase):
 
     def test_default_node_disk_must_be_supplied_before_renderer_writes(self):
         tasks = self.render_disk_fixture()
-        output = self.run_play(tasks, {'node_server_id': 'sv_manual',
+        output = self.run_play(tasks, {'node_server_id': '127',
                                       'node_parent_mac': '02:00:00:00:01:01',
                                       'node_external_mac': '02:00:00:00:01:02'}, expected=2)
         self.assertIn('Verify the intended', output)
@@ -283,32 +265,50 @@ class DiscoveryAnsibleTests(unittest.TestCase):
         rendered = yaml.safe_load((self.base / 'install/src/agent-config.yaml').read_text())
         self.assertEqual([host['rootDeviceHints']['deviceName'] for host in rendered['hosts']], paths)
 
+    def cherry_inputs(self, base_url):
+        key, pins = self.base / 'key', self.base / 'known_hosts'
+        key.write_text('unused fixture private key'); key.chmod(0o600)
+        pins.write_text('unused fixture pins'); pins.chmod(0o600)
+        ports = [{'name': 'eth0', 'mac': '02:00:00:00:00:01'}, {'name': 'eth1', 'mac': '02:00:00:00:00:02'}]
+        node = dict(machine(), parent_if='bond0', parent_mac=ports[0]['mac'], external_if='',
+                    provider_hostname='allocated-node', provider_project_id='456', bond_mode='802.3ad', bond_ports=ports)
+        raw = {'hostname': 'allocated-node', 'links': [
+            {'ifname': 'bond0', 'address': ports[0]['mac'], 'linkinfo': {'info_kind': 'bond'}},
+            *[{'ifname': x['name'], 'link_type': 'ether', 'master': 'bond0', 'address': x['mac']} for x in ports]],
+            'addresses': [{'addr_info': [{'local': '198.51.100.11'}, {'local': '192.0.2.11'}]}]}
+        bin_dir = self.base / 'bin'; bin_dir.mkdir(exist_ok=True)
+        ssh = bin_dir / 'ssh'
+        ssh.write_text('#!' + sys.executable + '\nimport os,pathlib\npathlib.Path(os.environ["FIXTURE_SSH_CALL"]).touch()\nprint(os.environ["FIXTURE_SSH_DATA"])\n')
+        ssh.chmod(0o755)
+        self.env.update(PATH=str(bin_dir) + os.pathsep + os.environ['PATH'], FIXTURE_SSH_DATA=json.dumps(raw),
+                        FIXTURE_SSH_CALL=str(self.base / 'ssh-called'))
+        return {'machines': [node], 'infra_provider': 'cherry', 'cherry_api_base': base_url,
+                'cherry_token': 'fixture-sensitive-token', 'raw_node_ssh_user': 'root',
+                'raw_node_ssh_key': str(key), 'private_link_known_hosts': str(pins)}
+
     def test_real_discovery_then_render_keeps_extra_var_disk_network_and_nic_changes(self):
         base_url, calls = self.start_api()
-        output = self.run_play(self.discovery_tasks(), {'machines': [machine()], 'latitude_api_base': base_url,
-                                                        'latitude_token': 'fixture-sensitive-token'})
+        inputs = self.cherry_inputs(base_url)
+        output = self.run_play(self.discovery_tasks(), inputs)
         self.assertNotIn('fixture-sensitive-token', output)
-        self.assertEqual(calls, [('/servers/sv_fixture', 'Bearer fixture-sensitive-token')])
+        self.assertEqual(calls, [('/servers/123', 'Bearer fixture-sensitive-token')])
         cache = Path(self.env['COCO_STATE_DIR']) / 'discovery/node-macs.json'
         self.assertTrue(cache.is_file())
         self.variables.update(self.render_variables())
-        current = dict(machine(), root_device='/dev/current-disk', vlan_ip='192.0.2.99', parent_if='private0', external_if='public0')
+        current = dict(inputs['machines'][0], root_device='/dev/current-disk', vlan_ip='192.0.2.99', parent_if='private0')
         self.run_play(self.merge_and_render_tasks(), {'machines': [current]})
         host = yaml.safe_load((self.base / 'agent-config.yaml').read_text())['hosts'][0]
         self.assertEqual(host['rootDeviceHints']['deviceName'], '/dev/current-disk')
-        self.assertEqual(host['interfaces'], [{'name': 'private0', 'macAddress': '02:00:00:00:00:01'},
-                                             {'name': 'public0', 'macAddress': '02:00:00:00:00:02'}])
+        self.assertEqual(host['interfaces'], [{'name': x['name'], 'macAddress': x['mac']} for x in current['bond_ports']])
         vlan = host['networkConfig']['interfaces'][-1]
         self.assertEqual(vlan['ipv4']['address'][0]['ip'], '192.0.2.99')
-        self.assertEqual(host['networkConfig']['interfaces'][1]['state'], 'down')
-        self.run_play(self.merge_and_render_tasks(), {'machines': [dict(current, server_id='sv_changed')]}, expected=2)
+        self.run_play(self.merge_and_render_tasks(), {'machines': [dict(current, server_id='126')]}, expected=2)
 
     def test_api_failure_censors_token(self):
         base_url, calls = self.start_api(status=500)
         with patch.dict(os.environ, COCO_STATE_DIR=self.env['COCO_STATE_DIR']):
-            module.write_cache(module.cache_path(), module.capture([machine()], [response()]))
-        output = self.run_play(self.discovery_tasks(), {'machines': [machine()], 'latitude_api_base': base_url,
-                                                        'latitude_token': 'fixture-sensitive-token'}, expected=2)
+            module.write_cache(module.cache_path(), cached_bindings([machine()]))
+        output = self.run_play(self.discovery_tasks(), self.cherry_inputs(base_url), expected=2)
         self.assertNotIn('fixture-sensitive-token', output)
         self.assertEqual(len(calls), 1)
         self.assertFalse((Path(self.env['COCO_STATE_DIR']) / 'discovery/node-macs.json').exists())
@@ -318,28 +318,25 @@ class DiscoveryAnsibleTests(unittest.TestCase):
         self.assertFalse((self.base / 'agent-config.yaml').exists())
 
     def test_wrong_api_identity_invalidates_existing_cache(self):
-        base_url, _ = self.start_api(document=response(server_id='sv_wrong'))
+        base_url, _ = self.start_api(document=response(server_id=999))
         with patch.dict(os.environ, COCO_STATE_DIR=self.env['COCO_STATE_DIR']):
             cache = module.cache_path()
-            module.write_cache(cache, module.capture([machine()], [response()]))
-        output = self.run_play(self.discovery_tasks(), {'machines': [machine()], 'latitude_api_base': base_url,
-                                                        'latitude_token': 'fixture-sensitive-token'}, expected=2)
-        self.assertIn('identities do not exactly match', output)
+            module.write_cache(cache, cached_bindings([machine()]))
+        output = self.run_play(self.discovery_tasks(), self.cherry_inputs(base_url), expected=2)
+        self.assertFalse((self.base / 'ssh-called').exists())
         self.assertFalse(cache.exists())
 
     def test_render_rejects_unnamed_cached_public_nic_and_allows_true_single_nic(self):
         self.variables.update(self.render_variables())
         with patch.dict(os.environ, COCO_STATE_DIR=self.env['COCO_STATE_DIR']):
             path = module.cache_path()
-            module.write_cache(path, module.capture([machine()], [response()]))
+            module.write_cache(path, cached_bindings([machine()]))
         current = dict(machine(), external_if='')
         output = self.run_play(self.merge_and_render_tasks(), {'machines': [current]}, expected=2)
         self.assertIn('no external_if', output)
         self.assertFalse((self.base / 'agent-config.yaml').exists())
         # A confirmed single-NIC API response has neither an external name nor MAC.
-        single_nic = response()
-        single_nic['data']['attributes']['interfaces'].pop()
-        module.write_cache(path, module.capture([current], [single_nic]))
+        module.write_cache(path, cached_bindings([current]))
         self.run_play(self.merge_and_render_tasks(), {'machines': [current]})
         host = yaml.safe_load((self.base / 'agent-config.yaml').read_text())['hosts'][0]
         self.assertEqual(host['interfaces'], [{'name': 'eno2', 'macAddress': '02:00:00:00:00:01'}])
@@ -361,7 +358,7 @@ class DiscoveryAnsibleTests(unittest.TestCase):
         defaults = yaml.safe_load((ROOT / 'ansible/group_vars/all.yml').read_text())
         self.variables.update(defaults)
         self.variables.update(self.render_variables())
-        self.run_play(self.merge_and_render_tasks(), {'node_server_id': 'sv_manual', 'node_root_device': '/dev/sda',
+        self.run_play(self.merge_and_render_tasks(), {'node_server_id': '127', 'node_root_device': '/dev/sda',
                       'node_parent_if': 'eno2', 'node_external_if': 'eno1',
                       'node_parent_mac': '02:00:00:00:01:01', 'node_external_mac': '02:00:00:00:01:02'})
         host = yaml.safe_load((self.base / 'agent-config.yaml').read_text())['hosts'][0]

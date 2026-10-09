@@ -55,7 +55,8 @@ class BootstrapRelease(unittest.TestCase):
         self.assertTrue(consumed['images'].endswith('/install/fixture-tdx-images.yaml'))
 
     def test_direct_playbook_rejects_effective_version_override(self):
-        task = yaml.safe_load((ROOT / 'ansible/playbooks/site.yml').read_text())[0]['tasks'][0]
+        task = next(task for task in yaml.safe_load((ROOT / 'ansible/playbooks/site.yml').read_text())[0]['tasks']
+                    if task['name'] == 'Validate the effective Ansible release and profile inputs')
         task['ansible.builtin.command']['argv'][1] = str(ROOT / 'scripts/verify-release.py')
         out = self.run_play({'release_manifest_path': str(ROOT / 'install/release-manifest.json'),
                             'imageset_config_absolute': str(ROOT / 'install/imageset-config.yaml'),

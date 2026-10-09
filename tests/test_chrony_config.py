@@ -12,7 +12,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE = ROOT / 'ansible/roles/dns_ntp'
-CLOUD = ROOT / 'infra/latitude/bastion/cloud-init/mirror-registry.yaml'
+CLOUD = ROOT / 'ansible/bootstrap/mirror-registry.yaml.j2'
 
 
 class ChronyConfigurationTests(unittest.TestCase):
@@ -43,16 +43,16 @@ print(os.environ['FIXTURE_EFFECTIVE'], end='')
         parser.chmod(0o755)
 
     def cloud_script(self):
-        document = yaml.safe_load(CLOUD.read_text())
+        document = yaml.safe_load(CLOUD.read_text().replace('{{ bastion_ssh_user | to_json }}', '"fixture-user"'))
         content = {item['path']: item['content'] for item in document['write_files']}
         self.managed.parent.mkdir(exist_ok=True)
-        self.managed.write_text(content['/etc/chrony.d/rig.conf'].replace('${vlan_subnet}', '192.168.66.0/24'))
+        self.managed.write_text(content['/etc/chrony.d/rig.conf'].replace('{{ vlan_subnet }}', '192.168.66.0/24'))
         script = content['/usr/local/bin/setup-rig-ntp.sh']
         # Scope filesystem writes to the fixture; retain actual shell guards/flow.
         return script.replace('/etc/chrony.conf', str(self.main)).replace(
             '/etc/chrony.d/rig.conf', str(self.managed)).replace(
             '/etc/chrony[.]d/rig[.]conf', str(self.managed).replace('.', '[.]')).replace(
-            '${vlan_subnet}', '192.168.66.0/24')
+            '{{ vlan_subnet }}', '192.168.66.0/24')
 
     def test_cloud_init_includes_private_policy_once_and_preserves_image_sources(self):
         script = self.cloud_script()

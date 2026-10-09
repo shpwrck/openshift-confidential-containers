@@ -79,13 +79,12 @@
 - name: Verify the provider identity before sending a new reinstall
   when: prior_request.get('identity', '') != install_identity or prior_request.get('state', '') != 'requested'
   block:
-    - name: Block public routed reinstalls until early-boot ingress protection is implemented and verified
+    - name: Require the supported provider and private network before a rebuild
       ansible.builtin.assert:
-        that: network_profile | default('private-vlan') == 'private-vlan'
-        fail_msg: >-
-          public-routed-lab reinstall is currently blocked: reviewed ingress protection for both
-          the agent live environment and installed RHCOS is not yet implemented and verified.
-          Render and gate-only routed service rehearsals are available; there is no bypass flag.
+        that:
+          - infra_provider | default('cherry') == 'cherry'
+          - network_profile | default('private-vlan') == 'private-vlan'
+        fail_msg: "Only supplied Cherry rigs on private-vlan can be rebuilt."
 
     - name: Read and validate the selected provider identity
       ansible.builtin.include_tasks: provider_identity.yml
@@ -124,26 +123,22 @@
         provider_ipxe_script: |
           #!ipxe
           chain --autofree {{ ipxe_url }}
-      when: infra_provider | default('latitude') == 'cherry'
       no_log: true
 
     - name: Request the verified machine's fresh install
       ansible.builtin.uri:
-        url: >-
-          {{ (cherry_api_base if infra_provider | default('latitude') == 'cherry' else latitude_api_base)
-             ~ '/servers/' ~ install_machine.server_id
-             ~ ('/actions' if infra_provider | default('latitude') == 'cherry' else '/reinstall') }}
+        url: "{{ cherry_api_base }}/servers/{{ install_machine.server_id }}/actions"
         method: POST
         headers:
-          Authorization: "Bearer {{ cherry_token if infra_provider | default('latitude') == 'cherry' else latitude_token }}"
-          Content-Type: "{{ 'application/json' if infra_provider | default('latitude') == 'cherry' else 'application/vnd.api+json' }}"
-          Accept: "{{ 'application/json' if infra_provider | default('latitude') == 'cherry' else 'application/vnd.api+json' }}"
+          Authorization: "Bearer {{ cherry_token }}"
+          Content-Type: application/json
+          Accept: application/json
         body_format: json
-        body: >-
-          {{ {'type': 'rebuild', 'image': 'custom_ipxe_install', 'hostname': provider_identity.hostname,
-              'ipxe': provider_ipxe_script | b64encode}
-             if infra_provider | default('latitude') == 'cherry'
-             else {'data': {'type': 'reinstalls', 'attributes': {'operating_system': 'ipxe', 'ipxe': ipxe_url}}} }}
+        body:
+          type: rebuild
+          image: custom_ipxe_install
+          hostname: "{{ provider_identity.hostname }}"
+          ipxe: "{{ provider_ipxe_script | b64encode }}"
         status_code: [200, 201, 202]
       delegate_to: localhost
       become: false

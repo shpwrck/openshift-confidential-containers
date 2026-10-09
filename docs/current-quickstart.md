@@ -7,8 +7,7 @@ For an existing customer cluster, use [customer planning](design/customer-scopin
 
 ## Prepare the controller
 
-Use Linux with Bash, Python 3.12+, `jq`, SSH and Ansible. Terraform is needed only
-for the Latitude modules. Run commands from the checkout root.
+Use Linux with Bash, Python 3.12+, `jq`, SSH and Ansible. Run commands from the checkout root.
 
 ```bash
 umask 077
@@ -40,9 +39,8 @@ Git-ignored files. Put environment values in `$COCO_STATE_DIR/rig.yml`; use
 | Credentials | External `pull_secret_src` and `node_ssh_pubkey_src` paths; fresh private `boot_artifacts_token` |
 
 [Cherry setup](cherry-validation.md) covers its supplied-rig inputs and manual
-provisioning/BIOS prerequisites. [Latitude modules](../infra/latitude/README.md)
-are retained for provisioning, but their private network failed qualification.
-Cherry cannot use the Latitude `--plan-tf` or `--apply-tf` options.
+provisioning/BIOS prerequisites. Allocate the servers separately; the wrapper
+operates on supplied infrastructure.
 
 ## Prepare and install
 

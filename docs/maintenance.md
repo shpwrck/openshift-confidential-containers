@@ -70,7 +70,7 @@ The reset retains controllers until their operands finish deletion. If it stops,
 inspect finalizers and reconciliation before retrying; do not clear them blindly.
 Reinstall through [the quickstart](current-quickstart.md#install-coco-and-trustee),
 recollect current collateral, reconfigure Trustee and rerun all proofs/isolation.
-`make repro-loop` runs fresh proofs only; it does not reset or reinstall software.
+`make test-rung WHICH=all` runs fresh proofs; reset/reinstallation is separate.
 
 ## Retire the infrastructure
 
@@ -79,7 +79,6 @@ configuration, installer assets, Trustee state and evidence outside Git. Verify
 archive hashes and recovery limits before deleting resources.
 
 Delete only the intended provider objects and confirm absence through fresh inventory
-reads. Power-off or failed SSH is not proof of deletion. Keep the original Terraform
-state for [Latitude cleanup](../infra/latitude/README.md#cleanup).
+reads. Power-off or failed SSH is not proof of deletion. Keep the provider ownership and retirement records.
 The [Cherry leave-behind](runbooks/cherry-qualification/README.md) records the completed
 trial's retirement and protected backups; it is not a credential set for a new rig.

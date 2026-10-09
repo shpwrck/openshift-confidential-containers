@@ -48,7 +48,7 @@ destination.chmod(0o644)
                         registry_dns_name='mirror.fixture.invalid')
 
     def run_completion(self):
-        document = yaml.safe_load((ROOT / 'infra/latitude/bastion/cloud-init/mirror-registry.yaml').read_text())
+        document = yaml.safe_load((ROOT / 'ansible/bootstrap/mirror-registry.yaml.j2').read_text().replace('{{ bastion_ssh_user | to_json }}', '"fixture-user"'))
         script = next(item['content'] for item in document['write_files']
                       if item['path'] == '/usr/local/bin/bootstrap-mirror.sh')
         completion = script[script.index('CA_SRC='):]
@@ -57,13 +57,13 @@ destination.chmod(0o644)
                               cwd=self.base, capture_output=True, text=True, timeout=10)
 
     def run_startup(self, failure):
-        document = yaml.safe_load((ROOT / 'infra/latitude/bastion/cloud-init/mirror-registry.yaml').read_text())
+        document = yaml.safe_load((ROOT / 'ansible/bootstrap/mirror-registry.yaml.j2').read_text().replace('{{ bastion_ssh_user | to_json }}', '"fixture-user"'))
         script = next(item['content'] for item in document['write_files']
                       if item['path'] == '/usr/local/bin/bootstrap-mirror.sh')
         # Execute the real initial guard/directory ordering and completion block;
         # omit installation, downloads, SSH setup and credential generation.
         bootstrap = script.split('# registry DNS name', 1)[0] + script[script.index('CA_SRC='):]
-        bootstrap = bootstrap.replace('${mirror_root}', str(self.mirror))
+        bootstrap = bootstrap.replace('{{ mirror_root }}', str(self.mirror))
         bootstrap = bootstrap.replace('/usr/local/bin/check-mirror-prerequisites.sh', str(self.bin / 'prerequisites'))
         bootstrap = bootstrap.replace('/usr/local/bin/ensure-mirror-tls.sh', str(self.bin / 'tls'))
         (self.bin / 'bootstrap').write_text(bootstrap)
@@ -82,7 +82,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
             path.chmod(0o755)
         self.assertEqual(len(document['runcmd']), 1, 'dependent cloud-init steps must stop together on failure')
         command = document['runcmd'][0][2]
-        command = command.replace('${mirror_root}', str(self.mirror))
+        command = command.replace('{{ mirror_root }}', str(self.mirror))
         command = command.replace('/usr/local/bin/setup-rig-vlan.sh', str(self.bin / 'vlan'))
         command = command.replace('/usr/local/bin/setup-rig-ntp.sh', str(self.bin / 'ntp'))
         command = command.replace('/usr/local/bin/bootstrap-mirror.sh', str(self.bin / 'bootstrap'))
@@ -95,7 +95,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
         result = self.run_completion()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.failed.exists())
-        self.assertEqual((self.mirror / 'ca/rootCA.pem').read_text(), self.ca.read_text())
+        self.assertEqual((self.mirror / 'ca/rootCA.pem').read_text(), self.ca.read_text().replace('{{ bastion_ssh_user | to_json }}', '"fixture-user"'))
         self.assertRegex((self.mirror / 'MIRROR_READY').read_text(), r'^\d{4}-\d{2}-\d{2}T')
 
     def test_failed_tls_check_cannot_mark_the_registry_ready(self):
@@ -127,7 +127,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
         self.assertTrue(self.failed.exists(), result.stdout + result.stderr)
         self.assertEqual(self.mirror.stat().st_mode & 0o777, 0o700)
         self.assertFalse((self.mirror / 'MIRROR_READY').exists())
-        self.assertIn('prerequisites', (self.base / 'startup-calls').read_text())
+        self.assertIn('prerequisites', (self.base / 'startup-calls').read_text().replace('{{ bastion_ssh_user | to_json }}', '"fixture-user"'))
 
     def test_failed_network_setup_stops_before_registry_bootstrap(self):
         for failure in ('vlan', 'ntp', 'services', 'firewall'):
@@ -138,7 +138,7 @@ if os.environ.get('FIXTURE_FAIL_STEP') == step:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertTrue(self.failed.exists(), result.stdout + result.stderr)
                 self.assertFalse((self.mirror / 'MIRROR_READY').exists())
-                self.assertNotIn('prerequisites', (self.base / 'startup-calls').read_text())
+                self.assertNotIn('prerequisites', (self.base / 'startup-calls').read_text().replace('{{ bastion_ssh_user | to_json }}', '"fixture-user"'))
 
     def test_successful_startup_runs_network_before_bootstrap(self):
         result = self.run_startup('')

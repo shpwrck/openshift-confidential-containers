@@ -18,7 +18,6 @@ make lint
 Install ShellCheck separately through your operating system's package manager.
 `make install-dev-tools` fetches checksum-verified OPA/Kustomize. `make lint` runs
 shell, policy, manifest, documentation-link and offline regression checks.
-Terraform CI separately formats and validates the two infrastructure modules.
 Local checks do not validate firmware or attestation.
 
 For documentation-only edits, run `python3 scripts/check-doc-links.py` and
@@ -29,7 +28,7 @@ instructions rather than copying them, and retain the date/scope of validation c
 
 | Location | Work |
 |---|---|
-| Linux controller | Ansible/Terraform, release resolution and orchestration |
+| Linux controller | Ansible, release resolution and orchestration |
 | Linux helper | Mirror, DNS/NTP, boot publication and artifact preparation |
 | macOS or Linux workstation | Portable cluster/workload scripts with explicit contexts and required external inputs |
 | AMD node / RHCOS | Host SNP check and commands invoked through node debug |

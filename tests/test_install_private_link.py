@@ -35,7 +35,7 @@ class PrivateLinkInstallTests(unittest.TestCase):
         self.bin = self.base / 'bin'
         self.bin.mkdir()
         self.events = self.base / 'events'
-        self.journal = self.base / 'provider-requests/.coco-reinstall-sv_fixture.json'
+        self.journal = self.base / 'provider-requests/.coco-reinstall-123.json'
         self.config = self.base / 'ansible.cfg'
         self.config.write_text('[defaults]\nstdout_callback=default\nretry_files_enabled=False\n')
         self.env = dict(os.environ, ANSIBLE_CONFIG=str(self.config),
@@ -60,8 +60,7 @@ class PrivateLinkInstallTests(unittest.TestCase):
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                payload = getattr(owner, 'provider_payload', {'data': {'id': 'sv_fixture', 'attributes': {
-                    'hostname': 'fixture', 'primary_ipv4': '192.0.2.11', 'interfaces': owner.provider_interfaces}}})
+                payload = owner.provider_payload
                 self.wfile.write(json.dumps(payload).encode())
 
             def do_POST(self):
@@ -76,11 +75,17 @@ class PrivateLinkInstallTests(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.variables = dict(cluster_assets_dir=str(self.base / 'assets'), install_identity='c' * 64,
-                              install_machine={'name': 'fixture', 'server_id': 'sv_fixture',
-                                               'parent_if': 'eno2', 'vlan_ip': '192.168.66.11'},
+                              install_machine={'name': 'fixture', 'server_id': '123',
+                                               'parent_if': 'eno2', 'parent_mac': '02:00:00:00:00:11', 'vlan_ip': '192.168.66.11',
+                                               'provider_hostname': 'allocated-node', 'provider_project_id': '456'},
                               retry_reinstall=False, reinstall_existing=False, ocp_version='4.20.39',
-                              latitude_api_base=f'http://127.0.0.1:{server.server_port}',
-                              latitude_token='fixture-token', ipxe_url='http://example.invalid/fixture.ipxe')
+                              cherry_api_base=f'http://127.0.0.1:{server.server_port}',
+                              cherry_token='fixture-token', ipxe_url='http://example.invalid/fixture.ipxe')
+        self.variables['infra_provider'] = 'cherry'
+        self.provider_payload = {'id': 123, 'hostname': 'allocated-node', 'project': {'id': 456}, 'ip_addresses': [
+            {'type': 'primary-ip', 'address_family': 4, 'address': '192.0.2.11'},
+            {'type': 'private-ip', 'address_family': 4, 'address': '192.168.66.11'}]}
+
 
     def run_role(self, expected=0, real_gate=False, gate_only=False):
         def local_fixture(value):
@@ -137,21 +142,8 @@ class PrivateLinkInstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         return result.stdout + result.stderr
 
-    def cherry(self):
-        self.journal = self.base / 'provider-requests/.coco-reinstall-123.json'
-        self.env['FIXTURE_JOURNAL'] = str(self.journal)
-        self.variables.update(infra_provider='cherry', cherry_token='fixture-token',
-                              cherry_api_base=self.variables['latitude_api_base'])
-        self.variables['install_machine'].update(server_id='123', provider_hostname='allocated-node',
-                                                 provider_project_id='456')
-        self.provider_payload = {'id': 123, 'hostname': 'allocated-node', 'project': {'id': 456},
-                                 'ip_addresses': [
-                                     {'type': 'primary-ip', 'address_family': 4, 'address': '192.0.2.11'},
-                                     {'type': 'private-ip', 'address_family': 4, 'address': '10.1.2.11'}]}
-
     def test_cherry_rebuild_posts_encoded_ipxe_after_gate_and_journal(self):
         import base64
-        self.cherry()
         self.run_role()
         self.assertEqual(self.requests, ['GET', 'POST'])
         body = self.request_bodies[0]
@@ -162,15 +154,20 @@ class PrivateLinkInstallTests(unittest.TestCase):
         self.assertEqual(json.loads(self.journal.read_text())['state'], 'requested')
 
     def test_cherry_wrong_project_prevents_intent_and_post(self):
-        self.cherry()
         self.provider_payload['project']['id'] = 999
         self.run_role(2)
         self.assertEqual(self.requests, ['GET'])
         self.assertFalse(self.journal.exists())
 
+    def test_removed_network_profile_rejects_before_provider_access(self):
+        self.variables['network_profile'] = 'public-routed-lab'
+        self.run_role(2)
+        self.assertEqual(self.requests, [])
+        self.assertFalse(self.journal.exists())
+
     def write_journal(self, state, identity=None):
         self.journal.parent.mkdir(exist_ok=True)
-        self.journal.write_text(json.dumps({'server_id': 'sv_fixture', 'state': state,
+        self.journal.write_text(json.dumps({'server_id': '123', 'state': state,
                                            'identity': identity or self.variables['install_identity']}))
 
     def test_failed_gate_prevents_intent_and_post_and_closes_unused_endpoint(self):
@@ -237,8 +234,8 @@ class PrivateLinkInstallTests(unittest.TestCase):
 
     def test_other_machine_request_preserves_shared_endpoint_on_gate_failure(self):
         self.journal.parent.mkdir()
-        other = self.journal.parent / '.coco-reinstall-sv_other.json'
-        other.write_text(json.dumps({'identity': 'a' * 64, 'state': 'requested', 'server_id': 'sv_other'}))
+        other = self.journal.parent / '.coco-reinstall-124.json'
+        other.write_text(json.dumps({'identity': 'a' * 64, 'state': 'requested', 'server_id': '124'}))
         self.env['FIXTURE_GATE_FAIL'] = '1'
         self.run_role(2)
         self.assertEqual(self.requests, ['GET'])
@@ -248,8 +245,8 @@ class PrivateLinkInstallTests(unittest.TestCase):
     def test_other_machine_legacy_request_preserves_shared_endpoint_on_gate_failure(self):
         assets = Path(self.variables['cluster_assets_dir'])
         assets.mkdir()
-        other = assets / '.coco-reinstall-sv_other.json'
-        other.write_text(json.dumps({'identity': 'a' * 64, 'state': 'sending', 'server_id': 'sv_other'}))
+        other = assets / '.coco-reinstall-124.json'
+        other.write_text(json.dumps({'identity': 'a' * 64, 'state': 'sending', 'server_id': '124'}))
         previous = other.read_bytes()
         self.env['FIXTURE_GATE_FAIL'] = '1'
         self.run_role(2)
@@ -323,7 +320,7 @@ raise SystemExit(0 if status=='PASS' else 1)
         args = json.loads(self.events.read_text())['checkerArgs']
         self.assertEqual(args[args.index('--interface') + 1], 'eno2.2032')
         self.assertEqual(args[args.index('--node-ip') + 1], '192.168.66.11')
-        records = list((self.base / 'state/validation/private-link').glob('sv_fixture-*/result.json'))
+        records = list((self.base / 'state/validation/private-link').glob('123-*/result.json'))
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0].stat().st_mode & 0o777, 0o600)
         self.assertEqual(json.loads(records[0].read_text())['checker']['status'], 'PASS')
@@ -338,7 +335,7 @@ raise SystemExit(0 if status=='PASS' else 1)
         self.run_role(2, real_gate=True)
         self.assertEqual(self.requests, ['GET'])
         self.assertFalse(self.journal.exists())
-        records = list((self.base / 'state/validation/private-link').glob('sv_fixture-*/result.json'))
+        records = list((self.base / 'state/validation/private-link').glob('123-*/result.json'))
         self.assertEqual(json.loads(records[0].read_text())['checker']['status'], 'FAIL')
         self.assertEqual(records[0].stat().st_mode & 0o777, 0o600)
         self.assertIn('closed', self.events.read_text())
@@ -400,122 +397,16 @@ raise SystemExit(0 if status=='PASS' else 1)
                     'release': self.variables['ocp_release_image'], 'version': self.variables['ocp_version']}
         self.variables['install_identity'] = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
 
-    def configure_public_fixture(self):
-        self.configure_raw_fixture()
-        self.variables.update(network_profile='public-routed-lab', node_public_ipv4='192.0.2.11',
-                              node_public_prefix=31, node_public_gateway='192.0.2.10',
-                              bastion_service_ip='198.51.100.10', ansible_host='198.51.100.10',
-                              air_gap=False, enforce_node_egress=False,
-                              provider_machine={'json': {'data': {'id': 'sv_fixture', 'attributes': {
-                                  'primary_ipv4': '192.0.2.11', 'interfaces': self.provider_interfaces}}}})
-        self.variables['install_machine'].update(external_if='eno1', external_mac='02:00:00:00:00:12')
-        self.public_agent = {'rendezvousIP': '192.0.2.11', 'additionalNTPSources': ['198.51.100.10'], 'hosts': [{
-            'hostname': 'fixture', 'interfaces': [
-                {'name': 'eno2', 'macAddress': '02:00:00:00:00:11'},
-                {'name': 'eno1', 'macAddress': '02:00:00:00:00:12'}],
-            'networkConfig': {'interfaces': [
-                {'name': 'eno2', 'type': 'ethernet', 'state': 'down',
-                 'ipv4': {'enabled': False}, 'ipv6': {'enabled': False}},
-                {'name': 'eno1', 'type': 'ethernet', 'state': 'up',
-                 'ipv4': {'enabled': True, 'dhcp': False, 'address': [{'ip': '192.0.2.11', 'prefix-length': 31}]},
-                 'ipv6': {'enabled': False}}],
-                'dns-resolver': {'config': {'server': ['198.51.100.10']}},
-                'routes': {'config': [{'destination': '0.0.0.0/0', 'next-hop-address': '192.0.2.10',
-                                      'next-hop-interface': 'eno1'}]}}}]}
-        install_file = Path(self.variables['install_src_dir']) / 'install-config.yaml'
-        install = yaml.safe_load(install_file.read_text())
-        install['networking'] = {'machineNetwork': [{'cidr': '192.0.2.10/31'}]}
-        install_file.write_text(yaml.safe_dump(install))
-        self.save_public_agent()
-        (self.bin / 'ip').write_text('''#!/usr/bin/env python3
-import json,os
-print(json.dumps([{'ifname':'eno2','ifindex':2,'address':'02:00:00:00:00:11'},
- {'ifname':'eno1','ifindex':1,'address':os.environ.get('FIXTURE_RAW_MAC','02:00:00:00:00:12')}]))
-''')
 
     def save_public_agent(self):
         (Path(self.variables['install_src_dir']) / 'agent-config.yaml').write_text(yaml.safe_dump(self.public_agent))
         self.refresh_artifact_identity()
 
-    def test_public_reinstall_has_no_bypass_and_never_queries_or_sends_provider(self):
-        self.variables.update(network_profile='public-routed-lab', public_ingress_verified=True,
-                              retry_reinstall=True, reinstall_existing=True)
-        output = self.run_role(2)
-        self.assertIn('public-routed-lab reinstall is currently blocked', output)
-        self.assertEqual(self.requests, [])
-        self.assertFalse(self.journal.exists())
-        self.assertFalse(self.events.exists())
 
-    def test_public_gate_only_binds_provider_source_mac_gateway_and_evidence(self):
-        self.configure_public_fixture()
-        output = self.run_role(real_gate=True, gate_only=True)
-        self.assertEqual(self.requests, [])
-        self.assertFalse(self.journal.exists())
-        args = json.loads(self.events.read_text())['checkerArgs']
-        expected = {'--network-mode': 'public-routed-lab', '--interface': 'eno1', '--node-ip': '192.0.2.11',
-                    '--gateway': '192.0.2.10', '--prefix-length': '31', '--expected-mac': '02:00:00:00:00:12',
-                    '--bastion-ip': '198.51.100.10'}
-        for flag, value in expected.items():
-            self.assertEqual(args[args.index(flag) + 1], value)
-        self.assertNotIn('--vid', args)
-        records = list((self.base / 'state/validation/private-link').glob('sv_fixture-*/identity.json'))
-        identity = json.loads(records[0].read_text())
-        self.assertEqual(identity['network_profile'], 'public-routed-lab')
-        self.assertEqual(identity['reviewed_gateway'], '192.0.2.10')
-        self.assertNotIn('private_mac', identity)
-        self.assertIn('public-routed-lab path proof passed', output)
-        self.assertFalse(list(self.base.glob('coco-private-link-*')))
 
-    def test_public_gate_rejects_prepared_route_mismatch_even_with_current_identity(self):
-        self.configure_public_fixture()
-        self.public_agent['hosts'][0]['networkConfig']['routes']['config'][0]['next-hop-address'] = '192.0.2.12'
-        self.save_public_agent()
-        output = self.run_role(2, real_gate=True, gate_only=True)
-        self.assertIn('reviewed gateway', output)
-        self.assertFalse(self.events.exists())
-        self.assertFalse(self.journal.exists())
 
-    def test_public_gate_rejects_stale_rendezvous_or_machine_network_with_recomputed_identity(self):
-        self.configure_public_fixture()
-        self.public_agent['rendezvousIP'] = '192.168.66.11'
-        self.save_public_agent()
-        output = self.run_role(2, real_gate=True, gate_only=True)
-        self.assertIn('private_link_prepared_rendezvous == node_public_ipv4', output)
-        self.assertIn('"evaluated_to": false', output)
-        self.assertFalse(self.events.exists())
-        self.public_agent['rendezvousIP'] = self.variables['node_public_ipv4']
-        self.save_public_agent()
-        install_file = Path(self.variables['install_src_dir']) / 'install-config.yaml'
-        install = yaml.safe_load(install_file.read_text())
-        install['networking']['machineNetwork'] = [{'cidr': '192.168.66.0/24'}]
-        install_file.write_text(yaml.safe_dump(install))
-        self.refresh_artifact_identity()
-        output = self.run_role(2, real_gate=True, gate_only=True)
-        self.assertIn('private_link_prepared_machine_networks ==', output)
-        self.assertIn('"evaluated_to": false', output)
-        self.assertFalse(self.events.exists())
-        self.assertFalse(self.journal.exists())
 
-    def test_public_gate_rejects_internal_mac_as_public_before_any_probe(self):
-        self.configure_public_fixture()
-        self.env['FIXTURE_RAW_MAC'] = '02:00:00:00:00:11'
-        output = self.run_role(2, real_gate=True, gate_only=True)
-        self.assertIn('Raw public NIC/provider MAC', output)
-        self.assertFalse(self.events.exists())
-        self.assertFalse(self.journal.exists())
 
-    def test_public_gate_requires_current_provider_ip_and_no_airgap_claim(self):
-        self.configure_public_fixture()
-        for key, value in [('node_public_ipv4', '192.0.2.12'), ('air_gap', True),
-                           ('air_gap', 'unexpected'), ('enforce_node_egress', 'unexpected'),
-                           ('node_public_prefix', 24)]:
-            original = self.variables[key]
-            self.variables[key] = value
-            with self.subTest(key=key):
-                output = self.run_role(2, real_gate=True, gate_only=True)
-                self.assertIn("provider's current public IP", output)
-                self.assertFalse(self.events.exists())
-            self.variables[key] = original
 
 
 

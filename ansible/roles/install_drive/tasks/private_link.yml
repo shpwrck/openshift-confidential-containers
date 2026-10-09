@@ -1,12 +1,12 @@
 ---
 # The install flow invokes this only for a NEW request, never an accepted-request resume.
 # A separate gate-only rehearsal can include this file without requesting an install.
-# Network preparation remains explicit; routed mode proves no private VLAN.
+# Private VLAN preparation remains explicit; this check does not change networking.
 # No key/token is copied remotely; only the checker and public mirror CA are staged.
 - name: Require a supported explicit network profile
   ansible.builtin.assert:
-    that: network_profile | default('private-vlan') in ['private-vlan', 'public-routed-lab']
-    fail_msg: "Unsupported network_profile; select private-vlan or the explicitly limited public-routed-lab."
+    that: network_profile | default('private-vlan') == 'private-vlan'
+    fail_msg: "Only private-vlan is supported."
 
 - name: Resolve explicit raw-host connection and evidence inputs
   ansible.builtin.set_fact:
@@ -14,16 +14,10 @@
     private_link_raw_key: "{{ install_machine.raw_ssh_key | default(raw_node_ssh_key | default('')) }}"
     private_link_bastion_key: "{{ bastion_ssh_key | default('') }}"
     private_link_pins: "{{ private_link_known_hosts | default('') }}"
-    private_link_raw_address: >-
-      {{ provider_identity.public_ipv4 if provider_identity is defined
-         else provider_machine.json.data.attributes.primary_ipv4 | default('') }}
-    private_link_profile: "{{ network_profile | default('private-vlan') }}"
-    private_link_raw_parent: >-
-      {{ install_machine.raw_external_if | default(install_machine.external_if | default(''))
-         if network_profile | default('private-vlan') == 'public-routed-lab'
-         else install_machine.raw_parent_if | default(install_machine.parent_if | default('')) }}
-    private_link_service_ip: >-
-      {{ bastion_service_ip if network_profile | default('private-vlan') == 'public-routed-lab' else bastion_vlan_ip | default('') }}
+    private_link_raw_address: "{{ provider_identity.public_ipv4 }}"
+    private_link_profile: private-vlan
+    private_link_raw_parent: "{{ install_machine.raw_parent_if | default(install_machine.parent_if | default('')) }}"
+    private_link_service_ip: "{{ bastion_vlan_ip | default('') }}"
     private_link_state: >-
       {{ lookup('ansible.builtin.env', 'COCO_STATE_DIR')
          | default(lookup('ansible.builtin.env', 'HOME') ~ '/.local/state/openshift-confidential-containers', true) }}
@@ -48,24 +42,8 @@
     fail_msg: >-
       Fresh reinstall requires raw_node_ssh_user, raw_node_ssh_key, bastion_ssh_key and
       private_link_known_hosts (absolute external controller files), plus a verified raw
-      interface. Per-machine raw_ssh_user/raw_ssh_key, raw_parent_if (private) or raw_external_if
-      (public) overrides are supported.
+      interface. Per-machine raw_ssh_user/raw_ssh_key and raw_parent_if overrides are supported.
       The raw SSH address must come from this server's current provider response; no RHCOS fallback is used.
-
-- name: Require public lab inputs to describe this provider node and pinned bastion
-  ansible.builtin.assert:
-    that:
-      - node_public_ipv4 == private_link_raw_address
-      - node_public_prefix | string == '31'
-      - node_public_gateway | length > 0
-      - private_link_service_ip == private_link_bastion_address
-      - air_gap | default(false) | string | lower in ['false', 'no', 'off', '0']
-      - enforce_node_egress | default(false) | string | lower in ['false', 'no', 'off', '0']
-    fail_msg: >-
-      public-routed-lab requires the provider's current public IP, reviewed public prefix/gateway,
-      public bastion service/SSH address and air_gap=false/enforce_node_egress=false.
-      This is routed service proof, not private networking or isolation evidence.
-  when: private_link_profile == 'public-routed-lab'
 
 - name: Validate external credential paths and evidence location before staging
   ansible.builtin.command:
@@ -89,19 +67,11 @@
             if Path(value).stat().st_mode & 0o077:
                 raise SystemExit('SSH private keys must be owner-only: '+value)
         result={'directory':str(Path(x['state']).expanduser().resolve()/'validation'/'private-link')}
-        if x['profile']=='public-routed-lab':
-            node=ipaddress.IPv4Address(x['address'])
-            gateway=ipaddress.IPv4Address(x['gateway'])
-            subnet=ipaddress.IPv4Network(str(node)+'/31',strict=False)
-            if gateway==node or gateway not in subnet:
-                raise SystemExit('Reviewed gateway must be the other address in the public node /31')
-            result['machine_network']=str(subnet)
         print(json.dumps(result))
     stdin: >-
       {{ {'files': [private_link_raw_key, private_link_bastion_key, private_link_pins],
           'state': private_link_state, 'repo': private_link_repo,
-          'address': private_link_raw_address, 'profile': private_link_profile,
-          'gateway': node_public_gateway | default('')} | to_json }}
+          'address': private_link_raw_address} | to_json }}
   delegate_to: localhost
   become: false
   changed_when: false
@@ -166,27 +136,18 @@
     private_link_prepared_hosts: >-
       {{ (private_link_sources.results[2].content | b64decode | from_yaml).hosts
          | selectattr('hostname', 'equalto', install_machine.name) | list }}
-    private_link_prepared_rendezvous: "{{ (private_link_sources.results[2].content | b64decode | from_yaml).rendezvousIP | default('') }}"
-    private_link_prepared_machine_networks: >-
-      {{ (private_link_sources.results[1].content | b64decode | from_yaml).get('networking', {}).get('machineNetwork', []) }}
     private_link_prepared_ca: "{{ (private_link_sources.results[1].content | b64decode | from_yaml).additionalTrustBundle }}"
     private_link_prepared_ntp: "{{ (private_link_sources.results[2].content | b64decode | from_yaml).additionalNTPSources | default([]) }}"
     private_link_prepared_mirror_authorities: >-
       {{ (private_link_sources.results[1].content | b64decode | from_yaml).imageDigestSources | default([])
          | map(attribute='mirrors') | flatten | map('regex_replace', '/.*$', '') | unique | list }}
-    private_link_provider_nic: >-
-      {{ [{'mac_address': install_machine.parent_mac}]
-         if infra_provider | default('latitude') == 'cherry'
-         else provider_machine.json.data.attributes.interfaces | default([])
-         | selectattr('role', 'equalto', 'external' if private_link_profile == 'public-routed-lab' else 'internal') | list }}
+    private_link_provider_nic: "{{ [{'mac_address': install_machine.parent_mac}] }}"
   no_log: true
 
 - name: Require exact prepared machine and trust identities
   ansible.builtin.assert:
     that:
-      - >-
-        provider_identity.id == install_machine.server_id if provider_identity is defined
-        else provider_machine.json.data.id == install_machine.server_id
+      - provider_identity.id == install_machine.server_id
       - private_link_prepared_hosts | length == 1
       - private_link_provider_nic | length == 1
       - private_link_ca | trim == private_link_prepared_ca | trim
@@ -227,7 +188,6 @@
   register: private_link_raw_links
 
 - name: Select the expected raw parent and VLAN from the current host
-  when: private_link_profile == 'private-vlan'
   ansible.builtin.set_fact:
     private_link_parent: "{{ private_link_raw_links.stdout | from_json | selectattr('ifname', 'equalto', private_link_raw_parent) | list }}"
     private_link_vlan: "{{ private_link_raw_links.stdout | from_json | selectattr('ifname', 'equalto', private_link_raw_parent ~ '.' ~ vlan_vid) | list }}"
@@ -239,7 +199,6 @@
          | selectattr('name', 'equalto', install_machine.parent_if ~ '.' ~ vlan_vid) | list }}
 
 - name: Require an existing temporary VLAN on the provider's actual private NIC
-  when: private_link_profile == 'private-vlan'
   ansible.builtin.assert:
     that:
       - private_link_parent | length == 1
@@ -306,60 +265,11 @@
       loop_control:
         label: "{{ item.name }}"
 
-- name: Select the current public NIC and prepared public network
-  ansible.builtin.set_fact:
-    private_link_parent: "{{ private_link_raw_links.stdout | from_json | selectattr('ifname', 'equalto', private_link_raw_parent) | list }}"
-    private_link_prepared_public: "{{ private_link_prepared_hosts[0].interfaces | selectattr('name', 'equalto', install_machine.external_if) | list }}"
-    private_link_prepared_public_config: >-
-      {{ private_link_prepared_hosts[0].networkConfig.interfaces | selectattr('name', 'equalto', install_machine.external_if) | list }}
-    private_link_prepared_private_config: >-
-      {{ private_link_prepared_hosts[0].networkConfig.interfaces | selectattr('name', 'equalto', install_machine.parent_if) | list }}
-  when: private_link_profile == 'public-routed-lab'
-
-- name: Require public source and reviewed gateway to match the actual prepared install
-  ansible.builtin.assert:
-    that:
-      - private_link_parent | length == 1
-      - private_link_prepared_rendezvous == node_public_ipv4
-      - >-
-        private_link_prepared_machine_networks == [{'cidr': (private_link_location.stdout | from_json).machine_network}]
-      - private_link_prepared_public | length == 1
-      - private_link_prepared_public_config | length == 1
-      - private_link_prepared_private_config | length == 1
-      - private_link_parent[0].address | lower == private_link_provider_nic[0].mac_address | lower
-      - private_link_prepared_public[0].macAddress | lower == private_link_provider_nic[0].mac_address | lower
-      - private_link_prepared_public_config[0].type == 'ethernet'
-      - private_link_prepared_public_config[0].state == 'up'
-      - private_link_prepared_public_config[0].ipv4.enabled | bool
-      - not (private_link_prepared_public_config[0].ipv4.dhcp | bool)
-      - not (private_link_prepared_public_config[0].ipv6.enabled | bool)
-      - >-
-        private_link_prepared_public_config[0].ipv4.address ==
-        [{'ip': node_public_ipv4, 'prefix-length': node_public_prefix | int}]
-      - private_link_prepared_private_config[0].state == 'down'
-      - not (private_link_prepared_private_config[0].ipv4.enabled | bool)
-      - not (private_link_prepared_private_config[0].ipv6.enabled | bool)
-      - private_link_prepared_hosts[0].networkConfig.interfaces | length == 2
-      - private_link_prepared_hosts[0].networkConfig['dns-resolver'].config.server == [private_link_service_ip]
-      - >-
-        private_link_prepared_hosts[0].networkConfig.routes.config ==
-        [{'destination': '0.0.0.0/0', 'next-hop-address': node_public_gateway,
-          'next-hop-interface': install_machine.external_if}]
-    fail_msg: >-
-      Raw public NIC/provider MAC or prepared public source, reviewed gateway, DNS and interface
-      state differ. Reconcile and rebuild the explicit public-routed-lab artifacts before probing.
-      Provider identity verifies IP/MAC; gateway/prefix must also match the reviewed raw OS route.
-  when: private_link_profile == 'public-routed-lab'
-
 - name: Select mandatory topology arguments without any skip option
   ansible.builtin.set_fact:
     private_link_network_args: >-
-      {{ ['--network-mode', 'public-routed-lab', '--interface', private_link_raw_parent,
-          '--node-ip', node_public_ipv4, '--gateway', node_public_gateway,
-          '--prefix-length', node_public_prefix | string, '--expected-mac', private_link_provider_nic[0].mac_address]
-         if private_link_profile == 'public-routed-lab'
-         else ['--interface', private_link_raw_parent ~ '.' ~ vlan_vid, '--vid', vlan_vid | string,
-               '--node-ip', install_machine.vlan_ip] }}
+      {{ ['--interface', private_link_raw_parent ~ '.' ~ vlan_vid, '--vid', vlan_vid | string,
+          '--node-ip', install_machine.vlan_ip] }}
 
 - name: Allocate protected temporary proof staging on the raw host
   ansible.builtin.tempfile:
@@ -445,8 +355,6 @@
       {{ {'server_id': install_machine.server_id, 'install_identity': install_identity,
           'raw_address': private_link_raw_address,
           'network_profile': private_link_profile, 'provider_mac': private_link_provider_nic[0].mac_address,
-          'reviewed_gateway': node_public_gateway if private_link_profile == 'public-routed-lab' else none,
-          'reviewed_prefix': node_public_prefix if private_link_profile == 'public-routed-lab' else none,
           'mirror_ca_sha256': private_link_ca | hash('sha256'),
           'proof': private_link_evidence.path ~ '/result.json'} | to_nice_json }}
     dest: "{{ private_link_evidence.path }}/identity.json"

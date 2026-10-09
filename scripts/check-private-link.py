@@ -36,35 +36,6 @@ def validate_direct_route(routes, interface, node_ip):
     return route
 
 
-def validate_routed_route(routes, interface, node_ip, gateway):
-    if len(routes) != 1:
-        raise ValueError('Public routed path is missing or ambiguous')
-    route = routes[0]
-    if (route.get('dev') != interface or route.get('from', route.get('prefsrc')) != node_ip
-            or route.get('gateway') != gateway or route.get('type', 'unicast') != 'unicast'):
-        raise ValueError('Bastion route must use the selected public interface/source and exact reviewed gateway')
-    return route
-
-
-def validate_routed_path(links, addresses, routes, interface, node_ip, gateway, prefix_length, expected_mac):
-    if len(links) != 1 or links[0].get('ifname') != interface:
-        raise ValueError('Selected public interface is missing or ambiguous')
-    link = links[0]
-    if ('UP' not in link.get('flags', []) or link.get('operstate') != 'UP'
-            or link.get('link_type') != 'ether' or link.get('linkinfo', {}).get('info_kind')
-            or link.get('address', '').lower() != expected_mac.lower()):
-        raise ValueError('Selected public interface must be an UP physical Ethernet NIC with the provider MAC')
-    matching = [item for item in addresses if item.get('ifname') == interface]
-    if len(matching) != 1 or not any(
-            item.get('family') == 'inet' and item.get('local') == node_ip
-            and item.get('prefixlen') == prefix_length
-            for item in matching[0].get('addr_info', [])):
-        raise ValueError('Expected public IPv4 address/prefix is absent from the selected interface')
-    route = validate_routed_route(routes, interface, node_ip, gateway)
-    return {'interface': interface, 'nodeIPv4': node_ip, 'prefixLength': prefix_length,
-            'providerMAC': expected_mac.lower(), 'gateway': gateway, 'route': route}
-
-
 def validate_path(links, addresses, routes, interface, node_ip, vid):
     if len(links) != 1 or links[0].get('ifname') != interface:
         raise ValueError('Selected private interface is missing or ambiguous')
@@ -87,12 +58,6 @@ def check_path(args):
     links = ip_json('-d', 'link', 'show', 'dev', args.interface)
     addresses = ip_json('address', 'show', 'dev', args.interface)
     routes = ip_json('route', 'get', args.bastion_ip, 'from', args.node_ip)
-    if getattr(args, 'network_mode', 'private-vlan') == 'public-routed-lab':
-        path = validate_routed_path(links, addresses, routes, args.interface, args.node_ip,
-                                    args.gateway, args.prefix_length, args.expected_mac)
-        validate_direct_route(ip_json('route', 'get', args.gateway, 'from', args.node_ip),
-                              args.interface, args.node_ip)
-        return path
     return validate_path(links, addresses, routes, args.interface, args.node_ip, args.vid)
 
 
@@ -109,8 +74,7 @@ def validate_neighbor(neighbors, bastion_ip, interface):
 def check_arp(args):
     # iproute2 can omit "dev" when the query is already filtered by device.
     # Retain it in the returned records so validation checks the actual interface.
-    peer = args.gateway if getattr(args, 'network_mode', 'private-vlan') == 'public-routed-lab' else args.bastion_ip
-    return validate_neighbor(ip_json('neighbor', 'show', 'to', peer), peer, args.interface)
+    return validate_neighbor(ip_json('neighbor', 'show', 'to', args.bastion_ip), args.bastion_ip, args.interface)
 
 
 def dns_name(packet, offset):
@@ -189,8 +153,6 @@ def check_flow_route(args, stream, protocol, port):
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         raise ValueError('Exact-flow route lookup failed; iproute2 must support '
                          f'oif/ipproto/sport/dport selectors (no fallback): {error}') from error
-    if getattr(args, 'network_mode', 'private-vlan') == 'public-routed-lab':
-        return validate_routed_route(routes, args.interface, args.node_ip, args.gateway)
     return validate_direct_route(routes, args.interface, args.node_ip)
 
 
@@ -312,11 +274,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('interface', 'node-ip', 'bastion-ip', 'mirror-hostname', 'ca-file'):
         parser.add_argument('--' + name, required=True)
-    parser.add_argument('--network-mode', choices=('private-vlan', 'public-routed-lab'), default='private-vlan')
-    parser.add_argument('--vid', type=int, help='Required for the default private-vlan mode')
-    parser.add_argument('--gateway', help='Required exact reviewed gateway for public-routed-lab')
-    parser.add_argument('--prefix-length', type=int, help='Required reviewed public IPv4 prefix for public-routed-lab')
-    parser.add_argument('--expected-mac', help='Required provider external-role MAC for public-routed-lab')
+    parser.add_argument('--vid', type=int, required=True, help='Verified VLAN wire tag')
     parser.add_argument('--mirror-port', type=int, default=8443)
     parser.add_argument('--timeout', type=float, default=3)
     parser.add_argument('--evidence', help='Optional JSON path in an existing private external directory')
@@ -332,30 +290,8 @@ def main(argv=None):
                 or args.interface.startswith('-')
                 or not 1 <= args.mirror_port <= 65535 or not 0.1 <= args.timeout <= 30):
             raise ValueError('Invalid interface, port or timeout')
-        if args.network_mode == 'private-vlan':
-            if args.vid is None or not 1 <= args.vid <= 4094:
-                raise ValueError('private-vlan requires --vid between 1 and 4094')
-            if any(value is not None for value in (args.gateway, args.prefix_length, args.expected_mac)):
-                raise ValueError('Public routed inputs cannot be used in private-vlan mode')
-        else:
-            if args.vid is not None:
-                raise ValueError('public-routed-lab does not accept --vid or claim private VLAN proof')
-            if args.prefix_length is None or not 1 <= args.prefix_length <= 31:
-                raise ValueError('public-routed-lab requires an explicit reviewed --prefix-length between 1 and 31')
-            if not args.expected_mac or not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', args.expected_mac):
-                raise ValueError('public-routed-lab requires the provider --expected-mac')
-            if int(args.expected_mac[:2], 16) & 1 or args.expected_mac.lower() == '00:00:00:00:00:00':
-                raise ValueError('Expected provider MAC must be a nonzero unicast address')
-            gateway = ipaddress.IPv4Address(args.gateway or '')
-            network = ipaddress.IPv4Interface(f'{args.node_ip}/{args.prefix_length}').network
-            if (gateway.is_unspecified or gateway.is_multicast or gateway.is_loopback
-                    or gateway not in network
-                    or (args.prefix_length < 31 and gateway in (network.network_address, network.broadcast_address))
-                    or str(gateway) in (args.node_ip, args.bastion_ip)):
-                raise ValueError('Reviewed gateway must be a distinct usable on-link IPv4 address')
-            if (args.prefix_length < 31
-                    and ipaddress.IPv4Address(args.node_ip) in (network.network_address, network.broadcast_address)):
-                raise ValueError('Provider node address must be usable in its prefix')
+        if not 1 <= args.vid <= 4094:
+            raise ValueError('--vid must be between 1 and 4094')
         args.mirror_hostname = args.mirror_hostname.lower().rstrip('.')
         if len(args.mirror_hostname) > 253 or not all(
                 re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label)
@@ -368,9 +304,7 @@ def main(argv=None):
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
-    routed = args.network_mode == 'public-routed-lab'
-    scope = ('Raw provider OS public routed lab path; no private VLAN, isolation, install or enforcement proof'
-             if routed else 'Raw provider OS private IPv4/VLAN path; no install or enforcement proof')
+    scope = 'Raw provider OS private IPv4/VLAN path; no install or enforcement proof'
     result = {'recordedAt': datetime.now(timezone.utc).isoformat(), 'status': 'FAIL',
               'scope': scope,
               'inputs': {key: str(value) for key, value in vars(args).items() if key != 'evidence'},
@@ -386,20 +320,19 @@ def main(argv=None):
               f"{result['checks'][name].get('error', 'verified')}")
         return result['checks'][name]['status'] == 'PASS'
 
-    if record('interface/source/reviewedGateway' if routed else 'interface/source/VID', lambda: check_path(args)):
+    if record('interface/source/VID', lambda: check_path(args)):
         # The bounded probes cause ordinary neighbor resolution; no interface or
         # neighbor configuration is modified, including on a failed probe.
         record('mirrorTLS', lambda: check_tls(args))
         record('DNS', lambda: check_dns(args))
         record('NTP', lambda: check_ntp(args))
-        record('gatewayARP' if routed else 'ARP', lambda: check_arp(args))
+        record('ARP', lambda: check_arp(args))
         record('pathAfterProbes', lambda: check_path(args))
     if all(check['status'] == 'PASS' for check in result['checks'].values()):
         result['status'] = 'PASS'
     if target:
         write_evidence(target, result)
-    label = 'public routed lab path (no private VLAN proof)' if routed else 'private link'
-    print(f"{result['status']} {label}; authenticated image pull and enforcement are untested.")
+    print(f"{result['status']} private link; authenticated image pull and enforcement are untested.")
     return 0 if result['status'] == 'PASS' else 1
 
 

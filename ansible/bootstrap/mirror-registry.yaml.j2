@@ -1,32 +1,32 @@
 #cloud-config
 # Bastion bootstrap (Rocky Linux 9 lab): private-VLAN L3 + Red Hat mirror-registry (quay).
-# Templated by Terraform (latitudesh_user_data.bastion): $${name} tokens are TF template vars,
-# NOT shell vars. Bootstrap log lands in /var/log/cloud-init-output.log.
+# Jinja cloud-init template: render with reviewed external environment inputs.
+# Bootstrap log lands in /var/log/cloud-init-output.log.
 #
 # OS: Rocky 9 is the compatible lab baseline. Red Hat documents RHEL 8/9 as supported
-# mirror-registry hosts; Rocky is not a supported RHEL substitute. This candidate still needs
-# live validation. The network stack is NetworkManager; verify the Quay pod under SELinux.
+# mirror-registry hosts; Rocky is not a supported RHEL substitute. The helper host choice needs
+# its own compatibility validation. The network stack is NetworkManager; verify the Quay pod under SELinux.
 #
 # Network model (the REAL air gap, not a cosmetic VLAN):
-#   - this host gets a STATIC private IP (${bastion_vlan_ip}/${vlan_prefix}) on the rig VLAN
-#     (vid ${vlan_vid}) via a NetworkManager VLAN connection, plus its public IP (kept for
+#   - this host gets a STATIC private IP ({{ bastion_vlan_ip }}/{{ vlan_prefix }}) on the rig VLAN
+#     (vid {{ vlan_vid }}) via a NetworkManager VLAN connection, plus its public IP (kept for
 #     internet egress while mirroring);
-#   - the registry is served under DNS name ${registry_dns_name}, mapped to the PRIVATE IP in
+#   - the registry is served under DNS name {{ registry_dns_name }}, mapped to the PRIVATE IP in
 #     /etc/hosts, so quay's TLS cert SAN matches what the node dials (no x509 IP-SAN failure);
 #   - the SNP node reaches the mirror ONLY over this private IP (its egress nftables allow just
-#     ${bastion_vlan_ip}); see runbook Phase 1.
-#   # VERIFY on first provision: the VLAN parent interface is '${vlan_parent_interface}'
+#     {{ bastion_vlan_ip }}); see runbook Phase 1.
+#   # VERIFY on first provision: the VLAN parent interface is '{{ vlan_parent_interface }}'
 #   # (`ip -br link` / `nmcli device`). Adjust below if the naming differs — it is hardware-bound.
 #
 # Security: the admin password is GENERATED on the bastion on first boot, 0600 root-only (never
-# templated into Terraform state / the Latitude user-data store). Retrieve after boot with:
-#   sudo cat ${mirror_root}/mirror-admin-password
+# included in the rendered cloud-init or provider user-data). Retrieve after boot with:
+#   sudo cat {{ mirror_root }}/mirror-admin-password
 
-# Override only password locking for the image's existing default user. Latitude's
-# Rocky image sets lock_passwd: false, which can fail when its password is empty.
+# Keep the image's existing default user password locked, including images
+# whose inherited settings otherwise try to unlock an empty password.
 # The user mapping inherits provider defaults and keeps cloud SSH key installation.
 user:
-  name: ${jsonencode(bastion_ssh_user)}
+  name: {{ bastion_ssh_user | to_json }}
   lock_passwd: true
 
 packages:
@@ -58,8 +58,7 @@ write_files:
       fi
 
   # --- VLAN L3 setup: AUTO-DETECT the parent NIC, then write the NM keyfile + dnsmasq iface ---
-  # The parent interface is hardware-bound and varies by Latitude plan (e.g. m4-metal-small has
-  # NO bond0 — it is eno1[public]/eno2[private]). With vlan_parent_interface="auto" (default) we
+  # The parent interface is hardware-bound. With vlan_parent_interface="auto" we
   # pick the cabled, un-addressed, physical, non-USB NIC (= the private/VLAN port). Set the var to
   # an explicit name to override. (Discovered on metal 2026-06-26: hardcoding bond0 cascaded into
   # dnsmasq + mirror-registry failures because the VLAN never came up.)
@@ -68,8 +67,8 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      PARENT="${vlan_parent_interface}"
-      VID="${vlan_vid}"
+      PARENT="{{ vlan_parent_interface }}"
+      VID="{{ vlan_vid }}"
       if [ "$PARENT" = "auto" ] || [ -z "$PARENT" ]; then
         for i in $(ls /sys/class/net); do
           [ "$i" = lo ] && continue
@@ -93,7 +92,7 @@ write_files:
       id=$VID
       [ipv4]
       method=manual
-      address1=${bastion_vlan_ip}/${vlan_prefix}
+      address1={{ bastion_vlan_ip }}/{{ vlan_prefix }}
       [ipv6]
       method=ignore
       EOF
@@ -108,7 +107,7 @@ write_files:
     permissions: "0644"
     content: |
       # Serve the rig VLAN even before the bastion itself syncs upstream.
-      allow ${vlan_subnet}
+      allow {{ vlan_subnet }}
       local stratum 10
 
   - path: /usr/local/bin/setup-rig-ntp.sh
@@ -122,7 +121,7 @@ write_files:
         printf '\ninclude /etc/chrony.d/rig.conf\n' >> /etc/chrony.conf
       fi
       EFFECTIVE_CONFIG="$(chronyd -p -f /etc/chrony.conf)"
-      grep -Fxq 'allow ${vlan_subnet}' <<< "$EFFECTIVE_CONFIG"
+      grep -Fxq 'allow {{ vlan_subnet }}' <<< "$EFFECTIVE_CONFIG"
       grep -Fxq 'local stratum 10' <<< "$EFFECTIVE_CONFIG"
 
   # --- DNS: resolve the mirror name to the bastion's PRIVATE IP over the VLAN --------------
@@ -131,7 +130,7 @@ write_files:
   - path: /etc/dnsmasq.d/rig.conf
     permissions: "0644"
     content: |
-      address=/${registry_dns_name}/${bastion_vlan_ip}
+      address=/{{ registry_dns_name }}/{{ bastion_vlan_ip }}
       # add cluster records here too if the bastion is the node's DNS, e.g.:
       # address=/apps.<cluster>.<basedomain>/<node_vlan_ip>
       # host-record=api.<cluster>.<basedomain>,<node_vlan_ip>
@@ -143,15 +142,15 @@ write_files:
       #!/usr/bin/env bash
       set -euo pipefail
       umask 077
-      MIRROR_ROOT="${mirror_root}"
+      MIRROR_ROOT="{{ mirror_root }}"
       QUAY_ROOT="$MIRROR_ROOT/quay"
       mkdir -p "$QUAY_ROOT"
       /usr/local/bin/check-mirror-prerequisites.sh
 
       # registry DNS name -> private VLAN IP, so quayHostname resolves to the private segment
       # on the bastion (and the node uses the same name -> same IP over the VLAN).
-      if ! grep -q "${registry_dns_name}" /etc/hosts; then
-        echo "${bastion_vlan_ip} ${registry_dns_name}" >> /etc/hosts
+      if ! grep -q "{{ registry_dns_name }}" /etc/hosts; then
+        echo "{{ bastion_vlan_ip }} {{ registry_dns_name }}" >> /etc/hosts
       fi
 
       # --- admin password generated on-box, never in TF state / user-data --------------
@@ -162,7 +161,7 @@ write_files:
       chmod 600 "$PW_FILE"
 
       # --- fetch the explicit mirror-registry archive; verification is mandatory -------
-      URL="${mirror_registry_url}"
+      URL="{{ mirror_registry_url }}"
       SHA="${mirror_registry_sha256}"
       [[ "$URL" == https://* && "$URL" != */latest/* && "$SHA" =~ ^[0-9a-fA-F]{64}$ ]] \
         || { echo "FATAL: versioned HTTPS mirror-registry URL and SHA-256 are required"; exit 1; }
@@ -186,12 +185,12 @@ write_files:
       # quayHostname = the DNS name (cert SAN); password read from the 0600 file. Install output
       # is captured to a 0600 sink (it can echo the credential), NOT the world-readable tee log.
       /opt/mirror-registry/mirror-registry install \
-        --quayHostname "${registry_dns_name}" \
+        --quayHostname "{{ registry_dns_name }}" \
         --quayRoot "$QUAY_ROOT" \
         --targetHostname localhost \
         --targetUsername root \
         -k /root/.ssh/id_rsa \
-        --initUser "${init_user}" \
+        --initUser "{{ init_user }}" \
         --initPassword "$(cat "$PW_FILE")" \
         > "$MIRROR_ROOT/install.log" 2>&1
       chmod 600 "$MIRROR_ROOT/install.log"
@@ -202,7 +201,7 @@ write_files:
       if [ ! -s "$CA_SRC" ]; then
         echo "FATAL: quay CA not found at $CA_SRC (version-specific path?) — not marking ready"; exit 1
       fi
-      /usr/local/bin/ensure-mirror-tls.sh "$QUAY_ROOT" "${registry_dns_name}"
+      /usr/local/bin/ensure-mirror-tls.sh "$QUAY_ROOT" "{{ registry_dns_name }}"
       install -D -m0644 "$CA_SRC" "$MIRROR_ROOT/ca/rootCA.pem"
       # Clear an earlier failed attempt only after this retry completed and its CA
       # was installed. Phase A deliberately gives FAILED precedence over READY.
@@ -258,7 +257,7 @@ runcmd:
     - |
       set -euo pipefail
       umask 077
-      MIRROR_ROOT="${mirror_root}"
+      MIRROR_ROOT="{{ mirror_root }}"
       mkdir -p "$MIRROR_ROOT"
       trap 'date -u +%FT%TZ > "$MIRROR_ROOT/MIRROR_FAILED"' ERR
       # RHEL-compatible images can supply curl-minimal. Reuse its curl command
@@ -278,4 +277,4 @@ runcmd:
       # pipefail preserves bootstrap errors through the log tee.
       /usr/local/bin/bootstrap-mirror.sh 2>&1 | tee -a /var/log/mirror-bootstrap.log
 
-final_message: "mirror-registry bootstrap finished after $UPTIME s — admin password: sudo cat ${mirror_root}/mirror-admin-password"
+final_message: "mirror-registry bootstrap finished after $UPTIME s — admin password: sudo cat {{ mirror_root }}/mirror-admin-password"

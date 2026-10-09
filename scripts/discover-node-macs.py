@@ -37,7 +37,7 @@ def check_machines(machines):
         name, server_id = machine.get("name"), machine.get("server_id")
         if not isinstance(name, str) or not name.strip() or name in names:
             raise InvalidDiscovery("Every machine must have a unique nonempty name")
-        if (not isinstance(server_id, str) or not re.fullmatch(r"(?:sv_[A-Za-z0-9]+|[1-9][0-9]*)", server_id)
+        if (not isinstance(server_id, str) or not re.fullmatch(r"[1-9][0-9]*", server_id)
                 or server_id in server_ids):
             raise InvalidDiscovery("Every machine must have a unique supported provider server_id")
         names.add(name)
@@ -57,49 +57,6 @@ def check_machines(machines):
                     raise InvalidDiscovery("Interface MAC addresses must be unique across all machines")
                 addresses.add(address)
     return machines
-
-
-def capture(machines, servers):
-    check_machines(machines)
-    if not isinstance(servers, list) or len(servers) != len(machines):
-        raise InvalidDiscovery("The API response count must exactly match the requested machines")
-    by_id = {}
-    for server in servers:
-        if not isinstance(server, dict) or not isinstance(server.get("data"), dict):
-            raise InvalidDiscovery("The API must return one server object per request")
-        data = server["data"]
-        server_id = data.get("id")
-        if not isinstance(server_id, str) or server_id in by_id:
-            raise InvalidDiscovery("The API returned a missing or duplicate server identity")
-        by_id[server_id] = data
-    if set(by_id) != {machine["server_id"] for machine in machines}:
-        raise InvalidDiscovery("The API server identities do not exactly match the requested machines")
-    bindings = []
-    for machine in machines:
-        attributes = by_id[machine["server_id"]].get("attributes")
-        if not isinstance(attributes, dict):
-            raise InvalidDiscovery("The API server attributes are missing")
-        interfaces = attributes.get("interfaces")
-        if interfaces is None or interfaces == []:
-            specs = attributes.get("specs", {})
-            interfaces = specs.get("nics", []) if isinstance(specs, dict) else []
-        if not isinstance(interfaces, list) or any(not isinstance(nic, dict) for nic in interfaces):
-            raise InvalidDiscovery("The API interface list is malformed")
-        binding = {key: machine[key] for key in ("name", "server_id")}
-        for role, field, required in (("internal", "parent_mac", True),
-                                      ("external", "external_mac", bool(machine.get("external_if")))):
-            matches = [nic for nic in interfaces if nic.get("role") == role]
-            if len(matches) > 1 or (required and len(matches) != 1):
-                raise InvalidDiscovery(f"Expected exactly one {role}-role NIC for each configured interface")
-            address = mac(matches[0].get("mac_address")) if matches else ""
-            if machine.get(field) and mac(machine[field]) != address:
-                raise InvalidDiscovery(f"Explicit {field} disagrees with the current API interface identity")
-            binding[field] = address
-        bindings.append(binding)
-    result = {"version": 1, "bindings": bindings}
-    merge(machines, result)  # Cross-node uniqueness and required public-NIC checks.
-    return result
-
 
 
 def capture_cherry(machines, servers, observations):
@@ -214,7 +171,7 @@ def write_cache(path, document):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("begin", "capture", "capture-cherry", "merge"))
+    parser.add_argument("mode", choices=("begin", "capture-cherry", "merge"))
     args = parser.parse_args()
     try:
         payload = json.load(sys.stdin)
@@ -229,9 +186,8 @@ def main():
             changed = path.exists()
             path.unlink(missing_ok=True)
             print(json.dumps({"changed": changed}))
-        elif args.mode in ("capture", "capture-cherry"):
-            document = (capture_cherry(machines, payload.get("servers", []), payload.get("observations", []))
-                        if args.mode == "capture-cherry" else capture(machines, payload.get("servers")))
+        elif args.mode == "capture-cherry":
+            document = capture_cherry(machines, payload.get("servers", []), payload.get("observations", []))
             changed = write_cache(cache_path(), document)
             print(json.dumps({"changed": changed, "bindings": document["bindings"]}))
         else:

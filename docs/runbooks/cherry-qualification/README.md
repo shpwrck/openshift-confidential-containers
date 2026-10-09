@@ -38,7 +38,7 @@ A future trial needs new authorized allocations, budget, pinned access, actual
 hardware/NIC/disk facts and fresh external inputs. Provision Cherry manually,
 complete the [firmware gate](../../amd-firmware-preflight.md), then follow
 [Cherry setup](../../cherry-validation.md) and [the quickstart](../../current-quickstart.md).
-Cherry provisioning is not implemented by the Latitude Terraform modules.
+Provisioning is manual; the repository prepares and installs supplied servers.
 
 The tested node was EPYC 9124 / H13SST-G / BIOS 3.7 with UEFI. Manual console setup
 enabled SMEE, full-memory RMP, IOMMU and SNP, with SEV-ES ASID limit 100.

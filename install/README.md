@@ -7,12 +7,10 @@ contains the selected release inventory and templates, not an independent manual
 |---|---|
 | `release-manifest.json` | Exact platform, Operator, image and tool identities |
 | `imageset-config.yaml` | Matching oc-mirror v2 content selection |
-| `install-config.yaml.tmpl` | Cluster, payload mirrors, trust and pull-secret inputs |
-| `agent-config.yaml.tmpl` | Actual disk, MACs and private-network configuration |
+| [Ansible templates](../ansible/roles/render_configs/templates/) | Cluster, disk, MAC and private-network inputs |
 
-The Ansible templates render the normal supplied-rig workflow. These manual
-examples need actual verified values; keep filled files and generated assets in
-private external storage. Never create credential-bearing `cluster-assets` here.
+Ansible renders actual verified values. Keep generated configuration/assets in
+private external storage; never create credential-bearing `cluster-assets` here.
 
 Check the disk serial and stable `/dev/disk/by-path/` hint, permanent MACs, VLAN wire
 tag, addresses/subnet, rendezvous IP, DNS/NTP, mirror CA/authentication and cluster

@@ -35,6 +35,18 @@ class CherryProviderTests(unittest.TestCase):
     def capture(self):
         return discovery.capture_cherry([self.machine], [self.server], [self.raw])
 
+    def test_capture_requires_one_node_server_and_pinned_observation(self):
+        for machines, servers, observations in (([], [self.server], [self.raw]),
+                                                ([self.machine], [], [self.raw]),
+                                                ([self.machine], [self.server], []),
+                                                ([self.machine], [self.server] * 2, [self.raw])):
+            with self.subTest(counts=(len(machines), len(servers), len(observations))), self.assertRaises(ValueError):
+                discovery.capture_cherry(machines, servers, observations)
+
+    def test_removed_provider_is_not_normalized_as_cherry(self):
+        with self.assertRaisesRegex(ValueError, 'Unsupported provider'):
+            server_identity('latitude', self.server, '123', 'allocated-node', '456')
+
     def test_identity_output_excludes_credentials(self):
         result = server_identity("cherry", self.server, "123", "allocated-node", "456")
         self.assertNotIn("root_password", result)

@@ -6,7 +6,7 @@ import sys
 from lib.provider import server_identity
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--provider", required=True, choices=["latitude", "cherry"])
+parser.add_argument("--provider", required=True, choices=["cherry"])
 parser.add_argument("--server-id", required=True)
 parser.add_argument("--hostname", default="")
 parser.add_argument("--project-id", default="")

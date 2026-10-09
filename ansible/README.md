@@ -3,7 +3,8 @@
 Start with the [quickstart](../docs/current-quickstart.md) and
 [provider setup](../docs/cherry-validation.md). Ansible prepares a supplied helper
 and explicitly installs a disposable AMD node. Cherry allocation and BIOS setup
-are manual; optional Terraform provisioning targets Latitude only.
+are manual. The shared [mirror bootstrap](bootstrap/mirror-registry.yaml.j2) is a
+Jinja cloud-init template for supplied helpers.
 
 ## Modes
 
@@ -13,8 +14,6 @@ are manual; optional Terraform provisioning targets Latitude only.
 | `--mode fresh-install` | Prepare, qualify raw hardware/private link, then replace the node OS |
 | `--mode resume-install` | Finish an accepted request with unchanged assets/inputs; no new rebuild |
 | `--mode verify` | Check installed OCP payload and health without reinstalling |
-| `--plan-tf` | Latitude Terraform plan only; no Ansible work |
-| `--apply-tf` | Explicit Latitude provisioning before the selected mode |
 
 Pass private environment inputs with `-e "@$COCO_STATE_DIR/rig.yml"`.
 Fresh install is not a customer upgrade. Successful installation closes boot publication.
