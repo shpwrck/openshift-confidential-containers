@@ -8,65 +8,29 @@
 - name: Pxe_serve STOP mode (tear the endpoint down)
   when: pxe_mode == 'stop'
   block:
-    - name: Remove the nginx boot-artifacts conf
-      ansible.builtin.file:
-        path: /etc/nginx/conf.d/boot-artifacts.conf
-        state: absent
-      become: true
-      register: pxe_conf_removed
-
-    - name: Remove the boot-artifacts webroot
-      ansible.builtin.file:
-        path: "{{ boot_artifacts_webroot }}"
-        state: absent
-      become: true
-
-    - name: Validate nginx config after removal
-      ansible.builtin.command: nginx -t
-      become: true
-      register: pxe_nginx_t_stop
-      changed_when: false
-      failed_when: false
-
-    - name: Reload nginx if its config is still valid, else stop it
-      ansible.builtin.systemd:
-        name: nginx
-        state: "{{ 'reloaded' if pxe_nginx_t_stop.rc == 0 else 'stopped' }}"
-      become: true
-
-    - name: Confirm the endpoint is closed
-      ansible.builtin.debug:
-        msg: "Boot-artifact endpoint closed — the secret-bearing initrd is no longer served."
+    - name: Close the published boot endpoint
+      ansible.builtin.include_tasks: stop_publication.yml
 
 # ---- SERVE mode ----
 - name: Pxe_serve SERVE mode
   when: pxe_mode != 'stop'
   block:
+    - name: Reset publication mutation tracking for this invocation
+      ansible.builtin.set_fact:
+        pxe_publication_started: false
+
     - name: Guard against the placeholder token (issue 33 — secret-bearing initrd path)
       ansible.builtin.assert:
         that:
           - boot_artifacts_token != 'REPLACE_WITH_openssl_rand_hex_16'
-          - boot_artifacts_token | length >= 16
+          - boot_artifacts_token is match('^[0-9a-fA-F]{32,}$')
         fail_msg: "boot_artifacts_token is the placeholder — set a real openssl rand -hex 16 token."
 
-    - name: Build the agent PXE/iPXE boot artifacts (openshift-install agent create pxe-files)
-      ansible.builtin.command:
-        cmd: openshift-install --dir {{ cluster_assets_dir }} agent create pxe-files
-        creates: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
-      become: true
-      environment:
-        PATH: "{{ tool_path }}"
+    - name: Validate publication paths and remove unused legacy copies
+      ansible.builtin.include_tasks: cleanup_publication.yml
 
-    - name: Confirm the generated .ipxe exists
-      ansible.builtin.stat:
-        path: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
-      become: true
-      register: ipxe_stat
-
-    - name: Fail if pxe-files were not generated
-      ansible.builtin.fail:
-        msg: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe not found — agent create pxe-files failed."
-      when: not ipxe_stat.stat.exists
+    - name: Verify or regenerate boot artifacts for these inputs
+      ansible.builtin.include_tasks: prepare.yml
 
     # Derive the URL path the node will actually request from the generated .ipxe and serve
     # EXACTLY that — guarantees the serve location matches the tokenized bootArtifactsBaseURL.
@@ -75,20 +39,21 @@
         src: "{{ boot_artifacts_dir }}/agent.x86_64.ipxe"
       become: true
       register: ipxe_content
+      no_log: true
 
     - name: Extract the URL path prefix from the .ipxe
       ansible.builtin.set_fact:
         pxe_url_prefix: >-
           {{ (ipxe_content.content | b64decode
               | regex_search('http://[^/]+/([^ ]*)/agent\.x86_64-vmlinuz', '\1')
-              | first) | default('', true) }}
+              | default([], true) | first) | default('', true) }}
+      no_log: true
 
-    - name: Warn if the .ipxe base URL has NO path segment (guessable root)
-      ansible.builtin.debug:
-        msg: >-
-          WARN: the .ipxe base URL has no path segment — artifacts would sit at a GUESSABLE root
-          leaking ignition secrets. Set bootArtifactsBaseURL to a tokenized path and rebuild.
-      when: pxe_url_prefix | length == 0
+    - name: Require the generated iPXE URL to use this run's token
+      ansible.builtin.assert:
+        that: pxe_url_prefix == boot_artifacts_token
+        fail_msg: "Generated iPXE does not match the selected boot token; refusing to serve stale or unprotected assets."
+      no_log: true
 
     - name: Ensure nginx is installed
       ansible.builtin.package:
@@ -96,18 +61,57 @@
         state: present
       become: true
 
+    - name: Ensure the default public staging parent is traversable
+      ansible.builtin.file:
+        path: /var/www
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+      when: boot_artifacts_webroot == '/var/www/coco-boot-artifacts'
+
+    - name: Track publication changes for failure cleanup
+      ansible.builtin.set_fact:
+        pxe_publication_started: true
+
     - name: Stage the boot artifacts into the tokenized webroot
       ansible.builtin.shell: >-
-        set -o pipefail;
-        rm -rf "{{ boot_artifacts_webroot }}";
-        mkdir -p "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}";
-        cp -rf "{{ boot_artifacts_dir }}/." "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}/";
-        chmod -R a+rX "{{ boot_artifacts_webroot }}"
+        set -euo pipefail;
+        rm -rf -- {{ boot_artifacts_webroot | quote }};
+        mkdir -p -- {{ (boot_artifacts_webroot ~ '/' ~ pxe_url_prefix) | quote }};
+        cp -rf -- {{ (boot_artifacts_dir ~ '/.') | quote }} {{ (boot_artifacts_webroot ~ '/' ~ pxe_url_prefix ~ '/') | quote }};
+        chmod -R -- a+rX {{ boot_artifacts_webroot | quote }}
       args:
         executable: /bin/bash
       become: true
       register: pxe_stage
       changed_when: true
+      no_log: true
+
+    - name: Check that the nginx worker can read the staged initrd
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - -u
+          - nginx
+          - --
+          - test
+          - -r
+          - "{{ boot_artifacts_webroot }}/{{ pxe_url_prefix }}/agent.x86_64-initrd.img"
+      become: true
+      register: pxe_nginx_read
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Require a readable public staging path before configuring nginx
+      ansible.builtin.assert:
+        that: pxe_nginx_read.rc == 0
+        fail_msg: >-
+          The nginx worker cannot read the staged initrd. Check the staging directory and every
+          parent directory's traversal permissions. Keep the public webroot outside the private
+          installer source/assets tree; do not relax permissions on private installer files.
 
     - name: Write the nginx server block (listing OFF; only the tokenized path resolves)
       ansible.builtin.template:
@@ -118,6 +122,7 @@
         mode: "0644"
       become: true
       register: pxe_nginx_conf
+      no_log: true
 
     - name: Apply SELinux context to the webroot (if SELinux enforcing)
       ansible.builtin.command: "{{ item }}"
@@ -131,12 +136,17 @@
         - semanage port -a -t http_port_t -p tcp "{{ boot_artifacts_port }}"
       when: ansible_facts.selinux is defined and ansible_facts.selinux.status == 'enabled'
 
+    # Installation is a separate ansible-playbook invocation from bastion prep;
+    # setup does not include service facts and the earlier memory cache is gone.
+    - name: Gather service facts before opening the boot-artifacts port
+      ansible.builtin.service_facts:
+      become: true
+
     - name: Open the boot-artifacts port in firewalld (if active)
       ansible.builtin.command: "{{ item }}"
       become: true
       register: pxe_fw
       changed_when: "'success' in (pxe_fw.stdout | default(''))"
-      failed_when: false
       loop:
         - firewall-cmd --add-port={{ boot_artifacts_port }}/tcp --permanent
         - firewall-cmd --reload
@@ -167,6 +177,7 @@
       retries: 3
       delay: 2
       until: pxe_range_check.status == 206
+      no_log: true
 
     - name: Verify the initrd is NOT reachable at the guessable root
       ansible.builtin.uri:
@@ -176,9 +187,44 @@
       register: pxe_root_check
       when: pxe_url_prefix | length > 0
 
-    - name: Report the iPXE URL to feed Latitude
+    # A loopback probe cannot detect an ingress firewall blocking the public URL.
+    # This checks the controller path; actual node PXE access remains a boot check.
+    - name: Verify public boot artifact access from the controller
+      ansible.builtin.uri:
+        url: "{{ boot_artifacts_base_url }}/agent.x86_64-initrd.img"
+        method: GET
+        headers:
+          Range: "bytes=0-1"
+        # Let uri close an ignored Range (200) without reading a whole initrd.
+        # The task-level condition below still requires 206 before proceeding.
+        status_code: [200, 206]
+        return_content: false
+        follow_redirects: none
+        use_proxy: false
+        timeout: 10
+      delegate_to: localhost
+      become: false
+      register: pxe_public_range_check
+      retries: 3
+      delay: 2
+      until: pxe_public_range_check.status | default(0) == 206
+      failed_when: pxe_public_range_check.status | default(0) != 206
+      no_log: true
+
+    - name: Report the protected boot endpoint status
       ansible.builtin.debug:
         msg: >-
-          Boot artifacts published. Feed Latitude this iPXE URL:
-          http://{{ bastion_public_ipv4 }}:{{ boot_artifacts_port }}/{{ pxe_url_prefix }}{{ '/' if pxe_url_prefix | length > 0 else '' }}agent.x86_64.ipxe
-          — AFTER the node boots, run the site stop tag (pxe_mode=stop) to close it.
+          Boot artifacts are ready for the selected fresh installation; the boot token is omitted from logs.
+          The wrapper closes this endpoint after a successful install. For a staged/manual run,
+          run the pxe-stop tag once boot artifacts are no longer needed.
+
+  rescue:
+    - name: Close a partially published endpoint after preparation or readiness failure
+      ansible.builtin.include_tasks: stop_publication.yml
+      when: pxe_publication_started | default(false) | bool
+
+    - name: Keep a failed PXE publication run failed after cleanup
+      ansible.builtin.fail:
+        msg: >-
+          PXE publication failed. Any publication started by this invocation was closed;
+          inspect the preceding failed task and fix its cause before retrying.

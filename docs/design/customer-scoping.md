@@ -1,42 +1,53 @@
-# Pre-deployment scoping — questions to confirm before/early in a deployment
+# Customer deployment and upgrade planning
 
-These are unknowns that the design deliberately works *around* (so they don't block rung-0),
-but they must be confirmed for the target environment to finalize the apply-to-production step.
+The repository has validated a disposable AMD SNO lab. Customer installation,
+Restricted HTTPS in a separate Trustee trust domain, HA/DR and upgrades need
+validation in the customer's environment. [The trial record](../validation/README.md)
+states the demonstrated scope.
 
-## Hardware
-- [ ] **AMD EPYC generation** — Milan (7003) / Genoa (9004) / Turin (9005)? Changes the KDS
-      product string and trips Trustee bug #591. (Mitigation: VCEK automation is gen-agnostic.)
-- [ ] **BMC vendor/model** (Dell iDRAC / HPE iLO / Supermicro / Lenovo XCC)? Determines whether
-      the SNP BIOS settings (`SMEE`, `SEV-SNP Support`, `SNP Memory Coverage`, `SEV-ES ASID
-      limit`) are exposed in the **Redfish** BIOS attribute registry so they can be automated
-      via metal3 **`HostFirmwareSettings`** (declarative, GitOps) instead of manual console.
-      Risk to validate: not all AMD CBS settings are Redfish-exposed on every vendor; fallback
-      = vendor tooling (Dell SCP / Supermicro SUM). The manual sequence is in
-      [../notes/latitude-snp-bringup.md](../notes/latitude-snp-bringup.md).
-- [ ] Eligible AMD node count → total host VCEK certificates to collect (one standard collection per node; socket count does not change the procedure).
-- [ ] BIOS access to confirm: SEV-SNP Support **Enabled**, Memory Interleaving **Enabled**
-      (disabled → PSP `Error: 0x3 INVALID_CONFIG`), SMEE **Enabled**.
+## Confirm before deployment
 
-## Firmware / lifecycle
-- [ ] **Firmware/TCB patch cadence** — decides whether VCEK provisioning is a one-shot bundle
-      or a recurring sync. (Mitigation: built as a re-runnable job regardless.)
-- [ ] Process for staging firmware updates (ReportedTcb deferral window?).
+| Area | Information to collect |
+|---|---|
+| Product support | Exact OCP/OSC/Trustee versions, dated live compatibility matrix, entitlements and supported update path |
+| Hardware | Actual CPU/board/BIOS/BMC, UEFI, initialized SNP/RMP, firmware fixes and eligible worker pool |
+| Private network | Registry, DNS/NTP, TLS/authentication, mirror paths, boot delivery and isolation at host/pod/guest levels |
+| Trustee | Separate trust domain/context, endpoint TLS and token signer, administrator access, policies, resources and storage |
+| Workloads | Protected resource paths, complete agent policy, approved image digests/signatures, memory requirements and negative controls |
+| Operations | Owners, monitoring, reference/certificate expiry, backups, tested recovery and rollback checkpoints |
 
-## Network / air-gap
-- [ ] Internal **mirror registry** details (host, CA, auth) for `oc-mirror` + IDMS.
-- [ ] Internal **git** host for the Kustomize tree + ArgoCD.
-- [ ] Proxy in play? Note: **two independent proxies** — Trustee pod (`KbsEnvVars`) and CVM
-      (`aa.toml` in initdata) — neither inherits cluster proxy.
+Start with [firmware preflight](../amd-firmware-preflight.md),
+[Trustee setup](../trustee-current.md) and [guest registry access](../guest-images.md).
+BIOS automation depends on the actual vendor/BMC; manual setup was required in the lab.
 
-## Trustee / topology
-- [ ] Confirm **separate Trustee cluster** placement and the KBS URL the workers will target.
-- [ ] TLS route model: passthrough vs re-encrypt (cert pinned in initdata).
+## Existing OSC 1.12 / Trustee 1.1 deployments
 
-## Roadmap
-- [ ] 🔴 **TDX timeline** — fully air-gapped TDX is not supported upstream yet. Confirm
-      stakeholders understand the SNP-now / TDX-when-supported split.
-- [ ] Does the target environment already run **OpenShift GitOps/ArgoCD**, or is it net-new?
+Treat this as a product migration, not the provider fresh-install path:
 
-## Secrets to gate behind attestation
-- [ ] Real credential type(s) to gate behind attestation (vs the demo `sample` secret).
-- [ ] Image signing (cosign) and/or encryption requirements for rungs b/c.
+1. Capture the current cluster IDs, OCP payload, CSVs/CRDs, Trustee ownership,
+   policies, resources, VCEKs, TLS/signing identities and storage in protected backups.
+2. Check the **live OSC 1.12 matrix** for the existing baseline and the target
+   **OSC 1.13 matrix**. Verify the customer's actual OCP update graph;
+   the tested 4.20.39 target does not prove an update edge from 4.20.18.
+3. Follow the product update order and rehearse Trustee migration in an isolated clone.
+   Trustee 1.2 can replace policy/configuration maps and does not preserve every custom
+   verifier setting. The repository refuses automatic adoption of standalone KbsConfig.
+4. Recalculate launch references and approved hardware TCB, recollect collateral when
+   needed, and rebind final initdata. Run the affected positive/negative/recovery proofs.
+5. Verify serving configuration, workload health and network isolation after rollouts.
+   Rollback must restore compatible software, policy, references, collateral and signer
+   identities together; a policy-only rollback is insufficient.
+
+Use Red Hat's [OSC update procedure](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.13/html/deploying_confidential_containers_on_bare-metal_servers/update-osc-cc-overview_metal-cc)
+and [Trustee product guide](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.13/html/deploying_red_hat_build_of_trustee_for_workloads_running_on_bare-metal_servers/index).
+[The existing 1.12 compatibility matrix](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.12/html/deploying_confidential_containers_on_bare-metal_servers/cc-discover_metal-cc)
+and [target 1.13 matrix](https://docs.redhat.com/en/documentation/openshift_sandboxed_containers/1.13/html/deploying_confidential_containers_on_bare-metal_servers/cc-discover_metal-cc)
+are separate checks. Recheck them before customer use; a dated repository manifest
+cannot replace live support guidance.
+
+## Changes after deployment
+
+Reassess references and rerun affected proofs after firmware, guest artifacts,
+initdata, agent/resource/image policies or signing identities change. Track expiry
+and refresh before it blocks attestation. [Maintenance](../maintenance.md) maps the
+repository helpers; it does not provide a production backup or rotation service.

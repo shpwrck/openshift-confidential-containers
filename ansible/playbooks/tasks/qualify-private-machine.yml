@@ -1,0 +1,14 @@
+---
+- name: Read and validate the exact provider identity
+  ansible.builtin.include_tasks: ../../roles/install_drive/tasks/provider_identity.yml
+
+- name: Require current raw-host service proof for the prepared inputs
+  block:
+    - name: Run the same pinned service check used before reinstall
+      ansible.builtin.include_tasks:
+        file: ../../roles/install_drive/tasks/private_link.yml
+        apply:
+          ignore_unreachable: true
+  rescue:
+    - name: Preserve diagnostics and close an unused boot endpoint
+      ansible.builtin.include_tasks: ../../roles/install_drive/tasks/private_link_failure.yml

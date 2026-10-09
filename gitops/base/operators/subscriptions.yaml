@@ -1,71 +1,51 @@
----
-# Operator subscriptions. Air-gapped cluster: every `source` points at a CatalogSource
-# produced by `oc-mirror` (oc-mirror output) in the openshift-marketplace namespace, NOT at
-# the public Red Hat catalog. The CatalogSource name below (cs-redhat-operator-index-v4-20)
-# is the oc-mirror default for the v4.20 operator index; adjust to match your mirror set.
-#
-# installPlanApproval: Automatic everywhere — these are pinned by the mirrored catalog, so
-# there is no floating-latest risk; manual approval just adds toil on a disconnected cluster.
-#
-# Channels carry a `# VERIFY` because the exact channel string is version-specific and must
-# be confirmed against the mirrored catalog (`oc get packagemanifest <pkg> -o yaml`).
-
-# 1) Node Feature Discovery — must match the OCP minor version. Emits the SEV-SNP CPU label.
+# Target candidates from install/release-manifest.json. Verify catalog CSVs first.
+# startingCSV is not an upgrade lock; manual InstallPlan approval is intentional.
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: nfd
   namespace: openshift-nfd
 spec:
-  channel: stable # VERIFY: NFD channel must match OCP minor (e.g. 4.20 ships `stable`).
+  channel: stable
   name: nfd
-  source: cs-redhat-operator-index-v4-20 # VERIFY: mirrored CatalogSource name (oc-mirror).
+  source: cs-redhat-operator-index-v4-20
   sourceNamespace: openshift-marketplace
-  installPlanApproval: Automatic
-  # startingCSV: # FILL: pin to the mirrored CSV if you want a hard version pin.
+  installPlanApproval: Manual
 ---
-# 2) cert-manager Operator for Red Hat OpenShift — prereq for Trustee certs.
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: openshift-cert-manager-operator
   namespace: cert-manager-operator
 spec:
-  channel: stable-v1 # VERIFY: cert-manager operator channel for this mirror.
+  channel: stable-v1
   name: openshift-cert-manager-operator
-  source: cs-redhat-operator-index-v4-20 # VERIFY: mirrored CatalogSource name (oc-mirror).
+  source: cs-redhat-operator-index-v4-20
   sourceNamespace: openshift-marketplace
-  installPlanApproval: Automatic
-  # startingCSV: # FILL: pin to the mirrored CSV if desired.
+  installPlanApproval: Manual
 ---
-# 3) OpenShift sandboxed containers operator (OSC 1.12).
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: sandboxed-containers-operator
   namespace: openshift-sandboxed-containers-operator
 spec:
-  channel: stable # VERIFY: OSC 1.12 channel (confirm against mirrored packagemanifest).
+  channel: stable
   name: sandboxed-containers-operator
-  source: cs-redhat-operator-index-v4-20 # VERIFY: mirrored CatalogSource name (oc-mirror).
+  source: cs-redhat-operator-index-v4-20
   sourceNamespace: openshift-marketplace
-  installPlanApproval: Automatic
-  # PIN (#65): proven CSV. Safe with Automatic because the imageset min/maxVersion bounds the
-  # mirror at 1.12.x — the catalog cannot offer an upgrade past the pin.
-  startingCSV: sandboxed-containers-operator.v1.12.1
+  installPlanApproval: Manual
+  startingCSV: sandboxed-containers-operator.v1.13.1
 ---
-# 4) Red Hat build of Trustee (trustee-operator 1.1).
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: trustee-operator
   namespace: trustee-operator-system
 spec:
-  channel: stable # VERIFY: Trustee 1.1 channel (confirm against mirrored packagemanifest).
+  channel: stable
   name: trustee-operator
-  source: cs-redhat-operator-index-v4-20 # VERIFY: mirrored CatalogSource name (oc-mirror).
+  source: cs-redhat-operator-index-v4-20
   sourceNamespace: openshift-marketplace
-  installPlanApproval: Automatic
-  # PIN (#65): proven CSV; imageset bounds the mirror at 1.1.x. Trustee >=1.2 needs the #65
-  # migration (1.2 kbs-config format, no policy-CM refs, persistent EC token signer).
-  startingCSV: trustee-operator.v1.1.0
+  installPlanApproval: Manual
+  startingCSV: trustee-operator.v1.2.1

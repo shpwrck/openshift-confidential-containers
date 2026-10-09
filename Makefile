@@ -1,320 +1,153 @@
-# Rig driver for the disposable SNO test environment.
-# Customer env uses ArgoCD against the same gitops/ tree instead of `oc apply`.
-
-OVERLAY ?= sno-workers
-NODE    ?=
-NS      ?= trustee-operator-system
-WORKLOAD_NS ?= default
-CATALOGSOURCE ?= cs-redhat-operator-index-v4-20
-VCEK_BUNDLE ?= ./vcek-bundle
+# The release manifest is the single source for product versions.
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
+COCO_STATE_DIR ?= $(HOME)/.local/state/openshift-confidential-containers
 TEE ?= snp
-OCP_VERSION ?= 4.20.18
-PULL_SECRET ?= ./pull-secret.json
-INITDATA ?= ./initdata-flavour-b.toml
-RVPS_OUT ?= ./rvps-$(TEE).yaml
-DEBUG_IMAGE ?=
-REGISTRIES_CONF ?=
-REGISTRY_CERTS_DIR ?=
-VERITAS_OC_WRAPPER ?=
-VERITAS_EXTRA_ARGS ?=
-HWID ?=
-HWIDS ?=
-# Endpoint seam (#26 keystone): ARTIFACTORY_REGISTRY is the canonical, provider-neutral registry
-# endpoint; MIRROR_REGISTRY stays as a back-compat alias. Env/CLI precedence ARTIFACTORY_REGISTRY >
-# MIRROR_REGISTRY > default matches scripts/*.sh. Default preserves the quay mirror host mid-migration.
-# `override` is load-bearing: without it a command-line `make MIRROR_REGISTRY=x` (command-line origin)
-# would beat the plain `:=` and let the legacy alias win over a command-line ARTIFACTORY_REGISTRY.
+OCP_VERSION ?= $(shell python3 scripts/verify-release.py --get platform.version)
+CATALOGSOURCE ?= $(shell python3 scripts/verify-release.py --get catalog.source)
+WORKER_CONTEXT ?=
+TRUSTEE_CONTEXT ?=
+TRUSTEE_LAB ?= 0
+TRUSTEE_PROFILE ?= Restricted
+NS ?= trustee-operator-system
+WORKLOAD_NS ?= coco-validation
+NODE ?=
+OVERLAY ?= sno-workers
+WHICH ?= all
+TIMEOUT ?= 180
 MIRROR_REGISTRY ?= mirror.rig.local:8443
 ARTIFACTORY_REGISTRY ?= $(MIRROR_REGISTRY)
 override MIRROR_REGISTRY := $(ARTIFACTORY_REGISTRY)
-# Single pull secret (customer model): a dockerconfigjson whose mirror entry supplies the registry
-# credential — no mirror admin password needed. `export`ed so it reaches apply-trustee/seed-trustee
-# (and any other consumer) without threading it through every recipe. Empty = fall back to the
-# rig's mirror admin user + password file.
-MIRROR_PULL_SECRET ?=
-export MIRROR_PULL_SECRET
-MIRROR_DNS_UPSTREAM ?= 192.168.66.10
-KBS_URL ?= http://kbs-service.trustee-operator-system.svc:8080
-RUNG_KBS_IMAGE ?= registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
-ARTIFACT_DIR ?= ./rung-image-artifacts
-SOURCE_IMAGE ?= $(RUNG_KBS_IMAGE)
-SOURCE_IMAGE_REF ?= docker://$(SOURCE_IMAGE)
-SKOPEO_COPY_ARGS ?= --remove-signatures
-RUNG_ENCRYPTED_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c:encrypted
+ARTIFACT_DIR ?= $(COCO_STATE_DIR)/rung-image-artifacts
+ASSETS ?= $(COCO_STATE_DIR)/cluster-assets
+BIN_DIR ?= $(COCO_STATE_DIR)/bin
+INSTALL ?= $(BIN_DIR)/openshift-install
+PULL_SECRET ?= $(COCO_STATE_DIR)/credentials/pull-secret.json
+VCEK_BUNDLE ?= $(COCO_STATE_DIR)/vcek-bundle
+INITDATA ?= $(COCO_STATE_DIR)/initdata.toml
+RVPS_OUT ?= $(COCO_STATE_DIR)/rvps-$(TEE).yaml
+RUNG_KBS_IMAGE ?= $(shell python3 scripts/verify-release.py --get images.ubiMinimal.ref)
 RUNG_SIGNED_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-b:signed
 RUNG_SIGNED_UNSIGNED_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-b-unsigned:unsigned
-RUNG_ENCRYPTED_KEY_PATH ?= /default/image-key/rung-encrypted
-RUNG_ENCRYPTED_KEY_ID ?= kbs://$(RUNG_ENCRYPTED_KEY_PATH)
-RUNG_ENCRYPTED_POLICY_URI ?= kbs:///default/security-policy/test
-RUNG_SIGNED_POLICY_URI ?= kbs:///default/security-policy/rung-signed
+RUNG_ENCRYPTED_IMAGE ?= $(MIRROR_REGISTRY)/coco/rung-c:encrypted
+RUNG_ENCRYPTED_KEY_ID ?= kbs:///default/image-key/rung-encrypted
 RUNG_ENCRYPTED_KEY_FILE ?= $(ARTIFACT_DIR)/rung-encrypted-image.key
-COCO_KEYPROVIDER_IMAGE ?= coco-keyprovider
-CONTAINER_RUNTIME ?=
-CONTAINER_VOLUME_SUFFIX ?=
+RUNG_SIGNED_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
+RUNG_SIGNED_POLICY_URI ?= kbs:///default/security-policy/rung-signed
+RUNG_ENCRYPTED_POLICY_URI ?= kbs:///default/security-policy/test
+RUNG_IMAGE_MANIFEST ?= $(ARTIFACT_DIR)/rung-image-manifest.json
 COSIGN_KEY ?= $(ARTIFACT_DIR)/cosign.key
 COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
-COSIGN_SIGN_ARGS ?=
-COSIGN_VERIFY_ARGS ?=
-BUILD_RUNG_IMAGES_SCRIPT ?= ./scripts/build-rung-images.sh
-SEED_TRUSTEE_SECRETS_SCRIPT ?= ./scripts/seed-trustee-secrets.sh
-APPLY_TRUSTEE_SCRIPT ?= ./scripts/apply-trustee.sh
-NEGATIVE_TEST_SCRIPT ?= ./scripts/negative-test.sh
-TEST_RUNG_SCRIPT ?= ./scripts/test-rung.sh
-REPRO_LOOP_SCRIPT ?= ./scripts/repro-loop.sh
-APPLY_RUNG_KBS_SCRIPT ?= ./scripts/apply-rung-kbs.sh
-APPLY_RUNG_ENCRYPTED_SCRIPT ?= ./scripts/apply-rung-encrypted.sh
-APPLY_RUNG_SIGNED_SCRIPT ?= ./scripts/apply-rung-signed.sh
-RENDER_MEASUREMENT_POLICY_SCRIPT ?= ./scripts/render-measurement-policy.sh
-VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT ?= ./scripts/verify-rung-encrypted-key-wrap.sh
-VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT ?= ./scripts/verify-rung-signed-signature.sh
-VERIFY_RUNG_ARTIFACTS_AFTER_BUILD ?= 1
-REQUIRE_RUNG_IMAGE_MANIFEST ?= 1
-RUNG_SIGNED_COSIGN_PUB ?= $(ARTIFACT_DIR)/cosign.pub
-RUNG_SIGNED_POLICY_FILE ?=
-RUNG_SIGNED_POLICY_IMAGE_PREFIX ?=
-EVIDENCE_DIR ?=
-DIAG_DIR ?=
-RUNG_IMAGE_MANIFEST ?= $(ARTIFACT_DIR)/rung-image-manifest.json
-REQUIRE_MIRROR_SUMMARY ?= 1
-PROOF_SCOPE ?= all
-EVIDENCE_PODS ?= rung-a-secret rung-encrypted rung-signed negtest-rung-a negtest-rung-encrypted negtest-rung-signed negtest-air-gap
-RUNG_ENCRYPTED_POD ?= rung-encrypted
-RUNG_SIGNED_POD ?= rung-signed
-NEG_RUNG_ENCRYPTED_POD ?= negtest-rung-encrypted
-NEG_RUNG_SIGNED_POD ?= negtest-rung-signed
-RUNG_SIGNED_EVIDENCE_PODS ?= $(RUNG_SIGNED_POD) $(NEG_RUNG_SIGNED_POD)
-RUNG_ENCRYPTED_APP_LOG_MARKER ?= rung-encrypted: encrypted image decrypted and running
-RUNG_SIGNED_APP_LOG_MARKER ?= rung-signed: signed image accepted and running
-KEEP_DENIED_PODS ?= 0
-TRUSTEE_LOG_TAIL ?= 1000
-TRUSTEE_LOG_SINCE_TIME ?=
-POD_LOG_TAIL ?= 200
-CRIO_LOG_TAIL ?= 1000
-CRIO_LOG_SINCE_TIME ?=
-MIRROR_LOG_TAIL ?= 1000
-MIRROR_LOG_SINCE_TIME ?=
-MIRROR_LOG_FILES ?=
-MIRROR_CONTAINER_NAMES ?=
+export COCO_STATE_DIR TEE OCP_VERSION CATALOGSOURCE WORKER_CONTEXT TRUSTEE_CONTEXT TRUSTEE_LAB TRUSTEE_PROFILE
+export WORKLOAD_NS
+export MIRROR_REGISTRY ARTIFACTORY_REGISTRY ARTIFACT_DIR BIN_DIR PULL_SECRET VCEK_BUNDLE
+export RUNG_KBS_IMAGE SOURCE_IMAGE RUNG_SIGNED_IMAGE RUNG_SIGNED_UNSIGNED_IMAGE RUNG_ENCRYPTED_IMAGE
+export RUNG_ENCRYPTED_KEY_ID RUNG_SIGNED_POLICY_URI RUNG_ENCRYPTED_POLICY_URI
+export RUNG_IMAGE_MANIFEST COSIGN_KEY COSIGN_PUB TIMEOUT
+# Command-line variables and exported environment variables pass through to scripts.
+# NS is Trustee's namespace here; proof/workload recipes explicitly select WORKLOAD_NS.
 
-# Assets dir the Agent-based installer consumes (install-config + agent-config land here).
-# FILL: matches the dir used in install/README.md ("cluster-assets").
-ASSETS  ?= cluster-assets
-# openshift-install / oc-mirror come from scripts/install-tools.sh into ./bin; prefer them.
-INSTALL ?= ./bin/openshift-install
+.PHONY: help check-release preflight lint test install-dev-tools fetch-cli-tools
+help: ## Show current entry points
+	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z0-9_-]+:.*## /{printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+check-release: ## Check repository/BOM consistency without credentials or hardware
+	python3 scripts/verify-release.py
+preflight: ## Require all catalog/image/tool pins to be resolved before deployment
+	python3 scripts/verify-release.py --require-resolved --tee "$(TEE)"
+install-dev-tools: ## Install checksum-verified OPA and Kustomize in external state
+	python3 scripts/install-dev-tools.py
+lint: ## Strict shell, policy, manifest, and offline regression checks
+	bash scripts/lint.sh
+test: lint ## Alias for the complete hardware-free check suite
+fetch-cli-tools: ## Fetch checksum-verified CLIs for the selected OCP version
+	bash scripts/install-tools.sh
 
-.PHONY: help
-help: ## List targets
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
+.PHONY: bringup-sno-airgapped ansible-lint pxe-stop mirror-content
+bringup-sno-airgapped: ## Prepare by default; ARGS='--mode fresh-install ...' explicitly installs
+	bash ansible/up.sh $(ARGS)
+ansible-lint: ## Validate Ansible syntax and lint (requires development dependencies)
+	cd ansible && ANSIBLE_CONFIG="$(CURDIR)/ansible/ansible.cfg" ansible-lint
+	cd ansible && ANSIBLE_CONFIG="$(CURDIR)/ansible/ansible.cfg" ansible-playbook --syntax-check playbooks/site.yml
+pxe-stop: ## Close the boot-artifact endpoint
+	cd ansible && ANSIBLE_CONFIG="$(CURDIR)/ansible/ansible.cfg" ansible-playbook playbooks/site.yml --tags pxe-stop $(ARGS)
+mirror-content: preflight ## Push selected release content with oc-mirror v2
+	bash scripts/mirror.sh mirror
 
-## --- Hands-off bring-up (Ansible automation) -----------------------------
-# TF owns infra (bastion, node, VLAN, firewall, netboot OS=ipxe); Ansible owns the bastion host
-# config + the OpenShift install. `make bringup-sno-airgapped` sequences both, pausing only at the SEV-SNP BIOS step.
-# Requires: LATITUDESH_AUTH_TOKEN in env; RH pull-secret on the bastion (~/pull-secret.json);
-# and -e overrides from terraform output (see ansible/README.md). Pass extra args via ARGS=.
-# Public console publishing is default-on; opt out with -e public_console_enabled=false.
-#   make bringup-sno-airgapped ARGS="--apply-tf -e vlan_vid_override=123 -e node_server_id=sv_x -e boot_artifacts_token=$(openssl rand -hex 16)"
-.PHONY: bringup-sno-airgapped
-bringup-sno-airgapped: ## Hands-off air-gapped SNO bring-up via Ansible (stops at the SEV-SNP BIOS step)
-	cd ansible && ./up.sh $(ARGS)
+.PHONY: agent-image pxe-files serve-boot-artifacts stop-boot-artifacts install-wait
+agent-image: preflight ## Create an ISO from externally prepared install assets
+	"$(INSTALL)" --dir "$(ASSETS)" agent create image
+pxe-files: preflight ## Create PXE artifacts from externally prepared install assets
+	"$(INSTALL)" --dir "$(ASSETS)" agent create pxe-files
+serve-boot-artifacts: ## Publish prepared boot artifacts on the bastion
+	bash scripts/serve-boot-artifacts.sh "$(ASSETS)/boot-artifacts"
+stop-boot-artifacts: ## Stop boot-artifact publishing
+	bash scripts/serve-boot-artifacts.sh stop
+install-wait: ## Wait for the selected fresh installation
+	"$(INSTALL)" --dir "$(ASSETS)" agent wait-for install-complete
 
-.PHONY: ansible-lint
-ansible-lint: ## Lint the Ansible tree (yamllint + ansible-lint + syntax-check)
-	cd ansible && yamllint . && ansible-lint && ansible-playbook --syntax-check playbooks/site.yml
+.PHONY: verify-snp-host validate-sno-baseline repair-sno-baseline install-coco-operators apply-overlay render-overlay diff-overlay
+verify-snp-host: ## Check the selected SNP node (NODE and WORKER_CONTEXT required)
+	@test -n "$(NODE)" && test -n "$(WORKER_CONTEXT)" || { echo 'Set NODE and WORKER_CONTEXT'; exit 2; }
+	bash scripts/verify-snp-host.sh "$(NODE)"
+validate-sno-baseline: ## Read-only node/MCP/catalog checks in WORKER_CONTEXT
+	bash scripts/validate-sno-baseline.sh
+repair-sno-baseline: ## Explicit repair of known MCO drift on NODE
+	NODE="$(NODE)" bash scripts/repair-sno-baseline.sh
+install-coco-operators: ## Apply selected worker operators in dependency order
+	bash scripts/apply-sno.sh
+apply-overlay: ## Route worker installs and Trustee configure through staged scripts
+	@case "$(OVERLAY)" in \
+	  sno-workers) INSTALL_TOPOLOGY=sno bash scripts/apply-sno.sh ;; \
+	  customer-workers) INSTALL_TOPOLOGY=customer bash scripts/apply-sno.sh ;; \
+	  sno-trustee|customer-trustee) NS="$(NS)" bash scripts/apply-trustee.sh configure ;; \
+	  *) echo 'Unknown overlay; use render-overlay to inspect it'; exit 2 ;; esac
+render-overlay: ## Render OVERLAY locally without applying it
+	oc kustomize "gitops/overlays/$(OVERLAY)"
+diff-overlay: ## Server diff; report real errors (a difference is exit 1)
+	@test -n "$(WORKER_CONTEXT)" || { echo 'Set WORKER_CONTEXT'; exit 2; }
+	@oc --context="$(WORKER_CONTEXT)" diff -k "gitops/overlays/$(OVERLAY)"; rc=$$?; test $$rc -le 1
 
-.PHONY: pxe-stop
-pxe-stop: ## Close the boot-artifact endpoint after the node has booted (issue #33)
-	cd ansible && ansible-playbook playbooks/site.yml --tags pxe-stop $(ARGS)
+.PHONY: bootstrap-trustee deploy-trustee seed-trustee-secrets collect-vcek seed-vcek gen-rvps render-measurement-policy
+bootstrap-trustee: ## Create Restricted TrusteeConfig, wait for migration, install collateral
+	NS="$(NS)" bash scripts/apply-trustee.sh bootstrap
+deploy-trustee: ## Configure approved resource policy/RVPS and explicitly named resources
+	NS="$(NS)" bash scripts/apply-trustee.sh configure
+seed-trustee-secrets: ## Seed synthetic resources on an explicitly selected disposable lab
+	NS="$(NS)" bash scripts/seed-trustee-secrets.sh
+collect-vcek: ## Collect the selected worker VCEK into external state (NODE required)
+	@test -n "$(NODE)" || { echo 'Set NODE'; exit 2; }
+	bash scripts/collect-vcek.sh "$(NODE)"
+seed-vcek: ## Publish a validated VCEK bundle to the explicit Trustee context
+	NS="$(NS)" bash scripts/collect-vcek.sh --seed
+gen-rvps: ## Run target-hardware Veritas; convert and validate Trustee 1.2 references
+	INITDATA="$(INITDATA)" OUT="$(RVPS_OUT)" NODE="$(NODE)" bash scripts/gen-rvps-veritas.sh
+render-measurement-policy: ## Add initdata binding to BASE_CPU_POLICY_FILE without dropping CPU checks
+	NS="$(NS)" bash scripts/render-measurement-policy.sh "$(INITDATA)"
 
-## --- Prereqs / tooling (Phase 0) -----------------------------------------
-.PHONY: fetch-cli-tools
-fetch-cli-tools: ## Fetch version-pinned oc / openshift-install / oc-mirror into ./bin (Phase 0)
-	./scripts/install-tools.sh
+.PHONY: build-rung-signed build-rung-images verify-rung-signed-signature verify-rung-encrypted-key-wrap
+build-rung-signed: ## Build signed and unsigned controls independently of encrypted-image tooling
+	bash scripts/build-rung-images.sh sign-rung-signed-only
+build-rung-images: ## Build both signed and experimental encrypted image artifacts
+	RUNG_ENCRYPTED_KEY_FILE="$(RUNG_ENCRYPTED_KEY_FILE)" bash scripts/build-rung-images.sh
+verify-rung-signed-signature: ## Check published image signatures before guest testing
+	bash scripts/verify-rung-signed-signature.sh
+verify-rung-encrypted-key-wrap: ## Check encrypted layers and key wrapping before guest testing
+	RUNG_ENCRYPTED_KEY_FILE="$(RUNG_ENCRYPTED_KEY_FILE)" bash scripts/verify-rung-encrypted-key-wrap.sh
 
-## --- Mirror (Phase 2 — the ~1-2h bottleneck, cacheable) ------------------
-.PHONY: mirror-content
-mirror-content: ## oc-mirror v2 push to the bastion (needs MIRROR_REGISTRY=<host:port>)
-	@test -n "$(MIRROR_REGISTRY)" || { echo "set MIRROR_REGISTRY=<host:port>"; exit 2; }
-	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ./scripts/mirror.sh mirror
+.PHONY: run-rung-kbs run-rung-signed run-rung-encrypted test-rung proof-plan
+run-rung-kbs: ## Render or create a secret-release workload (RENDER_ONLY=1 supported)
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" bash scripts/apply-rung-kbs.sh
+run-rung-signed: ## Render or create a signed workload (immutable image required)
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" bash scripts/apply-rung-signed.sh
+run-rung-encrypted: ## Experimental encrypted workload (explicit opt-in required for apply)
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" bash scripts/apply-rung-encrypted.sh
+proof-plan: ## List proof cases without cluster access
+	python3 scripts/run-proofs.py --list
+test-rung: ## Fresh allow/deny/restore/recovery proof; WHICH=all or a named case
+	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" python3 scripts/run-proofs.py "$(WHICH)"
 
-## --- SNO install (Phase 3) -----------------------------------------------
-.PHONY: agent-image
-agent-image: ## Build the agent ISO from $(ASSETS) (fill install/agent-config first)
-	# FILL: $(ASSETS)/{install-config,agent-config}.yaml from install/*.tmpl before this.
-	# VERIFY: for true air-gap, $(INSTALL) should come from `oc adm release extract` on the
-	#         mirrored release (install/README.md step 3), not the public binary.
-	$(INSTALL) --dir $(ASSETS) agent create image
-
-.PHONY: pxe-files
-pxe-files: ## Phase 3 (iPXE): build agent PXE/iPXE boot artifacts into $(ASSETS)/boot-artifacts
-	# FILL: $(ASSETS)/{install-config,agent-config}.yaml first, AND set agent-config
-	#       bootArtifactsBaseURL to where serve-boot-artifacts.sh publishes (bastion pub IP:8080).
-	# The node boots iPXE over its PUBLIC NIC, so the base URL must be publicly reachable.
-	$(INSTALL) --dir $(ASSETS) agent create pxe-files
-
-.PHONY: serve-boot-artifacts
-serve-boot-artifacts: ## Phase 3 (iPXE): publish $(ASSETS)/boot-artifacts under the tokenized path (:8080)
-	./scripts/serve-boot-artifacts.sh "$(ASSETS)/boot-artifacts"
-
-.PHONY: stop-boot-artifacts
-stop-boot-artifacts: ## Phase 3 (iPXE): close the boot-artifact endpoint once the node has booted
-	./scripts/serve-boot-artifacts.sh stop
-
-.PHONY: install-wait
-install-wait: ## Wait for the Agent-based SNO install to finish (kubeconfig -> $(ASSETS)/auth)
-	$(INSTALL) --dir $(ASSETS) agent wait-for install-complete
-
-## --- Gates ---------------------------------------------------------------
-.PHONY: verify-snp-host
-verify-snp-host: ## Rung-0 gate: prove SEV-SNP HOST is live on NODE (run before any GitOps)
-	@test -n "$(NODE)" || { echo "set NODE=<node-name>"; exit 2; }
-	./scripts/verify-snp-host.sh "$(NODE)"
-
-.PHONY: validate-sno-baseline
-validate-sno-baseline: ## Read-only gate: node Ready, MCP stable, mirrored CatalogSource READY
-	CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/validate-sno-baseline.sh
-
-.PHONY: repair-sno-baseline
-repair-sno-baseline: ## Repair known MCO kubelet.conf drift, then wait for the SNO baseline gate
-	NODE="$(NODE)" CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/repair-sno-baseline.sh
-
-## --- Lint / CI (no hardware) ---------------------------------------------
-.PHONY: lint
-lint: ## kustomize build + kubeconform + conftest over all overlays
-	./scripts/lint.sh
-
-## --- Apply (rig) ---------------------------------------------------------
-.PHONY: apply-overlay
-apply-overlay: ## oc apply -k the selected OVERLAY (sno-workers delegates to the staged installer)
-	@# A flat `oc apply -k` cannot work for sno-workers on a fresh cluster (#75): the overlay mixes
-	@# operator Subscriptions with CRs of the CRDs those operators install, so it races and fails
-	@# "no matches for kind" x5. ArgoCD honours the sync-wave annotations; plain oc does not. Send
-	@# the operator there instead of letting the advertised target fail.
-	@if [ "$(OVERLAY)" = "sno-workers" ]; then \
-		echo "sno-workers must be applied in stages (CRDs before CRs) — delegating to scripts/apply-sno.sh."; \
-		echo "  (ArgoCD can apply the overlay directly; it honours the sync-wave annotations.)"; \
-		CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/apply-sno.sh; \
-	else \
-		oc apply -k gitops/overlays/$(OVERLAY); \
-	fi
-
-.PHONY: install-coco-operators
-install-coco-operators: ## Phase 4: operators (NFD->cert-manager->OSC->Trustee) + KataConfig (reboots node)
-	CATALOGSOURCE="$(CATALOGSOURCE)" bash ./scripts/apply-sno.sh
-
-.PHONY: deploy-trustee
-deploy-trustee: ## Phase 5: stand up the rig Trustee (seed VCEK OfflineStore + RVPS after)
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/apply-trustee.sh
-
-.PHONY: seed-trustee-secrets
-seed-trustee-secrets: ## Phase 5: create/update rig Trustee secrets from bastion-local files
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" bash ./scripts/seed-trustee-secrets.sh
-
-.PHONY: build-rung-images
-build-rung-images: ## Phase 6: build/push the encrypted and signed images
-	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SOURCE_IMAGE="$(SOURCE_IMAGE)" SOURCE_IMAGE_REF="$(SOURCE_IMAGE_REF)" SKOPEO_COPY_ARGS="$(SKOPEO_COPY_ARGS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_ENCRYPTED_IMAGE="$(RUNG_ENCRYPTED_IMAGE)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_UNSIGNED_IMAGE="$(RUNG_SIGNED_UNSIGNED_IMAGE)" RUNG_ENCRYPTED_KEY_PATH="$(RUNG_ENCRYPTED_KEY_PATH)" RUNG_ENCRYPTED_KEY_ID="$(RUNG_ENCRYPTED_KEY_ID)" RUNG_ENCRYPTED_KEY_FILE="$(RUNG_ENCRYPTED_KEY_FILE)" COCO_KEYPROVIDER_IMAGE="$(COCO_KEYPROVIDER_IMAGE)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" CONTAINER_VOLUME_SUFFIX="$(CONTAINER_VOLUME_SUFFIX)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="$(VERIFY_RUNG_ARTIFACTS_AFTER_BUILD)" VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT="$(VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT)" VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT="$(VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)"
-
-.PHONY: verify-rung-encrypted-key-wrap
-verify-rung-encrypted-key-wrap: ## Phase 6: verify the encrypted-image layer KID and KEK unwrap before seeding Trustee
-	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_ENCRYPTED_IMAGE="$(RUNG_ENCRYPTED_IMAGE)" RUNG_ENCRYPTED_KEY_ID="$(RUNG_ENCRYPTED_KEY_ID)" RUNG_ENCRYPTED_KEY_FILE="$(RUNG_ENCRYPTED_KEY_FILE)" RUNG_IMAGE_MANIFEST="$(RUNG_IMAGE_MANIFEST)" REQUIRE_RUNG_IMAGE_MANIFEST="$(REQUIRE_RUNG_IMAGE_MANIFEST)" bash "$(VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT)"
-
-.PHONY: verify-rung-signed-signature
-verify-rung-signed-signature: ## Phase 6: verify the signed image and unsigned negative-control signature state
-	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_UNSIGNED_IMAGE="$(RUNG_SIGNED_UNSIGNED_IMAGE)" RUNG_SIGNED_COSIGN_PUB="$(RUNG_SIGNED_COSIGN_PUB)" RUNG_IMAGE_MANIFEST="$(RUNG_IMAGE_MANIFEST)" REQUIRE_RUNG_IMAGE_MANIFEST="$(REQUIRE_RUNG_IMAGE_MANIFEST)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT)"
-
-.PHONY: verify-rung-image-artifacts
-verify-rung-image-artifacts: verify-rung-encrypted-key-wrap verify-rung-signed-signature ## Phase 6: verify the signed+encrypted image artifact manifest, key unwrap, and signature state
-
-.PHONY: seed-rung-image-secrets
-seed-rung-image-secrets: verify-rung-encrypted-key-wrap verify-rung-signed-signature ## Phase 6: seed the signed+encrypted key, public key, and signed-image policy resources
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_ENCRYPTED_KEY_ID="$(RUNG_ENCRYPTED_KEY_ID)" RUNG_ENCRYPTED_KEY_FILE="$(RUNG_ENCRYPTED_KEY_FILE)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_COSIGN_PUB="$(RUNG_SIGNED_COSIGN_PUB)" RUNG_SIGNED_POLICY_FILE="$(RUNG_SIGNED_POLICY_FILE)" RUNG_SIGNED_POLICY_IMAGE_PREFIX="$(RUNG_SIGNED_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
-
-.PHONY: deploy-trustee-rung-image
-deploy-trustee-rung-image: verify-rung-encrypted-key-wrap verify-rung-signed-signature ## Phase 6: apply Trustee with the signed+encrypted KBS resources enabled
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_ENCRYPTED_KEY_ID="$(RUNG_ENCRYPTED_KEY_ID)" RUNG_ENCRYPTED_KEY_FILE="$(RUNG_ENCRYPTED_KEY_FILE)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_COSIGN_PUB="$(RUNG_SIGNED_COSIGN_PUB)" RUNG_SIGNED_POLICY_FILE="$(RUNG_SIGNED_POLICY_FILE)" RUNG_SIGNED_POLICY_IMAGE_PREFIX="$(RUNG_SIGNED_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
-
-## --- rung-signed only (signed image, no rung-encrypted / no coco-keyprovider) ----------
-# rung-signed (signed image) is independent of rung-encrypted (encrypted image). These targets prove rung-signed
-# WITHOUT the rung-encrypted encryption path, so they need neither coco-keyprovider (often unavailable in
-# an air gap) nor the rung-encrypted artifacts. They deliberately omit all RUNG_ENCRYPTED_* env so the trustee
-# scripts stay rung-signed-only (rung-encrypted is gated on a non-empty RUNG_ENCRYPTED_KEY_FILE).
-.PHONY: build-rung-signed
-build-rung-signed: ## Phase 6 (rung-signed only): build/push + cosign-sign the signed image (no rung-encrypted, no keyprovider)
-	# SOURCE_IMAGE is deliberately NOT forwarded here: the Makefile default ($(RUNG_KBS_IMAGE)) is a
-	# public registry.access.redhat.com ref, which would break the first `skopeo copy` on a
-	# mirror-only bastion. Omitting it lets build-rung-images.sh use its MIRROR_REGISTRY-derived
-	# default; override with `make build-rung-signed SOURCE_IMAGE=<ref>` if you really need a custom source.
-	MIRROR_REGISTRY="$(MIRROR_REGISTRY)" SKOPEO_COPY_ARGS="$(SKOPEO_COPY_ARGS)" ARTIFACT_DIR="$(ARTIFACT_DIR)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_UNSIGNED_IMAGE="$(RUNG_SIGNED_UNSIGNED_IMAGE)" COSIGN_KEY="$(COSIGN_KEY)" COSIGN_PUB="$(COSIGN_PUB)" COSIGN_SIGN_ARGS="$(COSIGN_SIGN_ARGS)" COSIGN_VERIFY_ARGS="$(COSIGN_VERIFY_ARGS)" bash "$(BUILD_RUNG_IMAGES_SCRIPT)" sign-rung-signed-only
-
-.PHONY: seed-rung-signed-secrets
-seed-rung-signed-secrets: ## Phase 6 (rung-signed only): seed the cosign pub + signed-image policy (no rung-encrypted)
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_ENCRYPTED_KEY_ID= RUNG_ENCRYPTED_KEY_FILE= RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_COSIGN_PUB="$(RUNG_SIGNED_COSIGN_PUB)" RUNG_SIGNED_POLICY_FILE="$(RUNG_SIGNED_POLICY_FILE)" RUNG_SIGNED_POLICY_IMAGE_PREFIX="$(RUNG_SIGNED_POLICY_IMAGE_PREFIX)" bash "$(SEED_TRUSTEE_SECRETS_SCRIPT)"
-
-.PHONY: deploy-trustee-rung-signed
-deploy-trustee-rung-signed: ## Phase 6 (rung-signed only): apply Trustee with the signed-image KBS resources (no rung-encrypted, no keyprovider)
-	NS="$(NS)" VCEK_BUNDLE="$(VCEK_BUNDLE)" HWID="$(HWID)" HWIDS="$(HWIDS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" RUNG_ENCRYPTED_KEY_ID= RUNG_ENCRYPTED_KEY_FILE= RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_COSIGN_PUB="$(RUNG_SIGNED_COSIGN_PUB)" RUNG_SIGNED_POLICY_FILE="$(RUNG_SIGNED_POLICY_FILE)" RUNG_SIGNED_POLICY_IMAGE_PREFIX="$(RUNG_SIGNED_POLICY_IMAGE_PREFIX)" bash "$(APPLY_TRUSTEE_SCRIPT)"
-
-.PHONY: run-rung-kbs
-run-rung-kbs: ## Phase 6: render initdata, launch the KBS secret-release workload, and wait for the CoCo pod to run
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_KBS_IMAGE="$(RUNG_KBS_IMAGE)" bash "$(APPLY_RUNG_KBS_SCRIPT)"
-
-.PHONY: run-rung-encrypted
-run-rung-encrypted: ## Phase 6: render initdata, launch the encrypted-image workload, and wait for the pod
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_ENCRYPTED_KEY_ID="$(RUNG_ENCRYPTED_KEY_ID)" IMAGE_SECURITY_POLICY_URI="$(RUNG_ENCRYPTED_POLICY_URI)" RUNG_ENCRYPTED_IMAGE="$(RUNG_ENCRYPTED_IMAGE)" bash "$(APPLY_RUNG_ENCRYPTED_SCRIPT)"
-
-.PHONY: run-rung-signed
-run-rung-signed: ## Phase 6: render initdata, launch the signed-image workload, and wait for the pod
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" IMAGE_SECURITY_POLICY_URI="$(RUNG_SIGNED_POLICY_URI)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" bash "$(APPLY_RUNG_SIGNED_SCRIPT)"
-
-.PHONY: uninstall-coco
-uninstall-coco: ## Remove the CoCo stack in reverse order (Trustee->Kata/Gatekeeper/NFD->OLM)
-	bash ./scripts/uninstall-coco.sh
-
-.PHONY: validate-coco-uninstalled
-validate-coco-uninstalled: ## Verify CoCo operators/operands are absent and the SNO node is Ready
-	bash ./scripts/uninstall-coco.sh validate
-
-.PHONY: diff-overlay
-diff-overlay: ## Server-side diff of the selected OVERLAY
-	oc diff -k gitops/overlays/$(OVERLAY) || true
-
-## --- Air-gap data pipelines ----------------------------------------------
-.PHONY: collect-vcek
-collect-vcek: ## Collect the selected host's VCEK cert into the OfflineStore (auto-detects single-node clusters)
-	@node="$(NODE)"; \
-	if [ -z "$$node" ]; then \
-		nodes="$$(oc get nodes --request-timeout=10s -o name 2>/dev/null | sed 's#^node/##')"; \
-		count="$$(printf '%s\n' "$$nodes" | sed '/^$$/d' | wc -l | tr -d ' ')"; \
-		if [ "$$count" = "1" ]; then \
-			node="$$nodes"; \
-			echo "Auto-detected NODE=$$node"; \
-		elif [ "$$count" = "0" ]; then \
-			echo "set NODE=<node-name> (could not auto-detect from oc get nodes)"; \
-			exit 2; \
-		else \
-			echo "set NODE=<node-name> (multiple nodes found: $$(printf '%s' "$$nodes" | tr '\n' ' '))"; \
-			exit 2; \
-		fi; \
-	fi; \
-	./scripts/collect-vcek.sh "$$node" "$(NS)"
-
-.PHONY: gen-rvps
-gen-rvps: ## Generate RVPS reference values with Veritas (run on target hardware)
-	TEE="$(TEE)" OCP_VERSION="$(OCP_VERSION)" PULL_SECRET="$(PULL_SECRET)" INITDATA="$(INITDATA)" OUT="$(RVPS_OUT)" NODE="$(NODE)" DEBUG_IMAGE="$(DEBUG_IMAGE)" REGISTRIES_CONF="$(REGISTRIES_CONF)" REGISTRY_CERTS_DIR="$(REGISTRY_CERTS_DIR)" VERITAS_OC_WRAPPER="$(VERITAS_OC_WRAPPER)" VERITAS_EXTRA_ARGS="$(VERITAS_EXTRA_ARGS)" ./scripts/gen-rvps-veritas.sh
-
-.PHONY: render-measurement-policy
-render-measurement-policy: ## Render the restrictive measured-initdata HOST_DATA and image-key policies (set INITDATA)
-	NS="$(NS)" RUNG_ENCRYPTED_KEY_ID="$(RUNG_ENCRYPTED_KEY_ID)" bash "$(RENDER_MEASUREMENT_POLICY_SCRIPT)" "$(INITDATA)"
-
-## --- Validation (negative tests) -----------------------------------------
-.PHONY: negative-test
-negative-test: ## Run the per-rung denial proofs (WHICH=all|rung-kbs|rung-rvps|rung-signed|rung-encrypted|air-gap)
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_ENCRYPTED_POLICY_URI="$(RUNG_ENCRYPTED_POLICY_URI)" RUNG_SIGNED_POLICY_URI="$(RUNG_SIGNED_POLICY_URI)" RUNG_ENCRYPTED_IMAGE="$(RUNG_ENCRYPTED_IMAGE)" RUNG_SIGNED_UNSIGNED_IMAGE="$(RUNG_SIGNED_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" bash "$(NEGATIVE_TEST_SCRIPT)" $(WHICH)
-
-.PHONY: test-rung
-test-rung: ## Run per-rung POSITIVE+NEGATIVE proofs (WHICH=all|rung-kbs|rung-rvps|rung-signed|rung-encrypted; set RUNG_SIGNED_IMAGE=<@sha256> for the signed positive)
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" bash "$(TEST_RUNG_SCRIPT)" $(WHICH)
-
-.PHONY: repro-loop
-repro-loop: ## Hands-off A->C loop: deploy->pos->neg per rung, resumable via a durable status file (D manual/skipped). REPRO_FRESH=1 restarts
-	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" MIRROR_REGISTRY="$(MIRROR_REGISTRY)" MIRROR_DNS_UPSTREAM="$(MIRROR_DNS_UPSTREAM)" KBS_URL="$(KBS_URL)" RUNG_SIGNED_IMAGE="$(RUNG_SIGNED_IMAGE)" RUNG_SIGNED_UNSIGNED_IMAGE="$(RUNG_SIGNED_UNSIGNED_IMAGE)" TIMEOUT="$(TIMEOUT)" KEEP_DENIED_PODS="$(KEEP_DENIED_PODS)" REPRO_FRESH="$(REPRO_FRESH)" bash "$(REPRO_LOOP_SCRIPT)"
+.PHONY: uninstall-coco validate-coco-uninstalled
+uninstall-coco: ## Remove the explicitly selected disposable rig stack
+	bash scripts/uninstall-coco.sh
+validate-coco-uninstalled: ## Read-only uninstall check
+	bash scripts/uninstall-coco.sh validate

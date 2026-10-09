@@ -23,8 +23,8 @@ metadata:
   name: gatekeeper-operator-product
   namespace: openshift-gatekeeper-system
 spec:
-  channel: stable   # gatekeeper-operator-product.v3.21.0 (verified against mirrored catalog)
+  channel: stable   # Resolve an exact bundle/CSV in the selected release manifest.
   name: gatekeeper-operator-product
   source: cs-redhat-operator-index-v4-20   # mirrored CatalogSource
   sourceNamespace: openshift-marketplace
-  installPlanApproval: Automatic
+  installPlanApproval: Manual

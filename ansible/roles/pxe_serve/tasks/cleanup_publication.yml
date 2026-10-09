@@ -1,0 +1,40 @@
+---
+- name: Validate publication paths and plan legacy webroot cleanup
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path ~ '/../../../scripts/boot-publication-paths.py') }}"
+      - --mode
+      - "{{ pxe_cleanup_mode | default(pxe_mode) }}"
+      - --webroot
+      - "{{ boot_artifacts_webroot }}"
+      - --source
+      - "{{ install_src_dir }}"
+      - --source
+      - "{{ cluster_assets_dir }}"
+      - --source
+      - "{{ boot_artifacts_dir }}"
+      - --source
+      - "{{ install_request_dir }}"
+      - --state-file
+      - "{{ pxe_publication_state_path }}"
+      - --remember-sources
+      - "{{ 'true' if (pxe_cleanup_mode | default(pxe_mode)) == 'serve' else 'false' }}"
+  become: true
+  register: pxe_publication_paths
+  changed_when: pxe_publication_paths.rc == 0 and (pxe_publication_paths.stdout | from_json).metadataChanged
+  failed_when: false
+  no_log: true
+
+- name: Require separation between published copies and private installer paths
+  ansible.builtin.assert:
+    that: pxe_publication_paths.rc == 0
+    fail_msg: "{{ pxe_publication_paths.stderr }}"
+
+- name: Remove selected inactive publication directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop: "{{ (pxe_publication_paths.stdout | from_json).remove }}"

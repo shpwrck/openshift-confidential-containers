@@ -1,0 +1,154 @@
+---
+- name: Select durable provider request storage outside generated artifacts
+  ansible.builtin.set_fact:
+    provider_request_dir: "{{ install_request_dir | default((cluster_assets_dir | dirname) ~ '/provider-requests') }}"
+
+- name: Keep provider request records outside replaceable installer state
+  ansible.builtin.assert:
+    that:
+      - provider_request_dir.startswith('/')
+      - provider_request_dir != cluster_assets_dir
+      - not provider_request_dir.startswith(cluster_assets_dir ~ '/')
+    fail_msg: "install_request_dir must be an absolute directory outside cluster_assets_dir."
+
+- name: Inspect legacy request storage before switching journal locations
+  ansible.builtin.stat:
+    path: "{{ cluster_assets_dir }}/.coco-reinstall-{{ install_machine.server_id }}.json"
+  become: true
+  register: legacy_request
+
+- name: Preserve legacy provider evidence for explicit migration
+  ansible.builtin.assert:
+    that: not legacy_request.stat.exists
+    fail_msg: >-
+      A request journal is still inside cluster_assets_dir. Inspect provider state, then move
+      the journal to {{ provider_request_dir }} before retrying; it must not be discarded.
+
+- name: Create protected provider request storage
+  ansible.builtin.file:
+    path: "{{ provider_request_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: Inspect this machine's prior request
+  ansible.builtin.stat:
+    path: "{{ provider_request_dir }}/.coco-reinstall-{{ install_machine.server_id }}.json"
+  become: true
+  register: prior_request_stat
+
+- name: Read the prior request record
+  ansible.builtin.slurp:
+    src: "{{ provider_request_dir }}/.coco-reinstall-{{ install_machine.server_id }}.json"
+  become: true
+  register: prior_request_content
+  when: prior_request_stat.stat.exists
+
+- name: Resolve the prior request state
+  ansible.builtin.set_fact:
+    prior_request: "{{ prior_request_content.content | default('e30=') | b64decode | from_json }}"
+
+- name: Require the unchanged accepted request when resuming only
+  ansible.builtin.assert:
+    that:
+      - prior_request.get('state', '') == 'requested'
+      - prior_request.get('identity', '') == install_identity
+      - prior_request.get('server_id', '') | string == install_machine.server_id | string
+    fail_msg: >-
+      resume-install requires this machine's accepted journal for the unchanged prepared
+      artifacts. Missing, ambiguous or changed requests cannot submit a rebuild in this mode.
+      Inspect the provider and preserved inputs before choosing a new fresh installation.
+  when: resume_install_only | default(false) | bool
+
+- name: Stop rather than automatically repeat an ambiguous provider action
+  ansible.builtin.assert:
+    that:
+      - >-
+        prior_request.get('state', '') != 'sending'
+        or (retry_reinstall | bool)
+      - >-
+        prior_request.get('identity', install_identity) == install_identity
+        or (reinstall_existing | bool)
+    fail_msg: >-
+      A previous request for {{ install_machine.server_id }} is ambiguous or has different inputs.
+      Inspect the provider's current reinstall state before retrying. Only after confirming that
+      the request was not accepted, set retry_reinstall=true; changed installs require reinstall_existing=true.
+
+- name: Verify the provider identity before sending a new reinstall
+  when: prior_request.get('identity', '') != install_identity or prior_request.get('state', '') != 'requested'
+  block:
+    - name: Require the supported provider and private network before a rebuild
+      ansible.builtin.assert:
+        that:
+          - infra_provider | default('cherry') == 'cherry'
+          - network_profile | default('private-vlan') == 'private-vlan'
+        fail_msg: "Only supplied Cherry rigs on private-vlan can be rebuilt."
+
+    - name: Read and validate the selected provider identity
+      ansible.builtin.include_tasks: provider_identity.yml
+
+    - name: Require fresh raw-host network proof before recording reinstall intent
+      block:
+        - name: Check the current raw provider OS and prepared network inputs
+          ansible.builtin.include_tasks:
+            file: private_link.yml
+            apply:
+              ignore_unreachable: true
+      rescue:
+        - name: Preserve failure evidence and close unused publication
+          ansible.builtin.include_tasks: private_link_failure.yml
+
+    - name: Show the machine selected for fresh installation
+      ansible.builtin.debug:
+        msg: >-
+          Fresh install: {{ install_machine.server_id }}
+          ({{ provider_identity.hostname | default(install_machine.name) }})
+          to OCP {{ ocp_version }}. This replaces the machine's installed OS.
+
+    # Persist intent before the call. A crash or an HTTP timeout then requires inspection,
+    # instead of silently issuing the destructive action again on the next run.
+    - name: Record the pending provider action atomically
+      ansible.builtin.copy:
+        content: "{{ {'identity': install_identity, 'server_id': install_machine.server_id, 'state': 'sending'} | to_json }}\n"
+        dest: "{{ provider_request_dir }}/.coco-reinstall-{{ install_machine.server_id }}.json"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+
+    - name: Prepare Cherry's iPXE script with real newline bytes
+      ansible.builtin.set_fact:
+        provider_ipxe_script: |
+          #!ipxe
+          chain --autofree {{ ipxe_url }}
+      no_log: true
+
+    - name: Request the verified machine's fresh install
+      ansible.builtin.uri:
+        url: "{{ cherry_api_base }}/servers/{{ install_machine.server_id }}/actions"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ cherry_token }}"
+          Content-Type: application/json
+          Accept: application/json
+        body_format: json
+        body:
+          type: rebuild
+          image: custom_ipxe_install
+          hostname: "{{ provider_identity.hostname }}"
+          ipxe: "{{ provider_ipxe_script | b64encode }}"
+        status_code: [200, 201, 202]
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Record the accepted request atomically
+      ansible.builtin.copy:
+        content: "{{ {'identity': install_identity, 'server_id': install_machine.server_id, 'state': 'requested'} | to_json }}\n"
+        dest: "{{ provider_request_dir }}/.coco-reinstall-{{ install_machine.server_id }}.json"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true

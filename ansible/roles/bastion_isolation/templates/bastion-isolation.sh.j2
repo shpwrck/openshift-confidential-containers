@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+{
+  if nft list table inet coco_bastion_isolation >/dev/null 2>&1; then
+    printf 'delete table inet coco_bastion_isolation\n'
+  fi
+  cat <<'RULES'
+table inet coco_bastion_isolation {
+  chain forward {
+    type filter hook forward priority 0; policy accept;
+    iifname "{{ bastion_private_if }}" oifname "{{ bastion_external_if }}" counter drop
+  }
+}
+RULES
+} | nft -f -

@@ -1,0 +1,48 @@
+---
+- name: Read the selected provider machine
+  ansible.builtin.uri:
+    url: "{{ cherry_api_base }}/servers/{{ install_machine.server_id }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cherry_token }}"
+      Accept: "application/json"
+    return_content: true
+    follow_redirects: none
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: provider_machine
+  no_log: true
+
+- name: Normalize and validate the exact provider machine identity
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../../scripts/provider-identity.py"
+      - --provider
+      - "{{ infra_provider | default('cherry') }}"
+      - --server-id
+      - "{{ install_machine.server_id }}"
+      - --hostname
+      - "{{ install_machine.provider_hostname | default('') }}"
+      - --project-id
+      - "{{ install_machine.provider_project_id | default('') | string }}"
+    stdin: "{{ provider_machine.json | to_json }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: provider_identity_result
+  failed_when: false
+  no_log: true
+
+- name: Require the exact selected provider ownership and identity
+  ansible.builtin.assert:
+    that: provider_identity_result.rc == 0
+    fail_msg: >-
+      Provider identity does not match the selected server, hostname or project.
+      Inspect the current allocation and controller identity checker before retrying;
+      no reinstall was sent.
+
+- name: Select only validated public provider identity fields
+  ansible.builtin.set_fact:
+    provider_identity: "{{ provider_identity_result.stdout | from_json }}"

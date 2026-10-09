@@ -1,0 +1,96 @@
+---
+- name: Require explicit distinct private and public bastion interfaces
+  ansible.builtin.assert:
+    that:
+      - bastion_private_if | default('') is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$')
+      - bastion_external_if | default('') is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$')
+      - bastion_private_if != bastion_external_if
+    fail_msg: "Private forwarding isolation requires the verified VLAN and public underlay interface names."
+
+- name: Read the current bastion private VLAN identity
+  ansible.builtin.command:
+    argv: [ip, -j, -d, link, show, dev, "{{ bastion_private_if }}"]
+  changed_when: false
+  register: bastion_isolation_link
+
+- name: Verify the bastion's actual VLAN tag before installing rules
+  ansible.builtin.assert:
+    that:
+      - bastion_isolation_link.stdout | from_json | length == 1
+      - (bastion_isolation_link.stdout | from_json)[0].linkinfo.info_kind == 'vlan'
+      - (bastion_isolation_link.stdout | from_json)[0].linkinfo.info_data.id | int == vlan_vid | int
+    fail_msg: "The bastion VLAN interface does not match the reviewed wire tag."
+
+- name: Ensure nftables is installed
+  ansible.builtin.package:
+    name: nftables
+    state: present
+  become: true
+
+- name: Read the bastion public route without sending traffic
+  ansible.builtin.command:
+    argv: [ip, -j, route, get, 1.1.1.1]
+  changed_when: false
+  register: bastion_isolation_public_route
+
+- name: Require the reviewed public underlay to match the actual route
+  ansible.builtin.assert:
+    that:
+      - bastion_isolation_public_route.stdout | from_json | length == 1
+      - (bastion_isolation_public_route.stdout | from_json)[0].dev == bastion_external_if
+    fail_msg: "The reviewed public underlay does not match the bastion's actual public route."
+
+- name: Create the managed firewall script directory
+  ansible.builtin.file:
+    path: /usr/local/sbin
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Install the isolated private-to-public forwarding rule
+  ansible.builtin.template:
+    src: bastion-isolation.sh.j2
+    dest: /usr/local/sbin/coco-bastion-isolation.sh
+    mode: "0755"
+  become: true
+  register: bastion_isolation_script
+
+- name: Install the firewall persistence unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Block private lab forwarding to the public underlay
+      After=network-online.target firewalld.service
+      Wants=network-online.target
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/coco-bastion-isolation.sh
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/coco-bastion-isolation.service
+    mode: "0644"
+  become: true
+  register: bastion_isolation_unit
+
+- name: Enable private forwarding isolation across reboots
+  ansible.builtin.systemd:
+    name: coco-bastion-isolation.service
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if bastion_isolation_script.changed or bastion_isolation_unit.changed else 'started' }}"
+  become: true
+
+- name: Verify the installed forwarding rule
+  ansible.builtin.command:
+    argv: [nft, list, table, inet, coco_bastion_isolation]
+  changed_when: false
+  become: true
+  register: bastion_isolation_rules
+
+- name: Require the expected private-to-public drop rule
+  ansible.builtin.assert:
+    that:
+      - "('iifname \"' ~ bastion_private_if ~ '\" oifname \"' ~ bastion_external_if ~ '\" counter') in bastion_isolation_rules.stdout"
+      - "'drop' in bastion_isolation_rules.stdout"
+    fail_msg: "Private forwarding isolation was not installed."

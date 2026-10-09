@@ -1,7 +1,17 @@
 ---
-# Whether to (re)trigger the netboot via the Latitude reinstall API before waiting. A plain
-# power reboot boots the stale local disk — you MUST reinstall to re-netboot (hard-won fix #5).
-install_trigger_reinstall: true
+# Direct role/tag invocations are read-only unless fresh installation is selected explicitly.
+install_mode: verify
+install_trigger_reinstall: "{{ install_mode == 'fresh' }}"
+reinstall_existing: false
+# Set only after inspecting an ambiguous previous provider request and confirming it was not accepted.
+retry_reinstall: false
+
+# Raw-provider SSH is separate from core@RHCOS and from the public key embedded
+# in install-config. These explicit controller paths must remain outside the repo.
+private_link_known_hosts: ""
+raw_node_ssh_user: ""
+raw_node_ssh_key: ""
+private_link_probe_timeout: 3
 
 # wait-for install-complete timeout (minutes). A bootstrap-complete timeout is treated as
 # NON-fatal (fix #9) — we fall through to polling clusterversion.

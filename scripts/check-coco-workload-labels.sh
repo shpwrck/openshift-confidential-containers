@@ -32,9 +32,8 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# Shipped manifest surface: the gitops tree plus docs/templates (the customer bundle ships real
-# pod manifests the customer copies verbatim, so the contract has to hold there too).
-surface="$(find gitops docs/templates -type f \
+# Check shipped manifests and any YAML examples in the documentation.
+surface="$(find gitops docs -type f \
 	\( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null || true)"
 
 [ -n "${surface}" ] || { echo "coco workload-label gate OK (#68) — no manifests found"; exit 0; }

@@ -1,23 +1,26 @@
-# GitOps tree
+# GitOps manifests
 
-Kustomize is the common substrate. The rig drives it with `oc apply -k` (see `../Makefile`);
-the customer env points **mirrored ArgoCD** at the same tree.
+Kustomize renders the common manifests. Use the staged scripts for installation:
+`make install-coco-operators` and `scripts/apply-trustee.sh bootstrap|configure`.
+Applying a complete overlay directly bypasses dependency waits and inventory checks.
 
-## Overlay matrix — `{sno, customer} × {workers, trustee}`
+| Overlay | Intended scope |
+|---|---|
+| `sno-workers` | Disposable SNO worker stack; staged install requires `INSTALL_TOPOLOGY=sno TRUSTEE_LAB=1` |
+| `customer-workers` | Separate worker cluster with explicit `node-role.kubernetes.io/coco-snp` pool selection |
+| `sno-trustee`, `customer-trustee` | Restricted Trustee base; site TLS/resources are supplied out of band |
 
-| Overlay | Composes | Differs by |
-|---------|----------|------------|
-| `sno-workers` | operators + kataconfig + workloads | single-node, co-located, insecure-HTTP-friendly |
-| `sno-trustee` | trustee | secondary rig Trustee cluster |
-| `customer-workers` | operators + kataconfig + workloads | multi-node selectors, replicas, mirrored images |
-| `customer-trustee` | trustee | separate Trustee cluster, external KBS URL, OfflineStore VCEK |
+Co-located Permissive HTTP testing is selected through the scripts, not inferred
+from an overlay name. The customer overlays are starting manifests and remain
+unvalidated in the [completed SNO trial](../docs/validation/README.md).
+`make render-overlay OVERLAY='<name>'` inspects them without applying.
 
-## What is portable vs hardware-bound
+Versions come from [the release manifest](../install/release-manifest.json).
+Worker installation waits for NFD discovery, scoped Kata convergence, `kata-cc`
+with `kata-snp`, and Gatekeeper policy. Trustee configuration follows actual
+Operator-owned resources; [the guide](../docs/trustee-current.md) describes the order.
 
-- **Portable** (prove on rig, reuse): manifests, operator subscriptions + order
-  (NFD → cert-manager → OSC → Trustee), KBS ConfigMaps, Rego policies, initdata *structure*.
-- **Hardware-bound** (regenerate on customer metal): VCEK certs (their HWIDs), RVPS reference
-  values (their CPU+firmware), TLS certs + Trustee URL, initdata *measured bytes*.
-
-Bases are intentionally empty skeletons — populate from the onboarding guide Steps 3–6 as each
-rung is replay-verified on the rig.
+Recollect VCEKs for the actual worker/TCB and recalculate approved launch references
+when artifacts change. Initdata bytes, endpoint certificates and policies are
+site/workload inputs, not portable historical proof. Use
+[guest registry setup](../docs/guest-images.md) before launching workloads.

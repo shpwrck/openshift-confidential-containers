@@ -1,0 +1,82 @@
+---
+- name: Require one Cherry SNO node and explicit pinned SSH access
+  ansible.builtin.assert:
+    that:
+      - machines | length == 1
+      - machines[0].server_id is match('^[1-9][0-9]*$')
+      - machines[0].provider_hostname | default('') | length > 0
+      - machines[0].provider_project_id | default('') | string is match('^[1-9][0-9]*$')
+      - raw_node_ssh_user | default('') is match('^[a-z_][a-z0-9_-]*[$]?$')
+      - raw_node_ssh_key | default('') is match('^/[^\s]+$')
+      - private_link_known_hosts | default('') is match('^/[^\s]+$')
+      - cherry_token | length > 0
+    fail_msg: "Cherry discovery requires a single allocated SNO, exact hostname/project and pinned raw SSH inputs."
+  no_log: true
+
+- name: Read the exact allocated Cherry node
+  ansible.builtin.uri:
+    url: "{{ cherry_api_base }}/servers/{{ machines[0].server_id }}"
+    headers:
+      Authorization: "Bearer {{ cherry_token }}"
+    follow_redirects: none
+    status_code: 200
+  register: cherry_discovery_response
+  no_log: true
+
+- name: Validate provider ownership before SSH
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../../scripts/provider-identity.py"
+      - --provider
+      - cherry
+      - --server-id
+      - "{{ machines[0].server_id }}"
+      - --hostname
+      - "{{ machines[0].provider_hostname }}"
+      - --project-id
+      - "{{ machines[0].provider_project_id | string }}"
+    stdin: "{{ cherry_discovery_response.json | to_json }}"
+  register: cherry_discovery_identity
+  changed_when: false
+  no_log: true
+
+- name: Inspect current interfaces through the pinned raw-host connection
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -i
+      - "{{ raw_node_ssh_key }}"
+      - -o
+      - BatchMode=yes
+      - -o
+      - IdentitiesOnly=yes
+      - -o
+      - StrictHostKeyChecking=yes
+      - -o
+      - GlobalKnownHostsFile=/dev/null
+      - -o
+      - "UserKnownHostsFile={{ private_link_known_hosts }}"
+      - -o
+      - ConnectTimeout=15
+      - "{{ raw_node_ssh_user }}@{{ (cherry_discovery_identity.stdout | from_json).public_ipv4 }}"
+      - >-
+        python3 -c 'import json,socket,subprocess;
+        print(json.dumps({"hostname":socket.gethostname(),
+        "links":json.loads(subprocess.check_output(["ip","-j","-d","link","show"])),
+        "addresses":json.loads(subprocess.check_output(["ip","-j","address","show"]))}))'
+  register: cherry_discovery_raw
+  changed_when: false
+
+- name: Validate current bonded NIC identities and capture public bindings
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ playbook_dir }}/../../scripts/discover-node-macs.py"
+      - capture-cherry
+    stdin: >-
+      {{ {'machines': machines, 'servers': [cherry_discovery_response.json],
+          'observations': [cherry_discovery_raw.stdout | from_json]} | to_json }}
+  changed_when: (cherry_capture.stdout | from_json).changed
+  register: cherry_capture
+  no_log: true

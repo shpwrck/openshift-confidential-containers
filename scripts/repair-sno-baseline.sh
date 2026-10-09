@@ -13,6 +13,11 @@ SLEEP_SECONDS="${SLEEP_SECONDS:-20}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/compat.sh
 source "${SCRIPT_DIR}/lib/compat.sh"
+source "${SCRIPT_DIR}/lib/release.sh"
+source "${SCRIPT_DIR}/lib/cluster-context.sh"
+load_release_defaults
+load_worker_context
+require_resolved_release
 
 die() {
 	echo "ERROR: $*" >&2
@@ -28,14 +33,14 @@ autodetect_node() {
 		return
 	fi
 	local nodes count
-	nodes="$(oc get nodes --request-timeout=10s -o name 2>/dev/null | sed 's#^node/##')"
+	nodes="$(worker_oc get nodes --request-timeout=10s -o name 2>/dev/null | sed 's#^node/##')"
 	count="$(printf '%s\n' "$nodes" | sed '/^$/d' | wc -l | tr -d ' ')"
 	case "$count" in
 		1)
 			NODE="$nodes"
 			echo "Auto-detected NODE=$NODE"
 			;;
-		0) die "set NODE=<node-name> (could not auto-detect from oc get nodes)" ;;
+		0) die "set NODE=<node-name> (could not auto-detect from worker_oc get nodes)" ;;
 		*) die "set NODE=<node-name> (multiple nodes found: $(printf '%s' "$nodes" | tr '\n' ' '))" ;;
 	esac
 }
@@ -59,7 +64,7 @@ PY
 
 host_file_b64() {
 	local file="$1"
-	oc debug "node/${NODE}" --quiet -- chroot /host bash -c "base64 -w0 '$file'" 2>/dev/null
+	worker_oc debug "node/${NODE}" --quiet -- chroot /host bash -c "base64 -w0 '$file'" 2>/dev/null
 }
 
 restore_host_file() {
@@ -85,13 +90,13 @@ echo "backup=\$backup"
 stat -c "restored=%n mode=%a bytes=%s" "\$path"
 NODE_SCRIPT
 )"
-	oc debug "node/${NODE}" --quiet -- chroot /host bash -c "$remote_script"
+	worker_oc debug "node/${NODE}" --quiet -- chroot /host bash -c "$remote_script"
 }
 
 validate_until_ready() {
 	local deadline=$((SECONDS + WAIT_TIMEOUT))
 	while (( SECONDS < deadline )); do
-		if CATALOGSOURCE="${CATALOGSOURCE:-cs-redhat-operator-index-v4-20}" bash "$SCRIPT_DIR/validate-sno-baseline.sh"; then
+		if CATALOGSOURCE="$CATALOGSOURCE" bash "$SCRIPT_DIR/validate-sno-baseline.sh"; then
 			return 0
 		fi
 		echo "Waiting ${SLEEP_SECONDS}s for MCO/SNO baseline to converge..."
@@ -105,13 +110,13 @@ need oc
 need jq
 need python3
 need base64
-oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
+worker_oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
 [[ "$FILE" == "/etc/kubernetes/kubelet.conf" ]] || die "this repair only supports FILE=/etc/kubernetes/kubelet.conf"
 autodetect_node
 
-state="$(oc get node "$NODE" -o jsonpath='{.metadata.annotations.machineconfiguration\.openshift\.io/state}' 2>/dev/null || true)"
-reason="$(oc get node "$NODE" -o jsonpath='{.metadata.annotations.machineconfiguration\.openshift\.io/reason}' 2>/dev/null || true)"
-current_config="$(oc get node "$NODE" -o jsonpath='{.metadata.annotations.machineconfiguration\.openshift\.io/currentConfig}' 2>/dev/null || true)"
+state="$(worker_oc get node "$NODE" -o jsonpath='{.metadata.annotations.machineconfiguration\.openshift\.io/state}' 2>/dev/null || true)"
+reason="$(worker_oc get node "$NODE" -o jsonpath='{.metadata.annotations.machineconfiguration\.openshift\.io/reason}' 2>/dev/null || true)"
+current_config="$(worker_oc get node "$NODE" -o jsonpath='{.metadata.annotations.machineconfiguration\.openshift\.io/currentConfig}' 2>/dev/null || true)"
 [[ -n "$current_config" ]] || die "node/$NODE has no machineconfiguration.openshift.io/currentConfig annotation"
 
 if [[ "$state" != "Degraded" || "$reason" != *"content mismatch for file \"${FILE}\""* ]]; then
@@ -126,10 +131,10 @@ trap 'rm -rf "$tmpdir"' EXIT
 expected_file="$tmpdir/expected"
 actual_file="$tmpdir/actual"
 
-source="$(oc get machineconfig "$current_config" -o json \
+source="$(worker_oc get machineconfig "$current_config" -o json \
 	| jq -r --arg path "$FILE" '.spec.config.storage.files[]? | select(.path == $path) | .contents.source // empty')"
 [[ -n "$source" ]] || die "machineconfig/$current_config does not manage $FILE"
-mode_decimal="$(oc get machineconfig "$current_config" -o json \
+mode_decimal="$(worker_oc get machineconfig "$current_config" -o json \
 	| jq -r --arg path "$FILE" '.spec.config.storage.files[]? | select(.path == $path) | .mode // 420')"
 mode_octal="$(printf '%04o' "$mode_decimal")"
 

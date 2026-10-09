@@ -1,0 +1,531 @@
+{
+  "schemaVersion": 1,
+  "resolvedDate": "2026-10-05",
+  "runId": "20261005T135203Z",
+  "checkout": "04a7f7a6de028191356a7cbe8dc7423b2802c2c1",
+  "scope": "Authenticated read-only artifact identity resolution; no cluster installation or hardware proof.",
+  "tools": {
+    "skopeo": "skopeo version 1.24.1",
+    "opm": "Version: version.Version{OpmVersion:\"e1d090d16\", GitCommit:\"e1d090d165aa3e31de614b18da7cf4dd2f6976f6\", BuildDate:\"2026-09-15T10:14:54Z\", GoOs:\"linux\", GoArch:\"amd64\"}",
+    "ocMirror": "4.20.0-202609150553.p2.g9b18640.assembly.stream.el9-9b18640"
+  },
+  "catalog": {
+    "sourceRef": "registry.redhat.io/redhat/redhat-operator-index:v4.20",
+    "ref": "registry.redhat.io/redhat/redhat-operator-index@sha256:d0ba2f762a9514cf31bcb7ce77b837c6cedb517190f54eb2729be0fa02afb964",
+    "amd64Ref": "registry.redhat.io/redhat/redhat-operator-index@sha256:5c23da6450c3c0fbc90dcbc2f465104b447fea3382c24d9b3387ef4170c5d089",
+    "catalogRenderSha256": "sha256:bf6c0fb53993bf7aab3861f663eb36a7e609ccc1485d3e6c2759dc26ba69ce95",
+    "objects": 5448,
+    "opmValidateExit": 0,
+    "rawManifestHashAndImmutableRereadVerified": true
+  },
+  "operators": [
+    {
+      "key": "osc",
+      "package": "sandboxed-containers-operator",
+      "channel": "stable",
+      "originalDefaultChannel": "stable",
+      "version": "1.13.1",
+      "csv": "sandboxed-containers-operator.v1.13.1",
+      "bundleImage": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:d6d6e5b7696bfe764abfa1ed2d9229597ae1d1c52c19aa015fd325d028684d2e",
+      "bundleAMD64Image": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:d6d6e5b7696bfe764abfa1ed2d9229597ae1d1c52c19aa015fd325d028684d2e",
+      "bundleRenderSha256": "sha256:0fd64eb0719b1a0bf4ebdcca5b11524f8cf47cf4006b7013de99d278faa87be0",
+      "csvSha256": "sha256:0833854c6a542818580937ea897a22f37b169aff39d9bd984806f5c32e328b74",
+      "relatedImages": [
+        "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:7523fc2133233196f8fcbbe7c96d44c24ec4d3d60b40a0c306da4240e5997e4c",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:ca897a4689f3ac66fa2e4ce440e3f080ae283565ed52d9082f9b5194bf36c4d9",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:cd0bbdc464dfe0060b33a07474f30ed093a6efc839ba910a44915ef9f55b195b",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:7b9adb111b0277f41222b409fc8815b2d075ce945401741ea6e0670dfa8ec5a1",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c37ef009bf983e9b74b240844332d16f09bf3b9d6685883df1ac7c5262a40a1",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:d6d6e5b7696bfe764abfa1ed2d9229597ae1d1c52c19aa015fd325d028684d2e",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:a4f12990522eb37056afe0329cec4c42edcdd1d569fb54a497d5727424d78d91",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:8c13e3816ae9e11b0029920d22c5f312b856c5f43fc927b937934c93aaaa6780",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:5805a0ec3fce8903af6ff43457072aecd38ef67e19c1719c049244bcbf32a3f5",
+        "registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c65fb8f12888705d4989d6b8f0e4e3f144224b43f72b609d5f496e77b3b73917"
+      ],
+      "dependencyProperties": [],
+      "requiredCRDs": [],
+      "requiredAPIs": [],
+      "selectionReason": "Exact package/channel/CSV/version verified in pinned catalog and independently rendered immutable bundle; declared dependency properties and required CRDs/APIs are empty. Requested exact product version retained."
+    },
+    {
+      "key": "trustee",
+      "package": "trustee-operator",
+      "channel": "stable",
+      "originalDefaultChannel": "stable",
+      "version": "1.2.1",
+      "csv": "trustee-operator.v1.2.1",
+      "bundleImage": "registry.redhat.io/build-of-trustee/trustee-operator-bundle@sha256:22e278358fba7ec05bc065411b49b8f7148e4a25afe96de7a601e0b0b980bb42",
+      "bundleAMD64Image": "registry.redhat.io/build-of-trustee/trustee-operator-bundle@sha256:22e278358fba7ec05bc065411b49b8f7148e4a25afe96de7a601e0b0b980bb42",
+      "bundleRenderSha256": "sha256:4599ffdc214503754bdf523bc08104ac2f38da23a9e2d57f9146fb51d06dc48b",
+      "csvSha256": "sha256:2772d11cf2cdc8155ad372b9c4d688dea9449ae38952757d0fcd39250bbfd83b",
+      "relatedImages": [
+        "registry.redhat.io/build-of-trustee/trustee-operator-bundle@sha256:22e278358fba7ec05bc065411b49b8f7148e4a25afe96de7a601e0b0b980bb42",
+        "registry.redhat.io/build-of-trustee/trustee-rhel9-operator@sha256:193b4d794fc1eeb023c46b485a8804acabeb6fbaca4186a808549ddbef755bf1",
+        "registry.redhat.io/build-of-trustee/trustee-rhel9@sha256:85312d29d6ea7b96396b567c96893ae2527d83b9fc7a459044ba610c98593fae"
+      ],
+      "dependencyProperties": [],
+      "requiredCRDs": [],
+      "requiredAPIs": [],
+      "selectionReason": "Exact package/channel/CSV/version verified in pinned catalog and independently rendered immutable bundle; declared dependency properties and required CRDs/APIs are empty. Requested exact product version retained."
+    },
+    {
+      "key": "nfd",
+      "package": "nfd",
+      "channel": "stable",
+      "originalDefaultChannel": "stable",
+      "version": "4.20.0-202609201357",
+      "csv": "nfd.4.20.0-202609201357",
+      "bundleImage": "registry.redhat.io/openshift4/ose-cluster-nfd-operator-bundle@sha256:a6239e207c32962d7acd33248be2db134d299108e260b70d4989c4229db9eaa8",
+      "bundleAMD64Image": "registry.redhat.io/openshift4/ose-cluster-nfd-operator-bundle@sha256:a6239e207c32962d7acd33248be2db134d299108e260b70d4989c4229db9eaa8",
+      "bundleRenderSha256": "sha256:089402793333b19140a99db3de77ef321544cc1f5e1c011e9e9b16979a3854ab",
+      "csvSha256": "sha256:0224c4376b6f354ecff4dcbee07aad27585244ead37c6cba30185846a3cebd65",
+      "relatedImages": [
+        "registry.redhat.io/openshift4/ose-cluster-nfd-operator-bundle@sha256:a6239e207c32962d7acd33248be2db134d299108e260b70d4989c4229db9eaa8",
+        "registry.redhat.io/openshift4/ose-cluster-nfd-rhel9-operator@sha256:4abb6073835f633ed0501c0ee5103c0d308fe5f16185d8ac9de1d58b2cf3f04d",
+        "registry.redhat.io/openshift4/ose-node-feature-discovery-rhel9@sha256:93419edbdf47716d02894f3add1e54ecc8a2489918d30596fbf66ed900114f84"
+      ],
+      "dependencyProperties": [],
+      "requiredCRDs": [],
+      "requiredAPIs": [],
+      "selectionReason": "Exact package/channel/CSV/version verified in pinned catalog and independently rendered immutable bundle; declared dependency properties and required CRDs/APIs are empty. OCP-aligned 4.20 stable head in selected 4.20 catalog."
+    },
+    {
+      "key": "certManager",
+      "package": "openshift-cert-manager-operator",
+      "channel": "stable-v1",
+      "originalDefaultChannel": "stable-v1",
+      "version": "1.20.1",
+      "csv": "cert-manager-operator.v1.20.1",
+      "bundleImage": "registry.redhat.io/cert-manager/cert-manager-operator-bundle@sha256:d6dbf3a5b3e49e7c4c83e5caebc222105c266d05c1d1daeafe0f3ae359897c68",
+      "bundleAMD64Image": "registry.redhat.io/cert-manager/cert-manager-operator-bundle@sha256:d6dbf3a5b3e49e7c4c83e5caebc222105c266d05c1d1daeafe0f3ae359897c68",
+      "bundleRenderSha256": "sha256:79c492c4410a9f5a33ed043832d16e3d5764949989da13e8cd29ae832deae5d0",
+      "csvSha256": "sha256:86d2837cb401f082e640725cdf9f0be04daa9f9b127eb2941caaf71655513b0a",
+      "relatedImages": [
+        "registry.redhat.io/cert-manager/cert-manager-istio-csr-rhel9@sha256:f63c50a7465ce4222dc3bb9443056d5bfcb07ecba20fcd9dd6ee143bc591f446",
+        "registry.redhat.io/cert-manager/cert-manager-operator-bundle@sha256:d6dbf3a5b3e49e7c4c83e5caebc222105c266d05c1d1daeafe0f3ae359897c68",
+        "registry.redhat.io/cert-manager/cert-manager-operator-rhel9@sha256:207804f9237b0c2875f5252997312230c88726b5271c6419320958078dd7b7fd",
+        "registry.redhat.io/cert-manager/cert-manager-trust-manager-rhel9@sha256:1fef2bffce8c89631099fbf8cefaa031502d670817897660ccfa0a9aa8a9ebc7",
+        "registry.redhat.io/cert-manager/jetstack-cert-manager-acmesolver-rhel9@sha256:8ce8e3f21e49fda94f6c984e4777637e3773a099c6d74010a26e5e2743965739",
+        "registry.redhat.io/cert-manager/jetstack-cert-manager-rhel9@sha256:b3305a06bff4a344ba1b19c8142d7e605fc723841981c97aab2310ff8a82c66d"
+      ],
+      "dependencyProperties": [],
+      "requiredCRDs": [],
+      "requiredAPIs": [],
+      "selectionReason": "Exact package/channel/CSV/version verified in pinned catalog and independently rendered immutable bundle; declared dependency properties and required CRDs/APIs are empty. Selected stable-v1 head; Red Hat cert-manager 1.20 lifecycle matrix supports OCP 4.20 and is in full support."
+    },
+    {
+      "key": "gatekeeper",
+      "package": "gatekeeper-operator-product",
+      "channel": "stable",
+      "originalDefaultChannel": "stable",
+      "version": "3.21.1",
+      "csv": "gatekeeper-operator-product.v3.21.1",
+      "bundleImage": "registry.redhat.io/gatekeeper/gatekeeper-operator-bundle@sha256:42790242e0d827a68c34131b41995ccef7e28a8c6e969a232c4322182a569c24",
+      "bundleAMD64Image": "registry.redhat.io/gatekeeper/gatekeeper-operator-bundle@sha256:42790242e0d827a68c34131b41995ccef7e28a8c6e969a232c4322182a569c24",
+      "bundleRenderSha256": "sha256:f1fb36381cd1835b089ee380b205dc9008306ebfce4e35992b616d8ec026151a",
+      "csvSha256": "sha256:721f111139d52154766b0b7a686fc6f8f440e4c5862f961aa4268cc01e3f6b43",
+      "relatedImages": [
+        "registry.redhat.io/gatekeeper/gatekeeper-operator-bundle@sha256:42790242e0d827a68c34131b41995ccef7e28a8c6e969a232c4322182a569c24",
+        "registry.redhat.io/gatekeeper/gatekeeper-rhel9-operator@sha256:09b84262efaa6fb5a4de9addd1fab6e7d34906209ed867bc30a20daad6779f83",
+        "registry.redhat.io/gatekeeper/gatekeeper-rhel9@sha256:21108b429068a3b7d07623bec45de3be42ecfec8e0223b115d6b76a604bab2be"
+      ],
+      "dependencyProperties": [],
+      "requiredCRDs": [],
+      "requiredAPIs": [],
+      "selectionReason": "Exact package/channel/CSV/version verified in pinned catalog and independently rendered immutable bundle; declared dependency properties and required CRDs/APIs are empty. Selected stable head; Red Hat Gatekeeper 3.21 lifecycle matrix supports OCP 4.20 and is in full support. ACM/Platform Plus entitlement must be confirmed separately."
+    }
+  ],
+  "helpers": [
+    {
+      "key": "cocoTools",
+      "source": "quay.io/openshift_sandboxed_containers/coco-tools@sha256:3d8227aedb4423ecc6d6e868a43d38ab8ed7fb9683cbb1b9a1d2bee6d1994667",
+      "ref": "quay.io/openshift_sandboxed_containers/coco-tools@sha256:3d8227aedb4423ecc6d6e868a43d38ab8ed7fb9683cbb1b9a1d2bee6d1994667",
+      "digest": "sha256:3d8227aedb4423ecc6d6e868a43d38ab8ed7fb9683cbb1b9a1d2bee6d1994667",
+      "mediaType": "application/vnd.oci.image.index.v1+json",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "unknown",
+          "os": "unknown"
+        }
+      ],
+      "resolution": "verified",
+      "amd64Ref": "quay.io/openshift_sandboxed_containers/coco-tools@sha256:ad6e652427ca263faf7e1ab089871c35bf62f8822b817db6ffc5a19d2acfbefb",
+      "architecture": "amd64"
+    },
+    {
+      "key": "ubiMinimal",
+      "source": "registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+      "ref": "registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+      "digest": "sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+      "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+      "platforms": [],
+      "resolution": "verified",
+      "amd64Ref": "registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+      "architecture": "amd64"
+    },
+    {
+      "key": "oscMustGather",
+      "source": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:1.13.1",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c37ef009bf983e9b74b240844332d16f09bf3b9d6685883df1ac7c5262a40a1",
+      "digest": "sha256:1c37ef009bf983e9b74b240844332d16f09bf3b9d6685883df1ac7c5262a40a1",
+      "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "s390x",
+          "os": "linux"
+        }
+      ],
+      "resolution": "verified",
+      "amd64Ref": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:391d1f6f951475721b9bd58c0b7476e33824e2061dc5bc46a1ff285525f9e204",
+      "architecture": "amd64"
+    },
+    {
+      "key": "trusteeMustGather",
+      "source": "registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9:1.2",
+      "ref": "registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9@sha256:e8f272967e5cb0091621a798af4ef41a39c5a945d0101dce5564c59eaaa19d63",
+      "digest": "sha256:e8f272967e5cb0091621a798af4ef41a39c5a945d0101dce5564c59eaaa19d63",
+      "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "s390x",
+          "os": "linux"
+        }
+      ],
+      "resolution": "verified",
+      "amd64Ref": "registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9@sha256:fd6bc82026c741e0e95f92cdbc22b18e2adfe77a13f344138e614385efe603cf",
+      "architecture": "amd64"
+    }
+  ],
+  "relatedImages": [
+    {
+      "sourceRef": "registry.redhat.io/build-of-trustee/trustee-operator-bundle@sha256:22e278358fba7ec05bc065411b49b8f7148e4a25afe96de7a601e0b0b980bb42",
+      "ref": "registry.redhat.io/build-of-trustee/trustee-operator-bundle@sha256:22e278358fba7ec05bc065411b49b8f7148e4a25afe96de7a601e0b0b980bb42",
+      "selectedRef": "registry.redhat.io/build-of-trustee/trustee-operator-bundle@sha256:22e278358fba7ec05bc065411b49b8f7148e4a25afe96de7a601e0b0b980bb42",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/build-of-trustee/trustee-rhel9-operator@sha256:193b4d794fc1eeb023c46b485a8804acabeb6fbaca4186a808549ddbef755bf1",
+      "ref": "registry.redhat.io/build-of-trustee/trustee-rhel9-operator@sha256:193b4d794fc1eeb023c46b485a8804acabeb6fbaca4186a808549ddbef755bf1",
+      "selectedRef": "registry.redhat.io/build-of-trustee/trustee-rhel9-operator@sha256:202422a4063078f0cd75d745859c775bb5cf1cdaba114b616444b2a691c523a2",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/build-of-trustee/trustee-rhel9@sha256:85312d29d6ea7b96396b567c96893ae2527d83b9fc7a459044ba610c98593fae",
+      "ref": "registry.redhat.io/build-of-trustee/trustee-rhel9@sha256:85312d29d6ea7b96396b567c96893ae2527d83b9fc7a459044ba610c98593fae",
+      "selectedRef": "registry.redhat.io/build-of-trustee/trustee-rhel9@sha256:75ffad5d97c83c54182816b6f8a5b258f27326c903512e66b09a8cda7fb56b8a",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/cert-manager/cert-manager-istio-csr-rhel9@sha256:f63c50a7465ce4222dc3bb9443056d5bfcb07ecba20fcd9dd6ee143bc591f446",
+      "ref": "registry.redhat.io/cert-manager/cert-manager-istio-csr-rhel9@sha256:f63c50a7465ce4222dc3bb9443056d5bfcb07ecba20fcd9dd6ee143bc591f446",
+      "selectedRef": "registry.redhat.io/cert-manager/cert-manager-istio-csr-rhel9@sha256:0329f6bd8b196ecd1fb76dde04b8f3b9b2e64a1064db05b7d5211b50d8353a95",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/cert-manager/cert-manager-operator-bundle@sha256:d6dbf3a5b3e49e7c4c83e5caebc222105c266d05c1d1daeafe0f3ae359897c68",
+      "ref": "registry.redhat.io/cert-manager/cert-manager-operator-bundle@sha256:d6dbf3a5b3e49e7c4c83e5caebc222105c266d05c1d1daeafe0f3ae359897c68",
+      "selectedRef": "registry.redhat.io/cert-manager/cert-manager-operator-bundle@sha256:d6dbf3a5b3e49e7c4c83e5caebc222105c266d05c1d1daeafe0f3ae359897c68",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/cert-manager/cert-manager-operator-rhel9@sha256:207804f9237b0c2875f5252997312230c88726b5271c6419320958078dd7b7fd",
+      "ref": "registry.redhat.io/cert-manager/cert-manager-operator-rhel9@sha256:207804f9237b0c2875f5252997312230c88726b5271c6419320958078dd7b7fd",
+      "selectedRef": "registry.redhat.io/cert-manager/cert-manager-operator-rhel9@sha256:403674a15e95ce09e0823b49c961f09a070e36c33d051c8a97e9cafc260da397",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/cert-manager/cert-manager-trust-manager-rhel9@sha256:1fef2bffce8c89631099fbf8cefaa031502d670817897660ccfa0a9aa8a9ebc7",
+      "ref": "registry.redhat.io/cert-manager/cert-manager-trust-manager-rhel9@sha256:1fef2bffce8c89631099fbf8cefaa031502d670817897660ccfa0a9aa8a9ebc7",
+      "selectedRef": "registry.redhat.io/cert-manager/cert-manager-trust-manager-rhel9@sha256:41b67648465fa70bec1fb0a771a15c04c1daf0b1d053b0872ca8016f2b2f7f80",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/cert-manager/jetstack-cert-manager-acmesolver-rhel9@sha256:8ce8e3f21e49fda94f6c984e4777637e3773a099c6d74010a26e5e2743965739",
+      "ref": "registry.redhat.io/cert-manager/jetstack-cert-manager-acmesolver-rhel9@sha256:8ce8e3f21e49fda94f6c984e4777637e3773a099c6d74010a26e5e2743965739",
+      "selectedRef": "registry.redhat.io/cert-manager/jetstack-cert-manager-acmesolver-rhel9@sha256:6df582e555424ab8a71758b228e72d1649206002fe2293398bcedd5001c8b11d",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/cert-manager/jetstack-cert-manager-rhel9@sha256:b3305a06bff4a344ba1b19c8142d7e605fc723841981c97aab2310ff8a82c66d",
+      "ref": "registry.redhat.io/cert-manager/jetstack-cert-manager-rhel9@sha256:b3305a06bff4a344ba1b19c8142d7e605fc723841981c97aab2310ff8a82c66d",
+      "selectedRef": "registry.redhat.io/cert-manager/jetstack-cert-manager-rhel9@sha256:d5e31002f72b74edfd91e09b72c4c37eb3bbbeb7ddbc69202f5d82b8f61c8ab4",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/gatekeeper/gatekeeper-operator-bundle@sha256:42790242e0d827a68c34131b41995ccef7e28a8c6e969a232c4322182a569c24",
+      "ref": "registry.redhat.io/gatekeeper/gatekeeper-operator-bundle@sha256:42790242e0d827a68c34131b41995ccef7e28a8c6e969a232c4322182a569c24",
+      "selectedRef": "registry.redhat.io/gatekeeper/gatekeeper-operator-bundle@sha256:42790242e0d827a68c34131b41995ccef7e28a8c6e969a232c4322182a569c24",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/gatekeeper/gatekeeper-rhel9-operator@sha256:09b84262efaa6fb5a4de9addd1fab6e7d34906209ed867bc30a20daad6779f83",
+      "ref": "registry.redhat.io/gatekeeper/gatekeeper-rhel9-operator@sha256:09b84262efaa6fb5a4de9addd1fab6e7d34906209ed867bc30a20daad6779f83",
+      "selectedRef": "registry.redhat.io/gatekeeper/gatekeeper-rhel9-operator@sha256:bf5410361964f12fa2c897c996cbd730744b3812b54870b7c541aef4e15cf300",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/gatekeeper/gatekeeper-rhel9@sha256:21108b429068a3b7d07623bec45de3be42ecfec8e0223b115d6b76a604bab2be",
+      "ref": "registry.redhat.io/gatekeeper/gatekeeper-rhel9@sha256:21108b429068a3b7d07623bec45de3be42ecfec8e0223b115d6b76a604bab2be",
+      "selectedRef": "registry.redhat.io/gatekeeper/gatekeeper-rhel9@sha256:af46585da0ba3a3b3b9ffc246a7aa6a6d99274b0768f5b01195d5be1ab2a8163",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:7523fc2133233196f8fcbbe7c96d44c24ec4d3d60b40a0c306da4240e5997e4c",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:7523fc2133233196f8fcbbe7c96d44c24ec4d3d60b40a0c306da4240e5997e4c",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-rhel9@sha256:610fbca3180f28576fce107df2dab8e59a609db2e93250d5e72ea1672affad93",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:ca897a4689f3ac66fa2e4ce440e3f080ae283565ed52d9082f9b5194bf36c4d9",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:ca897a4689f3ac66fa2e4ce440e3f080ae283565ed52d9082f9b5194bf36c4d9",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-cloud-api-adaptor-webhook-rhel9@sha256:08e7ded47d1f799e561212092e7d0c2c757a840a59f6562fa52c3ce7bda60db2",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:cd0bbdc464dfe0060b33a07474f30ed093a6efc839ba910a44915ef9f55b195b",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:cd0bbdc464dfe0060b33a07474f30ed093a6efc839ba910a44915ef9f55b195b",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-dm-verity-image@sha256:cd0bbdc464dfe0060b33a07474f30ed093a6efc839ba910a44915ef9f55b195b",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:7b9adb111b0277f41222b409fc8815b2d075ce945401741ea6e0670dfa8ec5a1",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:7b9adb111b0277f41222b409fc8815b2d075ce945401741ea6e0670dfa8ec5a1",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-monitor-rhel9@sha256:f56ad332753cb98379f36714b2211ca2f080f191027c77004bdcea555bc1ccbf",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c37ef009bf983e9b74b240844332d16f09bf3b9d6685883df1ac7c5262a40a1",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c37ef009bf983e9b74b240844332d16f09bf3b9d6685883df1ac7c5262a40a1",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:391d1f6f951475721b9bd58c0b7476e33824e2061dc5bc46a1ff285525f9e204",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:d6d6e5b7696bfe764abfa1ed2d9229597ae1d1c52c19aa015fd325d028684d2e",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:d6d6e5b7696bfe764abfa1ed2d9229597ae1d1c52c19aa015fd325d028684d2e",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-operator-bundle@sha256:d6d6e5b7696bfe764abfa1ed2d9229597ae1d1c52c19aa015fd325d028684d2e",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:a4f12990522eb37056afe0329cec4c42edcdd1d569fb54a497d5727424d78d91",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:a4f12990522eb37056afe0329cec4c42edcdd1d569fb54a497d5727424d78d91",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-builder-rhel9@sha256:cf6b118ce8757ed3977799e03752084f90c3edf29149793a8f5ad37acf9664da",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:8c13e3816ae9e11b0029920d22c5f312b856c5f43fc927b937934c93aaaa6780",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:8c13e3816ae9e11b0029920d22c5f312b856c5f43fc927b937934c93aaaa6780",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-podvm-payload-rhel9@sha256:8f16f0a7bafed613d12f16417c932185f21e6340537b690fc80d35289067ca35",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:5805a0ec3fce8903af6ff43457072aecd38ef67e19c1719c049244bcbf32a3f5",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:5805a0ec3fce8903af6ff43457072aecd38ef67e19c1719c049244bcbf32a3f5",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-rhel9-operator@sha256:cf8d0358736d3491b9fec1b8837832004d45effb8fc619cf907f612dbfa54c67",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c65fb8f12888705d4989d6b8f0e4e3f144224b43f72b609d5f496e77b3b73917",
+      "ref": "registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c65fb8f12888705d4989d6b8f0e4e3f144224b43f72b609d5f496e77b3b73917",
+      "selectedRef": "registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:6194978f085331cf31da85ece1a2bdfab26d20b818932497cec95b5b7681c70f",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift4/ose-cluster-nfd-operator-bundle@sha256:a6239e207c32962d7acd33248be2db134d299108e260b70d4989c4229db9eaa8",
+      "ref": "registry.redhat.io/openshift4/ose-cluster-nfd-operator-bundle@sha256:a6239e207c32962d7acd33248be2db134d299108e260b70d4989c4229db9eaa8",
+      "selectedRef": "registry.redhat.io/openshift4/ose-cluster-nfd-operator-bundle@sha256:a6239e207c32962d7acd33248be2db134d299108e260b70d4989c4229db9eaa8",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift4/ose-cluster-nfd-rhel9-operator@sha256:4abb6073835f633ed0501c0ee5103c0d308fe5f16185d8ac9de1d58b2cf3f04d",
+      "ref": "registry.redhat.io/openshift4/ose-cluster-nfd-rhel9-operator@sha256:4abb6073835f633ed0501c0ee5103c0d308fe5f16185d8ac9de1d58b2cf3f04d",
+      "selectedRef": "registry.redhat.io/openshift4/ose-cluster-nfd-rhel9-operator@sha256:72735f067bc80637753a9a9fdb5d4f5a9d8489d8182e51788326996c7be8591f",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    },
+    {
+      "sourceRef": "registry.redhat.io/openshift4/ose-node-feature-discovery-rhel9@sha256:93419edbdf47716d02894f3add1e54ecc8a2489918d30596fbf66ed900114f84",
+      "ref": "registry.redhat.io/openshift4/ose-node-feature-discovery-rhel9@sha256:93419edbdf47716d02894f3add1e54ecc8a2489918d30596fbf66ed900114f84",
+      "selectedRef": "registry.redhat.io/openshift4/ose-node-feature-discovery-rhel9@sha256:a1be7ea1c0c3e0dc0a98d9fa6d6a27774bb6d6c979f86230ae1988b753c5396c",
+      "selectedPlatform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "rawManifestHashAndImmutableRereadVerified": true
+    }
+  ],
+  "checks": {
+    "fiveExactPackageChannelCSVVersionSelections": true,
+    "independentlyRenderedBundlesMatchCatalog": true,
+    "additionalDeclaredDependencyBundles": [],
+    "requiredCSVCRDsAndAPIs": [],
+    "allUniqueRelatedImagesResolved": 25,
+    "helpersResolved": 4,
+    "allSelectedImagesHaveLinuxAMD64Config": true,
+    "strictReleaseVerifierExit": 0,
+    "verifierOutput": "Release manifests agree; artifact identities resolved",
+    "mirrorDryRun": {
+      "status": "passed",
+      "completed": true,
+      "exitCode": 0,
+      "plannedImageCount": 220,
+      "freshCacheMissingImageCount": 220,
+      "expectedOperatorAndHelperImageCount": 28,
+      "allExpectedOperatorAndHelperSourcesPresent": true,
+      "mappingSha256": "sha256:2a32af9735e0f202579fd3b6442e3cc9b08773a264fced0181fe91a65f7bf7db",
+      "logSha256": "sha256:80e31c5ff3dbadcdab48af79675ed1eb8798d75d817fd9fb7d190c65f8cf9e9a",
+      "limit": "A dry run does not mirror image layers or validate the destination registry or cluster."
+    },
+    "checksummedExternalEvidenceFiles": 289,
+    "normalizerSourceRegistryMetadata": {
+      "sourceTag": "registry.redhat.io/redhat/redhat-operator-index:v4.20",
+      "sourceIndexDigest": "sha256:d0ba2f762a9514cf31bcb7ce77b837c6cedb517190f54eb2729be0fa02afb964",
+      "selectedChildDigest": "sha256:5c23da6450c3c0fbc90dcbc2f465104b447fea3382c24d9b3387ef4170c5d089",
+      "sourceNameEchoesRequestedRef": true,
+      "pinnedNameEchoesRequestedRef": true,
+      "digestEqualsContentDigest": true,
+      "childImmutableRereadMatches": true,
+      "architecture": "amd64",
+      "os": "linux",
+      "fbcConfigPath": "/configs"
+    },
+    "normalizerFilteredMirrorRuntimeCheck": "pending actual mirror creation"
+  },
+  "hashes": {
+    "inputManifest": "sha256:6c9bb2dffc24d42776ee008b83f157217ab9177415cf22045752f3c250dd080b",
+    "inputImageSet": "sha256:753cfdc20bcb57071ca84a5dc0445d22559c27cac873e8a9a73ea2e3504bd15a",
+    "candidateManifest": "sha256:16ac02380259f2d92b29c1294ec7eb00926780fc3d22f0fb197842a113444e97",
+    "candidateImageSet": "sha256:3914c8fcede5eba31741b4a1e335e53f0d07e99ff331ff9e577ae1c7242d1317",
+    "bundleComparison": "sha256:b3b728c7043d5b475f470c3391f754d229e4c40da64230c9082a34d40e20852e",
+    "relatedImageIdentities": "sha256:eb88212351814c9690c5f886a7bfdfbdb7ee3c3fa1bdd523fae8fa2c00a6a34a",
+    "externalSourceEvidenceChecksumManifest": "sha256:dfd645092d6fed3cc456adba18a62e586371d72e45573c2e5b6d53c12c69158f"
+  },
+  "limitations": [
+    "Artifact digest equality does not establish publisher signature trust, payload compatibility or successful mirroring.",
+    "Gatekeeper support requires OpenShift Platform Plus or Red Hat Advanced Cluster Management; authenticated artifact access is not entitlement verification.",
+    "Hardware validation remains false.",
+    "No cluster resources were created or changed.",
+    "Raw catalog and registry evidence remain external to the checkout."
+  ],
+  "supportSources": [
+    "https://access.redhat.com/support/policy/updates/openshift_operators",
+    "https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/disconnected_environments/about-installing-oc-mirror-v2"
+  ],
+  "platformPayload": {
+    "sourceRef": "quay.io/openshift-release-dev/ocp-release:4.20.39-x86_64",
+    "ref": "quay.io/openshift-release-dev/ocp-release@sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850",
+    "selectedRef": "quay.io/openshift-release-dev/ocp-release@sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850",
+    "selectedPlatform": {
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "mirrorSelectedTagMatchesBOM": true,
+    "rawManifestHashAndImmutableRereadVerified": true
+  }
+}

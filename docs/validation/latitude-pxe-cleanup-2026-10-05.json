@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS",
+  "startedAt": "2026-10-05T15:55:49.527839+00:00",
+  "finishedAt": "2026-10-05T16:02:30.926987+00:00",
+  "scope": "Existing Dallas bastion only; reuse prepared assets; no discovery, node contact, provider API, install or reinstall",
+  "providerCredentialsRemovedFromAnsibleEnvironment": true,
+  "ansibleServeAndReuse": "PASS",
+  "preparedAssetsRebuilt": false,
+  "sourceAndArtifactHashesAndMtimesUnchanged": true,
+  "publicHTTP": {
+    "checkedAt": "2026-10-05T15:57:06.214961+00:00",
+    "checks": [
+      {
+        "name": "tokenized",
+        "status": 206,
+        "contentRange": "bytes 0-1/117636700",
+        "bytesRead": 2
+      },
+      {
+        "name": "guessable-root",
+        "status": 404,
+        "contentRange": null,
+        "bytesRead": 2
+      }
+    ]
+  },
+  "injectedReadinessFailure": {
+    "result": "PASS",
+    "expectedExitCode": 2,
+    "actualExitCode": 2,
+    "injection": "Controller readiness URL used a verified closed 127.0.0.1 port; actual bastion HTTP checks still ran",
+    "rescueExecuted": true,
+    "endpointClosedAfterRescue": true,
+    "installerInputsUnchanged": true
+  },
+  "explicitAnsibleStop": "PASS",
+  "shellServeAndDefaultStop": "PASS",
+  "shellPublicHTTP": [
+    {
+      "name": "tokenized",
+      "status": 206,
+      "contentRange": "bytes 0-1/117636700",
+      "bytesRead": 2
+    },
+    {
+      "name": "guessable-root",
+      "status": 404,
+      "contentRange": null,
+      "bytesRead": 2
+    }
+  ],
+  "pathGuardPlans": [
+    {
+      "path": "/etc",
+      "returnCode": 1,
+      "reason": "Unsafe boot publication paths: Public webroot must be a dedicated directory outside system trees and broad storage/home roots"
+    },
+    {
+      "path": "/var",
+      "returnCode": 1,
+      "reason": "Unsafe boot publication paths: Public webroot must be a dedicated directory outside system trees and broad storage/home roots"
+    },
+    {
+      "path": "/opt/install/src",
+      "returnCode": 1,
+      "reason": "Unsafe boot publication paths: Public webroot overlaps private installer source/assets; choose a separate publication directory"
+    }
+  ],
+  "metadata": {
+    "path": "/var/lib/coco-boot-publication/source-paths.json",
+    "fileMode": "0600",
+    "directoryMode": "0700",
+    "uid": 0,
+    "contentAndMtimeUnchangedAcrossReuseAndCrossEntrypointStop": true,
+    "sources": [
+      "/opt/install/cluster-assets",
+      "/opt/install/cluster-assets/boot-artifacts",
+      "/opt/install/provider-requests",
+      "/opt/install/src",
+      "/var/lib/coco-boot-publication/source-paths.json"
+    ]
+  },
+  "finalClosure": {
+    "result": "PASS",
+    "port8080Listening": false,
+    "publicTcpConnectionFailed": true,
+    "publishedDirectoriesAndBootConfigAbsent": true,
+    "privateInstallParentMode": "0o700"
+  },
+  "selinuxMode": "Permissive",
+  "selinuxEnforcingValidation": "INCOMPLETE",
+  "actualNodeBoot": "NOT ATTEMPTED",
+  "providerReinstall": "NOT ATTEMPTED",
+  "phases": [
+    {
+      "phase": "explicit-stop",
+      "tag": "pxe-stop",
+      "startedAt": "2026-10-05T15:59:45.727453+00:00",
+      "finishedAt": "2026-10-05T15:59:54.088861+00:00",
+      "returnCode": 0
+    },
+    {
+      "phase": "serve-initial",
+      "tag": "pxe",
+      "startedAt": "2026-10-05T15:56:20.919394+00:00",
+      "finishedAt": "2026-10-05T15:56:44.485507+00:00",
+      "returnCode": 0
+    },
+    {
+      "phase": "serve-injected-failure",
+      "tag": "pxe",
+      "startedAt": "2026-10-05T15:57:59.214060+00:00",
+      "finishedAt": "2026-10-05T15:58:32.293676+00:00",
+      "returnCode": 2
+    },
+    {
+      "phase": "serve-reuse",
+      "tag": "pxe",
+      "startedAt": "2026-10-05T15:57:06.260346+00:00",
+      "finishedAt": "2026-10-05T15:57:28.948606+00:00",
+      "returnCode": 0
+    },
+    {
+      "phase": "shell-default-stop",
+      "returnCode": 0,
+      "startedAt": "2026-10-05T16:01:17.500942+00:00",
+      "finishedAt": "2026-10-05T16:01:18.469127+00:00"
+    },
+    {
+      "phase": "shell-serve",
+      "returnCode": 0,
+      "startedAt": "2026-10-05T15:59:54.969248+00:00",
+      "finishedAt": "2026-10-05T15:59:57.547395+00:00"
+    }
+  ],
+  "sourceSha256": {
+    "scripts/boot-publication-paths.py": "5a8aadd550c928605951b685cb2a917d6e022fe13d0211ffe2e083e56ef1558a",
+    "scripts/serve-boot-artifacts.sh": "5df77500a805bd489607b14be3b99289c3e6aa065f52acba94db6117e147b006",
+    "ansible/roles/pxe_serve/defaults/main.yml": "47aa6558fe35c30f2c0722fab954d8d4c4bf5e58b3e42757e50065c5f376f047",
+    "ansible/roles/pxe_serve/tasks/main.yml": "2715f041e2f74c26a53eb98e88282b7ef5d9bad36fd0bf95edd15d8dce993ace",
+    "ansible/roles/pxe_serve/tasks/cleanup_publication.yml": "547e421126cb487f4ee6210b851208c22432747ff974da9fda1d85a2409576b5",
+    "ansible/roles/pxe_serve/tasks/stop_publication.yml": "26def232f1e082ef073ddf96f741f975b9a0a6c82cc33341c8e6486c6a27a8de",
+    "ansible/roles/pxe_serve/tasks/prepare.yml": "6beea4e6b1139d5faa28b5ccd7d12c266452fc9c313d9e2b28ee4b79f5d6745c",
+    "ansible/group_vars/all.yml": "0f8bf7b0b736287e2d4c709a061cac2cb27aa90d88367cb4a113788ba2a40b56"
+  },
+  "remoteScriptIdentity": {
+    "scriptSha256": {
+      "serve-boot-artifacts.sh": "5df77500a805bd489607b14be3b99289c3e6aa065f52acba94db6117e147b006",
+      "boot-publication-paths.py": "5a8aadd550c928605951b685cb2a917d6e022fe13d0211ffe2e083e56ef1558a"
+    },
+    "metadataUid": 0,
+    "metadataParentUid": 0
+  },
+  "logSha256": {
+    "explicit-stop.log": "4c586da65e23a2f50602ee2f7060cd40763837754d40c6ff3a33fa8fc720c2d8",
+    "serve-initial.log": "e553d4959d899f3a775b6c21c8d870b20de8c7f1e239666b95f9876920c80fd6",
+    "serve-injected-failure.log": "6b3027d9fda3ba2516f97c9670fb851d08588783acd06529cefd8f235ac685f0",
+    "serve-reuse.log": "38dbe784ccc403f954defd18963ff9db3049b35b7f81586c029feb4a67c5b620",
+    "shell-default-stop.log": "e1a8bfdf64aa228b7452dd17b9577c46fd43f65ce06951a45a1652141541802f",
+    "shell-serve.log": "32d9537567f502b6cd487adbd053e34479fa14850a7f7481b083bed4e6d5e6e0",
+    "task-list.log": "73464d1da8f44c8b97786068f68b3383f40dc9c8e9599f0505ee8d460b37b8ab"
+  },
+  "protectedInventorySha256": {
+    "after-rescue-private.json": "a53483a526b2c5bfbd55d6b18dd84d4d81417611fe2feb4f490f10ff75c479a2",
+    "before-private.json": "0121d335a845291767fb9593990a2ef4966e3f5c3bc153c0589e4532c0773e59",
+    "final-private.json": "a53483a526b2c5bfbd55d6b18dd84d4d81417611fe2feb4f490f10ff75c479a2",
+    "reused-private.json": "2bc05116de49369f8755903e06db2f9de7f5d3ccf99c941cc5a7ced8b7ba6793",
+    "served-private.json": "5ca96b431ba47b156dbe57440455e8cd093191d46496cefab984786d705db0d6",
+    "shell-served-private.json": "2b1879ba73f194e183699e9b183e06e5031d396bc3cd93508addcf382eefe2df"
+  },
+  "bastionSite": "DAL",
+  "evidenceSha256": "c51cc4c46e0f3fc3dcb4aba4e030fe76946917cd51cceb12a7e05e282e8da1be",
+  "baseCommit": "6c6d4cfeb453e4614037d8e214ee9f9688b5f9f1",
+  "workingTreeChangesUsed": false
+}

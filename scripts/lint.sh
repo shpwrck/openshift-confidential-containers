@@ -1,34 +1,27 @@
 #!/usr/bin/env bash
-# Hardware-free CI: build every overlay and validate. Safe to run anywhere.
+# Required hardware-free checks. Missing prerequisites or failed checks are errors.
 set -euo pipefail
-
-echo "== shell syntax =="
-# Syntax-check EVERY script (incl. scripts/lib). One `bash -n` per file on purpose:
-# `bash -n a b c` parses only the FIRST arg (the rest become $1 $2 …), and `find -exec … \;`
-# swallows the child exit status — so loop and let `set -e` fail on the first bad script.
-while IFS= read -r f; do bash -n "$f"; done < <(find scripts -type f -name '*.sh')
-
-echo "== endpoint parameterization gate (#34) =="
-bash ./scripts/check-endpoint-parameterization.sh
-
-echo "== coco workload-label gate (#68) =="
-bash ./scripts/check-coco-workload-labels.sh
-
-echo "== coco memory-floor rego tests (#70) =="
-bash ./scripts/test-coco-mem-rego.sh
-
-overlays=$(find gitops/overlays -maxdepth 1 -mindepth 1 -type d 2>/dev/null || true)
-[ -n "${overlays}" ] || { echo "no overlays yet"; exit 0; }
-
-for o in ${overlays}; do
-	echo "== kustomize build ${o} =="
-	if command -v kustomize >/dev/null; then kustomize build "${o}" >/dev/null; else oc kustomize "${o}" >/dev/null; fi
-	# Optional, if installed:
-	command -v kubeconform >/dev/null && kustomize build "${o}" | kubeconform -strict -summary || true
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+for tool in python3 shellcheck opa kustomize ansible-playbook ansible-lint; do
+  command -v "$tool" >/dev/null || { echo "ERROR: missing $tool; see docs/current-quickstart.md" >&2; exit 2; }
 done
-
-# Rego policies (when present)
-if command -v conftest >/dev/null && ls gitops/**/policy.rego >/dev/null 2>&1; then
-	conftest verify -p gitops || true
-fi
-echo "lint OK"
+while IFS= read -r file; do bash -n "$file"; done < <(find scripts -type f -name '*.sh')
+shellcheck --severity=warning -x scripts/*.sh scripts/lib/*.sh ansible/up.sh
+bash scripts/check-endpoint-parameterization.sh
+bash scripts/check-coco-workload-labels.sh
+bash scripts/test-coco-mem-rego.sh
+python3 scripts/verify-release.py
+python3 scripts/test-release-manifest.py
+python3 scripts/test-mirror-resources.py
+python3 scripts/test-worker-install.py
+python3 scripts/test-worker-safety.py
+python3 scripts/test-vcek-bundle.py
+python3 -m unittest discover -s tests -v
+while IFS= read -r overlay; do
+  echo "Rendering $overlay"
+  kustomize build "$overlay" >/dev/null
+done < <(find gitops/overlays -mindepth 1 -maxdepth 1 -type d | sort)
+export ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg"
+(cd ansible && ansible-playbook --syntax-check playbooks/site.yml && ansible-lint)
+python3 scripts/check-doc-links.py
+printf 'All required offline checks passed. Hardware validation remains separate.\n'

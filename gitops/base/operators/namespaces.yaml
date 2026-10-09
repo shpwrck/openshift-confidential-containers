@@ -27,7 +27,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  # Trustee operator namespace (per trustee-operator v1.1 templates).
+  # Trustee Operator namespace; customer workers use a separate Trustee cluster.
   name: trustee-operator-system
   labels:
     openshift.io/cluster-monitoring: "true"

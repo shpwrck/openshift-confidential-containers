@@ -1,5 +1,5 @@
-{{ '#' }} Rendered by Ansible role render_configs — DISCONNECTED SNO install-config.
-{{ '#' }} pullSecret = MIRROR creds only (the node is air-gapped). NOTE: additionalNTPSources
+{{ '#' }} Rendered by Ansible role render_configs — {{ network_profile | default('private-vlan') }} SNO install-config.
+{{ '#' }} pullSecret = MIRROR credentials only; this does not enforce egress isolation. additionalNTPSources
 {{ '#' }} is deliberately ABSENT here — the installer drops it from install-config; it lives in
 {{ '#' }} agent-config.yaml instead (hard-won fix #3).
 apiVersion: v1
@@ -21,7 +21,7 @@ networking:
   serviceNetwork:
     - {{ service_network_cidr }}
   machineNetwork:
-    - cidr: {{ machine_network }}
+    - cidr: {{ render_machine_network | default(machine_network) }}
 platform:
   none: {}
 imageDigestSources:

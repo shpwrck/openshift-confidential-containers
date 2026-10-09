@@ -1,93 +1,51 @@
 # OpenShift Confidential Containers
 
-Stand up **OpenShift Confidential Containers (CoCo)** with AMD SEV-SNP on bare metal,
-prove each capability on a disposable test rig, then apply the proven configuration to the
-target air-gapped multi-node cluster.
+Install and test AMD SEV-SNP confidential containers on a disposable bare-metal
+OpenShift cluster. Customer deployment uses a separate Trustee trust domain.
 
-## Stack
+The release set validated on **October 8, 2026** is **OCP 4.20.39, OpenShift
+sandboxed containers (OSC) 1.13.1, and Red Hat build of Trustee 1.2.1**.
+Exact operator, tool and image identities live in the
+[release manifest](install/release-manifest.json).
 
-| Layer | Choice |
-|-------|--------|
-| TEE | **AMD SEV-SNP** first; Intel TDX added later as an additive overlay (⚠️ see air-gap caveat) |
-| Path | **Bare-metal Kata host** (the worker's RHCOS kernel is the SNP host) |
-| Platform | Customer baseline: OSC **1.12** + Red Hat build of Trustee **1.1**; tested rig pin: OCP 4.20.18. Use the **1.12** docs only and re-check its live OCP z-stream matrix before customer use. |
-| Attestation (air-gap) | Trustee-side **OfflineStore** VCEK cache (`kbsLocalCertCacheSpec`) — see [design doc](docs/design/engagement-design.md) |
-| GitOps | Kustomize substrate; `oc apply -k` + Makefile on the rig; ArgoCD (mirrored) in the production env |
+The Cherry trial passed offline attestation, secret release, measured-initdata
+and launch-reference enforcement, signed-image verification, and network isolation.
+These checks passed again after removing and reinstalling the CoCo software.
+**The rig has been deleted.** [Validation results and limits](docs/validation/README.md)
+include the retirement receipt.
 
-## Visual overview
-
-Start with the
-[`organizational operating playbook`](docs/getting-started-and-operations.md). It defines the customer
-roles, tangible artifacts, approval gates, and end-to-end workflows for net-new installation,
-workload releases, routine operations, and upgrades on the 1.12 baseline.
-
-See [`docs/architecture.md`](docs/architecture.md) for the repository-specific component diagrams,
-attestation sequence, and step-by-step flow from bastion preparation through negative tests and
-production promotion.
-
-## Environments
-
-- **Test rig** — Single Node OpenShift (SNO) on one **Latitude.sh hourly** bare-metal node,
-  plus a secondary Trustee cluster. Disposable; spun up, proven, destroyed. Simulated air-gap
-  (bastion/mirror host + egress-firewalled node).
-- **Production** — full **multi-node** bare metal, **air-gapped**, separate Trustee cluster.
-
-> **Driving from macOS?** The operator scripts run on stock macOS (bash 3.2 + BSD userland) —
-> no GNU coreutils needed. See [macOS operator prerequisites](docs/runbooks/macos-operator-prerequisites.md)
-> for the required CLIs and which scripts run on your workstation vs the bastion.
-
-## Capability rungs (prove on rig → apply to production)
-
-- **A** (`rung-kbs`) — KBS secret-resource release (attestation gates a credential)
-- **B** (`rung-rvps`) — RVPS measurement verification (a populated `snp_launch_measurement` gates release)
-- **C** (`rung-signed`) — signed image (`image_security_policy`)
-- **D** (`rung-encrypted`) — encrypted container image (wrong measurement → pod won't start; direct pull is upstream-blocked, cri-o/cri-o#10084) — **manual**, excluded from the hands-off loop
-
-Each rung is "done" only when (1) reproduced from written steps on a fresh node and (2) its
-**negative test** (the denial) passes. Run `make negative-test WHICH=<rung-kbs|rung-rvps|rung-signed|rung-encrypted|air-gap|all>` — each
-denial is self-contained: the secret/policy/VCEK swap it needs is backed up and **automatically
-reverted**, so the rig returns to baseline.
-
-**Proof status** (rig: disconnected SNO, EPYC Genoa; last proven 2026-07-01):
-
-| Rung / test | Happy path | Negative (the denial) | State |
-|---|---|---|---|
-| **A** (`rung-kbs`) — secret release | ✅ air-gapped attest via VCEK **OfflineStore** → secret released | no valid attestation → secret **withheld (403)** — bare-attestation negative **authored in #17** | happy **PROVEN**; bare negative pending #17 |
-| **B** (`rung-rvps`) — measurement verification | a populated `snp_launch_measurement` matches the evidence → released | ✅ restrictive measured-initdata policy — tampered initdata → secret **withheld (403)**; untampered control still releases (apply+revert) | **PROVEN 2026-07-01** — runs via `WHICH=rung-kbs` today; relocates to `WHICH=rung-rvps` in #18 (currently a SKIP) |
-| **air-gap** — OfflineStore is load-bearing | (rung-kbs happy) | ✅ swap VCEK for a wrong cert → attestation **401** (not a silent KDS hit) | **PROVEN** |
-| **C** (`rung-signed`) — signed image | scaffolding + tag-shaped diagnostics | `image_security_policy` rejects unsigned/tampered | signature **transport gap** — the minimal mirror-registry doesn't serve the Quay signature extension (see [`failure-modes.md`](docs/runbooks/failure-modes.md)) |
-| **D** (`rung-encrypted`) — encrypted image *(manual)* | — | wrong measurement → key withheld → pod won't start | **upstream-blocked** — host encrypted-layer pre-pull, [cri-o/cri-o#10084](https://github.com/cri-o/cri-o/issues/10084) |
-
-See Phase 6 of [`docs/runbooks/install-execution-plan.md`](docs/runbooks/install-execution-plan.md)
-for the build → KBS-resource → apply → negative sequence, and
-[`docs/design/engagement-design.md`](docs/design/engagement-design.md) §5 for the definition of "proven".
-
-## Layout
-
-```
-docs/getting-started-and-operations.md  beginner-first product, ownership, and lifecycle guide
-docs/install-guide.md  fully MANUAL, provider-neutral bring-up (no Terraform/Ansible)
-docs/runbooks/         phase checklists for the automated path + failure modes
-docs/design/           design notes + pre-deployment scoping list
-docs/notes/            hardware bring-up + air-gap guest-pull reference notes
-docs/research/         dated primary-source research behind the customer guide
-infra/                 Terraform (node, bastion, VLAN, firewall, netboot)
-ansible/               bastion config + OpenShift install automation (`make bringup-sno-airgapped`)
-gitops/                Kustomize base/ + overlays {sno,customer} × {workers,trustee}
-scripts/               rung-0 SNP-host gate, VCEK collection, Veritas RVPS
-Makefile               rig driver (verify gates, apply rungs)
-```
+Encrypted images, customer upgrades and the separate customer Trustee deployment
+remain unvalidated. The trial used public iPXE delivery before the private Agent OS
+started; it does not prove private boot delivery from power-on.
 
 ## Start here
 
-- **Learn and plan customer operations:** read
-  [`docs/getting-started-and-operations.md`](docs/getting-started-and-operations.md). Complete its
-  ownership and Day 0 decisions before selecting an install path.
-- **By hand (any provider):** follow [`docs/install-guide.md`](docs/install-guide.md) — the
-  full manual procedure, no Terraform/Ansible.
-- **Automated (Latitude.sh):** use the Terraform + Ansible + `Makefile` path:
+1. [Quickstart](docs/current-quickstart.md): prepare a controller and install on a supplied rig.
+2. [Trustee setup](docs/trustee-current.md): offline collateral, references and resource policies.
+3. [Capability tests](docs/capability-status.md): what each rung proves and how to run it.
+
+Use the [documentation index](docs/README.md) for firmware, registry, troubleshooting
+and maintenance guides.
 
 ```bash
-make help                  # list targets
-make verify-snp-host NODE=<node>   # rung-0 gate: prove SEV-SNP host before any GitOps
+make help           # available commands
+make check-release  # local inventory consistency
+make preflight      # require resolved artifact identities
+make proof-plan     # list tests without cluster access
 ```
+
+## Repository map
+
+| Directory | Purpose |
+|---|---|
+| `install/` | Release inventory, ImageSet and installer templates |
+| `ansible/` | Bastion preparation, explicit installation and verification |
+| `gitops/` | Worker and Trustee manifests |
+| `scripts/` | Setup, artifact preparation and proof runner |
+| `tests/` | Hardware-free regression tests |
+| `docs/` | Operating guides and dated validation receipts |
+
+Keep credentials, keys, kubeconfigs, generated state and recovery files outside
+this checkout and Homelab. The default state directory is
+`$HOME/.local/state/openshift-confidential-containers`.
+See [contributor setup](docs/contributing.md) for local checks.

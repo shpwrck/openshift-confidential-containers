@@ -1,27 +1,32 @@
-{{ '#' }} Rendered by Ansible role render_configs — DISCONNECTED SNO agent-config.
+{{ '#' }} Rendered by Ansible role render_configs — {{ network_profile | default('private-vlan') }} SNO agent-config.
 {{ '#' }} additionalNTPSources lives HERE (the installer drops it from install-config — fix #3).
-{{ '#' }} VLAN-only nmstate: the parent NIC has ipv4/ipv6 DISABLED; the tagged VLAN child carries
-{{ '#' }} the node's private IP and reaches the mirror over the air gap. MACs are discovered at
-{{ '#' }} runtime (parent_mac), never hardcoded.
+{{ '#' }} NIC names are bound to discovered MACs; topology is selected explicitly.
 apiVersion: v1beta1
 kind: AgentConfig
 metadata:
   name: {{ cluster_name }}
-rendezvousIP: {{ node_vlan_ip }}
+rendezvousIP: {{ cluster_node_ip | default(node_vlan_ip) }}
 bootArtifactsBaseURL: {{ boot_artifacts_base_url }}
 additionalNTPSources:
 {% for ntp in additional_ntp_sources %}
   - {{ ntp }}
 {% endfor %}
 hosts:
-{% for m in machines %}
+{% for m in discovery_machines | default(machines) %}
   - hostname: {{ m.name }}
     role: {{ m.role }}
     rootDeviceHints:
       deviceName: {{ m.root_device }}
     interfaces:
+{% if m.bond_ports | default([]) %}
+{% for port in m.bond_ports %}
+      - name: {{ port.name }}
+        macAddress: {{ port.mac }}
+{% endfor %}
+{% else %}
       - name: {{ m.parent_if }}
         macAddress: {{ m.parent_mac }}
+{% endif %}
 {% if m.external_if is defined and m.external_if and m.external_mac is defined and m.external_mac %}
       {{ '#' }} Bind the PUBLIC NIC's name to its DISCOVERED mac (#80). This list is the
       {{ '#' }} name<->MAC mapping the installer applies, so declaring it here makes
@@ -35,12 +40,36 @@ hosts:
     networkConfig:
       interfaces:
         - name: {{ m.parent_if }}
-          type: ethernet
+          type: {{ 'bond' if m.bond_ports | default([]) else 'ethernet' }}
+{% if m.bond_ports | default([]) %}
+          link-aggregation:
+            mode: {{ m.bond_mode }}
+            options:
+              miimon: '100'
+              lacp_rate: slow
+              xmit_hash_policy: layer3+4
+            port:
+{% for port in m.bond_ports %}
+              - {{ port.name }}
+{% endfor %}
+{% endif %}
           state: up
           ipv4:
             enabled: false
           ipv6:
             enabled: false
+{% for port in m.bond_ports | default([]) %}
+        - name: {{ port.name }}
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: false
+            dhcp: false
+          ipv6:
+            enabled: false
+            dhcp: false
+            autoconf: false
+{% endfor %}
 {% if m.external_if is defined and m.external_if and m.external_mac is defined and m.external_mac %}
         {{ '#' }} PUBLIC NIC — held DOWN on purpose (#78). Leaving it undeclared does NOT leave it
         {{ '#' }} alone: an interface absent from networkConfig is unmanaged in the agent live
@@ -78,7 +107,7 @@ hosts:
       dns-resolver:
         config:
           server:
-            - {{ bastion_vlan_ip }}
+            - {{ bastion_service_ip | default(bastion_vlan_ip) }}
       routes:
         config:
           - destination: 0.0.0.0/0

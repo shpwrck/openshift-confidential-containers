@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-05T16:45:44.937557+00:00",
+  "scope": "Fresh provider boot: key-only SSH, locked account and cloud-init module completion; full release mirroring has not run on this host",
+  "sourceCommit": "d05e8fc655c66b65de8d80e8cf87e5fab5d52d0e",
+  "status": "PASS",
+  "freshProvision": true,
+  "sshKeyOnlyAuthentication": "PASS",
+  "accountPasswordLocked": true,
+  "cloudInitStatus": "done",
+  "cloudInitExtendedStatus": "degraded done",
+  "moduleErrors": {
+    "init-local": [],
+    "init": [],
+    "modules-config": [],
+    "modules-final": []
+  },
+  "retainedProviderWarnings": {
+    "WARNING": [
+      "Metadata 'network' key not valid: None."
+    ]
+  },
+  "mirrorReadyMarker": true,
+  "mirrorFailureMarker": false,
+  "quayService": "active",
+  "fullReleaseMirroring": "NOT_RUN",
+  "privateNodeConnectivity": "FAIL in subsequent network qualification; see latitude-mia2-network-2026-10-05.json",
+  "renderedUserDataSha256": "8d1ea8f38da6b6c0e7495a05bdf7fc54351bd55f5eb47c01ca072d4338389bee",
+  "privateEvidenceSha256": "a0ebc4bde04739e12a9d079a2886dd90c6eb8ac8c19707a72bf3ac8e84be5f96",
+  "retirement": "Deleted after preserving evidence; exact-server GET404 verified"
+}

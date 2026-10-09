@@ -2,3 +2,5 @@
 # pxe_serve mode: "serve" (default) builds + publishes the boot artifacts under the tokenized
 # path; "stop" tears the endpoint down once the node has booted. Override with -e pxe_mode=stop.
 pxe_mode: serve
+# Protected source identities survive stop so explicit legacy source overrides stay safe.
+pxe_publication_state_path: /var/lib/coco-boot-publication/source-paths.json

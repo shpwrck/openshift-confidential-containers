@@ -1,58 +1,89 @@
 #!/usr/bin/env bash
-# Fetch version-pinned OpenShift client tooling into ./bin for the disconnected SNO prep.
-#
-# Pulls oc, openshift-install (4.20.18) and oc-mirror from the public Red Hat mirror
-# (https://mirror.openshift.com/pub/openshift-v4/clients/...). linux/amd64 only. Idempotent:
-# re-running re-extracts the pinned versions and prints what landed.
-#
-# NOTE (disconnected): for the real air-gapped install the installer should ultimately come
-# from `oc adm release extract --command=openshift-install` run against the MIRRORED release
-# image, so it matches the payload byte-for-byte. THIS script only fetches the public
-# binaries to bootstrap the mirroring/prep step. See install/README.md step 3.
+# Install a checksum-verified OpenShift tool set; safe to rerun after a release change.
+# Also staged standalone by Ansible, which supplies OCP_VERSION explicitly.
 set -euo pipefail
-
-OCP_VERSION="${OCP_VERSION:-4.20.18}"        # VERIFY: matches install/imageset-config.yaml pin
-ARCH="amd64"
-OS="linux"
-BIN_DIR="${BIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin}"
-MIRROR="https://mirror.openshift.com/pub/openshift-v4/${ARCH}/clients"
-
-mkdir -p "${BIN_DIR}"
-TMP="$(mktemp -d)"
-trap 'rm -rf "${TMP}"' EXIT
-
-fetch() {  # fetch <url> <outfile>
-  echo ">> downloading $1"
-  curl -fsSL "$1" -o "$2"
-}
-
-# --- oc + kubectl (openshift-client) and openshift-install, pinned to OCP_VERSION ---------
-fetch "${MIRROR}/ocp/${OCP_VERSION}/openshift-client-${OS}-${OCP_VERSION}.tar.gz" "${TMP}/oc.tgz"
-tar -xzf "${TMP}/oc.tgz" -C "${BIN_DIR}" oc kubectl
-
-fetch "${MIRROR}/ocp/${OCP_VERSION}/openshift-install-${OS}-${OCP_VERSION}.tar.gz" "${TMP}/install.tgz"
-tar -xzf "${TMP}/install.tgz" -C "${BIN_DIR}" openshift-install
-
-# --- oc-mirror (v2). Ships in the SAME per-version dir as oc/openshift-install -------------
-# (verified 2026-06-26: .../clients/ocp/<ver>/oc-mirror.tar.gz — NOT under ocp-tools/, which
-# 404s for the 4.20 train). A glibc build (oc-mirror.tar.gz) and a RHEL9 build
-# (oc-mirror.rhel9.tar.gz) sit side by side; we take the glibc one. Pin to OCP_VERSION, fall
-# back to ocp/latest with a warning.
-OCMIRROR_URL="${MIRROR}/ocp/${OCP_VERSION}/oc-mirror.tar.gz"
-if ! curl -fsI "${OCMIRROR_URL}" >/dev/null 2>&1; then
-  echo ">> WARN: ${OCMIRROR_URL} not found; falling back to ocp/latest (VERIFY version)"
-  OCMIRROR_URL="${MIRROR}/ocp/latest/oc-mirror.tar.gz"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -r "$SCRIPT_DIR/lib/release.sh" ]]; then
+  # shellcheck source=scripts/lib/release.sh
+  source "$SCRIPT_DIR/lib/release.sh"
+  load_release_defaults
 fi
-fetch "${OCMIRROR_URL}" "${TMP}/oc-mirror.tgz"
-tar -xzf "${TMP}/oc-mirror.tgz" -C "${BIN_DIR}" oc-mirror
-
-chmod +x "${BIN_DIR}"/oc "${BIN_DIR}"/kubectl "${BIN_DIR}"/openshift-install "${BIN_DIR}"/oc-mirror
-
-# --- report versions ---------------------------------------------------------------------
-echo
-echo "Installed into ${BIN_DIR}:"
-"${BIN_DIR}/oc" version --client
-"${BIN_DIR}/openshift-install" version
-"${BIN_DIR}/oc-mirror" version 2>/dev/null || "${BIN_DIR}/oc-mirror" --v2 version 2>/dev/null || true
-echo
-echo "Add to PATH:  export PATH=\"${BIN_DIR}:\$PATH\""
+: "${OCP_VERSION:?set OCP_VERSION or use the repository release manifest}"
+[[ "$OCP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "ERROR: OCP_VERSION must be an exact release" >&2; exit 2; }
+BIN_DIR="${BIN_DIR:-$SCRIPT_DIR/../bin}"
+OCP_CLIENTS_BASE="${OCP_CLIENTS_BASE:-https://mirror.openshift.com/pub/openshift-v4/amd64/clients}"
+OCMIRROR_VARIANT="${OCMIRROR_VARIANT:-rhel9}"
+case "$OCMIRROR_VARIANT" in rhel9|glibc) ;; *) echo "ERROR: OCMIRROR_VARIANT must be rhel9 or glibc" >&2; exit 2 ;; esac
+base="${OCP_CLIENTS_BASE%/}/ocp/$OCP_VERSION"
+umask 077
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$BIN_DIR" "$TMP/stage"
+BIN_DIR="$(cd "$BIN_DIR" && pwd)"
+if ! mkdir "$BIN_DIR/.coco-tools-lock" 2>/dev/null; then
+  echo "ERROR: another tool install owns $BIN_DIR/.coco-tools-lock; inspect it before removing a stale lock" >&2
+  exit 1
+fi
+trap 'rm -rf "$TMP"; rmdir "$BIN_DIR/.coco-tools-lock"' EXIT
+die() { echo "ERROR: $*" >&2; exit 1; }
+sha() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else die "install sha256sum or shasum before fetching tools"; fi
+}
+fetch() { curl --fail --silent --show-error --location --retry 3 "$1" -o "$2"; }
+fetch "$base/sha256sum.txt" "$TMP/sha256sum.txt" || die "checksums unavailable for $OCP_VERSION at $base; no latest fallback"
+checksum() {
+  local name="$1" result
+  result="$(awk -v name="$name" '{file=$2; sub(/^\*/, "", file); if(file==name) print $1}' "$TMP/sha256sum.txt")"
+  [[ "$result" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
+  printf '%s\n' "$result" | tr '[:upper:]' '[:lower:]'
+}
+client="openshift-client-linux-$OCP_VERSION.tar.gz"
+installer="openshift-install-linux-$OCP_VERSION.tar.gz"
+mirror="oc-mirror.tar.gz"
+# A variant fallback stays in this exact release and requires its published checksum.
+if [[ "$OCMIRROR_VARIANT" == rhel9 ]] && checksum oc-mirror.rhel9.tar.gz >/dev/null; then mirror="oc-mirror.rhel9.tar.gz"; fi
+for archive in "$client" "$installer" "$mirror"; do
+  digest="$(checksum "$archive")" || die "no unique published checksum for $archive in $OCP_VERSION"
+  printf '%s %s\n' "$archive" "$digest" >> "$TMP/archives"
+done
+fingerprint="$(sha "$TMP/archives")"
+marker="$BIN_DIR/.coco-tools-manifest"
+reusable=1
+[[ -f "$marker" ]] && [[ "$(head -n 1 "$marker")" == "$OCP_VERSION $fingerprint" ]] || reusable=0
+for binary in oc kubectl openshift-install oc-mirror; do
+  if [[ ! -x "$BIN_DIR/$binary" ]] || [[ ! -f "$marker" ]]; then reusable=0; continue; fi
+  expected="$(awk -v name="$binary" '$1==name {print $2}' "$marker")"
+  [[ "$expected" == "$(sha "$BIN_DIR/$binary")" ]] || reusable=0
+done
+if [[ "$reusable" == 1 ]]; then
+  echo "OpenShift $OCP_VERSION tools verified in $BIN_DIR"
+  echo "COCO_TOOLS_CHANGED=0"
+  exit 0
+fi
+for archive in "$client" "$installer" "$mirror"; do
+  fetch "$base/$archive" "$TMP/$archive" || die "requested archive unavailable: $base/$archive"
+  [[ "$(sha "$TMP/$archive")" == "$(checksum "$archive")" ]] || die "checksum mismatch: $archive; installed tools were not replaced"
+done
+tar -xzf "$TMP/$client" -C "$TMP/stage" oc kubectl
+tar -xzf "$TMP/$installer" -C "$TMP/stage" openshift-install
+tar -xzf "$TMP/$mirror" -C "$TMP/stage" oc-mirror
+chmod 755 "$TMP/stage/oc" "$TMP/stage/kubectl" "$TMP/stage/openshift-install" "$TMP/stage/oc-mirror"
+# Detect an incorrect platform/archive before replacing a working installation.
+"$TMP/stage/oc" version --client >/dev/null
+install_version="$("$TMP/stage/openshift-install" version)"
+[[ "$(printf '%s\n' "$install_version" | awk 'NR==1 {print $2}')" == "$OCP_VERSION" ]] || die "installer does not report requested release $OCP_VERSION"
+"$TMP/stage/oc-mirror" version >/dev/null 2>&1 || "$TMP/stage/oc-mirror" --v2 version >/dev/null
+printf '%s %s\n' "$OCP_VERSION" "$fingerprint" > "$TMP/manifest"
+for binary in oc kubectl openshift-install oc-mirror; do
+  printf '%s %s\n' "$binary" "$(sha "$TMP/stage/$binary")" >> "$TMP/manifest"
+  # Publish each complete binary atomically. An interrupted set has no valid completion record.
+  cp "$TMP/stage/$binary" "$BIN_DIR/.$binary.coco-new"
+  chmod 755 "$BIN_DIR/.$binary.coco-new"
+  mv -f "$BIN_DIR/.$binary.coco-new" "$BIN_DIR/$binary"
+done
+cp "$TMP/manifest" "$marker.new"
+mv -f "$marker.new" "$marker"
+echo "Installed and verified OpenShift $OCP_VERSION tools in $BIN_DIR"
+echo "COCO_TOOLS_CHANGED=1"

@@ -1,13 +1,15 @@
 # Post-install egress lockdown — OPT-IN, NOT in the default overlay.
 #
-# Applies an nftables ruleset (see airgap-egress.nft in this dir) that DROPS the node's egress
-# to the public internet while allowing all cluster/host/VLAN traffic. Delivered as a oneshot
-# systemd unit so it survives reboots and applies after the network is up.
+# Applies the host OUTPUT rules in airgap-egress.nft, allowing configured private/cluster
+# ranges. This does not establish Trustee pod or guest isolation. A oneshot systemd unit
+# loads the rules after the network is up; verify effective enforcement after reboot.
 #
 # WHY OPT-IN: do NOT apply during/right after install — a half-formed allow-list during bootstrap
-# can wedge the cluster. Apply ONLY after the SNO is healthy (Phase 4+), then VERIFY:
-#   ssh core@<node> 'curl -m5 -sI https://quay.io && echo OPEN-bad || echo BLOCKED-good'
-#   oc get co && oc get nodes        # cluster must stay healthy
+# can wedge the cluster. Apply ONLY after the SNO is healthy (Phase 4+). Inspect effective
+# rules and attribute fresh public-connection denials to enforcement from the host, Trustee
+# and relevant workload/guest contexts. DNS/TLS/routing errors alone are not denial evidence.
+# Verify private mirror TLS, DNS/NTP and cluster health; repeat after reinstall/reboot.
+# See docs/validation/README.md for network acceptance requirements.
 # Roll back: oc delete -k gitops/base/airgap-egress  (stops dropping on next boot),
 # or on the node: nft delete table inet airgap  (clears immediately).
 #

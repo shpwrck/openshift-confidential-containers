@@ -1,5 +1,5 @@
 ---
-# render_configs — translates scripts/bastion-render-configs.sh (hard-won fix #3).
+# Render verified private-network installer inputs.
 # Renders install-config.yaml + agent-config.yaml into {{ install_src_dir }} (source of truth)
 # and stages copies into {{ cluster_assets_dir }} (the agent installer CONSUMES the copies on
 # `agent create`). Uses Jinja2 templates, NOT heredocs.
@@ -7,8 +7,25 @@
 # Correctness baked in:
 #   - additionalNTPSources -> agent-config ONLY (installer drops it from install-config).
 #   - imageDigestSources -> oc-mirror v2 layout (release / release-images).
-#   - install-config pullSecret = MIRROR creds only (node is air-gapped).
-#   - VLAN-only nmstate (parent NIC ipv4/ipv6 disabled; tagged VLAN child carries node IP).
+#   - install-config pullSecret = MIRROR credentials only (not an egress policy).
+#   - only the verified private-vlan profile is accepted.
+
+- name: Require an explicit verified install disk before creating renderer files
+  ansible.builtin.assert:
+    that:
+      - item.root_device is defined
+      - item.root_device is string
+      - item.root_device == item.root_device | trim
+      - item.root_device is match('^/dev/(?:[A-Za-z0-9_-][A-Za-z0-9_.:-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.:-]*$')
+    fail_msg: >-
+      Machine '{{ item.name }}' requires an explicit absolute /dev/... root_device
+      (node_root_device for the default single-node configuration). Verify the intended
+      install target and its serial on the node before rendering; installation erases
+      that disk. Prefer a stable /dev/disk/by-path/... path because NVMe device numbering
+      can change across reboots. No install disk is selected automatically.
+  loop: "{{ discovery_machines | default(machines) }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Assert each machine has a discovered parent_mac (run discover.yml first)
   ansible.builtin.assert:
@@ -18,9 +35,46 @@
     fail_msg: >-
       machine '{{ item.name }}' has no parent_mac — run playbooks/discover.yml first (MACs are
       per physical unit and must NEVER be hardcoded).
-  loop: "{{ machines }}"
+  loop: "{{ discovery_machines | default(machines) }}"
   loop_control:
     label: "{{ item.name }}"
+
+- name: Require a private LACP bond with distinct verified member identities
+  ansible.builtin.assert:
+    that:
+      - network_profile | default('private-vlan') == 'private-vlan'
+      - item.bond_mode | default('') == '802.3ad'
+      - item.bond_ports | length == 2
+      - not item.external_if | default('')
+      - item.bond_ports | map(attribute='name') | unique | length == 2
+      - item.bond_ports | map(attribute='mac') | map('lower') | unique | length == 2
+      - item.parent_if not in (item.bond_ports | map(attribute='name') | list)
+      - item.parent_mac | lower in (item.bond_ports | map(attribute='mac') | map('lower') | list)
+    fail_msg: "Bonded private VLANs require two distinct verified LACP ports and no separate public NIC."
+  loop: "{{ discovery_machines | default(machines) }}"
+  when: item.bond_ports | default([]) | length > 0
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Validate each configured bond member name and MAC
+  ansible.builtin.assert:
+    that:
+      - item.1.name is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$')
+      - item.1.mac is match('^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
+    fail_msg: "Bond members require valid interface names and verified physical MACs."
+  loop: "{{ (discovery_machines | default(machines)) | subelements('bond_ports', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }} / {{ item.1.name }}"
+
+- name: Require an explicit supported network profile
+  ansible.builtin.assert:
+    that:
+      - network_profile | default('private-vlan') == 'private-vlan'
+    fail_msg: "Only private-vlan is supported."
+
+- name: Select the validated machine network for this render
+  ansible.builtin.set_fact:
+    render_machine_network: "{{ machine_network }}"
 
 - name: Assert the boot-artifacts token was overridden
   ansible.builtin.assert:
@@ -31,12 +85,12 @@
       boot_artifacts_token is still the placeholder. Generate one (openssl rand -hex 16) and pass
       -e boot_artifacts_token=... — the secret-bearing initrd must not sit at a guessable path (#33).
 
-- name: Assert vlan_vid / bastion_public_ipv4 were provided
+- name: Assert required provider network outputs were provided
   ansible.builtin.assert:
     that:
       - vlan_vid is not match('REPLACE_.*')
       - bastion_public_ipv4 is not match('REPLACE_.*')
-    fail_msg: "Set vlan_vid (-e vlan_vid_override=) and bastion_public_ipv4 (-e bastion_public_ipv4_override=) from terraform output."
+    fail_msg: "Set the supplied helper public address and verified VLAN wire tag."
 
 - name: Ensure the install src + cluster-assets dirs exist
   ansible.builtin.file:
@@ -44,7 +98,7 @@
     state: directory
     owner: root
     group: root
-    mode: "0755"
+    mode: "0700"
   become: true
   loop:
     - "{{ install_src_dir }}"
@@ -52,7 +106,7 @@
 
 # Install-config pullSecret credential. Customer single-pull-secret model: when mirror_pull_secret is
 # set, read the mirror auth from that dockerconfigjson; else fall back to the mirror admin password.
-# Mirrors scripts/seed-trustee-secrets.sh + scripts/bastion-render-configs.sh.
+# Shares the credential contract with scripts/seed-trustee-secrets.sh.
 - name: Resolve the mirror auth from the pull secret (customer model)
   when: mirror_pull_secret | length > 0
   block:
@@ -91,36 +145,29 @@
   become: true
   register: render_mirror_ca
 
-# Nothing used to create this file (#73): terraform, cloud-init, and every role left it to the
-# operator, so a from-zero run aborted HERE — after the BIOS gate and the full mirror push. The
-# key that should go into the node is the one this run is already authenticating with, so derive
-# it from the controller's own private key rather than making the operator scp it by hand.
-# NOTE: do NOT derive this from `ansible_ssh_private_key_file`. The inventory defaults that var
-# to `omit`, which renders as the literal string "<<Omit>>" rather than an empty value, and
-# `--private-key` on the command line does not populate it either — so a lookup built from it
-# tries to read "<<Omit>>.pub" and the play dies. Use an explicit, overridable source path and
-# check that it actually exists on the CONTROLLER before copying.
+# Stage the explicitly selected controller public key before rendering.
+# Do not derive its path from an omitted Ansible private-key variable.
 # The public NIC is only held down when we have BOTH its name and its DISCOVERED mac (#80) — the
 # mac is what makes the name authoritative. If discover.yml found no external-role mac, rendering
 # the stanza anyway would name a possibly-nonexistent device; SKIPPING it silently is worse still,
 # because that is exactly #78 (unmanaged NIC DHCPs a public resolver, mirror stops resolving, the
 # install parks with every port refused and no clue why). So: fail loudly and make the operator
-# decide, with an explicit override for plans that genuinely have no second NIC.
+# configure the verified MAC. Plans with no public NIC use an empty external_if.
 - name: Fail closed if the public NIC cannot be pinned to a discovered MAC (#80)
   ansible.builtin.assert:
     that: >-
-      (item.external_mac | default('')) is truthy
-      or (allow_unmanaged_public_nic | default(false) | bool)
+      not (item.external_if | default(''))
+      or (item.external_mac | default('')) is truthy
     fail_msg: >-
       No external-role MAC was discovered for {{ item.name }}, so its public NIC cannot be pinned
-      and held down. Leaving it unmanaged reintroduces #78: NetworkManager will DHCP it in the
+      for the selected profile. Leaving it unmanaged reintroduces #78: NetworkManager will DHCP it in the
       agent live environment, the provider's resolver will outrank the static dns-resolver,
       {{ mirror_dns_name }} will stop resolving, and the install will park at "Cannot access
-      Rendezvous Host". Re-run `--tags discover` (it reads role=external from the Latitude API),
-      pass -e node_external_mac=<mac>, or set -e allow_unmanaged_public_nic=true if this plan
-      genuinely has only one NIC.
+      Rendezvous Host". Verify the actual interface identities,
+      or pass -e node_external_mac=<verified-current-mac>. Only configure an empty
+      external_if when hardware inspection confirms there is no public NIC.
     success_msg: "{{ item.name }}: public NIC {{ item.external_if | default('?') }} pinned to {{ item.external_mac | default('') }}"
-  loop: "{{ machines }}"
+  loop: "{{ discovery_machines | default(machines) }}"
   loop_control:
     label: "{{ item.name }}"
 
@@ -181,25 +228,7 @@
     group: root
     mode: "0600"
   become: true
+  no_log: true
 
-- name: Remove any stale staged copies in cluster-assets
-  ansible.builtin.file:
-    path: "{{ cluster_assets_dir }}/{{ item }}"
-    state: absent
-  become: true
-  loop:
-    - install-config.yaml
-    - agent-config.yaml
-
-- name: Stage fresh copies into cluster-assets (installer consumes these)
-  ansible.builtin.copy:
-    src: "{{ install_src_dir }}/{{ item }}"
-    dest: "{{ cluster_assets_dir }}/{{ item }}"
-    remote_src: true
-    owner: root
-    group: root
-    mode: "0600"
-  become: true
-  loop:
-    - install-config.yaml
-    - agent-config.yaml
+# pxe_serve stages these inputs only when their fingerprint changes. Recopying them into
+# a completed install directory would mix fresh YAML with stale installer state.

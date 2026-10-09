@@ -1,0 +1,367 @@
+---
+# The install flow invokes this only for a NEW request, never an accepted-request resume.
+# A separate gate-only rehearsal can include this file without requesting an install.
+# Private VLAN preparation remains explicit; this check does not change networking.
+# No key/token is copied remotely; only the checker and public mirror CA are staged.
+- name: Require a supported explicit network profile
+  ansible.builtin.assert:
+    that: network_profile | default('private-vlan') == 'private-vlan'
+    fail_msg: "Only private-vlan is supported."
+
+- name: Resolve explicit raw-host connection and evidence inputs
+  ansible.builtin.set_fact:
+    private_link_raw_user: "{{ install_machine.raw_ssh_user | default(raw_node_ssh_user | default('')) }}"
+    private_link_raw_key: "{{ install_machine.raw_ssh_key | default(raw_node_ssh_key | default('')) }}"
+    private_link_bastion_key: "{{ bastion_ssh_key | default('') }}"
+    private_link_pins: "{{ private_link_known_hosts | default('') }}"
+    private_link_raw_address: "{{ provider_identity.public_ipv4 }}"
+    private_link_profile: private-vlan
+    private_link_raw_parent: "{{ install_machine.raw_parent_if | default(install_machine.parent_if | default('')) }}"
+    private_link_service_ip: "{{ bastion_vlan_ip | default('') }}"
+    private_link_state: >-
+      {{ lookup('ansible.builtin.env', 'COCO_STATE_DIR')
+         | default(lookup('ansible.builtin.env', 'HOME') ~ '/.local/state/openshift-confidential-containers', true) }}
+    private_link_bastion_address: "{{ ansible_host | default('') }}"
+    private_link_bastion_user: "{{ ansible_user | default('') }}"
+    private_link_evidence: {}
+    private_link_repo: "{{ (role_path ~ '/../../..') if role_path is defined else (playbook_dir ~ '/../..') }}"
+
+- name: Require explicit SSH inputs and the provider's current public address
+  ansible.builtin.assert:
+    that:
+      - private_link_raw_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+      - private_link_bastion_user is match('^[a-z_][a-z0-9_-]*[$]?$')
+      - private_link_raw_key.startswith('/')
+      - private_link_bastion_key.startswith('/')
+      - private_link_pins.startswith('/')
+      - private_link_bastion_address | length > 0
+      - private_link_raw_address is match('^(?:[0-9]{1,3}[.]){3}[0-9]{1,3}$')
+      - private_link_raw_parent is match('^[a-zA-Z0-9_.:-]{1,15}$')
+      - mirror_endpoint is match('^[a-zA-Z0-9.-]+:[0-9]+$')
+      - mirror_endpoint.split(':')[0] == mirror_dns_name
+    fail_msg: >-
+      Fresh reinstall requires raw_node_ssh_user, raw_node_ssh_key, bastion_ssh_key and
+      private_link_known_hosts (absolute external controller files), plus a verified raw
+      interface. Per-machine raw_ssh_user/raw_ssh_key and raw_parent_if overrides are supported.
+      The raw SSH address must come from this server's current provider response; no RHCOS fallback is used.
+
+- name: Validate external credential paths and evidence location before staging
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import ipaddress,json,os,stat,sys
+        from pathlib import Path
+        x=json.load(sys.stdin)
+        ipaddress.IPv4Address(x['address'])
+        roots=[Path(x['repo']).resolve(),Path('/mnt/c/homelab')]
+        for value in [*x['files'],x['state']]:
+            p=Path(value).expanduser().resolve()
+            if any(p==r or r in p.parents for r in roots):
+                raise SystemExit('SSH credentials, known_hosts and evidence must remain outside repository/Homelab')
+        for value in x['files']:
+            p=Path(value)
+            if not p.is_file(): raise SystemExit('Missing explicit SSH key or known_hosts file: '+value)
+        for value in x['files'][:2]:
+            if Path(value).stat().st_mode & 0o077:
+                raise SystemExit('SSH private keys must be owner-only: '+value)
+        result={'directory':str(Path(x['state']).expanduser().resolve()/'validation'/'private-link')}
+        print(json.dumps(result))
+    stdin: >-
+      {{ {'files': [private_link_raw_key, private_link_bastion_key, private_link_pins],
+          'state': private_link_state, 'repo': private_link_repo,
+          'address': private_link_raw_address} | to_json }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: private_link_location
+
+- name: Create a private controller evidence directory
+  ansible.builtin.file:
+    path: "{{ (private_link_location.stdout | from_json).directory }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Allocate a new evidence directory for this attempt
+  ansible.builtin.tempfile:
+    state: directory
+    path: "{{ (private_link_location.stdout | from_json).directory }}"
+    prefix: "{{ install_machine.server_id }}-"
+  delegate_to: localhost
+  become: false
+  register: private_link_evidence
+
+- name: Create isolated pinned SSH aliases for both proof connections
+  ansible.builtin.add_host:
+    name: "coco-proof-{{ item.kind }}-{{ install_machine.server_id }}"
+    ansible_connection: ssh
+    ansible_host: "{{ item.address }}"
+    ansible_user: "{{ item.user }}"
+    ansible_ssh_private_key_file: "{{ item.key }}"
+    ansible_host_key_checking: true
+    ansible_ssh_host_key_checking: true
+    ansible_ssh_args: >-
+      -o ControlMaster=no -o ControlPath=none -o BatchMode=yes -o IdentitiesOnly=yes
+      -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null
+      -o UserKnownHostsFile={{ private_link_pins | quote }} -o ConnectTimeout=15
+    ansible_ssh_common_args: ""
+    ansible_ssh_extra_args: ""
+    ansible_become_method: sudo
+    ansible_become_flags: "-H -n"
+  loop:
+    - {kind: raw, address: "{{ private_link_raw_address }}", user: "{{ private_link_raw_user }}", key: "{{ private_link_raw_key }}"}
+    - {kind: bastion, address: "{{ private_link_bastion_address }}", user: "{{ private_link_bastion_user }}", key: "{{ private_link_bastion_key }}"}
+  loop_control:
+    label: "{{ item.kind }}"
+  changed_when: false
+
+- name: Read trust and prepared configurations through pinned bastion SSH
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ mirror_ca_path }}"
+    - "{{ install_src_dir }}/install-config.yaml"
+    - "{{ install_src_dir }}/agent-config.yaml"
+  delegate_to: "coco-proof-bastion-{{ install_machine.server_id }}"
+  become: true
+  register: private_link_sources
+  no_log: true
+
+- name: Select the prepared host and certificate without exposing pull credentials
+  ansible.builtin.set_fact:
+    private_link_ca: "{{ private_link_sources.results[0].content | b64decode }}"
+    private_link_prepared_hosts: >-
+      {{ (private_link_sources.results[2].content | b64decode | from_yaml).hosts
+         | selectattr('hostname', 'equalto', install_machine.name) | list }}
+    private_link_prepared_ca: "{{ (private_link_sources.results[1].content | b64decode | from_yaml).additionalTrustBundle }}"
+    private_link_prepared_ntp: "{{ (private_link_sources.results[2].content | b64decode | from_yaml).additionalNTPSources | default([]) }}"
+    private_link_prepared_mirror_authorities: >-
+      {{ (private_link_sources.results[1].content | b64decode | from_yaml).imageDigestSources | default([])
+         | map(attribute='mirrors') | flatten | map('regex_replace', '/.*$', '') | unique | list }}
+    private_link_provider_nic: "{{ [{'mac_address': install_machine.parent_mac}] }}"
+  no_log: true
+
+- name: Require exact prepared machine and trust identities
+  ansible.builtin.assert:
+    that:
+      - provider_identity.id == install_machine.server_id
+      - private_link_prepared_hosts | length == 1
+      - private_link_provider_nic | length == 1
+      - private_link_ca | trim == private_link_prepared_ca | trim
+      - private_link_prepared_ntp == [private_link_service_ip]
+      - private_link_prepared_mirror_authorities == [mirror_endpoint]
+    fail_msg: >-
+      Prepared host identity, service endpoint or mirror trust differs from this provider
+      machine/bastion; regenerate reviewed artifacts before reinstall.
+
+- name: Inspect the complete prepared boot inputs through pinned SSH
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+    follow: false
+  loop:
+    - "{{ install_src_dir }}/install-config.yaml"
+    - "{{ install_src_dir }}/agent-config.yaml"
+    - "{{ local_bin }}/openshift-install"
+  delegate_to: "coco-proof-bastion-{{ install_machine.server_id }}"
+  become: true
+  register: private_link_boot_inputs
+
+- name: Require this proof to describe the exact prepared artifact revision
+  ansible.builtin.assert:
+    that:
+      - >-
+        ({'configs': private_link_boot_inputs.results[:2] | map(attribute='stat.checksum') | list,
+          'installer': private_link_boot_inputs.results[2].stat.checksum,
+          'release': ocp_release_image, 'version': ocp_version} | to_json | hash('sha256')) == install_identity
+    fail_msg: "Prepared source files or installer changed after PXE generation; rebuild and verify assets before reinstall."
+
+- name: Read actual raw-host interfaces without altering networking
+  ansible.builtin.command:
+    argv: [ip, -j, -d, link, show]
+  delegate_to: "coco-proof-raw-{{ install_machine.server_id }}"
+  become: true
+  changed_when: false
+  register: private_link_raw_links
+
+- name: Select the expected raw parent and VLAN from the current host
+  ansible.builtin.set_fact:
+    private_link_parent: "{{ private_link_raw_links.stdout | from_json | selectattr('ifname', 'equalto', private_link_raw_parent) | list }}"
+    private_link_vlan: "{{ private_link_raw_links.stdout | from_json | selectattr('ifname', 'equalto', private_link_raw_parent ~ '.' ~ vlan_vid) | list }}"
+    private_link_prepared_parent: "{{ private_link_prepared_hosts[0].networkConfig.interfaces | selectattr('name', 'equalto', install_machine.parent_if) | list
+         if install_machine.bond_ports | default([]) else private_link_prepared_hosts[0].interfaces
+         | selectattr('name', 'equalto', install_machine.parent_if) | list }}"
+    private_link_prepared_vlan: >-
+      {{ private_link_prepared_hosts[0].networkConfig.interfaces
+         | selectattr('name', 'equalto', install_machine.parent_if ~ '.' ~ vlan_vid) | list }}
+
+- name: Require an existing temporary VLAN on the provider's actual private NIC
+  ansible.builtin.assert:
+    that:
+      - private_link_parent | length == 1
+      - private_link_vlan | length == 1
+      - private_link_prepared_parent | length == 1
+      - private_link_prepared_vlan | length == 1
+      - private_link_parent[0].address | lower == private_link_provider_nic[0].mac_address | lower
+      - >-
+        private_link_prepared_parent[0].type == 'bond' if install_machine.bond_ports | default([])
+        else private_link_prepared_parent[0].macAddress | lower == private_link_provider_nic[0].mac_address | lower
+      - >-
+        private_link_vlan[0].get('link_index', -1) == private_link_parent[0].ifindex
+        or private_link_vlan[0].get('link', '') == private_link_raw_parent
+      - private_link_prepared_vlan[0].vlan.id | int == vlan_vid | int
+      - private_link_prepared_vlan[0].vlan['base-iface'] == install_machine.parent_if
+      - private_link_prepared_vlan[0].ipv4.address[0].ip == install_machine.vlan_ip
+      - private_link_prepared_vlan[0].ipv4.address[0]['prefix-length'] | int == vlan_prefix | int
+      - private_link_prepared_hosts[0].networkConfig['dns-resolver'].config.server == [bastion_vlan_ip]
+    fail_msg: >-
+      Raw private NIC/VLAN or prepared network inputs do not match. Configure the reviewed temporary
+      raw-OS VLAN profile with autoconnect off and no public route/DNS changes, then retry.
+      This gate does not create interfaces, alter routes or fall back to an installed RHCOS endpoint.
+
+- name: Recheck the selected provider bond members and exact prepared configuration
+  when: install_machine.bond_ports | default([]) | length > 0
+  block:
+    - name: Select prepared and current bond members
+      ansible.builtin.set_fact:
+        private_link_raw_bond_members: >-
+          {{ private_link_raw_links.stdout | from_json | selectattr('master', 'defined')
+             | selectattr('master', 'equalto', private_link_raw_parent) | list }}
+        private_link_prepared_members: >-
+          {{ private_link_prepared_hosts[0].interfaces }}
+
+    - name: Verify LACP membership and exclusively private prepared addressing
+      ansible.builtin.assert:
+        that:
+          - private_link_parent[0].linkinfo.info_kind == 'bond'
+          - private_link_parent[0].linkinfo.info_data.mode == '802.3ad'
+          - private_link_raw_bond_members | length == 2
+          - private_link_prepared_members | length == 2
+          - >-
+            private_link_prepared_members | map(attribute='name') | sort
+            == install_machine.bond_ports | map(attribute='name') | sort
+          - >-
+            private_link_prepared_parent[0]['link-aggregation'].port | sort
+            == install_machine.bond_ports | map(attribute='name') | sort
+          - private_link_prepared_parent[0]['link-aggregation'].mode == '802.3ad'
+          - not private_link_prepared_parent[0].ipv4.enabled | bool
+          - not private_link_prepared_parent[0].ipv6.enabled | bool
+          - provider_identity.private_ipv4 == install_machine.vlan_ip
+        fail_msg: "Provider address, raw LACP bond and prepared private network disagree; no reinstall was sent."
+
+    - name: Verify every permanent member MAC before reinstall
+      ansible.builtin.assert:
+        that:
+          - >-
+            (private_link_raw_bond_members | selectattr('ifname', 'equalto', item.name) | first).get('permaddr',
+             (private_link_raw_bond_members | selectattr('ifname', 'equalto', item.name) | first).address) | lower == item.mac | lower
+          - >-
+            (private_link_prepared_members | selectattr('name', 'equalto', item.name) | first).macAddress | lower == item.mac | lower
+        fail_msg: "Bond member MAC differs between the raw host and prepared installation."
+      loop: "{{ install_machine.bond_ports }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+- name: Select mandatory topology arguments without any skip option
+  ansible.builtin.set_fact:
+    private_link_network_args: >-
+      {{ ['--interface', private_link_raw_parent ~ '.' ~ vlan_vid, '--vid', vlan_vid | string,
+          '--node-ip', install_machine.vlan_ip] }}
+
+- name: Allocate protected temporary proof staging on the raw host
+  ansible.builtin.tempfile:
+    state: directory
+    path: /run
+    prefix: coco-private-link-
+  delegate_to: "coco-proof-raw-{{ install_machine.server_id }}"
+  become: true
+  register: private_link_remote
+
+- name: Execute a fresh raw-host proof and retain its result
+  delegate_to: "coco-proof-raw-{{ install_machine.server_id }}"
+  become: true
+  block:
+    - name: Stage the current checker on the raw host
+      ansible.builtin.copy:
+        src: "{{ private_link_repo }}/scripts/check-private-link.py"
+        dest: "{{ private_link_remote.path }}/check-private-link.py"
+        mode: "0600"
+
+    - name: Stage only the public mirror trust bundle
+      ansible.builtin.copy:
+        content: "{{ private_link_ca }}"
+        dest: "{{ private_link_remote.path }}/mirror-ca.pem"
+        mode: "0600"
+
+    - name: Check the selected network path, trusted TLS, DNS and NTP
+      ansible.builtin.command:
+        argv: >-
+          {{ ['python3', private_link_remote.path ~ '/check-private-link.py']
+             + private_link_network_args
+             + ['--bastion-ip', private_link_service_ip, '--mirror-hostname', mirror_dns_name,
+                '--mirror-port', mirror_endpoint.split(':')[-1],
+                '--ca-file', private_link_remote.path ~ '/mirror-ca.pem',
+                '--timeout', private_link_probe_timeout | default(3) | string,
+                '--evidence', private_link_remote.path ~ '/result.json'] }}
+      changed_when: false
+      failed_when: false
+      register: private_link_probe
+
+    - name: Inspect whether the checker wrote structured evidence
+      ansible.builtin.stat:
+        path: "{{ private_link_remote.path }}/result.json"
+      register: private_link_result_stat
+
+    - name: Read this attempt's structured evidence if present
+      ansible.builtin.slurp:
+        src: "{{ private_link_remote.path }}/result.json"
+      register: private_link_result_contents
+      when: private_link_result_stat.stat.exists | default(false)
+
+    - name: Retain the checker result before evaluating its status
+      ansible.builtin.copy:
+        content: >-
+          {{ {'checker': private_link_result_contents.content | default('e30=') | b64decode | from_json,
+              'rc': private_link_probe.rc | default(-1),
+              'stdout': private_link_probe.stdout | default(''),
+              'stderr': private_link_probe.stderr | default(private_link_probe.msg | default(''))}
+              | to_nice_json }}
+        dest: "{{ private_link_evidence.path }}/result.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Require this invocation's successful path result
+      ansible.builtin.assert:
+        that:
+          - private_link_probe.rc | default(-1) == 0
+          - (private_link_result_contents.content | default('e30=') | b64decode | from_json).get('status') == 'PASS'
+        fail_msg: >-
+          {{ private_link_probe.stdout | default('') }}
+          {{ private_link_probe.stderr | default(private_link_probe.msg | default('Probe unavailable')) }}
+          Evidence: {{ private_link_evidence.path }}
+  always:
+    - name: Remove only this invocation's temporary raw-host proof files
+      ansible.builtin.file:
+        path: "{{ private_link_remote.path }}"
+        state: absent
+- name: Bind retained proof to this provider and artifact identity
+  ansible.builtin.copy:
+    content: >-
+      {{ {'server_id': install_machine.server_id, 'install_identity': install_identity,
+          'raw_address': private_link_raw_address,
+          'network_profile': private_link_profile, 'provider_mac': private_link_provider_nic[0].mac_address,
+          'mirror_ca_sha256': private_link_ca | hash('sha256'),
+          'proof': private_link_evidence.path ~ '/result.json'} | to_nice_json }}
+    dest: "{{ private_link_evidence.path }}/identity.json"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+
+- name: Report current path proof without promoting it to enforcement or image-pull evidence
+  ansible.builtin.debug:
+    msg: "Fresh raw-host {{ private_link_profile }} path proof passed for {{ install_machine.server_id }}; evidence: {{ private_link_evidence.path }}"

@@ -1,0 +1,47 @@
+---
+- name: Preserve the original private-link failure
+  ansible.builtin.set_fact:
+    private_link_failure_message: "{{ ansible_failed_result.msg | default('Raw-host private-link proof failed; inspect the preceding task') }}"
+
+- name: Find durable and legacy provider intents before deciding whether publication is unused
+  ansible.builtin.find:
+    paths: "{{ [provider_request_dir, cluster_assets_dir] | unique }}"
+    patterns: ".coco-reinstall-*.json"
+    hidden: true
+    file_type: file
+  become: true
+  register: private_link_request_files
+
+- name: Read retained intents without changing their state
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ private_link_request_files.files }}"
+  become: true
+  register: private_link_request_contents
+
+- name: Determine whether a requested or ambiguous install may still use publication
+  ansible.builtin.set_fact:
+    private_link_active_intents: >-
+      {{ private_link_request_contents.results | map(attribute='content') | map('b64decode')
+         | map('from_json') | selectattr('state', 'defined')
+         | selectattr('state', 'in', ['sending', 'requested']) | list }}
+
+- name: Close publication only when no retained request can still need it
+  when: private_link_active_intents | length == 0
+  block:
+    - name: Close the unused boot endpoint after a pre-request failure
+      ansible.builtin.include_role:
+        name: pxe_serve
+        tasks_from: stop_publication
+  rescue:
+    - name: Report endpoint cleanup failure without losing the original gate failure
+      ansible.builtin.debug:
+        msg: "Private-link proof failed and endpoint cleanup also failed; run the documented pxe-stop procedure."
+
+- name: Stop before sending any new reinstall request
+  ansible.builtin.fail:
+    msg: >-
+      Private-link preflight failed; no new reinstall intent or provider POST was issued.
+      {{ private_link_failure_message }}
+      Existing provider journals were preserved. Publication was retained when an accepted or
+      ambiguous request could still need it.

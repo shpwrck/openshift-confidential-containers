@@ -18,8 +18,8 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# Code surface only. docs/ + *.md are prose/runbook examples; infra/ terraform exposes its own
-# `registry_dns_name` variable seam (bastion bootstrap is issue #39) — both excluded on purpose.
+# Check executable/configuration sources, including the shared bootstrap template.
+# Markdown guides are excluded.
 surface="$(find scripts ansible gitops install -type f \
 	\( -name '*.sh' -o -name '*.yml' -o -name '*.yaml' -o -name '*.j2' -o -name '*.tmpl' \) 2>/dev/null)"
 surface="${surface} Makefile"

@@ -1,70 +1,50 @@
-# oc-mirror v2 ImageSetConfiguration — disconnected SNO + OSC 1.12 + Trustee 1.1 (SEV-SNP).
-#
-# Drives `oc-mirror --v2 -c install/imageset-config.yaml ...` (see scripts/mirror.sh).
-# v2 has NO `storageConfig` block (that was v1); the workspace is a CLI flag now.
-#
-# EVERY version / channel / digest below that is not yet replay-verified carries a
-# `# VERIFY` marker. Do NOT trust an operator channel string until confirmed against the
-# package's `oc-mirror list operators --catalog ... --package <name>` output.
+# Artifact identities verified 2026-10-05; not deployed or hardware validated.
 apiVersion: mirror.openshift.io/v2alpha1
 kind: ImageSetConfiguration
 mirror:
   platform:
     architectures:
-      - amd64
+    - amd64
     channels:
-      # Pinned to the engagement target. Alt fallback is 4.19.28 on channel stable-4.19.
-      - name: stable-4.20
-        minVersion: 4.20.18   # VERIFY: exact z-stream exists in stable-4.20
-        maxVersion: 4.20.18   # pin to a single release for a reproducible SNO mirror
-        type: ocp
-    # graph: true   # VERIFY: enable if you need the OSUS update graph image mirrored too
+    - name: stable-4.20
+      minVersion: 4.20.39
+      maxVersion: 4.20.39
+      type: ocp
   operators:
-    - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.20
-      packages:
-        # OSC 1.12. Install order (per design doc): NFD -> cert-manager -> OSC -> Trustee.
-        # VERSION PINS (#65): the floating channels delivered OSC 1.13.0 + Trustee 1.2.1 on
-        # 2026-07-22 and broke the proven 1.12/1.1 wiring (policy-CM migration deadlock +
-        # kbs-config format change + ephemeral-signer 401s — full analysis in issue #65).
-        # min/maxVersion bound what the MIRROR contains, so a disconnected Subscription
-        # physically cannot float past the proven minors. Bump BOTH pins deliberately, with
-        # the #65 migration notes in hand, when moving to OSC 1.13+/Trustee 1.2+.
-        - name: sandboxed-containers-operator
-          channels:
-            - name: stable   # VERIFY channel: `oc-mirror list operators --package sandboxed-containers-operator`
-              minVersion: '1.12.0'
-              maxVersion: '1.12.9'   # any 1.12 z-stream; excludes 1.13+
-        - name: trustee-operator
-          channels:
-            - name: stable   # VERIFY channel for Trustee 1.1 (may be e.g. trustee-1.1 / stable)
-              minVersion: '1.1.0'
-              maxVersion: '1.1.9'    # any 1.1 z-stream; excludes 1.2+
-        - name: nfd
-          channels:
-            - name: stable   # VERIFY: NFD channel must match OCP 4.20 (e.g. stable / 4.20)
-        - name: openshift-cert-manager-operator
-          channels:
-            - name: stable-v1   # VERIFY: cert-manager channel (often stable-v1)
-        # Gatekeeper (OPA) — RH-supported via the ACM/governance family. Used to MUTATE CoCo pods'
-        # memory requests/limits (kata-cc needs limit >= default_memory + 256Mi or the host OOM-kills
-        # the CVM). Confirmed in redhat-operator-index:v4.20 (default channel stable -> v3.21.0).
-        - name: gatekeeper-operator-product
-          channels:
-            - name: stable
+  - catalog: registry.redhat.io/redhat/redhat-operator-index@sha256:d0ba2f762a9514cf31bcb7ce77b837c6cedb517190f54eb2729be0fa02afb964
+    packages:
+    - name: sandboxed-containers-operator
+      channels:
+      - name: stable
+        minVersion: 1.13.1
+        maxVersion: 1.13.1
+      defaultChannel: stable
+    - name: trustee-operator
+      channels:
+      - name: stable
+        minVersion: 1.2.1
+        maxVersion: 1.2.1
+      defaultChannel: stable
+    - name: nfd
+      channels:
+      - name: stable
+        minVersion: 4.20.0-202609201357
+        maxVersion: 4.20.0-202609201357
+      defaultChannel: stable
+    - name: openshift-cert-manager-operator
+      channels:
+      - name: stable-v1
+        minVersion: 1.20.1
+        maxVersion: 1.20.1
+      defaultChannel: stable-v1
+    - name: gatekeeper-operator-product
+      channels:
+      - name: stable
+        minVersion: 3.21.1
+        maxVersion: 3.21.1
+      defaultChannel: stable
   additionalImages:
-    # Pinned to digests for air-gap reproducibility (tags float; the mirror must be a fixed
-    # bill of materials). Resolved 2026-06-26 via `oc image info <ref> --filter-by-os=linux/amd64`;
-    # re-resolve and update the digest if you intend to advance the version.
-    # coco-tools provides veritas (RVPS) + snphost helpers; was :1.12.
-    - name: quay.io/openshift_sandboxed_containers/coco-tools@sha256:89c219d2c7cb8359e8cc86605df1d31ce3be0f2565683b8bff882dba0c8e2605
-    # ubi-minimal used as a CoCo workload base in the runbook steps; was ubi9/ubi-minimal:latest.
-    - name: registry.access.redhat.com/ubi9/ubi-minimal@sha256:4ba37413a8284073eb28f1987fdf8f7b9cc3d301807cdd79e10ab5b98bd57a63
-    # OSC must-gather - the debug-surface runbook's collection steps (its host-vantage and
-    # log-collection-kit sections) depend on this being in the mirror (a disconnected cluster
-    # cannot pull it at incident time). Digest resolved 2026-07-23 from tag :1.12.0; re-resolve
-    # when advancing the OSC z-stream.
-    - name: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:9bd8bee8af6f1adda5923877f807c62a8309e8c64e777f1edc5bdc2036c928f6
-    # RHEL support-tools - the debug-surface host-vantage toolbox steps (socat/tcpdump/strace,
-    # sos report) need it on a disconnected node; /root/.toolboxrc must point at the mirror
-    # copy. Digest resolved 2026-07-23 from tag :latest; re-resolve deliberately on refresh.
-    - name: registry.redhat.io/rhel9/support-tools@sha256:be51c60c95c29f8c6d954ca2ad7c02ad4708191e5ae69dbc2d0e7d9bc7355f7a
+  - name: quay.io/openshift_sandboxed_containers/coco-tools@sha256:3d8227aedb4423ecc6d6e868a43d38ab8ed7fb9683cbb1b9a1d2bee6d1994667
+  - name: registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e
+  - name: registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:1c37ef009bf983e9b74b240844332d16f09bf3b9d6685883df1ac7c5262a40a1
+  - name: registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9@sha256:e8f272967e5cb0091621a798af4ef41a39c5a945d0101dce5564c59eaaa19d63

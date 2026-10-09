@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-05T18:36:09.812505+00:00",
+  "scope": "Public-routed lab workaround feasibility on the existing accepted AMD node and first Miami bastion",
+  "status": "PARTIAL",
+  "privateNetworkStatus": "Unresolved; private/disconnected acceptance remains pending",
+  "checks": {
+    "nodeToMirror": "PASS: device/source route through provider public gateway; TLS certificate verified with existing mirror CA and mirror.rig.local SNI; GET /v2/ returned HTTP401",
+    "installer": "PASS: exact OpenShift4.20.39 agent create cluster-manifests accepted static Ethernet /31, matching public NIC/MAC, provider next-hop, public bastion DNS/NTP and unused private NIC down",
+    "generatedManifestReadback": "PASS: generated machine network, rendezvous, addresses, routes and service endpoints match candidate"
+  },
+  "installerSha256": "1f094166cea9fa24360f07d149b7a8184c0150955b41475b02dabfd3f3b5befd",
+  "limits": [
+    "Cluster-manifest generation is not boot or nmstate activation proof",
+    "Installer could not validate release image architecture and skipped that check; reported binary/release architecture amd64",
+    "No PXE generated, published or requested in this feasibility experiment",
+    "Bastion IPv4 public service controls passed; reboot persistence, IPv6 controls and node boot/installed ingress protection remain unverified",
+    "No egress isolation, OpenShift cluster, attestation guest or encrypted-image claim",
+    "No credentials, active installation sources or active network configuration changed by the candidate experiment"
+  ],
+  "routedCheckerNegativeControl": {
+    "recordedAt": "2026-10-05T17:55:49.701726+00:00",
+    "status": "EXPECTED_FAIL",
+    "overallExit": 1,
+    "checks": {
+      "interface/source/reviewedGateway": "PASS",
+      "mirrorTLS": "PASS",
+      "DNS": "FAIL",
+      "NTP": "FAIL",
+      "gatewayARP": "PASS",
+      "pathAfterProbes": "PASS"
+    },
+    "dns": "Connection refused: public DNS listener not enabled",
+    "ntp": "Timed out: current daemon deliberately denies the node public source",
+    "tls": "HTTP401 with trusted TLSv1.3 and exact public route/source/device binding",
+    "checkerSha256": "413e4bbf9e1ee0da60b475a6beef413e92405b7e92f67f08761e616f90ba85c6",
+    "protectedReceiptSha256": "b4b3b285856bb9fa61090b57d822389c020411a15e1b13412461b68b820a3f78",
+    "limit": "No service, network or firewall changes; temporary checker/public CA removed; public service readiness remains incomplete"
+  },
+  "reusableRenderer": {
+    "status": "PASS",
+    "scope": "Actual repository render_configs role in a new isolated private directory on first Miami, followed by pinned installer cluster-manifest generation",
+    "ansible": {
+      "ok": 23,
+      "changed": 5,
+      "failed": 0
+    },
+    "installerExit": 0,
+    "networkReadback": "Generated NMStateConfig equals rendered network configuration and NIC/MAC mapping; canonical machine network matches /31",
+    "protectedReceiptSha256": "bcd86d639471c9d11c2b5bdcb2523a154bdc5f3813289c03375b3d50a45add47",
+    "candidateArchiveSha256": "e6d7ac3a345bb3305cf47018f849510fc05d20929c5715e673cc266302263c27",
+    "limits": [
+      "No active install sources changed",
+      "No boot assets generated or published",
+      "No provider reinstall or network service changes",
+      "Architecture validation skipped warning retained"
+    ]
+  },
+  "privateBootArtifactInspection": {
+    "recordedAt": "2026-10-05T18:12:15.950570+00:00",
+    "status": "PASS_ARTIFACT_INSPECTION_ONLY",
+    "scope": "Pinned installer generated PXE files in an isolated private bastion directory; original renderer sources unchanged",
+    "installerVersion": "4.20.39",
+    "installerSha256": "1f094166cea9fa24360f07d149b7a8184c0150955b41475b02dabfd3f3b5befd",
+    "releaseDigest": "sha256:7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850",
+    "artifacts": {
+      "boot-artifacts/agent.x86_64-rootfs.img": {
+        "bytes": 1247621632,
+        "sha256": "7995f72a92d4f33082b9e985418c29ab9728abd46203323deecc57f11555e4bf"
+      },
+      "boot-artifacts/agent.x86_64.ipxe": {
+        "bytes": 418,
+        "sha256": "a854fb0050b05f60bcccaa0ec4efb5cac2f9812d8baeedf68055811395908b5c"
+      },
+      "boot-artifacts/agent.x86_64-vmlinuz": {
+        "bytes": 14977144,
+        "sha256": "6c1c91f26ca86fbf3b4186ec0bfd0ea0e3aeca36ecd7b94218290d30bf5ad880"
+      },
+      "boot-artifacts/agent.x86_64-initrd.img": {
+        "bytes": 117636216,
+        "sha256": "d0d52e2e58711f96b0dcbfa07553efe840418f613ebbc327ad32fe3f6eefa067"
+      }
+    },
+    "coreosInstallerVersion": "coreos-installer 0.24.0",
+    "coreosInstallerSha256": "1fd2de59b6d730edcd86d61e10e98f5fb6816fa477661c7081ed4d493383315c",
+    "agentIgnitionPreserved": true,
+    "earlyNetworkFinding": "Generated boot arguments contain no explicit static network. The inspected initrd defaults to ip=auto and enables networking to fetch the live rootfs before Agent applies its static profiles.",
+    "limits": [
+      "No publication, node boot, artifact guard or reinstall",
+      "Binary/module presence and inspected boot ordering do not prove runtime filtering",
+      "Live-root and installed ingress protection remain required before public boot; the stock early network phase is being assessed separately"
+    ],
+    "staticEarlyNetworkFixture": {
+      "status": "PASS_OFFLINE_FIXTURE_ONLY",
+      "generatorSha256": "fc9a74366226e7f352feab1b5727ed3d4d9a2ee4bb8b87258ace675739c2c14c",
+      "exitCode": 0,
+      "checks": {
+        "static_address_present": true,
+        "ipv4_manual": true,
+        "ipv6_disabled": true,
+        "dhcp_method_absent": true,
+        "default_connection_absent": true
+      },
+      "method": "Exact image NetworkManager generator with explicit static /31 kernel arguments, MAC-bound interface name, provider gateway and bastion DNS; private empty-sysfs fixture",
+      "limits": [
+        "No host networking activated; original boot artifacts unchanged",
+        "Offline profile generation does not prove live or installed interface-name persistence"
+      ],
+      "selection": "Tested alternative; not applied to boot artifacts or selected as a mandatory boot requirement"
+    }
+  },
+  "publicBastionServices": {
+    "recordedAt": "2026-10-05T18:36:09.812505+00:00",
+    "status": "PASS_IPV4_SERVICE_CONTROLS",
+    "scope": "Bastion-only IPv4 public service controls; no node boot/isolation, reboot or IPv6 proof",
+    "protectedReceiptSha256": "09ae26d0803ced9dfed225098cf7a864e4adf42c18454dbcf9c5b5c954395011",
+    "nodeChecks": "Device/source-bound route, provider gateway ARP, trusted mirror TLS, DNS and nonce-bound NTP passed; eight additional TCP/UDP DNS checks cover mirror, API, API-internal and apps names",
+    "administratorAllow": "Fresh SSH and trusted mirror TLS passed; curl verified the explicit CA, hostname and intended peer with proxies/config disabled",
+    "administratorDenials": {
+      "adminDNSUDPDenied": {
+        "status": "PASS",
+        "expectedResult": "timeout",
+        "protocol": "udp",
+        "port": 53,
+        "dropRule": "deny other public DNS and NTP",
+        "dropCounterDelta": 1,
+        "elapsedSeconds": 3.82
+      },
+      "adminDNSTCPDenied": {
+        "status": "PASS",
+        "expectedResult": "timeout",
+        "protocol": "tcp",
+        "port": 53,
+        "dropRule": "deny other public DNS and mirror",
+        "dropCounterDelta": 2,
+        "elapsedSeconds": 3.81
+      },
+      "adminNTPDenied": {
+        "status": "PASS",
+        "expectedResult": "timeout",
+        "protocol": "udp",
+        "port": 123,
+        "dropRule": "deny other public DNS and NTP",
+        "dropCounterDelta": 1,
+        "elapsedSeconds": 3.8
+      },
+      "adminMirrorPolicyVariationDenied": {
+        "status": "PASS",
+        "expectedResult": "timeout",
+        "protocol": "tcp",
+        "port": 8443,
+        "dropRule": "deny other public DNS and mirror",
+        "dropCounterDelta": 2,
+        "elapsedSeconds": 3.83
+      }
+    },
+    "mirrorDenyControl": "Restrictive policy variation removed only the administrator mirror allowance; denial had matching drop counters, node access remained available, then normal policy and administrator access were restored",
+    "repeatability": "Normal guard reapplied; node services, administrator mirror access, administrator DNS denial and local/private-address self-checks passed again",
+    "preservation": "Private/local DNS and mirror checks passed; Chrony retained its private policy and tracking. Quay was not restarted; node configuration and provider resources were unchanged.",
+    "finalState": "Guard enabled and active; public DNS, Chrony, original DNS and Quay active; replacement rollback timer confirmed inactive after controls passed",
+    "priorAttempt": {
+      "status": "ROLLED_BACK",
+      "cause": "Controller Python3.14 strict TLS verification rejected the existing mirror-generated leaf certificate",
+      "recovery": "Automatic rollback closed public DNS, restored private Chrony and retained the enabled guard; retry verified this exact baseline"
+    },
+    "certificateCompatibility": "Leaf keyCertSign is true with no BasicConstraints extension; OpenSSL3.5 strict validation rejects depth0 with error79. Normal curl verifies CA and hostname; no insecure or relaxed-verification flags were used. Root CA self-validation passes.",
+    "limits": [
+      "No reboot persistence proof",
+      "No IPv6 negative-control proof",
+      "SELinux remains Permissive; no enforcing proof",
+      "Mirror denial was an explicit restrictive-policy variation using administrator source, not independent third-source denial",
+      "Local/private-IP self-checks preserve bastion services; private VLAN forwarding remains unresolved",
+      "No authenticated image pull or host/pod/guest egress-isolation proof",
+      "Registry-generated leaf fails strict OpenSSL depth0 error79; default curl verifies CA and hostname; no relaxed verification flags used"
+    ],
+    "privateNTPPreservation": {
+      "status": "PASS_LOCAL_PRIVATE_SOURCE",
+      "method": "Fresh UDP request bound to the bastion private address and targeted to that same address; exact current checker validates NTPv4, stratum2, leap0, matching nonce and ordered timestamps",
+      "protectedReceiptSha256": "7544c869d0e905db55d4fa7fc1035969413072b4c5c6e73e7396cae36ea6ba38",
+      "limit": "The route is local loopback; this does not establish private VLAN forwarding"
+    }
+  }
+}

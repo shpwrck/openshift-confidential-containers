@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
-# Idempotently create the rig Trustee secrets from bastion-local files.
+# Seed disposable-lab resources only; customer Secrets are provisioned out of band.
+# Existing keys omitted from this invocation are preserved.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/lib/compat.sh
 source "${REPO_ROOT}/scripts/lib/compat.sh"
+# shellcheck source=scripts/lib/release.sh
+source "$REPO_ROOT/scripts/lib/release.sh"
 NS="${NS:-trustee-operator-system}"
-VCEK_BUNDLE="${VCEK_BUNDLE:-${REPO_ROOT}/vcek-bundle}"
+TRUSTEE_NAME="${TRUSTEE_NAME:-trustee-config}"
+TEE="${TEE:-snp}"
+VCEK_BUNDLE="${VCEK_BUNDLE:-${HOME}/.local/state/coco/vcek-bundle}"
+TRUSTEE_CONTEXT="${TRUSTEE_CONTEXT:-}"
+oc() {
+	if [[ -n "$TRUSTEE_CONTEXT" ]]; then command oc --context "$TRUSTEE_CONTEXT" "$@";
+	else command oc "$@"; fi
+}
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
 MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
@@ -15,7 +25,6 @@ MIRROR_PULL_SECRET="${MIRROR_PULL_SECRET:-}"   # dockerconfigjson pull secret (t
 MIRROR_USERNAME="${MIRROR_USERNAME:-init}"
 MIRROR_PASSWORD_FILE="${MIRROR_PASSWORD_FILE:-/opt/mirror/mirror-admin-password}"
 MIRROR_CA="${MIRROR_CA:-/opt/mirror/ca/rootCA.pem}"
-KBS_PUB="${KBS_PUB:-${HOME}/kbs.pub}"
 ATTESTATION_CERT="${ATTESTATION_CERT:-$MIRROR_CA}"
 SAMPLE_SECRET="${SAMPLE_SECRET:-rung-a-demo-value}"
 RUNG_ENCRYPTED_KEY_FILE="${RUNG_ENCRYPTED_KEY_FILE:-}"
@@ -23,6 +32,7 @@ RUNG_ENCRYPTED_KEY_ID="${RUNG_ENCRYPTED_KEY_ID:-kbs:///default/image-key/rung-en
 RUNG_SIGNED_COSIGN_PUB="${RUNG_SIGNED_COSIGN_PUB:-}"
 RUNG_SIGNED_POLICY_FILE="${RUNG_SIGNED_POLICY_FILE:-}"
 RUNG_SIGNED_IMAGE="${RUNG_SIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b:signed}"
+RUNG_SIGNED_UNSIGNED_IMAGE="${RUNG_SIGNED_UNSIGNED_IMAGE:-${MIRROR_REGISTRY}/coco/rung-b-unsigned:unsigned}"
 RUNG_SIGNED_POLICY_IMAGE_PREFIX="${RUNG_SIGNED_POLICY_IMAGE_PREFIX:-}"
 
 tmpdir=""
@@ -109,17 +119,18 @@ image_repo_ref() {
 }
 
 render_default_rung_signed_policy() {
-	local image_prefix="$1"
-	jq -n --arg image_prefix "$image_prefix" --arg mirror_registry "$MIRROR_REGISTRY" '{
+	local image_prefix="$1" signed_repo unsigned_repo
+	signed_repo="$(image_repo_ref "$RUNG_SIGNED_IMAGE")"
+	unsigned_repo="$(image_repo_ref "$RUNG_SIGNED_UNSIGNED_IMAGE")"
+	# Both repositories must reach the same signature requirement. Rejecting the negative
+	# solely because it is outside the signed repository's policy scope proves nothing about signatures.
+	jq -n --arg image_prefix "$image_prefix" --arg signed_repo "$signed_repo" \
+		--arg unsigned_repo "$unsigned_repo" --arg mirror_registry "$MIRROR_REGISTRY" '
+		[{type: "sigstoreSigned", keyPath: "kbs:///default/sig-public-key/rung-signed"}] as $signature_requirement |
+	{
 		default: [{type: "reject"}],
 		transports: {
-			docker: {
-				($image_prefix): [
-					{
-						type: "sigstoreSigned",
-						keyPath: "kbs:///default/sig-public-key/rung-signed"
-					}
-				],
+			docker: ({
 				($mirror_registry + "/openshift/release"): [
 					{type: "insecureAcceptAnything"}
 				],
@@ -129,7 +140,11 @@ render_default_rung_signed_policy() {
 				($mirror_registry + "/ubi9"): [
 					{type: "insecureAcceptAnything"}
 				]
-			}
+			} + {
+				($image_prefix): $signature_requirement,
+				($signed_repo): $signature_requirement,
+				($unsigned_repo): $signature_requirement
+			})
 		}
 	}'
 }
@@ -150,7 +165,7 @@ load_vcek_bundle() {
 	else
 		ders=()
 		while IFS= read -r der_line; do ders+=("$der_line"); done < <(find "$VCEK_BUNDLE" -mindepth 2 -maxdepth 2 -type f -name vcek.der 2>/dev/null | sort)
-		[[ "${#ders[@]}" -gt 0 ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
+		[[ -n ${ders[*]-} ]] || die "no VCEK files found in $VCEK_BUNDLE; expected $VCEK_BUNDLE/<hwid>/vcek.der"
 		for der in "${ders[@]}"; do
 			hwid="$(basename "$(dirname "$der")" | tr 'A-F' 'a-f')"
 			[[ "$hwid" =~ ^[0-9a-f]{128}$ ]] || die "invalid HWID directory name for $der: $hwid"
@@ -161,7 +176,18 @@ load_vcek_bundle() {
 }
 
 apply_secret() {
-	oc -n "$NS" apply -f -
+	local secret manifest existing
+	manifest="$tmpdir/secret.json"
+	cat > "$manifest"
+	secret="$(jq -er '.metadata.name' "$manifest")"
+	existing="$(oc -n "$NS" get secret "$secret" -o name --ignore-not-found)"
+	if [[ -n "$existing" ]]; then
+		# Merge supplied keys only. An omitted signed-policy key must survive a plain rerun.
+		jq '{data:.data}' "$manifest" > "$tmpdir/secret-patch.json"
+		oc -n "$NS" patch secret "$secret" --type=merge --patch-file "$tmpdir/secret-patch.json"
+	else
+		oc -n "$NS" create -f "$manifest"
+	fi
 }
 
 if [[ -z "$RUNG_SIGNED_POLICY_IMAGE_PREFIX" ]]; then
@@ -175,6 +201,24 @@ if [[ "${1:-}" == "render-rung-signed-policy" ]]; then
 	exit 0
 fi
 
+[[ "${TRUSTEE_PROFILE:-Restricted}" == Permissive && "${TRUSTEE_LAB:-0}" == 1 ]] || die "this demo seeder requires TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1; provision customer resources out of band"
+need python3
+[[ "$TEE" == snp ]] || die "this workflow targets AMD SEV-SNP; set TEE=snp"
+load_release_defaults
+require_resolved_release
+# Secret-bearing files must never be staged under the Homelab checkout, even if ignored.
+for private_input in "$MIRROR_PULL_SECRET" "$MIRROR_PASSWORD_FILE" "$RUNG_ENCRYPTED_KEY_FILE"; do
+	[[ -z "$private_input" ]] && continue
+	python3 - "$REPO_ROOT" "$private_input" <<'CHECK'
+import pathlib, sys
+repo, path = (str(pathlib.Path(p).resolve()).casefold() for p in sys.argv[1:])
+# A checkout may live at /opt/coco-repo while protected state lives beside it.
+# Its parent is not necessarily Homelab. Check the actual forbidden roots,
+# after resolving symlinks, rather than rejecting every sibling of the repo.
+if any(path == root or path.startswith(root + "/") for root in (repo, "/mnt/c/homelab")):
+    raise SystemExit("ERROR: secret-bearing inputs must be outside Homelab and the repository")
+CHECK
+done
 if [[ -n "$RUNG_ENCRYPTED_KEY_FILE" ]]; then
 	parsed="$(kbs_uri_default_secret_key "$RUNG_ENCRYPTED_KEY_ID")"
 	RUNG_ENCRYPTED_KEY_SECRET="${parsed%%	*}"
@@ -186,8 +230,10 @@ need oc
 need jq
 need base64
 oc whoami >/dev/null 2>&1 || die "oc is not logged into a cluster"
+oc -n "$NS" get trusteeconfig "$TRUSTEE_NAME" -o json | jq -e '.spec.profileType == "Permissive"' >/dev/null || die "bootstrap the intended Permissive TrusteeConfig before lab seeding"
 
-tmpdir="$(mktemp -d)"
+umask 077
+tmpdir="$(mktemp -d /tmp/coco-trustee-secrets.XXXXXX)"
 load_vcek_bundle
 # Mirror credential for the Trustee `credential`/`regcred` secrets. Customer model: read the mirror
 # auth straight out of a single pull secret (dockerconfigjson) — no mirror admin password needed.
@@ -208,7 +254,6 @@ else
 	docker_auth_json="$(jq -nc --arg registry "$MIRROR_REGISTRY" --arg auth "$auth" '{auths:{($registry):{auth:$auth}}}')"
 fi
 
-stage_readable_file "$KBS_PUB" "$tmpdir/kbs.pub"
 stage_readable_file "$ATTESTATION_CERT" "$tmpdir/attestation.crt"
 if [[ -n "$RUNG_ENCRYPTED_KEY_FILE" ]]; then
 	stage_readable_file "$RUNG_ENCRYPTED_KEY_FILE" "$tmpdir/rung-encrypted-image.key"
@@ -246,64 +291,61 @@ prefix = "quay.io/openshift-release-dev/ocp-release"
 location = "${MIRROR_REGISTRY}/openshift/release-images"
 EOF
 
-oc create namespace "$NS" --dry-run=client -o yaml | oc apply -f -
-
-oc -n "$NS" create secret generic kbs-auth-public-key \
-	--from-file=publicKey="$tmpdir/kbs.pub" \
-	--dry-run=client -o yaml | apply_secret
 oc -n "$NS" create secret generic attestation-cert \
 	--from-file=attestation.crt="$tmpdir/attestation.crt" \
-	--dry-run=client -o yaml | apply_secret
+	--dry-run=client -o json | apply_secret
 oc -n "$NS" create secret generic regcred \
 	--from-file=config="$tmpdir/regcred.json" \
-	--dry-run=client -o yaml | apply_secret
+	--dry-run=client -o json | apply_secret
 oc -n "$NS" create secret generic credential \
 	--from-file=test="$tmpdir/credential.json" \
-	--dry-run=client -o yaml | apply_secret
+	--dry-run=client -o json | apply_secret
 if [[ -s "$tmpdir/security-policy-rung-signed.json" ]]; then
 	oc -n "$NS" create secret generic security-policy \
 		--from-file=test="$tmpdir/security-policy.json" \
 		--from-file=rung-signed="$tmpdir/security-policy-rung-signed.json" \
-		--dry-run=client -o yaml | apply_secret
+		--dry-run=client -o json | apply_secret
 else
 	oc -n "$NS" create secret generic security-policy \
 		--from-file=test="$tmpdir/security-policy.json" \
-		--dry-run=client -o yaml | apply_secret
+		--dry-run=client -o json | apply_secret
 fi
 oc -n "$NS" create secret generic registry-configuration \
 	--from-file=test="$tmpdir/registries.conf" \
-	--dry-run=client -o yaml | apply_secret
+	--dry-run=client -o json | apply_secret
 if [[ -s "$tmpdir/rung-encrypted-image.key" ]]; then
 	oc -n "$NS" create secret generic "$RUNG_ENCRYPTED_KEY_SECRET" \
 		--from-file="${RUNG_ENCRYPTED_KEY_NAME}=$tmpdir/rung-encrypted-image.key" \
-		--dry-run=client -o yaml | apply_secret
+		--dry-run=client -o json | apply_secret
 fi
 if [[ -s "$tmpdir/cosign.pub" ]]; then
 	oc -n "$NS" create secret generic sig-public-key \
 		--from-file=rung-signed="$tmpdir/cosign.pub" \
-		--dry-run=client -o yaml | apply_secret
+		--dry-run=client -o json | apply_secret
 fi
 oc -n "$NS" create secret generic attestation-status \
 	--from-file=status="$tmpdir/attestation-status" \
-	--dry-run=client -o yaml | apply_secret
+	--dry-run=client -o json | apply_secret
 oc -n "$NS" create secret generic sample \
 	--from-file=secret="$tmpdir/sample" \
-	--dry-run=client -o yaml | apply_secret
+	--dry-run=client -o json | apply_secret
 # Stable, collision-free VCEK secret name — readable hwid prefix + hash of the FULL hwid. MUST match
 # collect-vcek.sh and apply-trustee.sh render_kbsconfig. A positional index renumbers/remaps KbsConfig
 # entries when the hardware set changes; this HWID-derived name binds the secret to its source host.
 # The full HWID stays in the mountPath.
 vcek_secret_name() { printf 'vcek-snp-%s-%s\n' "${1:0:16}" "$(printf '%s' "$1" | sha256_stdin | cut -c1-16)"; }
-for i in "${!vcek_hwids[@]}"; do
+vcek_count=0
+for i in ${vcek_hwids[@]+"${!vcek_hwids[@]}"}; do
 	vcek_name="$(vcek_secret_name "${vcek_hwids[$i]}")"
 	oc -n "$NS" create secret generic "$vcek_name" \
 		--from-file=vcek.der="${vcek_ders[$i]}" \
-		--dry-run=client -o yaml | apply_secret
+		--dry-run=client -o json | apply_secret
 	echo "VCEK ${vcek_name}: ${vcek_hwids[$i]}"
+	vcek_count=$((vcek_count + 1))
 done
 
 echo "Trustee secrets seeded in $NS"
-echo "VCEK_COUNT=${#vcek_hwids[@]}"
+echo "VCEK_COUNT=$vcek_count"
 [[ -s "$tmpdir/rung-encrypted-image.key" ]] && echo "RUNG_ENCRYPTED_KEY_RESOURCE=${RUNG_ENCRYPTED_KEY_SECRET}/${RUNG_ENCRYPTED_KEY_NAME}"
 [[ -s "$tmpdir/cosign.pub" ]] && echo "RUNG_SIGNED_PUBLIC_KEY_RESOURCE=sig-public-key/rung-signed"
 [[ -s "$tmpdir/security-policy-rung-signed.json" ]] && echo "RUNG_SIGNED_POLICY_RESOURCE=security-policy/rung-signed"

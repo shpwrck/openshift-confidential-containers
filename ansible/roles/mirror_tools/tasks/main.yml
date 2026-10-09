@@ -1,106 +1,56 @@
 ---
-# mirror_tools — translates scripts/bastion-mirror-setup.sh.
 # Installs pinned oc/kubectl/openshift-install/oc-mirror to /usr/local/bin, trusts the mirror CA,
 # installs nmstate (needed before `agent create pxe-files`, fix #7), and builds the merged
 # /root/.docker/config.json (RH pull-secret + mirror creds). Idempotent.
 
-- name: Create a temp dir for tool tarballs
+# A fresh bastion may receive the supplied pull secret directly from an external controller
+# path. Existing bastions can keep using pull_secret_remote_path without a controller copy.
+- name: Stage the supplied Red Hat pull secret on a fresh bastion
+  ansible.builtin.copy:
+    src: "{{ pull_secret_src }}"
+    dest: "{{ pull_secret_remote_path }}"
+    mode: "0600"
+  when: pull_secret_src | default('') | length > 0
+  no_log: true
+
+# Reuse the same verified installer as direct shell users. It checks archive and installed
+# binary hashes, so a pre-existing older oc/installer/mirror cannot satisfy a changed release.
+- name: Create a temporary tool staging directory
   ansible.builtin.tempfile:
     state: directory
-    suffix: ocp-tools
+    suffix: coco-tools
   register: tools_tmp
   changed_when: false
 
-- name: Check which OpenShift tools are already installed
-  ansible.builtin.stat:
-    path: "{{ local_bin }}/{{ item }}"
-  loop:
-    - oc
-    - openshift-install
-    - oc-mirror
-  register: tool_stat
+- name: Install the requested OpenShift tool set
+  block:
+    - name: Stage the shared tool installer
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../scripts/install-tools.sh"
+        dest: "{{ tools_tmp.path }}/install-tools.sh"
+        mode: "0755"
+      changed_when: false
 
-- name: Download oc/kubectl client bundle
-  ansible.builtin.get_url:
-    url: "{{ ocp_clients_base }}/ocp/{{ ocp_version }}/openshift-client-linux-{{ ocp_version }}.tar.gz"
-    dest: "{{ tools_tmp.path }}/oc.tgz"
-    mode: "0644"
-  when: not (tool_stat.results[0].stat.exists and tool_stat.results[1].stat.exists)
-
-- name: Extract oc + kubectl into {{ local_bin }}
-  ansible.builtin.unarchive:
-    src: "{{ tools_tmp.path }}/oc.tgz"
-    dest: "{{ local_bin }}"
-    remote_src: true
-    extra_opts: [oc, kubectl]
-  become: true
-  when: not (tool_stat.results[0].stat.exists and tool_stat.results[1].stat.exists)
-
-- name: Download openshift-install
-  ansible.builtin.get_url:
-    url: "{{ ocp_clients_base }}/ocp/{{ ocp_version }}/openshift-install-linux-{{ ocp_version }}.tar.gz"
-    dest: "{{ tools_tmp.path }}/install.tgz"
-    mode: "0644"
-  when: not tool_stat.results[1].stat.exists
-
-- name: Extract openshift-install into {{ local_bin }}
-  ansible.builtin.unarchive:
-    src: "{{ tools_tmp.path }}/install.tgz"
-    dest: "{{ local_bin }}"
-    remote_src: true
-    extra_opts: [openshift-install]
-  become: true
-  when: not tool_stat.results[1].stat.exists
-
-# RHEL-family bastion: prefer the rhel9 oc-mirror build (no libgpgme dep); fall back to glibc.
-- name: Probe for the rhel9 oc-mirror build
-  ansible.builtin.uri:
-    url: "{{ ocp_clients_base }}/ocp/{{ ocp_version }}/oc-mirror.rhel9.tar.gz"
-    method: HEAD
-    status_code: [200, 301, 302, 404]
-  register: ocm_rhel9_head
-  when: not tool_stat.results[2].stat.exists
-
-- name: Select the oc-mirror download URL
-  ansible.builtin.set_fact:
-    ocm_url: >-
-      {{ ocp_clients_base }}/ocp/{{ ocp_version }}/{{
-        'oc-mirror.rhel9.tar.gz' if (ocm_rhel9_head.status | default(404)) == 200
-        else 'oc-mirror.tar.gz' }}
-  when: not tool_stat.results[2].stat.exists
-
-- name: Download oc-mirror
-  ansible.builtin.get_url:
-    url: "{{ ocm_url }}"
-    dest: "{{ tools_tmp.path }}/ocm.tgz"
-    mode: "0644"
-  when: not tool_stat.results[2].stat.exists
-
-- name: Extract oc-mirror into {{ local_bin }}
-  ansible.builtin.unarchive:
-    src: "{{ tools_tmp.path }}/ocm.tgz"
-    dest: "{{ local_bin }}"
-    remote_src: true
-    extra_opts: [oc-mirror]
-  become: true
-  when: not tool_stat.results[2].stat.exists
-
-- name: Ensure the tools are executable
-  ansible.builtin.file:
-    path: "{{ local_bin }}/{{ item }}"
-    mode: "0755"
-  become: true
-  loop:
-    - oc
-    - kubectl
-    - openshift-install
-    - oc-mirror
-
-- name: Remove the temp tool dir
-  ansible.builtin.file:
-    path: "{{ tools_tmp.path }}"
-    state: absent
-  changed_when: false
+    - name: Verify or replace the requested tools
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ tools_tmp.path }}/install-tools.sh"
+      environment:
+        OCP_VERSION: "{{ ocp_version }}"
+        OCP_CLIENTS_BASE: "{{ ocp_clients_base }}"
+        OCMIRROR_VARIANT: rhel9
+        BIN_DIR: "{{ local_bin }}"
+      become: true
+      register: tools_install
+      changed_when: "'COCO_TOOLS_CHANGED=1' in tools_install.stdout"
+  always:
+    - name: Remove temporary tool staging directory
+      ansible.builtin.file:
+        path: "{{ tools_tmp.path }}"
+        state: absent
+      become: true
+      changed_when: false
 
 # --- nmstate (fix #7): required before `openshift-install agent create pxe-files` ---
 - name: Ensure nmstate is installed (needed for agent create pxe-files)
@@ -133,6 +83,7 @@
     src: "{{ mirror_password_path }}"
   become: true
   register: mirror_pw_slurp
+  no_log: true
 
 - name: Set the mirror auth fact (base64 user:pass)
   ansible.builtin.set_fact:

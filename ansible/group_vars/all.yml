@@ -1,23 +1,41 @@
 ---
 # ============================================================================
-# ALL knobs for the disconnected SNO air-gapped bring-up.
-# Translated faithfully from scripts/*.sh + install/*.tmpl + the runbook
-# (validated on hardware 2026-06-28). Override any value with -e on the CLI or
-# a per-environment group_vars file; the customer multi-node cluster only edits
-# `machines` (a LIST) plus a handful of network values.
+# Deployment knobs; private-vlan remains the default network profile.
+# Override deployment inputs with -e or a private external environment file.
+# Verify hardware-specific NIC, disk and firmware inputs on the actual node.
+# The machines list supports multiple host records, but each customer topology
+# requires its own validation; historical rig results do not validate this release.
 #
-# SECRETS ARE NEVER STORED HERE. The Latitude token, mirror admin password, and
-# RH pull-secret are looked up at runtime from the environment / files on the
-# bastion. See the `latitude_token`, `mirror_password`, and pull-secret handling
-# below and ansible/README.md.
+# Credentials are read from external files or CHERRY_SERVERS_API_KEY.
+# Keep secret-bearing environment files outside the checkout and Homelab.
 # ============================================================================
 
 # ---- OpenShift / cluster identity ------------------------------------------
-ocp_version: "4.20.18"
+# Derived from the same manifest/profile as the shell entry points. The controller preflight
+# validates effective overrides before preparation or installation writes.
+release_manifest_path: >-
+  {{ lookup('ansible.builtin.env', 'RELEASE_MANIFEST')
+     | default(playbook_dir ~ '/../../install/release-manifest.json', true) }}
+release_manifest_absolute: >-
+  {{ release_manifest_path if release_manifest_path.startswith('/')
+     else lookup('ansible.builtin.env', 'PWD') ~ '/' ~ release_manifest_path }}
+coco_release: "{{ lookup('ansible.builtin.file', release_manifest_absolute) | from_json }}"
+tee: "{{ lookup('ansible.builtin.env', 'TEE') | default('snp', true) }}"
+ocp_version: "{{ lookup('ansible.builtin.env', 'OCP_VERSION') | default(coco_release.platform.version, true) }}"
+ocp_release_image: "{{ lookup('ansible.builtin.env', 'OCP_RELEASE_IMAGE') | default(coco_release.platform.releaseImage, true) }}"
+imageset_config: >-
+  {{ lookup('ansible.builtin.env', 'IMAGESET_CONFIG')
+     | default(coco_release.profiles[tee].imageSet, true) }}
+imageset_config_absolute: >-
+  {{ imageset_config if imageset_config.startswith('/')
+     else playbook_dir ~ '/../../' ~ imageset_config }}
 cluster_name: "sno-coco"
 base_domain: "coco.lab.local"
 
 # ---- Networking ------------------------------------------------------------
+network_profile: "private-vlan"
+cluster_node_ip: "{{ node_vlan_ip }}"
+bastion_service_ip: "{{ bastion_vlan_ip }}"
 machine_network: "192.168.66.0/24"   # node L2 subnet (contains rendezvous + node IP)
 vlan_cidr: "192.168.66.0/24"         # rig private VLAN CIDR (chrony allow scope)
 vlan_prefix: 24
@@ -33,7 +51,7 @@ service_network_cidr: "172.30.0.0/16"
 # Endpoint seam (#26 keystone): artifactory_registry is the canonical, provider-neutral registry
 # endpoint; mirror_endpoint stays as the in-tree consumer name (every task reads {{ mirror_endpoint }})
 # and as a back-compat alias. Env precedence ARTIFACTORY_REGISTRY > MIRROR_REGISTRY mirrors
-# scripts/*.sh + the Makefile (same idiom as latitude_token below); `-e mirror_endpoint=...` still wins.
+# scripts/*.sh + the Makefile ; `-e mirror_endpoint=...` still wins.
 artifactory_registry: >-
   {{ lookup('ansible.builtin.env', 'ARTIFACTORY_REGISTRY')
   | default(lookup('ansible.builtin.env', 'MIRROR_REGISTRY'), true)
@@ -60,8 +78,11 @@ mirror_ca_path: "/opt/mirror/ca/rootCA.pem"
 mirror_password_path: "/opt/mirror/mirror-admin-password"
 install_src_dir: "/opt/install/src"                    # source of truth for rendered configs
 cluster_assets_dir: "/opt/install/cluster-assets"      # the installer CONSUMES these copies
+# Provider request evidence is retained when generated cluster assets are replaced.
+install_request_dir: "{{ cluster_assets_dir | dirname }}/provider-requests"
 boot_artifacts_dir: "/opt/install/cluster-assets/boot-artifacts"
-boot_artifacts_webroot: "/opt/install/boot-artifacts"  # nginx webroot for the tokenized serve
+# Keep published copies outside the private /opt/install source and assets tree.
+boot_artifacts_webroot: "/var/www/coco-boot-artifacts"
 # secure_path omits /usr/local/bin, so every sudo invocation of the OpenShift tools must
 # pass this PATH explicitly (hard-won fix #6).
 tool_path: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -81,7 +102,7 @@ node_ssh_pubkey_path: "{{ ansible_facts['env']['HOME'] }}/coco-rig.pub"
 node_ssh_pubkey_src: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
 
 # ---- Tool download source (mirror.openshift.com clients) -------------------
-ocp_clients_base: "https://mirror.openshift.com/pub/openshift-v4/amd64/clients"
+ocp_clients_base: "{{ coco_release.platform.clientBase }}"
 
 # ---- Boot artifacts serve (iPXE) -------------------------------------------
 boot_artifacts_port: 8080
@@ -91,7 +112,7 @@ boot_artifacts_port: 8080
 boot_artifacts_token: "REPLACE_WITH_openssl_rand_hex_16"
 
 # ---- Public console edge ---------------------------------------------------
-# Default-on convenience for the disposable Latitude rig: publish the OpenShift console through
+# Default-on convenience for the disposable rig: publish the OpenShift console through
 # the bastion's public IP using sslip.io names, while proxying to the private VLAN ingress IP.
 # Opt out with `-e public_console_enabled=false`.
 public_console_enabled: true
@@ -100,7 +121,7 @@ public_console_host: "console-openshift-console.apps.{{ cluster_name }}.{{ publi
 public_oauth_host: "oauth-openshift.apps.{{ cluster_name }}.{{ public_console_domain_suffix }}"
 public_console_internal_host: "console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}"
 public_oauth_internal_host: "oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}"
-public_console_cluster_upstream_ip: "{{ node_vlan_ip }}"
+public_console_cluster_upstream_ip: "{{ cluster_node_ip }}"
 public_console_nginx_conf_path: "/etc/nginx/conf.d/coco-public-console.conf"
 public_console_cert_path: "/etc/pki/nginx/coco-public-console.crt"
 public_console_key_path: "/etc/pki/nginx/private/coco-public-console.key"
@@ -112,59 +133,43 @@ public_console_proxy_probe_address: "127.0.0.1"
 # ---- NTP -------------------------------------------------------------------
 # additionalNTPSources MUST go in agent-config (the installer drops it from install-config).
 additional_ntp_sources:
-  - "{{ bastion_vlan_ip }}"
+  - "{{ bastion_service_ip }}"
+dnsmasq_allow_upstream: false
 
-# ---- Bastion egress hardening (hard-won fix #1) ----------------------------
-# A fresh Latitude bastion's IPv6 egress to quay's CDN blackholes large oc-mirror blobs.
-# oc-mirror is a Go binary so /etc/gai.conf IPv4-preference is IGNORED — remove v6 reachability,
-# clamp the v4 path MTU, and SYN-MSS-clamp via nftables.
-bastion_egress_mtu: 1400
-bastion_egress_mss_clamp: 1360
-bastion_egress_nft_table: "egress_clamp"
-
-# ---- Latitude API ----------------------------------------------------------
-latitude_api_base: "https://api.latitude.sh"
-# Token is a SECRET — looked up from the environment, never written to a committed file.
-# Export LATITUDESH_AUTH_TOKEN (preferred) or LATITUDE_API_TOKEN before running.
-latitude_token: "{{ lookup('ansible.builtin.env', 'LATITUDESH_AUTH_TOKEN') | default(lookup('ansible.builtin.env', 'LATITUDE_API_TOKEN'), true) }}"
+# ---- Private helper isolation and provider access --------------------------
+bastion_node_isolation_enabled: true
+bastion_private_if: ""
+bastion_external_if: ""
+infra_provider: cherry
+cherry_api_base: https://api.cherryservers.com/v1
+cherry_token: "{{ lookup('ansible.builtin.env', 'CHERRY_SERVERS_API_KEY') }}"
 
 # ---- iPXE / netboot --------------------------------------------------------
 # The iPXE URL the node fetches (served by pxe_serve at the tokenized path on the bastion's
-# PUBLIC IP). bastion_public_ipv4 comes from terraform output; pass via -e.
+# PUBLIC IP). bastion_public_ipv4 is an explicit supplied-rig input.
 bastion_public_ipv4: "{{ bastion_public_ipv4_override | default('REPLACE_WITH_BASTION_PUBLIC_IPV4') }}"
 boot_artifacts_base_url: "http://{{ bastion_public_ipv4 }}:{{ boot_artifacts_port }}/{{ boot_artifacts_token }}"
 ipxe_url: "{{ boot_artifacts_base_url }}/agent.x86_64.ipxe"
 
-# ---- VLAN id (from terraform output virtual_network_vid) -------------------
-# Pass via -e vlan_vid=<vid> or set the discover play to read it. No safe default.
-vlan_vid: "{{ vlan_vid_override | default('REPLACE_WITH_virtual_network_vid') }}"
+# ---- Actual VLAN wire tag -------------------------------------------------
+# Set the verified wire tag in the external inputs; provider object IDs are different.
+vlan_vid: "{{ vlan_vid_override | default('REPLACE_WITH_VERIFIED_VLAN_TAG') }}"
 
-# ============================================================================
-# MACHINES — the portability seam.
-# For SNO this list has ONE entry. The customer multi-node cluster adds more
-# entries (each with its own server id, role, hostname, IPs) and switches
-# control-plane replicas; render_configs iterates this list. MACs are NEVER
-# hardcoded — the discover play fills `parent_mac` per machine at runtime from
-# the Latitude API (interface whose role == "internal" = the PXE NIC).
-# ============================================================================
+# Current hardware inputs. Supply actual ownership, disk and LACP members externally.
 machines:
   - name: "{{ cluster_name }}-node"
-    role: master                       # SNO: the single node is the control plane
-    server_id: "{{ node_server_id | default('REPLACE_WITH_LATITUDE_SERVER_ID') }}"
+    role: master
+    server_id: "{{ node_server_id | default('REPLACE_WITH_CHERRY_SERVER_ID') }}"
+    provider_hostname: "{{ node_provider_hostname | default('') }}"
+    provider_project_id: "{{ node_provider_project_id | default('') }}"
     vlan_ip: "{{ node_vlan_ip }}"
-    # Genoa m4-metal-medium VLAN parent (internal/PXE NIC). VERIFY on metal; overridable.
-    parent_if: "{{ node_parent_if | default('enp195s0f1') }}"
-    # PUBLIC (external-role) NIC. It carries NO cluster traffic, but it MUST still be declared
-    # (#78): an interface absent from networkConfig is unmanaged in the agent live environment,
-    # so NetworkManager DHCPs it, the provider hands out a public resolver (8.8.8.8), and that
-    # beats the static dns-resolver — mirror.rig.local then never resolves and the air-gapped
-    # install dies at "Cannot access Rendezvous Host". Declared here so it can be held DOWN.
-    external_if: "{{ node_external_if | default('enp195s0f0') }}"
-    # external_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
-    external_mac: "{{ node_external_mac | default('') }}"
-    root_device: "{{ node_root_device | default('/dev/nvme0n1') }}"
-    # parent_mac is filled at runtime by playbooks/discover.yml — do NOT hardcode.
+    parent_if: "{{ node_parent_if | default('bond0') }}"
     parent_mac: "{{ node_parent_mac | default('') }}"
+    bond_mode: "802.3ad"
+    bond_ports: "{{ node_bond_ports | default([]) }}"
+    external_if: "{{ node_external_if | default('') }}"
+    external_mac: "{{ node_external_mac | default('') }}"
+    root_device: "{{ node_root_device | default('') }}"
 
 # SNO: exactly one control-plane replica, zero compute. Multi-node overrides these.
 control_plane_replicas: 1

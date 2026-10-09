@@ -1,41 +1,74 @@
 ---
 # install_drive — hard-won fixes #5 + #9.
-# 1. (Re)trigger the netboot via the Latitude reinstall API (NOT a power reboot — a reboot boots
+# 1. (Re)trigger the netboot via the Cherry rebuild API (NOT a power reboot — a reboot boots
 #    the stale local disk; you must reinstall to re-netboot).
 # 2. openshift-install agent wait-for install-complete; a bootstrap-complete timeout is NON-fatal.
 # 3. ALSO poll `oc get clusterversion` until Available=True / Progressing=False.
 # 4. Add cluster API/console names to the bastion's /etc/hosts so `oc` works there (bastion
 #    resolver uses public DNS, not its own dnsmasq).
 
-# --- (Re)trigger netboot via the Latitude reinstall API (fix #5) ---
-- name: Trigger Latitude reinstall (iPXE re-netboot) for each machine
-  ansible.builtin.uri:
-    url: "{{ latitude_api_base }}/servers/{{ item.server_id }}/reinstall"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ latitude_token }}"
-      Content-Type: "application/vnd.api+json"
-      Accept: "application/vnd.api+json"
-    body_format: json
-    body:
-      data:
-        type: reinstalls
-        attributes:
-          operating_system: ipxe
-          ipxe: "{{ ipxe_url }}"
-    status_code: [200, 201, 202]
-  delegate_to: localhost
-  become: false
+- name: Validate the selected operation and target identities
+  ansible.builtin.assert:
+    that:
+      - install_mode in ['fresh', 'verify']
+      - not (install_trigger_reinstall | bool) or install_mode == 'fresh'
+      - machines | length > 0
+      - (machines | map(attribute='server_id') | unique | length) == (machines | length)
+      - ocp_release_image | default('') is search('@sha256:[0-9a-f]{64}$')
+    fail_msg: "Choose fresh or verify explicitly, provide unique machines and the exact target release. This role does not perform in-place upgrades."
+
+- name: Validate each provider machine ID
+  ansible.builtin.assert:
+    that:
+      - infra_provider | default('cherry') == 'cherry'
+      - item.server_id is match('^[1-9][0-9]*$')
+    fail_msg: "Expected an explicit selected-provider server ID for {{ item.name }}."
   loop: "{{ machines }}"
   loop_control:
-    label: "{{ item.name }} ({{ item.server_id }})"
-  when: install_trigger_reinstall | bool
-  register: reinstall_result
+    label: "{{ item.name }}"
 
-- name: Note the reinstall was requested
-  ansible.builtin.debug:
-    msg: "Reinstall (iPXE re-netboot) requested for {{ machines | map(attribute='name') | list }}. The node will fetch {{ ipxe_url }}."
+- name: Read the prepared boot input identity before any reinstall
+  ansible.builtin.slurp:
+    src: "{{ cluster_assets_dir }}/.coco-pxe-inputs"
+  become: true
+  register: install_boot_identity
   when: install_trigger_reinstall | bool
+
+- name: Select the prepared install identity
+  ansible.builtin.set_fact:
+    install_identity: "{{ install_boot_identity.content | b64decode | trim }}"
+  when: install_trigger_reinstall | bool
+
+- name: Require complete boot inputs
+  ansible.builtin.assert:
+    that: install_identity is match('^[0-9a-f]{64}$')
+    fail_msg: "Missing boot input identity; prepare and verify PXE assets before requesting a reinstall."
+  when: install_trigger_reinstall | bool
+
+- name: Verify and request each machine reinstall once per input revision
+  ansible.builtin.include_tasks: reinstall.yml
+  loop: "{{ machines }}"
+  loop_control:
+    loop_var: install_machine
+    label: "{{ install_machine.name }} ({{ install_machine.server_id }})"
+  when: install_trigger_reinstall | bool
+
+# --- /etc/hosts so oc works on the bastion (fix #9: bastion uses public DNS, not its dnsmasq) ---
+- name: Add cluster API/console names to the bastion /etc/hosts
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE coco cluster records ({{ cluster_name }})"
+    block: |
+      {% for m in machines if m.role == 'master' %}
+      {% set cluster_host_ip = m.vlan_ip %}
+      {{ cluster_host_ip }} api.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}
+      {{ cluster_host_ip }} oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}
+      {% endfor %}
+  become: true
+  when: install_mode == 'fresh'
+  tags: [api-resolver]
 
 # --- Wait for install-complete (bootstrap-complete timeout is NON-fatal, fix #9) ---
 - name: Wait for the Agent-based SNO install to complete (timeout non-fatal)
@@ -49,34 +82,22 @@
   changed_when: install_wait.rc == 0
   async: "{{ install_wait_timeout_min | int * 60 }}"
   poll: 30
+  when: install_mode == 'fresh'
 
 - name: Report wait-for install-complete result (non-fatal if it timed out)
   ansible.builtin.debug:
     msg: >-
       wait-for install-complete rc={{ install_wait.rc | default('?') }}.
       {{ 'Completed.' if install_wait.rc | default(1) == 0
-         else 'Timed out / not yet complete — falling through to clusterversion poll (this is expected for slow bootstraps).' }}
-
-# --- /etc/hosts so oc works on the bastion (fix #9: bastion uses public DNS, not its dnsmasq) ---
-- name: Add cluster API/console names to the bastion /etc/hosts
-  ansible.builtin.blockinfile:
-    path: /etc/hosts
-    marker: "# {mark} ANSIBLE coco cluster records ({{ cluster_name }})"
-    block: |
-      {% for m in machines if m.role == 'master' %}
-      {{ m.vlan_ip }} api.{{ cluster_name }}.{{ base_domain }}
-      {{ m.vlan_ip }} api-int.{{ cluster_name }}.{{ base_domain }}
-      {{ m.vlan_ip }} console-openshift-console.apps.{{ cluster_name }}.{{ base_domain }}
-      {{ m.vlan_ip }} oauth-openshift.apps.{{ cluster_name }}.{{ base_domain }}
-      {% endfor %}
-  become: true
+         else 'Installer wait did not complete — checking actual cluster release and health next.' }}
+  when: install_mode == 'fresh'
 
 # --- Poll clusterversion until Available=True / Progressing=False (fix #9) ---
 # argv form on purpose (#63): the jsonpath template contains a SPACE, and `cmd:` shlex-splits
 # an unquoted string — oc then gets `jsonpath={range` (unterminated template) and fails rc=1
 # with empty stdout on EVERY retry, reporting a healthy install as a poll failure. argv keeps
 # the template one argument. Proven on the rig 2026-07-22 (quoted form -> rc=0, conditions listed).
-- name: Poll clusterversion until Available=True and Progressing=False
+- name: Poll the actual completed cluster release and health
   ansible.builtin.command:
     argv:
       - oc
@@ -86,7 +107,7 @@
       - clusterversion
       - version
       - -o
-      - "jsonpath={range .status.conditions[*]}{.type}={.status};{end}"
+      - json
   become: true
   environment:
     PATH: "{{ tool_path }}"
@@ -95,19 +116,36 @@
   failed_when: false
   retries: "{{ clusterversion_poll_retries }}"
   delay: "{{ clusterversion_poll_delay }}"
+  vars:
+    cv: "{{ (cv_poll.stdout | default('{}', true) | from_json).get('status', {}) }}"
   until: >-
     cv_poll.rc == 0
-    and 'Available=True' in cv_poll.stdout
-    and 'Progressing=False' in cv_poll.stdout
+    and cv.get('desired', {}).get('version', '') == ocp_version
+    and cv.get('desired', {}).get('image', '').split('@')[-1] == ocp_release_image.split('@')[-1]
+    and (cv.get('history', []) | first | default({})).get('version', '') == ocp_version
+    and (cv.get('history', []) | first | default({})).get('state', '') == 'Completed'
+    and 'True' in (cv.get('conditions', []) | selectattr('type', 'equalto', 'Available') | map(attribute='status') | list)
+    and 'False' in (cv.get('conditions', []) | selectattr('type', 'equalto', 'Progressing') | map(attribute='status') | list)
+    and 'False' in (cv.get('conditions', []) | selectattr('type', 'equalto', 'Failing') | map(attribute='status') | list)
 
-- name: Assert the cluster reached Available=True / Progressing=False
+- name: Require the completed target release before declaring success
   ansible.builtin.assert:
     that:
       - cv_poll.rc == 0
-      - "'Available=True' in cv_poll.stdout"
-      - "'Progressing=False' in cv_poll.stdout"
-    fail_msg: "Cluster did not reach Available=True/Progressing=False. Last conditions: {{ cv_poll.stdout | default('(no oc output)') }}"
-    success_msg: "SNO cluster is up: clusterversion Available=True, Progressing=False."
+      - cv.get('desired', {}).get('version', '') == ocp_version
+      - cv.get('desired', {}).get('image', '').split('@')[-1] == ocp_release_image.split('@')[-1]
+      - (cv.get('history', []) | first | default({})).get('state', '') == 'Completed'
+      - (cv.get('history', []) | first | default({})).get('version', '') == ocp_version
+      - "'True' in (cv.get('conditions', []) | selectattr('type', 'equalto', 'Available') | map(attribute='status') | list)"
+      - "'False' in (cv.get('conditions', []) | selectattr('type', 'equalto', 'Progressing') | map(attribute='status') | list)"
+      - "'False' in (cv.get('conditions', []) | selectattr('type', 'equalto', 'Failing') | map(attribute='status') | list)"
+    fail_msg: "Cluster health or installed release does not match the requested BOM; do not treat this run as complete."
+  vars:
+    cv: "{{ (cv_poll.stdout | default('{}', true) | from_json).get('status', {}) }}"
+
+- name: Report the verified release identity
+  ansible.builtin.debug:
+    msg: "Cluster is healthy on the requested OCP {{ ocp_version }} payload {{ ocp_release_image.split('@')[-1] }}."
 
 # oc-mirror EMITS these (IDMS/ITMS + the mirrored CatalogSource) but nothing ever applied them
 # (#74): mirror.sh only prints them and mirror_push only `ls`es them. Without them the cluster has
@@ -117,35 +155,99 @@
 - name: Find the oc-mirror cluster-resources directory (#74)
   ansible.builtin.find:
     paths: "{{ mirror_workspace }}/working-dir/cluster-resources"
-    patterns: "*.yaml"
+    patterns:
+      - "*.yaml"
+      - "*.yml"
+      - "*.json"
     file_type: file
   become: true
   register: mirror_cluster_resources
   failed_when: false
 
-- name: Apply the oc-mirror cluster-resources (IDMS/ITMS + CatalogSource)
+- name: Require cluster resources for this fresh installation
+  ansible.builtin.assert:
+    that: (mirror_cluster_resources.files | default([]) | length) > 0
+    fail_msg: "No generated cluster resources were found; mirror preparation is incomplete."
+  when: install_mode == 'fresh'
+
+- name: Read generated resources for catalog identity validation
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ mirror_cluster_resources.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  become: true
+  register: install_drive_mirror_resource_contents
+  when: install_mode == 'fresh'
+
+- name: Stage the mirror resource validator
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../scripts/normalize-mirror-resources.py"
+    dest: "{{ mirror_workspace }}/normalize-mirror-resources.py"
+    mode: "0644"
+  become: true
+  when: install_mode == 'fresh'
+
+- name: Stage non-secret resource and BOM inputs for validation
+  ansible.builtin.copy:
+    content: "{{ item.content | to_nice_json }}\n"
+    dest: "{{ mirror_workspace }}/{{ item.name }}"
+    mode: "0600"
+  loop:
+    - name: generated-cluster-resources.json
+      content: >-
+        {{ install_drive_mirror_resource_contents.results | default([])
+           | map(attribute='content') | map('b64decode') | map('from_yaml_all')
+           | map('list') | flatten | reject('equalto', none) | list }}
+    - name: selected-release.json
+      content: "{{ coco_release }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+  when: install_mode == 'fresh'
+
+- name: Verify mirrored catalog and normalize its source name and immutable image
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ mirror_workspace }}/normalize-mirror-resources.py"
+      - --manifest
+      - "{{ mirror_workspace }}/selected-release.json"
+      - --input-json
+      - "{{ mirror_workspace }}/generated-cluster-resources.json"
+      - --working-dir
+      - "{{ mirror_workspace }}/working-dir"
+      - --mirror-endpoint
+      - "{{ mirror_endpoint }}"
+      - --output
+      - "{{ mirror_workspace }}/normalized-cluster-resources.json"
+      - --evidence
+      - "{{ mirror_workspace }}/catalog-identity.json"
+  become: true
+  environment:
+    PATH: "{{ tool_path }}"
+  changed_when: false
+  when: install_mode == 'fresh'
+
+- name: Apply verified mirror resources and release signatures
   ansible.builtin.command:
     argv:
       - oc
       - apply
       - -f
-      - "{{ mirror_workspace }}/working-dir/cluster-resources/"
+      - "{{ mirror_workspace }}/normalized-cluster-resources.json"
   become: true
   environment:
     KUBECONFIG: "{{ cluster_assets_dir }}/auth/kubeconfig"
     PATH: "{{ tool_path }}"
   register: mirror_res_apply
   changed_when: "'created' in mirror_res_apply.stdout or 'configured' in mirror_res_apply.stdout"
-  when: (mirror_cluster_resources.files | default([]) | length) > 0
+  when: install_mode == 'fresh'
 
-- name: Report the cluster-resources apply
+- name: Report fresh-install cluster resource completion
   ansible.builtin.debug:
-    msg: >-
-      {{ (mirror_cluster_resources.files | default([]) | length) }} cluster-resource file(s) applied
-      from {{ mirror_workspace }}/working-dir/cluster-resources —
-      {{ 'IDMS/ITMS + CatalogSource are in place for the operator install.'
-         if (mirror_cluster_resources.files | default([]) | length) > 0
-         else 'NONE FOUND: install-coco-operators will stall on a missing CatalogSource (#74) — check the oc-mirror workspace path.' }}
+    msg: "Applied {{ mirror_cluster_resources.files | length }} mirror cluster-resource files."
+  when: install_mode == 'fresh'
 
 - name: Print kubeconfig + console hints
   ansible.builtin.debug:

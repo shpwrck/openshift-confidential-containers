@@ -1,0 +1,83 @@
+{
+  "verified_at_utc": "2026-10-05T17:48:17.805587+00:00",
+  "scope": "Chrony-only private-policy repair on first Miami bastion",
+  "bastion": {
+    "role": "first Miami mirror bastion",
+    "identityVerified": true
+  },
+  "status": "PASS",
+  "first_apply": {
+    "exit_code": 0,
+    "changed": 2,
+    "changes": [
+      "Explicit include of managed /etc/chrony.d/rig.conf",
+      "Chronyd restart"
+    ]
+  },
+  "second_apply": {
+    "exit_code": 0,
+    "changed": 0,
+    "restart_handler_ran": false
+  },
+  "effective_configuration": {
+    "existing_upstream_settings_preserved": true,
+    "managed_private_allow": "192.168.66.0/24",
+    "local_stratum": 10
+  },
+  "udp123_listener": "0.0.0.0:123",
+  "positive_control": {
+    "status": "PASS",
+    "port": 123,
+    "mode": 4,
+    "leap": 0,
+    "stratum": 2,
+    "originate_matches": true,
+    "receive_transmit_valid": true,
+    "server_minus_client_seconds": -1.2874603271484375e-05,
+    "scope": "local private-source service response; does not test node VLAN path"
+  },
+  "negative_controls": [
+    {
+      "status": "PASS_DENIAL_CONTROL",
+      "port": 123,
+      "timeout_seconds": 2,
+      "outcome": "NO_RESPONSE",
+      "scope": "local public-source denial; daemon accheck also denies this source"
+    },
+    {
+      "status": "PASS_DENIAL_CONTROL",
+      "port": 123,
+      "timeout_seconds": 2,
+      "outcome": "NO_RESPONSE",
+      "scope": "actual accepted raw node public source; daemon accheck also denies this source"
+    }
+  ],
+  "chronyc_access_checks": {
+    "private_source": "allowed",
+    "bastion_public_source": "denied",
+    "raw_node_public_source": "denied"
+  },
+  "unchanged": {
+    "dns_configuration_sha256": true,
+    "interface_address_state": true
+  },
+  "service_health": {
+    "chronyd": "active",
+    "dnsmasq": "active",
+    "chronyd_synchronized": true
+  },
+  "source_sha256": {
+    "ansible/roles/dns_ntp/tasks/main.yml": "eac72690b5982da425dbd90db97fe781f15db881a28432856eff4fd09778cbe6",
+    "ansible/roles/dns_ntp/tasks/chrony.yml": "3131eccfeb703af4519da9c35e50767940b44fbd65c02bd97385a7333f968128",
+    "infra/latitude/bastion/cloud-init/mirror-registry.yaml": "3d489c76db8f1352f9603111f1e8a9ef2e6ea53e91c330ae32e1cf54372ac681",
+    "ansible/roles/dns_ntp/templates/chrony-rig.conf.j2": "628f9eaf89b6a35f0e1d6a4d92c3642fb6e89eba424097e71a6b197ac3f14a06",
+    "ansible/roles/dns_ntp/handlers/main.yml": "1b86504e88c2220fc31a1dd53ca66c043eb57812dfec0c71cbf8f20e7a04f730"
+  },
+  "limits": [
+    "Private positive control was local to the bastion; the broken node VLAN path was not revalidated.",
+    "Public negative packet probes received no response; chronyc independently confirms the daemon denies both sources.",
+    "No DNS, firewall, registry or network profile changes were made.",
+    "No machine reboot was performed."
+  ],
+  "protectedReceiptSha256": "bc0f6ce8d18e3d135850607982707623d906cec792305bfd46ab1d32f22b8fb9"
+}

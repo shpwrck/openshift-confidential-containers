@@ -1,0 +1,436 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-08T19:35:43.761217+00:00",
+  "provider": "Cherry Servers",
+  "scope": "Individual AMD CPU proofs on fresh OCP 4.20.39 / OSC 1.13.1 / Trustee 1.2.1",
+  "status": "FIVE_CPU_PROOFS_AND_COMBINED_REPEAT_PASSED",
+  "combinedRepeat": {
+    "status": "PASS",
+    "sourceRevision": "c6f1a0cab4e0a21d38b8a2799478571e315774f1",
+    "implementationSHA256": "7e2b0c8c9fb6c16c1c169f4edae7c331f49752308c790787f8843935e5efbda6",
+    "releaseManifestSHA256": "9660509355a0997e905bcdbf3b553bf4984e8bbec86ddf19e0a27ddedcc474b4",
+    "reportSHA256": "9920bdcd3b54cf025cd1ec595e1bddccd66572af543a131780a905333a12ede5",
+    "startedAt": "2026-10-08T19:22:12.090948+00:00",
+    "finishedAt": "2026-10-08T19:35:43.761217+00:00",
+    "trusteeConfigUID": "dfde0301-c56c-4418-98d7-977e2586337c",
+    "kbsConfigUID": "25e8d4ed-8127-4406-a4dc-4939366e1dfe",
+    "cases": [
+      {
+        "case": "rung-kbs",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "094b7197b24e698e459052b637e29360b4f1593fa8cf22e43bcc7b632f3633da",
+            "negative": "631153fbca2ae33872f50f2226a34bfb4da7626311909fd3e0a8f56f9e55c165",
+            "recovery": "5e82fad45c7d75841e8218f64f5b00ab637880fefe318b1f5cc7bce9d518a66f"
+          },
+          "negative": {
+            "corpusSHA256": "2ed3b14e7d513239805a276f7d14903977f6d5774374e7c6bc808ef7f59effd8",
+            "podUID": "e1d0f540-a1dc-44d6-9e1e-222910df2d40",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-51f40ca950-control": {
+              "node": "sno-coco-node",
+              "uid": "9ed5ef2b-0c5a-4efc-a41f-e0c6b19d2292"
+            },
+            "proof-51f40ca950-negative": {
+              "uid": "e1d0f540-a1dc-44d6-9e1e-222910df2d40"
+            },
+            "proof-51f40ca950-recovery": {
+              "node": "sno-coco-node",
+              "uid": "1ff81ea7-7688-403a-9e05-058e0b2f4455"
+            }
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T19:24:27.139771+00:00",
+        "startedAt": "2026-10-08T19:22:15.915886+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "rung-initdata",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "binding-input": "cde40b9d5278487e7999d76bbde04c48f2503cb91c1719dd06ae75fd5becd33c",
+            "control": "61dd0420f5d1148ab0aafba5ede6c5aaa9a3e641f2a7b98b405abb5f48c2b065",
+            "negative": "d254a9b00cb7c187adc9d18bd1f760c74c198020ab17802e5c8b35bae1124b6d",
+            "recovery": "435ea0d55f5e2e9b0db436a66c9e6bedc26fd1ff42d9395d60636274bcac9c81"
+          },
+          "negative": {
+            "corpusSHA256": "10dff41c3099d8bc53d81720f242479718175f01d903b179f30fc5bdc4957840",
+            "podUID": "47333155-0c47-4940-8875-0bff7b703a9a",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-b0d6cd5fbd-control": {
+              "node": "sno-coco-node",
+              "uid": "380979e2-2f5a-4b5e-9d2f-dd3d676ddb16"
+            },
+            "proof-b0d6cd5fbd-negative": {
+              "uid": "47333155-0c47-4940-8875-0bff7b703a9a"
+            },
+            "proof-b0d6cd5fbd-recovery": {
+              "node": "sno-coco-node",
+              "uid": "8701d585-a210-4f1e-8af5-7e04831bd810"
+            }
+          },
+          "restoration": "PASS",
+          "serverDenial": {
+            "corpusSHA256": "a00bb53a0551b31ce88206b6a10797dd3ef7e7352577dc60ef0649fab452672a",
+            "peer": "10.128.0.131",
+            "servingPodUID": "532de21a-668a-49f6-bd10-3ba314cc1c64",
+            "sinceTime": "2026-10-08T19:24:58Z"
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T19:27:05.286811+00:00",
+        "startedAt": "2026-10-08T19:24:27.140497+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "rung-rvps",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "4b6f60f8360bdda924c54e22ac778f8229e8ac7a7c11d3fc5bb846c234e42521",
+            "negative": "6a5303f2a5818b109fce42e14773ed2d61203680f9d87e40a9ff73dd512a9c8b",
+            "recovery": "2bc20017d565606efada0da0b7e358dd9e51e1c7e31e9b82391789951c25321d"
+          },
+          "negative": {
+            "corpusSHA256": "e86261f5b8c850efb5b4ad18dafccdab038f6c87211e6496dfd60282bd8c739c",
+            "podUID": "7b28ffeb-7ed5-4cb9-8f72-0a3766557c8b",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-ae110a9036-control": {
+              "node": "sno-coco-node",
+              "uid": "f4ec5eca-ac77-4aca-89ea-f8c4b990388c"
+            },
+            "proof-ae110a9036-negative": {
+              "uid": "7b28ffeb-7ed5-4cb9-8f72-0a3766557c8b"
+            },
+            "proof-ae110a9036-recovery": {
+              "node": "sno-coco-node",
+              "uid": "5b17be6f-5cd8-4c9d-a06c-a04a11e53eaa"
+            }
+          },
+          "referenceChange": {
+            "beforeSHA256": "faf930a2ca8f3f208a3560f506fcbe3d6174a1311802676a50594ab5576ed552",
+            "removedName": "snp_launch_measurement"
+          },
+          "restoration": "PASS",
+          "serverDenial": {
+            "corpusSHA256": "400c82f92108d001c5b5cfa85de612c28abb547b43126a6751ed22800d800c0c",
+            "peer": "10.128.0.138",
+            "servingPodUID": "482494be-2074-4597-ba1a-3ff8afd3ab20",
+            "sinceTime": "2026-10-08T19:27:34Z"
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T19:29:41.999221+00:00",
+        "startedAt": "2026-10-08T19:27:05.287637+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "rung-signed",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "6098199e53e4afca00015c6a3381128d6854abb4c4d6748c8540cabf3f381183",
+            "negative": "599278239bb06e8ad6674d7bda6a2b2154bb9a6eefba1c6318fc46ad421f57d4",
+            "recovery": "c67eb9a062eca8820f1103845ddb3e9fc2c97075b309cd8a5e69cb3aeb0e2963"
+          },
+          "negative": {
+            "corpusSHA256": "be477e957b7f06b66a1ae34069e548ef31becce21389ccaaab866561c4eca55e",
+            "podUID": "b955cca8-059b-4687-b3f4-47bd5a9d4b34",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-f06720d93d-control": {
+              "node": "sno-coco-node",
+              "uid": "a41c800f-3649-48d1-964b-ab7fea6eaadb"
+            },
+            "proof-f06720d93d-negative": {
+              "uid": "b955cca8-059b-4687-b3f4-47bd5a9d4b34"
+            },
+            "proof-f06720d93d-recovery": {
+              "node": "sno-coco-node",
+              "uid": "6aea0772-feb5-4767-bbd6-4ca8f5f00627"
+            }
+          },
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T19:31:59.252762+00:00",
+        "startedAt": "2026-10-08T19:29:42.000106+00:00",
+        "status": "PASS"
+      },
+      {
+        "case": "air-gap",
+        "evidence": {
+          "controls": [
+            {
+              "name": "control",
+              "status": "PASS"
+            },
+            {
+              "name": "recovery",
+              "status": "PASS"
+            }
+          ],
+          "manifestHashes": {
+            "control": "36584fd76a5d8ecd09b04517ad9fcb03840b005eadb6d5f7eb879c61b3924efc",
+            "negative": "5997b9118e00d9ac4d45a797b42509968789f9eab3de2e1b045ac4a19658ef49",
+            "recovery": "b0d3224ddcb30250ea284ea58b4d94c5eec2871ed6893fb028d0764128610ce4"
+          },
+          "negative": {
+            "corpusSHA256": "083dded058c5ff94992419aedb2706691e768017cd2e7672075aae34f4066f4f",
+            "podUID": "99851bf7-75e0-42b5-886e-6d2d8fff86b2",
+            "status": "PASS"
+          },
+          "negativeCleanup": "PASS",
+          "pods": {
+            "proof-75214f4904-control": {
+              "node": "sno-coco-node",
+              "uid": "4777b718-2ffd-49fe-8db1-33a97e3e8d56"
+            },
+            "proof-75214f4904-negative": {
+              "uid": "99851bf7-75e0-42b5-886e-6d2d8fff86b2"
+            },
+            "proof-75214f4904-recovery": {
+              "node": "sno-coco-node",
+              "uid": "96291ea6-dafb-40ac-be17-d0752593de9c"
+            }
+          },
+          "restoration": "PASS",
+          "supportStatus": "candidate"
+        },
+        "finishedAt": "2026-10-08T19:34:35.464456+00:00",
+        "startedAt": "2026-10-08T19:31:59.253745+00:00",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": "Verified all run pods deleted and namespace lock released"
+  },
+  "cleanSetupRepeat": {
+    "status": "PASS",
+    "scope": "Existing OCP, mirror and physical allocations retained; clean CoCo Operator/operand reset and rebuild",
+    "receipt": "cherry-software-repeat-2026-10-08.json",
+    "sourceRevision": "d5915bda5c9e43edfcfa599b837a22a9cbe30e1f",
+    "finishedAt": "2026-10-08T21:00:26.803604+00:00",
+    "repeatReportSHA256": "c50a369c6747215f2d11c3c04036d0f1ddeb2b08ddc7cf0e2201b70cc927db1e"
+  },
+  "trusteeProfile": "Permissive, HTTP co-located lab with vendor EAR enforcement",
+  "runtime": "kata-cc / kata-snp",
+  "cases": {
+    "rung-kbs": {
+      "status": "PASS",
+      "startedAt": "2026-10-08T18:49:48.005777+00:00",
+      "finishedAt": "2026-10-08T18:54:28.655185+00:00",
+      "sourceRevision": "c24031f389446188dd587c26fd5e148fcff459ae",
+      "implementationSHA256": "09a26525d979afd3d15a7c37167d9689ca7bf03a2c7bcb0a2bfa4ba54549f791",
+      "reportSHA256": "f56f0c4702a3ad09045ac19c40f86158fe5443a8a81688115168b7ae6dd84c7e",
+      "controls": [
+        {
+          "name": "control",
+          "status": "PASS"
+        },
+        {
+          "name": "recovery",
+          "status": "PASS"
+        }
+      ],
+      "negative": {
+        "corpusSHA256": "3bd8ef85068b8f3dd129620f5e667c2954d818c15ee81b62422f293157429325",
+        "podUID": "6fbaf38f-e4f4-4b77-a7d4-1940e1e86b0e",
+        "status": "PASS"
+      },
+      "restoration": "No shared configuration changed",
+      "negativeCleanup": "PASS",
+      "serverDenial": null
+    },
+    "air-gap": {
+      "status": "PASS",
+      "startedAt": "2026-10-08T18:55:12.886835+00:00",
+      "finishedAt": "2026-10-08T18:58:51.143246+00:00",
+      "sourceRevision": "d3c2eff0f3014cda17f0941e27ea89bbac519907",
+      "implementationSHA256": "09a26525d979afd3d15a7c37167d9689ca7bf03a2c7bcb0a2bfa4ba54549f791",
+      "reportSHA256": "67c02dae23fd0db6ace021e1559e18ba1ed64cd32d3ba90a5dac35b5f745f927",
+      "controls": [
+        {
+          "name": "control",
+          "status": "PASS"
+        },
+        {
+          "name": "recovery",
+          "status": "PASS"
+        }
+      ],
+      "negative": {
+        "corpusSHA256": "ed7075df3c2075c81cd850166125f32c74def249c2143e7d5aa204b7340d95b3",
+        "podUID": "7be80c75-6e34-466b-87d9-3916be10508a",
+        "status": "PASS"
+      },
+      "restoration": "PASS",
+      "negativeCleanup": "PASS",
+      "serverDenial": null
+    },
+    "rung-signed": {
+      "status": "PASS",
+      "startedAt": "2026-10-08T19:04:41.452653+00:00",
+      "finishedAt": "2026-10-08T19:06:58.067054+00:00",
+      "sourceRevision": "49ab122c5fe5a26f978bf9def6548f5b15f261d6",
+      "implementationSHA256": "e870b8e297a48aa07df72b74497cbacdd65d691a71baa1442f37ec36c971a5d9",
+      "reportSHA256": "710733f295d685a9c1a82cbb278e813ab87620dc1eaf53a269d097b1b287ff8a",
+      "controls": [
+        {
+          "name": "control",
+          "status": "PASS"
+        },
+        {
+          "name": "recovery",
+          "status": "PASS"
+        }
+      ],
+      "negative": {
+        "corpusSHA256": "dfaa27760f21380171de25942d1cb9838ff86cdc67d5347ec4a877d0eee63a80",
+        "podUID": "32fbf257-5fd4-40af-b151-9d39435624b1",
+        "status": "PASS"
+      },
+      "restoration": "No shared configuration changed",
+      "negativeCleanup": "PASS",
+      "serverDenial": null
+    },
+    "rung-initdata": {
+      "status": "PASS",
+      "startedAt": "2026-10-08T19:09:44.995878+00:00",
+      "finishedAt": "2026-10-08T19:12:23.002488+00:00",
+      "sourceRevision": "7435eaa57dbbe4f38c5480765ea1e13a9bc9726a",
+      "implementationSHA256": "c6bbdc00f631d35411afa9823176eee13e3f326dbb3136d54c60d88c6c323220",
+      "reportSHA256": "428c82ce77b61148a4b1e3d6432e4214c823db08a88f691269619419c0a697f9",
+      "controls": [
+        {
+          "name": "control",
+          "status": "PASS"
+        },
+        {
+          "name": "recovery",
+          "status": "PASS"
+        }
+      ],
+      "negative": {
+        "corpusSHA256": "a4cfd19fe0a40d2c658db6a04ea2ef0ef8410b1891ed27e7f378799deeb03f6c",
+        "podUID": "5cae0019-32cf-443e-9210-5c0a3e882ac9",
+        "status": "PASS"
+      },
+      "restoration": "PASS",
+      "negativeCleanup": "PASS",
+      "serverDenial": {
+        "corpusSHA256": "6c41b7f27c5c876bc90eb8d87d76b5743d313ca14fbb39e566889c09ad943a11",
+        "peer": "10.128.0.91",
+        "servingPodUID": "ba673ad2-32db-4283-b772-494113a41324",
+        "sinceTime": "2026-10-08T19:10:16Z"
+      }
+    },
+    "rung-rvps": {
+      "status": "PASS",
+      "startedAt": "2026-10-08T19:13:31.806891+00:00",
+      "finishedAt": "2026-10-08T19:16:08.213187+00:00",
+      "sourceRevision": "7435eaa57dbbe4f38c5480765ea1e13a9bc9726a",
+      "implementationSHA256": "c6bbdc00f631d35411afa9823176eee13e3f326dbb3136d54c60d88c6c323220",
+      "reportSHA256": "de0b51277f2bf3fcc892eb16d53d928e8b0aad20974029ffaabbeffbdeb1c05c",
+      "controls": [
+        {
+          "name": "control",
+          "status": "PASS"
+        },
+        {
+          "name": "recovery",
+          "status": "PASS"
+        }
+      ],
+      "negative": {
+        "corpusSHA256": "176db598eb3b5b470a746dedda7bf2ef8acab005f87b47bbe50648f5b20ae6c5",
+        "podUID": "e5dbc53e-cb47-42e4-9018-035295df521d",
+        "status": "PASS"
+      },
+      "restoration": "PASS",
+      "negativeCleanup": "PASS",
+      "serverDenial": {
+        "corpusSHA256": "40b8c6d8a1bd4efe5cbc469328c2ad5f5f92ff0f6137a310326dde686a1aee42",
+        "peer": "10.128.0.103",
+        "servingPodUID": "50adb51d-c0cb-49b2-8b1e-f23366d06375",
+        "sinceTime": "2026-10-08T19:14:01Z"
+      }
+    }
+  },
+  "references": {
+    "generatedSHA256": "0ca1db7885b429b646f7474f14ffcb05b48414b80bb322f2862209eb3b8e7959",
+    "verifiedQuoteLogSHA256": "6d12fc23761dbf6b0c79435ac116bc74a1bcec2217689e6acac40f5fb9a4e9cf",
+    "launchStringSHA256": "a6ee52911e38ccb1435c98bd2c13c5ca23e2d0fc003c0401025504104624e820",
+    "source": "Digest-pinned coco-tools 0.5.1, verified OCP 4.20.39 payload RPMs, explicit reviewed runtime kernel command line, EPYC-v4, nr_cpus=1, non-GPU only",
+    "hardwareValues": "Actual cryptographically verified first SNP quote; matched raw host TCB",
+    "unusedInitdataRecord": "Pinned Veritas computes SHA-384; repository measured bytes use declared SHA-256; initdata binding is checked separately",
+    "expiration": "2026-11-07T19:07:56Z"
+  },
+  "isolation": {
+    "ordinary": "PASS",
+    "confidentialGuest": "PASS",
+    "guestProbeExit": 0,
+    "reachableDestinationCalibrationExit": 42,
+    "execProcessDenied": true,
+    "evidenceSHA256": "9bd97840c5d8a0f0712357a1b73fd1434eb7aebbcb3ffd028deb7196f899cbdd",
+    "scope": "Fresh application TCP/DNS probes with trusted private registry positive control; BIOS/BMC/iPXE delivery excluded"
+  },
+  "limits": [
+    "Platform and all five individual CPU proofs, a combined repeat, and a clean CoCo software reset/reinstall with fresh combined proofs passed; second full OCP/infrastructure installation is unproved.",
+    "A co-located Permissive HTTP lab with enforcing appraisals does not establish a separate customer Trustee trust domain or an existing customer upgrade.",
+    "Automatic retirement remains disabled at owner direction; monitor charges and retire exact owned resources manually within the overall $150 cap.",
+    "Raw-host isolation rehearsal was rolled back; Agent-live, installed node, ordinary pod and confidential guest fresh probes passed.",
+    "AlmaLinux 9.8 is the trial helper OS, not the supported RHEL mirror-registry host.",
+    "Fully private boot-artifact delivery from power-on is not established.",
+    "No encrypted-image, Intel or GPU support is claimed.",
+    "Guest stdout was empty; finite startup exit checks and a deliberate failure calibration were used without relaxing the default guest agent policy."
+  ]
+}

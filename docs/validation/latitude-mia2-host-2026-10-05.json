@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-05T16:04:18.216912+00:00",
+  "recordedAt": "2026-10-05T16:05:46.221014+00:00",
+  "candidate": "mia2-01",
+  "provider": "Latitude.sh",
+  "region": "MIA2",
+  "repoCommit": "6c6d4cfeb453e4614037d8e214ee9f9688b5f9f1",
+  "scope": "Raw-host AMD SEV-SNP prerequisite verification after ordinary BIOS configuration; not OpenShift, RHCOS, guest-launch or attestation validation",
+  "hardware": {
+    "cpu": "AMD EPYC 9124 16-Core Processor",
+    "system": "AS -2115GT-HNTR",
+    "board": "H13SST-G",
+    "bios": "1.6",
+    "biosDate": "11/30/2023",
+    "bmc": "01.01.13",
+    "cpld": "F5.07.29"
+  },
+  "host": {
+    "kernel": "6.12.0-211.61.1.el10_2.x86_64",
+    "bootMode": "UEFI",
+    "sevSnpParameter": "Y",
+    "devSevPresent": true
+  },
+  "configuredSettings": {
+    "CPU/SEV-ES ASID Space Limit": {
+      "before": 1,
+      "after": 100
+    },
+    "CPU/SNP Memory (RMP Table) Coverage": {
+      "before": "Auto",
+      "after": "Enabled",
+      "help": "Enabled = ENTIRE system memory is covered"
+    },
+    "CPU/SMEE": {
+      "before": "Auto",
+      "after": "Enabled"
+    },
+    "CPU/SEV Control": {
+      "before": "Enable",
+      "after": "Enable"
+    },
+    "CPU/SVM Mode": {
+      "before": "Enabled",
+      "after": "Enabled"
+    },
+    "NB/IOMMU": {
+      "before": "Auto",
+      "after": "Enabled"
+    },
+    "NB/SEV-SNP Support": {
+      "before": "Auto",
+      "after": "Enabled"
+    }
+  },
+  "functionalResult": {
+    "status": "PASS",
+    "exit": 0,
+    "sevSnpApi": "1.55",
+    "sevSnpBuild": 24,
+    "rmpPhysicalStart": "0x0000000078200000",
+    "rmpPhysicalEnd": "0x00000000987fffff",
+    "iommuSnpEnabled": true,
+    "kvmSevSnpEnabled": true,
+    "snpAsidRange": "1-99",
+    "rmpReservationOrMappingFailure": false,
+    "finalSnpInitializationFailure": false,
+    "recoveredInitializationWarning": "SEV: retrying INIT command because of SECURE_DATA_INVALID error. Retrying once to reset PSP SEV state."
+  },
+  "firmwareSecurity": {
+    "status": "GAP",
+    "currentSecureCustomerBaselineEstablished": false,
+    "latestObservedDownload": {
+      "bios": "3.7",
+      "bmc": "1.09.02",
+      "bundle": "H13SST-G(C)_3.7_AS1.09.02_SAA1.4.0-p10.zip",
+      "checkedDate": "2026-10-05",
+      "url": "https://www.supermicro.com/en/support/resources/downloadcenter/firmware/MBD-H13SST-G/BIOS"
+    },
+    "reviewedAdvisoryFixVersions": {
+      "AMD-SB-3019": "3.4",
+      "AMD-SB-3020": "3.5",
+      "AMD-SB-3030": "3.7",
+      "AMD-SB-3033": "3.7",
+      "AMD-SB-3039": "3.7"
+    },
+    "advisoryInventoryComplete": false,
+    "note": "Functional success does not clear the old-firmware security gap. Separate Secure Boot certificate-transition guidance lists 3.8; this is not an SNP prerequisite."
+  },
+  "changes": {
+    "ordinaryBiosConfigurationSaved": true,
+    "snpSettingsChanged": 5,
+    "bootModeChanged": false,
+    "bootOrderChanged": false,
+    "memoryInterleavingChanged": false,
+    "firmwareFlashed": false,
+    "softwareLicensedOrInstalled": false
+  },
+  "proofLimits": [
+    "Raw provider OS only; repeat gate under actual RHCOS kernel",
+    "Guest launch and attestation remain untested",
+    "BIOS 1.6/BMC 01.01.13 remain below current published firmware",
+    "One recovered INIT warning retained; no additional firmware readback reboot performed"
+  ],
+  "evidenceHashes": {
+    "hostCheckScriptSha256": "a7368b976dc41fe6c5d4abe10a372b1324981a3514c9b0e1874b8e56db4be7ae",
+    "hostCheckLogSha256": "09815d1ac1a76a8bcaf290ca2e5890caa4aa7e5937f772e7719d89ba02b6a60a",
+    "currentBootDmesgSha256": "878126eb05eb012b54b11df00dd19afa68312470e705da040f7359a42943d61c"
+  }
+}

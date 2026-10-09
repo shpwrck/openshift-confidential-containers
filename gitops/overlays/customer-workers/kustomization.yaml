@@ -5,5 +5,44 @@ resources:
   - ../../base/operators
   - ../../base/kataconfig
   - ../../base/workloads
-# Customer specifics (patches to add): node selectors for the SNP worker pool, replicas,
-# mirror-registry image rewrites (ImageDigestMirrorSet), external Trustee KBS URL in initdata.
+# Hardware discovery alone does not authorize a runtime rollout to every SNP node.
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: trustee-operator-system
+  - patch: |-
+      $patch: delete
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: trustee-operator-group
+        namespace: trustee-operator-system
+  - patch: |-
+      $patch: delete
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: trustee-operator
+        namespace: trustee-operator-system
+  - target:
+      kind: KataConfig
+      name: cluster-kataconfig
+    patch: |-
+      - op: replace
+        path: /spec/kataConfigPoolSelector
+        value:
+          matchLabels:
+            amd.feature.node.kubernetes.io/snp: "true"
+            node-role.kubernetes.io/coco-snp: ""
+  - target:
+      kind: Pod
+    patch: |-
+      - op: add
+        path: /spec/nodeSelector
+        value:
+          amd.feature.node.kubernetes.io/snp: "true"
+          node-role.kubernetes.io/coco-snp: ""
+# Configure mirror rewrites and external Trustee initdata before customer use.

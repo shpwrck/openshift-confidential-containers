@@ -1,0 +1,29 @@
+---
+- name: Validate and clean up current and legacy published copies
+  ansible.builtin.include_tasks: cleanup_publication.yml
+  vars:
+    pxe_cleanup_mode: stop
+
+- name: Remove the nginx boot-artifacts conf
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d/boot-artifacts.conf
+    state: absent
+  become: true
+  register: pxe_conf_removed
+
+- name: Validate nginx config after removal
+  ansible.builtin.command: nginx -t
+  become: true
+  register: pxe_nginx_t_stop
+  changed_when: false
+  failed_when: false
+
+- name: Reload nginx if its config is still valid, else stop it
+  ansible.builtin.systemd:
+    name: nginx
+    state: "{{ 'reloaded' if pxe_nginx_t_stop.rc == 0 else 'stopped' }}"
+  become: true
+
+- name: Confirm the endpoint is closed
+  ansible.builtin.debug:
+    msg: "Boot-artifact endpoint closed — the secret-bearing initrd is no longer served."

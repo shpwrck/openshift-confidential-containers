@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-05T15:32:11.484490+00:00",
+  "scope": "Fresh AMD validation preflight; no OpenShift installation or guest proof yet",
+  "baseCommit": "66efc0fc57f55f435794a604771f8239706ec132",
+  "workingTreeChangesUsed": true,
+  "releaseManifestSha256": "9660509355a0997e905bcdbf3b553bf4984e8bbec86ddf19e0a27ddedcc474b4",
+  "selectedVersions": {
+    "ocp": "4.20.39",
+    "osc": "1.13.1",
+    "trustee": "1.2.1"
+  },
+  "bastion": {
+    "os": "Rocky Linux9.8",
+    "mirrorRegistry": "2.0.12",
+    "registryTLS": "PASS",
+    "dns": "PASS",
+    "imageTransfer": "PASS",
+    "repeatPrepare": {
+      "result": "PASS",
+      "changed": 0,
+      "transferSkipped": true,
+      "logSha256": "cd9f7fc90fda99219402cbf997b227b7996004435369a23168b68d400a6ef689"
+    }
+  },
+  "mirroredCatalog": {
+    "sourceCatalog": "registry.redhat.io/redhat/redhat-operator-index@sha256:d0ba2f762a9514cf31bcb7ce77b837c6cedb517190f54eb2729be0fa02afb964",
+    "expectedMirrorTag": "mirror.rig.local:8443/redhat/redhat-operator-index:sha256-4e93e29b5f0a70a7da95ce537927f1f7331d102b17a41350edf0e7cecc692bed",
+    "mirroredCatalog": "mirror.rig.local:8443/redhat/redhat-operator-index@sha256:f0d8a7917d4634c1208f5319969c12b15945a4e7cc12eaefa5ce29f7ed3866c4",
+    "selectedPlatform": "linux/amd64",
+    "mirroredCatalogIndexDigest": "sha256:4e93e29b5f0a70a7da95ce537927f1f7331d102b17a41350edf0e7cecc692bed",
+    "sourceName": "cs-redhat-operator-index-sha256-4e93e",
+    "normalizedName": "cs-redhat-operator-index-v4-20",
+    "immutableRereadVerified": true,
+    "omittedClusterCatalogs": [
+      "cc-redhat-operator-index-sha256-4e93e"
+    ],
+    "retainedReleaseSignatureSha256": {
+      "sha256-7bcf96bd0766436fcc30ac30d4bba565d27bfe5772d48177f1afd65878209850-1": "3f1edc3a4c4f0e611a2c5dfbb8abcd0e598abd0fdc70f92a9466eceaa96306bc"
+    },
+    "identicalSignatureCopiesOmitted": 1,
+    "releaseSignatureCryptographicVerification": "deferred to OpenShift CVO",
+    "note": "Filtered catalog content has its own digest; upstream and mirror digests need not match.",
+    "filteredCatalogWorkspace": {
+      "record": "operator-catalogs/redhat-operator-index/d0ba2f762a9514cf31bcb7ce77b837c6cedb517190f54eb2729be0fa02afb964/filtered-catalogs/d0f95ef91328e9dfeb0955fa23738c11/digest",
+      "recordSha256": "8f58bfa45d330c6640707c622bdc63767ef88ae0a64f59b54b3cfc14cd621a31",
+      "filteredDigest": "sha256:4e93e29b5f0a70a7da95ce537927f1f7331d102b17a41350edf0e7cecc692bed",
+      "inventoryMatchesBOM": true,
+      "filteredConfigSha256": {
+        "gatekeeper-operator-product/catalog.json": "a05c4368a9a9e82ec51ea6cd2fb422989a38912418ee3c6488b60e5b72596685",
+        "nfd/catalog.json": "be775596710abcc5f835436d497c78bc0254eb1e2e7ed34c97dadfeb4db145e8",
+        "openshift-cert-manager-operator/catalog.json": "896a0b812e3e620753f0466531b81ee19cb0e7c84f0fdfe1f7feb0cf7913a258",
+        "sandboxed-containers-operator/catalog.json": "d0b023ddaa8834c7ee62495c2f5b290592c69fa026449dc8f4f43fb246fb0a1a",
+        "trustee-operator/catalog.json": "41334137964f4e39e605c5802f8b3fe1e0aafd0fd6d10f0fab1ca71ef22d3a61"
+      }
+    },
+    "check": "PASS",
+    "helperSha256": "2d1c295e090556b2a1b16df3d9abec2feb3ec0299bdf0e8dcc8410f58cdcf4aa"
+  },
+  "hostSignedImage": {
+    "result": "PASS",
+    "signedDigestRef": "mirror.rig.local:8443/coco/rung-b@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+    "unsignedDigestRef": "mirror.rig.local:8443/coco/rung-b-unsigned@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
+    "publicKeySha256": "a5ccb6bd8a016c35707deaf9f3c0d2e9007563956b1ee3c9c49d37155a3c8780",
+    "positive": "Signed image verified with the selected key",
+    "negative": "Same-content unsigned image rejected for missing signature",
+    "guestEnforcement": "INCOMPLETE"
+  },
+  "node": {
+    "advertisedCpu": "EPYC9124",
+    "observedCpu": "EPYC7313P",
+    "system": "AS-1114S-WN10RT",
+    "motherboard": "H12SSW-NTR",
+    "bios": "2.3",
+    "biosDate": "2021-10-28",
+    "kernel": "6.12.0-211.61.1.el10_2.x86_64",
+    "bootMode": "legacy",
+    "savedSettings": {
+      "CPU/SMEE": {
+        "before": "Auto",
+        "after": "Enabled"
+      },
+      "CPU/SEV ASID Count": {
+        "before": "Auto",
+        "after": "509 ASIDs"
+      },
+      "CPU/SEV-ES ASID Space Limit Control": {
+        "before": "Auto",
+        "after": "Manual"
+      },
+      "CPU/SEV-ES ASID Space Limit": {
+        "before": 1,
+        "after": 100
+      },
+      "CPU/SVM Mode": {
+        "before": "Enabled",
+        "after": "Enabled"
+      },
+      "NB/IOMMU": {
+        "before": "Auto",
+        "after": "Enabled"
+      },
+      "NB/SEV-SNP Support": {
+        "before": "Disabled",
+        "after": "Enabled"
+      }
+    },
+    "savedValuesReadBack": true,
+    "snpHostResult": "FAIL",
+    "afterSettings": {
+      "exit": 1,
+      "devSevPresent": true,
+      "sevSnpParameter": "N",
+      "messages": [
+        "SEV-SNP: Memory for the RMP table has not been reserved by BIOS",
+        "ccp: SEV: INIT failed 0x13, rc -5",
+        "kvm_amd: SEV disabled (ASIDs100-509), SEV-ES disabled (ASIDs1-99)"
+      ],
+      "conclusion": "SNP host prerequisites failed; additional firmware investigation required"
+    },
+    "correctedGateLogSha256": "b94f049ff31df775837c3afd66400b79cd29ec887cc06cb4b509fe7a5b9b1d61",
+    "gateScriptSha256": "a7368b976dc41fe6c5d4abe10a372b1324981a3514c9b0e1874b8e56db4be7ae",
+    "bmc": "01.00.41",
+    "menuInspection": {
+      "windowUTC": {
+        "start": "2026-10-05T15:17:15Z",
+        "end": "2026-10-05T15:27:43Z"
+      },
+      "topLevelTabs": 7,
+      "advancedSubmenuRoots": 15,
+      "rmpCoverageControlExposed": false,
+      "settingsChanged": false,
+      "exit": "Discard Changes and Exit",
+      "bios": "2.3",
+      "bmc": "01.00.41",
+      "microcode": "A001143",
+      "pspBootloader": "0.13.0.67",
+      "abl": "10065011",
+      "limit": "Inspection of exposed menus with existing enabled controls; no attempt to unlock disabled menus or invoke destructive actions; vendor configuration export not performed.",
+      "transcriptSha256": "547743389157dea3352688e6df8c2b9158cbbbf28e42ab1ed15026cf2331e005"
+    },
+    "afterMenuInspection": {
+      "recordedAt": "2026-10-05T15:30:36.935819+00:00",
+      "exit": 1,
+      "scriptSha256": "a7368b976dc41fe6c5d4abe10a372b1324981a3514c9b0e1874b8e56db4be7ae",
+      "logSha256": "fbc030f14ff6ac9d7d676dbdd78b8482b913a26a5e5293dc3b512900a5bd4bf6",
+      "scope": "Read-only raw-host check after BIOS menu inspection; no firmware settings changed during inspection",
+      "result": "FAIL",
+      "sevSnpParameter": "N",
+      "rmpReserved": false,
+      "sevInitStatus": "0x13",
+      "returnedToProviderOS": true
+    }
+  },
+  "remaining": [
+    "No RMP coverage control exposed in the BIOS menu sweep. Provider-confirmed firmware/configuration resolution remains required; revalidate SNP after any change.",
+    "UEFI installation path and actual RHCOS SNP initialization are unverified.",
+    "Actual node boot, OpenShift/operator installation, Trustee reconciliation and all guest rungs are unverified.",
+    "First bastion predates latest cloud-init error-path repairs; a clean bootstrap remains required.",
+    "CVO must cryptographically verify retained release signatures.",
+    "Fresh-install evidence does not prove a customer-specific in-place upgrade or separate-cluster topology.",
+    "PXE publication and cleanup passed with SELinux Permissive; SELinux enforcing mode remains unverified."
+  ],
+  "primaryFirmwareSources": [
+    "https://docs.amd.com/v/u/en-US/58207-using-sev-with-amd-epyc-processors",
+    "https://www.supermicro.com/en/support/security_AMD-SB-3030",
+    "https://www.supermicro.com/en/support/resources/downloadcenter/firmware/AS-1114S-WN10RT/BIOS",
+    "https://www.supermicro.com/Bios/softfiles/30657/H12SSW-NTR_BIOS_3_6_release_notes.pdf",
+    "https://www.latitude.sh/docs/servers/remote-access"
+  ],
+  "pxePreparation": {
+    "result": "PASS",
+    "startedAt": "2026-10-05T15:15:18.929126+00:00",
+    "finishedAt": "2026-10-05T15:16:21.197935+00:00",
+    "scope": "Bastion installer artifact generation, HTTP serving, reuse and cleanup; no node boot or provider reinstall",
+    "initialFailure": {
+      "phase": "HTTP Range verification",
+      "status": 403,
+      "cause": "nginx could not traverse root-only /opt/install to reach the staged initrd"
+    },
+    "repair": {
+      "publicWebroot": "/var/www/coco-boot-artifacts",
+      "privateInstallerParent": "/opt/install",
+      "privateParentMode": "0700",
+      "sourceConfigMode": "0600",
+      "nginxWorkerReadCheck": "PASS"
+    },
+    "publicRange": {
+      "status": 206,
+      "contentRange": "bytes 0-1/117636700",
+      "bytesRead": 2
+    },
+    "guessableRoot": {
+      "status": 404
+    },
+    "unchangedArtifactReuse": true,
+    "cleanup": {
+      "result": "PASS",
+      "tokenEndpointUnreachable": true,
+      "bootConfigRemoved": true,
+      "currentAndLegacyWebrootsRemoved": true,
+      "port8080Listening": false
+    },
+    "selinuxMode": "Permissive",
+    "selinuxEnforcingValidation": "INCOMPLETE",
+    "actualNodeBoot": "INCOMPLETE",
+    "evidenceSha256": "aeda2138a97a3b96c7e43f9ce64831f6aef644ad352220309ca52e41bd87bff1",
+    "logsSha256": {
+      "pxe-legacy-stop.log": "01d01d3ee05b43e63efc21d3527e44a9be200ff2db87bf5837eeeff136429a5a",
+      "pxe-serve-fixed.log": "9305f45b06d8f3cda3a51390eff53e13d6117eaeb14ef6e1c3bbc5058d09c3e2",
+      "pxe-serve-reuse.log": "28f194b163106e26a1f8fbc530b47098e54909c76a54ace6cbfcff29bb154978",
+      "pxe-stop-fixed.log": "20d51ad555f3ea5485a4e3bf173ab1b94e44947da4637e385f205977596b6a73"
+    },
+    "sourceSha256": {
+      "ansible/group_vars/all.yml": "0f8bf7b0b736287e2d4c709a061cac2cb27aa90d88367cb4a113788ba2a40b56",
+      "ansible/roles/pxe_serve/tasks/main.yml": "2cf58db9ea3caa3a03301dc99a485a2fccea48bb0d1a7617f9cea7e240b3ff3c",
+      "ansible/roles/pxe_serve/tasks/prepare.yml": "6beea4e6b1139d5faa28b5ccd7d12c266452fc9c313d9e2b28ee4b79f5d6745c",
+      "scripts/serve-boot-artifacts.sh": "d74e9806ad83e5d6307f25c80f97056da2ac9eb3dae7135a9b862b3234c0d156"
+    }
+  }
+}

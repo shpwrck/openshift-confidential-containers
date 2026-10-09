@@ -1,17 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Trustee / KBS: cert-manager issuers + certs, KBS ConfigMaps (kbs-config.toml with
-# vcek_sources=[{OfflineStore}]), resource/attestation Rego policies, KbsConfig CR
-# (kbsLocalCertCacheSpec for air-gap VCEK). Populate from onboarding guide Step 3 + Appendix A.
+# The Operator owns generated KbsConfig/ConfigMaps. Never apply the old 1.1
+# low-level templates over them. Use the bootstrap/configure entry point to wait
+# for migration and attach offline collateral, policies, references and resources.
 resources:
-  - issuers.yaml
-  - kbs-configmaps.yaml
-# kbsconfig.template.yaml is intentionally NOT listed (#75): it is a TEMPLATE, not an appliable
-# manifest — it declares `secretName: vcek-snp-0` and a literal `<HWID-LOWERCASE-128-HEX>`
-# mountPath that only scripts/apply-trustee.sh can fill in (the real secret name and the
-# lowercase 128-hex HWID are hardware-derived). Applying it verbatim yields a KBS stuck in
-# ContainerCreating on "secret vcek-snp-0 not found", which reads as an attestation failure and
-# wastes a long time. Use `make deploy-trustee` (apply-trustee.sh) instead.
-#
-# secret-stubs.example.yaml is intentionally NOT listed: it documents the out-of-band Secrets
-# (kbs-auth-public-key, attestation-cert, regcred, vcek-certs, sample). Never commit real keys.
+  - trusteeconfig.yaml

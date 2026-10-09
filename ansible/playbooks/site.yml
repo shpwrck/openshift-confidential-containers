@@ -1,39 +1,76 @@
 ---
-# site.yml — orchestrates the disconnected SNO air-gapped bring-up in PHASE ORDER, faithfully
-# reproducing docs/runbooks/disconnected-sno-bringup.md and scripts/*.sh.
-#
-# TF/Ansible boundary: Terraform OWNS the infrastructure (bastion, node, VLAN, firewall, netboot
-# OS=ipxe). Ansible OWNS the bastion host config + the OpenShift install. `make up` interleaves
-# the two (TF apply bastion -> ansible bastion prep -> TF apply node -> ansible discover+install).
-# This playbook covers ONLY the Ansible halves; run it after the matching TF apply (see Makefile
-# `up` target / ansible/README.md). Tags let you run a single phase: --tags egress,mirror etc.
-#
-# STOP for SEV-SNP BIOS happens between the bastion-prep phase and the install phase — there is a
-# hard pause printing the BIOS recipe. The node must have its SEV-SNP BIOS set (via Latitude IPMI)
-# before it netboots, so the install phase is gated behind that confirmation.
+# Prepare supplied private-network infrastructure, then explicitly install and verify.
+# Complete docs/amd-firmware-preflight.md before acknowledging the BIOS gate.
 
-# =====================================================================================
-# PHASE A — Bastion preparation (egress hardening -> tools -> mirror push -> dns/ntp).
-# Run AFTER `terraform apply` of the bastion module, BEFORE the node is provisioned.
-# =====================================================================================
-- name: "Phase A — bastion preparation (egress, tools, mirror, dns/ntp)"
-  hosts: bastions
-  gather_facts: true
+# Validate the controller's release inputs before any selected preparation/install writes.
+# Cleanup stays available even when the BOM is unresolved. Verify mode reads cluster state only.
+- name: Validate the selected release before preparation or installation
+  hosts: localhost
+  gather_facts: false
   vars_files:
     - ../group_vars/all.yml
-  # Gate the whole phase on the bastion's first-boot mirror bootstrap (#71). `terraform apply`
-  # returns as soon as Latitude reports the server `on`, but cloud-init still has to dnf-install
-  # packages, pull the ~GB mirror-registry tarball and install quay. mirror_tools consumes
-  # {{ mirror_ca_path }} and {{ mirror_password_path }}, which cloud-init writes at the very END
-  # of that chain, one line before it stamps MIRROR_READY. Prior cycles never hit this because
-  # they reused an already-bootstrapped bastion; it bites every from-zero rebuild.
-  # These are pre_tasks, not a role, so they run BEFORE bastion_egress — which otherwise fights
-  # cloud-init for the dnf lock and rewrites the default route while the tarball is still in flight.
+  tags: [bastion-prep, tools, mirror, dns, dns-ntp, isolation, render, pxe, drive, install, api-resolver]
+  tasks:
+    - name: Require the supported provider and private network
+      ansible.builtin.assert:
+        that:
+          - infra_provider == 'cherry'
+          - network_profile == 'private-vlan'
+        fail_msg: "Only supplied Cherry rigs on private-vlan are supported."
+
+    - name: Validate the effective Ansible release and profile inputs
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/verify-release.py"
+          - --manifest
+          - "{{ release_manifest_absolute }}"
+          - --tee
+          - "{{ tee }}"
+      environment:
+        OCP_VERSION: "{{ ocp_version }}"
+        OCP_RELEASE_IMAGE: "{{ ocp_release_image }}"
+        IMAGESET_CONFIG: "{{ imageset_config_absolute }}"
+      changed_when: false
+
+    - name: Require resolved catalog and artifact identities
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/verify-release.py"
+          - --manifest
+          - "{{ release_manifest_absolute }}"
+          - --tee
+          - "{{ tee }}"
+          - --require-resolved
+      environment:
+        OCP_VERSION: "{{ ocp_version }}"
+        OCP_RELEASE_IMAGE: "{{ ocp_release_image }}"
+        IMAGESET_CONFIG: "{{ imageset_config_absolute }}"
+      changed_when: false
+      when: (install_mode | default('fresh')) != 'verify'
+
+# =====================================================================================
+# PHASE A — Bastion preparation (tools -> mirror push -> dns/ntp).
+# Start with an allocated helper whose mirror bootstrap has completed.
+# =====================================================================================
+- name: "Phase A — bastion preparation (tools, mirror, dns/ntp)"
+  hosts: bastions
+  # A new server can be reported as running before SSH accepts connections.
+  # Automatic setup runs before pre_tasks, so gather only after the wait below.
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+  # Wait for SSH and the protected mirror readiness marker before using registry inputs.
   pre_tasks:
     - name: Wait for the bastion to accept SSH (fresh cloud-init boot)
       ansible.builtin.wait_for_connection:
         timeout: "{{ bastion_ssh_wait_timeout | default(900) }}"
-      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
+
+    - name: Gather bastion facts after SSH is ready
+      ansible.builtin.setup:
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
 
     - name: Wait for the first-boot mirror bootstrap to settle
       ansible.builtin.shell: |
@@ -43,12 +80,15 @@
         else echo PENDING; fi
       args:
         executable: /bin/bash
+      # Bootstrap protects /opt/mirror with mode 0700; the SSH login cannot
+      # distinguish an inaccessible READY marker from one that is absent.
+      become: true
       register: mirror_bootstrap_state
       changed_when: false
       retries: "{{ mirror_bootstrap_retries | default(160) }}"
       delay: "{{ mirror_bootstrap_delay | default(15) }}"
       until: mirror_bootstrap_state.stdout != 'PENDING'
-      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
 
     - name: Fail closed if the mirror bootstrap did not succeed
       ansible.builtin.assert:
@@ -60,51 +100,55 @@
           cloud-init does NOT re-run on its own — inspect /var/log/mirror-bootstrap.log on the
           bastion, then re-run /usr/local/bin/bootstrap-mirror.sh before retrying this phase.
         success_msg: "mirror bootstrap READY — safe to prep the bastion"
-      tags: [bastion-prep, egress, tools, mirror, dns, dns-ntp]
+      tags: [bastion-prep, tools, mirror, dns, dns-ntp]
   roles:
-    - role: bastion_egress   # fix #1 — drop v6 default, clamp MTU 1400 + SYN MSS 1360. FIRST.
-      tags: [egress, bastion-prep]
     - role: mirror_tools     # tools to /usr/local/bin, trust CA, nmstate, merged docker config
       tags: [tools, bastion-prep]
     - role: mirror_push      # fix #2 — oc-mirror v2 push with resume-on-retry
       tags: [mirror, bastion-prep]
     - role: dns_ntp          # fix #10 — cluster dnsmasq records + chrony allow
       tags: [dns, dns-ntp, bastion-prep]
+    - role: bastion_isolation
+      tags: [isolation, bastion-prep]
+      when: bastion_node_isolation_enabled | default(false) | bool
 
 # =====================================================================================
-# STOP-GATE — SEV-SNP BIOS. Set this via the Latitude browser IPMI/KVM on the NODE before it
-# netboots. (Hands-on; not automatable through the provider.) The install phase below assumes
-# this is done.
+# STOP-GATE — acknowledge evidence for this node before its destructive reinstall.
+# Firmware menu locations and security-fix versions depend on the board and BIOS.
 # =====================================================================================
-- name: "STOP — set the SEV-SNP BIOS on the node before continuing"
+- name: "STOP — verify AMD firmware and SNP prerequisites before continuing"
   hosts: localhost
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
   tags: [bios, install]
   tasks:
-    - name: Print the SEV-SNP BIOS recipe and pause
+    - name: Print the AMD firmware preflight requirements and pause
       ansible.builtin.pause:
         prompt: |
 
           ====================================================================
-          STOP — SET THE SEV-SNP BIOS ON THE NODE (Latitude IPMI/KVM -> AMI Aptio)
+          STOP — VERIFY THIS NODE'S AMD FIRMWARE AND SNP PREREQUISITES
           ====================================================================
-          This is the ONE hands-on hardware step. Apply BEFORE the node netboots:
+          Follow docs/amd-firmware-preflight.md before the node is reinstalled:
 
-            North Bridge -> SEV-SNP Support           = Enabled   (Auto = OFF — this is the gotcha)
-            CPU Config   -> SMEE                        = Enabled
-            CPU Config   -> SNP Memory (RMP Table) Coverage = Enabled
-            CPU Config   -> SEV-ES ASID Space Limit     = 100
-            CPU Config   -> SEV Control                 = Enabled
+            1. Match server ID, CPU, motherboard, BIOS and BMC to the actual node.
+            2. Verify saved firmware settings using this board's documentation.
+               Assess firmware security fixes separately from SNP functionality.
+            3. Verify UEFI boot mode and the intended UEFI installer boot path.
+            4. Pass scripts/host-snp-check.sh on this node after the saved settings
+               take effect; retain the command result and relevant kernel logs.
 
-          The misleading "IOMMU SNP feature not enabled" kernel message is caused by
-          SEV-SNP Support = Auto, NOT IOMMU — do not chase IOMMU.
+          An unloaded module, pending BIOS changes or CPU feature flags are not a pass.
+          Missing RMP controls and IOMMU errors require board-specific diagnosis.
+          Recheck after reprovisioning; do not assume firmware settings were preserved.
 
-          Re-provisioning resets BIOS to defaults — re-apply this recipe every time.
+          docs/amd-firmware-preflight.md records the tested H13 settings and their limits.
+          It is not a universal H12/H13 BIOS configuration or a current security baseline.
 
-          Type SNP-SET (then ENTER) once the BIOS is set and saved, to continue to
-          discover + install. (Ctrl-C then 'A' to abort.)
+          Type SNP-SET (then ENTER) only after completing this preflight, to continue
+          to discover + install. This token records acknowledgement, not an automated
+          hardware or attestation result. (Ctrl-C then 'A' to abort.)
       register: bios_ack
       when: not (skip_bios_pause | default(false) | bool)
 
@@ -119,26 +163,26 @@
       ansible.builtin.assert:
         that: (bios_ack.user_input | default('') | trim) == 'SNP-SET'
         fail_msg: >-
-          SEV-SNP BIOS gate NOT acknowledged — refusing to netboot. This is what a
+          AMD firmware preflight NOT acknowledged — refusing to netboot. This is what a
           non-interactive run looks like (ansible.builtin.pause cannot prompt without a TTY);
-          re-run this phase from a real terminal. If the BIOS is already set and rung-0 has
-          been verified green on this node, pass -e skip_bios_pause=true to proceed
-          deliberately. Never skip it merely to get past this message: the install will
-          succeed and the cluster will not be confidential.
-        success_msg: "SEV-SNP BIOS acknowledged — proceeding to discover + install"
+          re-run this phase from a real terminal. Only after recording this node's identity,
+          firmware security review, UEFI boot path and successful raw-host SNP check under
+          docs/amd-firmware-preflight.md may an unattended rerun deliberately use
+          -e skip_bios_pause=true. The bypass does not perform or establish these checks.
+        success_msg: "AMD firmware preflight acknowledged — proceeding to discover + install"
       when: not (skip_bios_pause | default(false) | bool)
 
 # =====================================================================================
-# PHASE B — Discover node MACs from the Latitude API (fix #4). Run AFTER `terraform apply`
-# of the node module (the server must exist). Rewrites group_vars/discovered.yml.
+# PHASE B — Verify allocated Cherry identity and NICs through pinned SSH.
+# Save only current MAC bindings in external state.
 # =====================================================================================
-- name: "Phase B — discover node interface MACs (Latitude API)"
+- name: "Phase B — discover Cherry node interface MACs"
   ansible.builtin.import_playbook: discover.yml
   tags: [discover, install]
 
 # =====================================================================================
 # PHASE C — Render configs -> serve boot artifacts -> reinstall+wait. Runs on the bastion.
-# discovered.yml (from Phase B) overrides the machines list, so parent_mac is now populated.
+# Validated MAC bindings from Phase B fill missing MACs in the current machine inputs.
 # =====================================================================================
 - name: "Phase C — render configs, serve boot artifacts, drive the install"
   hosts: bastions
@@ -146,11 +190,26 @@
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
-    # Load the discovered MACs if discover.yml has run (optional so syntax-check/dry runs work).
-    - name: Load discovered MACs (overrides the machines list)
-      ansible.builtin.include_vars: "{{ playbook_dir }}/../group_vars/discovered.yml"
-      when: (playbook_dir ~ '/../group_vars/discovered.yml') is exists
-      tags: [render, install, always]
+    # Run on the controller, where COCO_STATE_DIR and discovery evidence live.
+    # A separate output variable also supports `-e machines=...`: Ansible extra
+    # vars cannot be overridden by set_fact, and current install inputs must win.
+    - name: Validate cached identities and merge MACs into current machine inputs
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/discover-node-macs.py"
+          - merge
+        stdin: "{{ {'machines': machines} | to_json }}"
+      delegate_to: localhost
+      become: false
+      register: discovery_merge
+      changed_when: false
+      tags: [render, install]
+
+    - name: Use the validated machine inputs for rendering
+      ansible.builtin.set_fact:
+        discovery_machines: "{{ discovery_merge.stdout | from_json }}"
+      tags: [render, install]
   roles:
     - role: render_configs   # fix #3 — install-config + agent-config (additionalNTPSources in agent)
       tags: [render, install]

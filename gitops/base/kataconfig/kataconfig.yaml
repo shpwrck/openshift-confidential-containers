@@ -1,33 +1,13 @@
----
-# KataConfig — installs the kata runtime + the Confidential Containers (CoCo) variant.
-#
-# OSC 1.12 on bare-metal SEV-SNP host path (NOT peer-pods):
-#   - enablePeerPods: false  -> bare-metal Kata; the RHCOS worker kernel is the SNP
-#     hypervisor host (design §2). Peer-pods would attest a cloud CVM guest instead.
-#   - CoCo / TEE is enabled via the feature gate below. OSC 1.12 gates the confidential
-#     runtime behind `confidentialCompute` (a.k.a. CoCo feature gate). The TEE *type*
-#     (SEV-SNP) is auto-detected from the NFD label
-#     `feature.node.kubernetes.io/cpu-cpuid.SEV_SNP=true` (Gate 2) — do NOT hardcode it.
-#
-# Outcome (Gate 3) — the operator creates the Confidential Containers RuntimeClass:
-#   - `kata-cc`  : on SNP its handler resolves to `kata-snp` (would be `kata-tdx`
-#                  on Intel TDX). Workloads use runtimeClassName: kata-cc.
-# Some OSC releases/environments may also create plain `kata`; the install gate only requires
-# the confidential runtime because that is what the workload uses.
+# Bare-metal confidential containers. The selected overlay scopes eligible workers.
+# Feature gates must reconcile before this CR; rollout can reboot selected nodes.
+# RuntimeClass handler must be checked against the selected TEE profile.
 apiVersion: kataconfiguration.openshift.io/v1
 kind: KataConfig
 metadata:
   name: cluster-kataconfig
 spec:
   enablePeerPods: false
-  # CoCo is NOT a KataConfig field in OSC 1.12 — the CRD has NO `enableConfidentialCompute`
-  # (verified 2026-06-28 against the OSC 1.12.1 CRD: `oc explain kataconfig.spec` shows only
-  # enablePeerPods / checkNodeEligibility / kataConfigPoolSelector / logLevel). Confidential
-  # Containers is enabled by the `osc-feature-gates` ConfigMap (confidential: "true") in the
-  # operator namespace — see feature-gates.yaml, which MUST be applied BEFORE this CR. The
-  # operator then auto-detects the TEE (SEV-SNP) and creates the `kata-cc` RuntimeClass
-  # (handler kata-qemu-snp). Ref: docs.redhat.com OSC 1.12 "Deploying Confidential Containers".
-  checkNodeEligibility: false   # required field. false = install on all worker nodes (the SNO node).
+  checkNodeEligibility: false   # profile selectors still determine target nodes; validate actual eligibility separately.
   # kataConfigPoolSelector: # FILL (per overlay): on multi-node, pin Kata to the SNP worker
   #   matchLabels:          #   pool so plain workers are untouched. SNO collapses to one node,
   #     node-role.kubernetes.io/kata-oc: ""  #   so the base leaves this unset.
