@@ -1,5 +1,7 @@
 # Cherry validation
 
+> **Trial retired:** the two Cherry servers, task project and SSH key were deleted after validation. [The retirement receipt](validation/cherry-retirement-2026-10-08.json) records verified absence and protected backups. A future run needs fresh allocations and inputs.
+
 The October 8, 2026 trial completed a healthy OCP 4.20.39 cluster, all five selected Operators and a converged OSC 1.13.1 `kata-snp` runtime with Trustee 1.2.1. The Ubuntu, Agent-live, installed RHCOS and post-Kata SNP gates passed. Offline guest attestation and all five individual CPU allow/deny/recovery proofs passed. Private service checks and installed-node, ordinary-pod and confidential-guest isolation passed. All five also passed one fresh combined proof run; a clean CoCo software reset/reinstall also passed with fresh combined proofs. Automatic retirement is disabled at the owner's direction; the overall $150 cap remains. See the [platform receipt](validation/cherry-qualification-2026-10-08.json), [CPU proof record](validation/cherry-cpu-proofs-2026-10-08.json) and [current trial runbook](runbooks/cherry-qualification/README.md).
 
 ## What is being tested

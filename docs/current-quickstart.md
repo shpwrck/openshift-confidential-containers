@@ -1,5 +1,7 @@
 # Current quickstart
 
+> **Trial retired:** the two Cherry servers, task project and SSH key were deleted after validation. [The retirement receipt](validation/cherry-retirement-2026-10-08.json) records verified absence and protected backups. A future run needs fresh allocations and inputs.
+
 This checkout targets **OCP 4.20.39, OSC 1.13, and Trustee 1.2** for CPU confidential containers. The OCP payload and authenticated catalog, bundle, related-image, and helper-image identities are verified. See [the resolution procedure and evidence](release-resolution.md) before refreshing these pins. The Cherry run completed a healthy platform and all five individual CPU allow/deny/recovery proofs. All five also passed a fresh combined proof run; a clean CoCo software reset/reinstall also passed with fresh combined proofs. Historical OCP 4.20.18 results do not validate this release set.
 
 The authoritative inputs are [the release manifest](../install/release-manifest.json). Start here instead of copying commands with older pins from historical runbooks. See [Cherry validation](cherry-validation.md) for the active supplied-rig path and [Latitude validation](latitude-validation.md) for the retired environment and acceptance criteria.

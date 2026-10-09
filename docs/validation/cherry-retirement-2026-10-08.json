@@ -1,0 +1,55 @@
+{
+  "status": "RETIRED_AND_ABSENCE_RECHECKED",
+  "verifiedAt": "2026-10-09T00:36:17.703727+00:00",
+  "resources": {
+    "node": {
+      "resource": "/v1/servers/1025551",
+      "status": "ABSENT",
+      "httpStatus": 404
+    },
+    "helper": {
+      "resource": "/v1/servers/1025601",
+      "status": "ABSENT",
+      "httpStatus": 404
+    },
+    "sshKey": {
+      "resource": "/v1/ssh-keys/19635",
+      "status": "ABSENT",
+      "httpStatus": 404
+    },
+    "project": {
+      "resource": "/v1/projects/295533",
+      "status": "ABSENT",
+      "httpStatus": 404
+    }
+  },
+  "preexistingProjectPreserved": 295530,
+  "limits": [
+    "Provider absence rechecked; no final invoice or physical-drive sanitization claim.",
+    "No new cloud infrastructure was created during wrap-up."
+  ],
+  "backup": {
+    "status": "LOCAL_RECOVERY_ARCHIVE_VERIFIED",
+    "bytes": 1462862564,
+    "files": 612,
+    "archiveSHA256": "737f005aa23ae5a46901e4ccf0d0a4381d59477d7525fa668e8a654a7358a1df",
+    "location": "Protected controller trial/pre-retirement/helper-recovery.tar.gz; never publish the archive",
+    "scope": [
+      "Sensitive configuration and original control artifacts; protect outside repository.",
+      "Registry image cache, Quay database, Python environment and full etcd restore are not backed up by this archive.",
+      "Historical boot inputs and certificate identities must not be blindly reused for a different cluster or hardware identity."
+    ]
+  },
+  "validation": {
+    "softwareRepeat": "PASS",
+    "receipt": "cherry-software-repeat-2026-10-08.json",
+    "preTeardownSource": "a9cecee8134fac091a76e48688b64cba235e624b",
+    "preTeardownCI": {
+      "Linux": "PASS",
+      "macOS": "PASS",
+      "Terraform": "PASS"
+    },
+    "finalLiveSnapshot": "All 34 core Operators stable; node Ready; master MCP converged; no proof lock or workload Pods"
+  },
+  "pullRequest": "https://github.com/shpwrck/openshift-confidential-containers/pull/86"
+}

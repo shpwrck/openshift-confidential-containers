@@ -6,8 +6,8 @@
   "region": "US-Chicago",
   "advertisedPlan": "amd-epyc-9124p",
   "prebuiltId": 850,
-  "state": "allocated",
-  "status": "healthy-platform-and-clean-coco-software-repeat-passed",
+  "state": "retired",
+  "status": "retired-after-validated-amd-lab-workflow",
   "rate": {
     "currency": "EUR",
     "unit": "Hours",
@@ -204,5 +204,10 @@
     "receipt": "cherry-software-repeat-2026-10-08.json",
     "sourceRevision": "d5915bda5c9e43edfcfa599b837a22a9cbe30e1f",
     "finishedAt": "2026-10-08T21:00:26.803604+00:00"
+  },
+  "retirement": {
+    "status": "RETIRED_AND_ABSENCE_RECHECKED",
+    "verifiedAt": "2026-10-09T00:36:17.703727+00:00",
+    "receipt": "cherry-retirement-2026-10-08.json"
   }
 }
