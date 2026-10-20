@@ -1,7 +1,7 @@
 {{ '#' }} Rendered by Ansible role render_configs — {{ network_profile | default('private-vlan') }} SNO install-config.
 {{ '#' }} pullSecret = MIRROR credentials only; this does not enforce egress isolation. additionalNTPSources
 {{ '#' }} is deliberately ABSENT here — the installer drops it from install-config; it lives in
-{{ '#' }} agent-config.yaml instead (hard-won fix #3).
+{{ '#' }} agent-config.yaml instead.
 apiVersion: v1
 baseDomain: {{ base_domain }}
 metadata:

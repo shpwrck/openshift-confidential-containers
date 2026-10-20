@@ -8,7 +8,7 @@ resources:
   - assign-coco-mem.yaml    # apply after the Gatekeeper CR is up (Assign CRD must exist)
   - constraint-coco-mem.yaml  # ConstraintTemplate+Constraint; apply Constraint AFTER its template CRD exists
 
-# ArgoCD sync-wave (#75): this tree mixes operator Subscriptions with CRs of the CRDs those
+# ArgoCD sync-wave: this tree mixes operator Subscriptions with CRs of the CRDs those
 # operators install, so an unordered apply races and fails "no matches for kind". Waves order
 # the ARGOCD path (the customer env). The rig's `oc apply -k` has no such ordering — use
 # scripts/apply-sno.sh, which stages the applies explicitly.

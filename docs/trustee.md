@@ -7,7 +7,7 @@ resource policy; they do not validate the customer topology.
 
 Use Python 3.12+, the development requirements, `jq` and the selected `oc`.
 Set `TRUSTEE_CONTEXT` explicitly. Keep credentials and generated files in external
-`COCO_STATE_DIR` storage as described in the [quickstart](current-quickstart.md).
+`COCO_STATE_DIR` storage as described in the [quickstart](quickstart.md).
 
 ## Bootstrap
 

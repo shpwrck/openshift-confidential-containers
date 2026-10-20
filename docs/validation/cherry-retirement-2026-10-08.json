@@ -51,5 +51,5 @@
     },
     "finalLiveSnapshot": "All 34 core Operators stable; node Ready; master MCP converged; no proof lock or workload Pods"
   },
-  "pullRequest": "https://github.com/shpwrck/openshift-confidential-containers/pull/86"
+  "recordedInCommit": "c6996612e698024af20daa685cf254407338e486"
 }

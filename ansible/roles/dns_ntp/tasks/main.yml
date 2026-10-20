@@ -1,5 +1,5 @@
 ---
-# dns_ntp — hard-won fix #10.
+# dns_ntp
 # cloud-init only lays the mirror.rig.local base dnsmasq record + chrony allow. This role adds
 # the CLUSTER dnsmasq records (api / api-int host-records + address=/apps.../ wildcard -> node)
 # and re-asserts the chrony allow {{ vlan_cidr }} + local stratum 10, all idempotent.
@@ -32,7 +32,7 @@
     mode: "0755"
   become: true
 
-- name: Make dnsmasq survive the VLAN race across reboots (#79)
+- name: Make dnsmasq survive the VLAN race across reboots
   ansible.builtin.template:
     src: dnsmasq-vlan-race.conf.j2
     dest: /etc/systemd/system/dnsmasq.service.d/10-wait-for-vlan.conf
@@ -68,7 +68,7 @@
 # dnsmasq can be active-but-wrong, and the failure mode is silent (the node simply cannot resolve
 # the mirror and the install parks). Assert on a REAL query against the address the NODE will
 # use, so a broken resolver fails Phase A loudly instead of surfacing an hour later as a
-# mysterious "Cannot access Rendezvous Host" (#79 -> #78 symptom chain). getent would
+# mysterious "Cannot access Rendezvous Host". getent would
 # accept the bastion's /etc/hosts entries without sending any DNS query.
 - name: Query the mirror and cluster names through the VLAN DNS server
   ansible.builtin.command:

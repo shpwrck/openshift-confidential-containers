@@ -19,7 +19,7 @@ oc() {
 }
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
-MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam: ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 MIRROR_PULL_SECRET="${MIRROR_PULL_SECRET:-}"   # dockerconfigjson pull secret (the customer model): when set, the
                                                # mirror credential is read FROM it and MIRROR_USERNAME/PASSWORD are ignored.
 MIRROR_USERNAME="${MIRROR_USERNAME:-init}"
@@ -206,17 +206,16 @@ need python3
 [[ "$TEE" == snp ]] || die "this workflow targets AMD SEV-SNP; set TEE=snp"
 load_release_defaults
 require_resolved_release
-# Secret-bearing files must never be staged under the Homelab checkout, even if ignored.
+# Secret-bearing files must never be staged under the checkout, even if ignored.
 for private_input in "$MIRROR_PULL_SECRET" "$MIRROR_PASSWORD_FILE" "$RUNG_ENCRYPTED_KEY_FILE"; do
 	[[ -z "$private_input" ]] && continue
 	python3 - "$REPO_ROOT" "$private_input" <<'CHECK'
 import pathlib, sys
 repo, path = (str(pathlib.Path(p).resolve()).casefold() for p in sys.argv[1:])
 # A checkout may live at /opt/coco-repo while protected state lives beside it.
-# Its parent is not necessarily Homelab. Check the actual forbidden roots,
-# after resolving symlinks, rather than rejecting every sibling of the repo.
-if any(path == root or path.startswith(root + "/") for root in (repo, "/mnt/c/homelab")):
-    raise SystemExit("ERROR: secret-bearing inputs must be outside Homelab and the repository")
+# Check the resolved checkout root rather than rejecting every sibling of the repo.
+if path == repo or path.startswith(repo + "/"):
+    raise SystemExit("ERROR: secret-bearing inputs must be outside the repository")
 CHECK
 done
 if [[ -n "$RUNG_ENCRYPTED_KEY_FILE" ]]; then

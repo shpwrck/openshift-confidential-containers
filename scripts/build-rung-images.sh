@@ -8,7 +8,7 @@ source "${REPO_ROOT}/scripts/lib/compat.sh"
 # shellcheck source=scripts/lib/release.sh
 source "${REPO_ROOT}/scripts/lib/release.sh"
 UBI_IMAGE="$(release_value images.ubiMinimal.ref)"
-MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam: ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 # Default to the MIRROR copy: this repo targets an air-gapped bastion where the public
 # registry.access.redhat.com is unreachable. The mirror preserves the manifest digest; override
 # SOURCE_IMAGE for a connected build.
@@ -36,15 +36,15 @@ VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="${VERIFY_RUNG_ARTIFACTS_AFTER_BUILD:-1}"
 VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT="${VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-encrypted-key-wrap.sh}"
 VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT="${VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-signed-signature.sh}"
 
-# Keys and registry credentials must never be generated in the checkout or Homelab.
+# Keys and registry credentials must never be generated in the checkout.
 python3 - "$REPO_ROOT" "$ARTIFACT_DIR" "$COSIGN_KEY" "$RUNG_ENCRYPTED_KEY_FILE" <<'PYGUARD'
 from pathlib import Path
 import sys
 repo = Path(sys.argv[1]).resolve()
 for item in sys.argv[2:]:
     path = Path(item).expanduser().resolve()
-    if path == repo or repo in path.parents or str(path).lower() == '/mnt/c/homelab' or str(path).lower().startswith('/mnt/c/homelab/'):
-        sys.exit('ERROR: image artifacts and keys must be outside the repository and Homelab; use COCO_STATE_DIR')
+    if path == repo or repo in path.parents:
+        sys.exit('ERROR: image artifacts and keys must be outside the repository; use COCO_STATE_DIR')
 PYGUARD
 umask 077
 

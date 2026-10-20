@@ -104,9 +104,9 @@
   roles:
     - role: mirror_tools     # tools to /usr/local/bin, trust CA, nmstate, merged docker config
       tags: [tools, bastion-prep]
-    - role: mirror_push      # fix #2 — oc-mirror v2 push with resume-on-retry
+    - role: mirror_push  # oc-mirror v2 push with resume-on-retry
       tags: [mirror, bastion-prep]
-    - role: dns_ntp          # fix #10 — cluster dnsmasq records + chrony allow
+    - role: dns_ntp  # cluster dnsmasq records + chrony allow
       tags: [dns, dns-ntp, bastion-prep]
     - role: bastion_isolation
       tags: [isolation, bastion-prep]
@@ -152,7 +152,7 @@
       register: bios_ack
       when: not (skip_bios_pause | default(false) | bool)
 
-    # The pause above is NOT a gate on its own (#72): ansible.builtin.pause WARNS AND FALLS
+    # The pause above is NOT a gate on its own: ansible.builtin.pause WARNS AND FALLS
     # THROUGH when stdin is not a TTY, so under nohup / CI / `make bringup-sno-airgapped | tee`
     # — i.e. the "hands-off" path this repo advertises — the one hands-on hardware step was
     # silently skipped and the node netbooted with SEV-SNP off. Nothing downstream noticed: no
@@ -211,18 +211,18 @@
         discovery_machines: "{{ discovery_merge.stdout | from_json }}"
       tags: [render, install]
   roles:
-    - role: render_configs   # fix #3 — install-config + agent-config (additionalNTPSources in agent)
+    - role: render_configs  # install-config + agent-config (additionalNTPSources in agent)
       tags: [render, install]
-    - role: pxe_serve        # fix #8 — build pxe-files, tokenized nginx serve, verify 206
+    - role: pxe_serve  # build pxe-files, tokenized nginx serve, verify 206
       tags: [pxe, install]
-    - role: install_drive    # fix #5 + #9 — reinstall netboot, wait-for, poll clusterversion
+    - role: install_drive  # reinstall netboot, wait-for, poll clusterversion
       tags: [drive, install]
     - role: public_console   # default-on public sslip.io console edge; opt out with public_console_enabled=false
       tags: [console, public-console, install]
 
 # =====================================================================================
 # After install: close the boot-artifact endpoint (run explicitly: --tags pxe-stop, or the
-# Makefile `pxe-stop` target). The secret-bearing initrd must not stay public (issue #33).
+# Makefile `pxe-stop` target). The secret-bearing initrd must not stay public.
 # =====================================================================================
 - name: "Post-install — close the boot-artifact endpoint"
   hosts: bastions

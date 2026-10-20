@@ -37,7 +37,7 @@ case "$WORKSPACE" in file://*) RES_ROOT="${WORKSPACE#file://}" ;; *) echo "ERROR
 WORKSPACE="file://$RES_ROOT"   # oc-mirror v2 workspace (cache + generated resources)
 MODE="${1:-mirror}"
 
-# Endpoint seam (#26): ARTIFACTORY_REGISTRY is canonical; MIRROR_REGISTRY is the legacy alias.
+# Endpoint seam: ARTIFACTORY_REGISTRY is canonical; MIRROR_REGISTRY is the legacy alias.
 MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-}}"
 
 

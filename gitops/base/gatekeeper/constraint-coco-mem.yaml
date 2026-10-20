@@ -24,7 +24,7 @@ spec:
       rego: |
         package cococontainermemory
 
-        # Every violation rule is gated on is_coco_pod (#70). Gatekeeper's `match` block cannot key
+        # Every violation rule is gated on is_coco_pod. Gatekeeper's `match` block cannot key
         # on spec.runtimeClassName, but REGO CAN — so the validating half no longer depends on the
         # coco-resource-default label being present, and an unlabeled kata-cc pod can no longer
         # dodge the memory floor (the label remains the only handle the Assign MUTATION has).
@@ -111,7 +111,7 @@ spec:
   parameters:
     overheadMi: 256
 ---
-# Second constraint, SAME template, deliberately WITHOUT a labelSelector (#70).
+# Second constraint, SAME template, deliberately WITHOUT a labelSelector.
 #
 # The constraint above only sees pods carrying coco-resource-default, which is the label the Assign
 # MUTATION needs. A hand-authored kata-cc pod that omits it bypasses the memory floor entirely and

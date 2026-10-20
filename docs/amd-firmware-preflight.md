@@ -43,8 +43,7 @@ BIOS version numbers cannot be compared across different boards.
 
 A prior H12SSW-NTR/EPYC 7313P allocation failed to reserve RMP despite saved SNP
 settings. A later H13 with old firmware initialized SNP but remained below published
-security fixes. [Dated host evidence](validation/latitude-mia2-host-2026-10-05.json)
-retains that distinction. Have the provider update or replace unsuitable hardware
+security fixes (H13SST-G, BIOS 1.6, on an earlier provider in October 2026). Have the provider update or replace unsuitable hardware
 using its supported recovery procedure; this repository does not flash firmware.
 
 ## Prove the running host

@@ -1,5 +1,5 @@
 ---
-# install_drive — hard-won fixes #5 + #9.
+# install_drive
 # 1. (Re)trigger the netboot via the Cherry rebuild API (NOT a power reboot — a reboot boots
 #    the stale local disk; you must reinstall to re-netboot).
 # 2. openshift-install agent wait-for install-complete; a bootstrap-complete timeout is NON-fatal.
@@ -53,7 +53,7 @@
     label: "{{ install_machine.name }} ({{ install_machine.server_id }})"
   when: install_trigger_reinstall | bool
 
-# --- /etc/hosts so oc works on the bastion (fix #9: bastion uses public DNS, not its dnsmasq) ---
+# --- /etc/hosts so oc works on the bastion (bastion uses public DNS, not its dnsmasq) ---
 - name: Add cluster API/console names to the bastion /etc/hosts
   ansible.builtin.blockinfile:
     path: /etc/hosts
@@ -70,7 +70,7 @@
   when: install_mode == 'fresh'
   tags: [api-resolver]
 
-# --- Wait for install-complete (bootstrap-complete timeout is NON-fatal, fix #9) ---
+# --- Wait for install-complete (bootstrap-complete timeout is NON-fatal) ---
 - name: Wait for the Agent-based SNO install to complete (timeout non-fatal)
   ansible.builtin.command:
     cmd: openshift-install --dir {{ cluster_assets_dir }} agent wait-for install-complete
@@ -92,8 +92,8 @@
          else 'Installer wait did not complete — checking actual cluster release and health next.' }}
   when: install_mode == 'fresh'
 
-# --- Poll clusterversion until Available=True / Progressing=False (fix #9) ---
-# argv form on purpose (#63): the jsonpath template contains a SPACE, and `cmd:` shlex-splits
+# --- Poll clusterversion until Available=True / Progressing=False ---
+# argv form on purpose: the jsonpath template contains a SPACE, and `cmd:` shlex-splits
 # an unquoted string — oc then gets `jsonpath={range` (unterminated template) and fails rc=1
 # with empty stdout on EVERY retry, reporting a healthy install as a poll failure. argv keeps
 # the template one argument. Proven on the rig 2026-07-22 (quoted form -> rc=0, conditions listed).
@@ -147,12 +147,12 @@
   ansible.builtin.debug:
     msg: "Cluster is healthy on the requested OCP {{ ocp_version }} payload {{ ocp_release_image.split('@')[-1] }}."
 
-# oc-mirror EMITS these (IDMS/ITMS + the mirrored CatalogSource) but nothing ever applied them
-# (#74): mirror.sh only prints them and mirror_push only `ls`es them. Without them the cluster has
+# oc-mirror EMITS these (IDMS/ITMS + the mirrored CatalogSource) but nothing ever applied them:
+# mirror.sh only prints them and mirror_push only `ls`es them. Without them the cluster has
 # no mirrored catalog, so `make install-coco-operators` spins its full 1800s timeout and then
 # reports "CatalogSource ... not READY (state=missing)", and operand pulls target unreachable
 # public registries. Apply them here, once the cluster is actually up.
-- name: Find the oc-mirror cluster-resources directory (#74)
+- name: Find the oc-mirror cluster-resources directory
   ansible.builtin.find:
     paths: "{{ mirror_workspace }}/working-dir/cluster-resources"
     patterns:

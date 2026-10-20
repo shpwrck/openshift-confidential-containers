@@ -21,7 +21,7 @@ startup errors never count as passes.
 
 ## Prepare the environment
 
-Complete [Trustee setup](trustee-current.md) and [guest registry setup](guest-images.md).
+Complete [Trustee setup](trustee.md) and [guest registry setup](guest-images.md).
 Choose the actual contexts and namespaces. The runner requires:
 
 - `COCO_DISPOSABLE_TEST=1` and explicit worker/Trustee contexts.
@@ -72,7 +72,7 @@ make verify-rung-signed-signature
 
 Use the selected `ARTIFACT_DIR` if overridden. The env file supplies immutable
 signed/unsigned images, public key and manifest. Configure the guest image policy
-and signing-key resources through [Trustee setup](trustee-current.md), then run
+and signing-key resources through [Trustee setup](trustee.md), then run
 `make test-rung WHICH=rung-signed`.
 
 Both repositories must be readable and covered by the **same signing-key requirement**.

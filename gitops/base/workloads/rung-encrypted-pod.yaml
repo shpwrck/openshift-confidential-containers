@@ -10,7 +10,7 @@ metadata:
   name: rung-encrypted
   namespace: default
   labels:
-    # Gatekeeper CoCo memory-guard selector (#68) — see gitops/base/workloads/rung-a-secret-pod.yaml.
+    # Gatekeeper CoCo memory-guard selector — see gitops/base/workloads/rung-a-secret-pod.yaml.
     # Required on every kata-cc pod or the memory floor does not apply to it.
     coco-resource-default: "true"
   annotations:

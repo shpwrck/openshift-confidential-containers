@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unit tests for the CoCoContainerMemory rego — issue #70.
+# Unit tests for the CoCoContainerMemory rego.
 #
 # WHY THIS EXISTS: the `coco-container-memory-floor-unlabeled` constraint has NO labelSelector, so
 # its rego is evaluated against EVERY pod creation in scope. A mistake there is not a missed
@@ -66,7 +66,7 @@ CASES = [
     ("ordinary pod: no runtimeClass, no label, no annotation", pod(limit="64Mi"), False),
     ("ordinary pod: nothing set at all", pod(), False),
     ("non-CoCo runtimeClass is ignored", pod(rc="myruntime", limit="64Mi"), False),
-    # The #70 bypass this constraint exists to close.
+    # The bypass this constraint exists to close.
     ("UNLABELED kata-cc, undersized limit", pod(rc="kata-cc", annots=DM, limit="512Mi"), True),
     ("UNLABELED kata-cc, correct limit", pod(rc="kata-cc", annots=DM, limit="2304Mi"), False),
     # Legacy label-only path must keep working (the Assign mutation still relies on the label).
@@ -99,4 +99,4 @@ for desc, inp, want_deny in CASES:
 sys.exit(failed)
 PY
 
-echo "coco-mem rego tests OK (#70)"
+echo "coco-mem rego tests OK"

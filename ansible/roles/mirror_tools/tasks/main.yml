@@ -1,6 +1,6 @@
 ---
 # Installs pinned oc/kubectl/openshift-install/oc-mirror to /usr/local/bin, trusts the mirror CA,
-# installs nmstate (needed before `agent create pxe-files`, fix #7), and builds the merged
+# installs nmstate (needed before `agent create pxe-files`), and builds the merged
 # /root/.docker/config.json (RH pull-secret + mirror creds). Idempotent.
 
 # A fresh bastion may receive the supplied pull secret directly from an external controller
@@ -52,7 +52,7 @@
       become: true
       changed_when: false
 
-# --- nmstate (fix #7): required before `openshift-install agent create pxe-files` ---
+# --- nmstate: required before `openshift-install agent create pxe-files` ---
 - name: Ensure nmstate is installed (needed for agent create pxe-files)
   ansible.builtin.package:
     name: nmstate

@@ -15,13 +15,13 @@ PODMAN_AUTHFILE="${PODMAN_AUTHFILE:-/var/lib/kubelet/config.json}"
 KDS_HOST="${KDS_HOST:-kdsintf.amd.com}"
 PROCESSOR="${PROCESSOR:-}"
 die() { echo "ERROR: $*" >&2; exit 2; }
-# Reports and publication state must stay outside this shared Homelab checkout.
+# Reports and publication state must stay outside this checkout.
 OUT="$(python3 - "$OUT" "$REPO_ROOT" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1]).expanduser().resolve(); repo=Path(sys.argv[2]).resolve()
-if p == repo or repo in p.parents or str(p).lower() == '/mnt/c/homelab' or str(p).lower().startswith('/mnt/c/homelab/'):
-    raise SystemExit('ERROR: VCEK_BUNDLE must be outside the checkout and /mnt/c/Homelab')
+if p == repo or repo in p.parents:
+    raise SystemExit('ERROR: VCEK_BUNDLE must be outside the checkout')
 print(p)
 PY
 )"
