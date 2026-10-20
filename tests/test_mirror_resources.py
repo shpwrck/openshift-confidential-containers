@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-SCRIPT = Path(__file__).with_name("normalize-mirror-resources.py")
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/normalize-mirror-resources.py"
 SPEC = importlib.util.spec_from_file_location("mirror_resources", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)

@@ -12,7 +12,7 @@ from test_trustee_config import CPU
 
 ROOT = Path(__file__).resolve().parents[1]
 # No command below can reach a real cluster. The release boundary is separately
-# tested by test-release.py; this isolated fixture exercises post-gate behavior.
+# tested by test_release_manifest.py; this isolated fixture exercises post-gate behavior.
 MOCK_OC = '''#!/usr/bin/env python3
 import base64, json, os, pathlib, sys
 args = sys.argv[1:]

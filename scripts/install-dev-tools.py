@@ -13,16 +13,20 @@ from urllib.request import urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 from proof_core import state_directory
 
-# SHA-256 asset identities from the publishers' GitHub releases, checked 2026-10-05.
+# SHA-256 asset identities from the publishers' GitHub releases, checked 2026-10-20.
+OPA_VERSION = "1.21.3"
+KUSTOMIZE_VERSION = "5.8.3"
 OPA = {
-    "linux_amd64": ("opa_linux_amd64_static", "66fa66f3b730b2fb086003863428b382b2898d343adb4b5dfab5598b4d739eed"),
-    "darwin_amd64": ("opa_darwin_amd64", "1122d0176604cd055d8f88b2b4d4019c469891d37e0bce9c1306e001e656ad2e"),
-    "darwin_arm64": ("opa_darwin_arm64_static", "0134337a52bd255a2202eac4b4b85348fd4a77f94e8dab8ebcb2399ec018f4c0"),
+    "linux_amd64": ("opa_linux_amd64_static", "add7c9dcf56e1ce1538426a6ee595ea1cc7ee830bbedd4c23219825b02b19a79"),
+    "linux_arm64": ("opa_linux_arm64_static", "45c8734a41436bf21d82453c2aa7b0ad47c150e8237310b8665e8b5a01305fc0"),
+    "darwin_amd64": ("opa_darwin_amd64", "3ef285e7e2cf57e6cb05142c33002e07d6791580a4ac14bac0a4e0880dfe073d"),
+    "darwin_arm64": ("opa_darwin_arm64_static", "ee96aae344f45dd63044be2bedcba6391ca78402760b204a747331f421db74fe"),
 }
 KUSTOMIZE = {
-    "linux_amd64": "ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8",
-    "darwin_amd64": "4a0dff80c5644df6bc8f51b342842969004cb6ba5f94dddaabbea7483493273d",
-    "darwin_arm64": "073e9d16d5a235e2ff83e62d6b76edb5d962adbc33be1e4860c4b3f1f39b33b9",
+    "linux_amd64": "cb9e31198d3f63b44848bd0afc4c8efc56e6cfef9c93a4a39a211940e6decd61",
+    "linux_arm64": "9867b76482cfc6d25b546abc1d2b5a32bd137505aba640649b4b378f64f6d68f",
+    "darwin_amd64": "d08fb85846c3d977f0e2a66e7ff45f1b5264c294685e5e726e1a8bdfe0da8dee",
+    "darwin_arm64": "4cbb08e209d8fff47cd60bfb6407daaf5ee699f9b9295849a1065024fac2d1ef",
 }
 
 
@@ -42,8 +46,8 @@ def main():
     dest = state_directory(root) / "dev-bin"
     dest.mkdir(exist_ok=True)
     asset, sha = OPA[key]
-    opa = download("https://github.com/open-policy-agent/opa/releases/download/v1.9.0/" + asset, sha)
-    archive = download(f"https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.7.1/kustomize_v5.7.1_{key}.tar.gz", KUSTOMIZE[key])
+    opa = download(f"https://github.com/open-policy-agent/opa/releases/download/v{OPA_VERSION}/" + asset, sha)
+    archive = download(f"https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v{KUSTOMIZE_VERSION}/kustomize_v{KUSTOMIZE_VERSION}_{key}.tar.gz", KUSTOMIZE[key])
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
         member = tar.getmember("kustomize")
         if not member.isfile():
@@ -55,7 +59,7 @@ def main():
             stream.write(data)
         os.chmod(path, 0o755)
         os.replace(path, dest / name)
-    print(f"Installed OPA 1.9.0 and Kustomize 5.7.1. Add {dest} to PATH.")
+    print(f"Installed OPA {OPA_VERSION} and Kustomize {KUSTOMIZE_VERSION}. Add {dest} to PATH.")
 
 
 if __name__ == "__main__":

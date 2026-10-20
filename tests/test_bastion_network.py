@@ -264,6 +264,8 @@ print('success')
         self.addCleanup(webroot.chmod, 0o755)
         for mode, expected in ((0o755, 0), (0o000, 2)):
             with self.subTest(parent_mode=oct(mode)):
+                if mode == 0o000 and os.geteuid() == 0:
+                    self.skipTest('root reads a mode-000 directory; run as a normal user')
                 sentinel.unlink(missing_ok=True)
                 webroot.chmod(mode)
                 self.run_play({'vars': {'boot_artifacts_webroot': str(webroot), 'pxe_url_prefix': 'fixture-token'},
