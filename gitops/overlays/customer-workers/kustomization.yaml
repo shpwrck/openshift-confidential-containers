@@ -1,9 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # Customer multi-node confidential workers (air-gapped). Driven by mirrored ArgoCD.
+# Same components as the staged installer (scripts/apply-sno.sh) applies for the
+# customer topology; Trustee is removed below because it runs in its own cluster.
 resources:
   - ../../base/operators
+  - ../../base/nfd          # emits the SNP node label the KataConfig pool selector needs
   - ../../base/kataconfig
+  - ../../base/gatekeeper   # CoCo memory guard the shipped workloads rely on
   - ../../base/workloads
 # Hardware discovery alone does not authorize a runtime rollout to every SNP node.
 patches:

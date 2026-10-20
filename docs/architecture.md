@@ -1,11 +1,42 @@
 # Architecture
 
-A confidential pod is a VM on the AMD worker. Kata's guest attestation agent
-sends evidence to Trustee; approved evidence permits resource release to the
-confidential data hub. The guest uses those resources for registry access and
-the protected workload.
+A confidential pod runs inside its own small VM on the AMD node. SEV-SNP encrypts
+that VM's memory so the host cannot read it. The VM starts without its secrets:
+it has to prove to Trustee what hardware and software it is running before
+Trustee releases anything, including the credentials it needs to pull its own
+container image. This page shows that exchange, the components involved, the
+test rig the automation builds, and the order of the install and the tests.
 
-## Components
+## How a confidential pod gets its secrets
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant K as Kubelet and CRI-O on the AMD node
+  participant G as Pod VM (guest components)
+  participant KBS as Trustee Key Broker Service
+  participant AS as Attestation service and RVPS
+  participant R as Mirror registry
+  K->>G: Start the pod as an SEV-SNP VM (runtime class kata-cc)
+  Note over K,G: The initdata hash is measured into the VM's launch report
+  G->>KBS: Request a resource, such as registry credentials
+  KBS-->>G: Challenge
+  G->>KBS: Hardware-signed attestation report and initdata
+  KBS->>AS: Verify the evidence
+  Note over AS: Chip certificate (VCEK) from the offline cache,<br/>launch measurement and firmware levels from RVPS,<br/>initdata hash from the CPU policy
+  AS-->>KBS: Signed result of each check
+  Note over KBS: The resource policy decides and denies by default
+  KBS-->>G: Resource, encrypted to a key only this VM holds
+  G->>R: Pull the workload image inside the VM
+  Note over G,R: Credentials, mirror remaps, registry CA and<br/>signature policy all come from Trustee
+  G->>G: Start the workload container
+```
+
+Each [capability test](capability-status.md) changes one input in this exchange
+(the initdata, a reference value, the image signature or the VCEK) and checks
+that Trustee then refuses the request.
+
+## Components and trust domains
 
 ```mermaid
 flowchart LR
@@ -25,10 +56,49 @@ flowchart LR
   KBS -->|Policy-approved resources| Agents
 ```
 
-`WORKER_CONTEXT` and `TRUSTEE_CONTEXT` select the domains independently.
-`kata-cc` must resolve to handler `kata-snp`. The completed trial instead used
-an explicitly selected co-located Permissive HTTP lab; the separate customer
-boundary in this diagram remains unvalidated.
+`WORKER_CONTEXT` and `TRUSTEE_CONTEXT` select the two domains independently, so
+the scripts can drive a worker cluster and a separate Trustee cluster. `kata-cc`
+must resolve to the `kata-snp` handler. The completed trial used a simpler
+layout: Trustee on the same cluster in the Permissive profile over HTTP. The
+separate customer boundary drawn here has not been validated on hardware; see
+[validation results](validation.md).
+
+## The test rig
+
+```mermaid
+flowchart LR
+  subgraph Internet
+    RH[Red Hat and Quay registries]
+    API[Cherry Servers API]
+  end
+  Controller[Controller: Ansible and scripts]
+  subgraph Helper[Helper server]
+    Reg[Mirror registry :8443]
+    DNSNTP[DNS and NTP]
+    Boot[Boot files :8080 behind a random URL token]
+    Console[Optional console proxy]
+  end
+  subgraph Node[AMD SEV-SNP node]
+    OCP[Single-node OpenShift with Kata, OSC and Trustee]
+  end
+  Controller -->|SSH| Helper
+  Controller -->|Discovery and reinstall| API
+  Controller -.->|SSH to the original OS, before install only| Node
+  Helper -->|oc-mirror pulls release content| RH
+  Node -.->|First iPXE boot only, public IP| Boot
+  OCP -->|Private VLAN: images, DNS, time| Reg
+  OCP --> DNSNTP
+  Console -->|Private VLAN| OCP
+```
+
+The node and the helper share a private VLAN (`192.168.66.0/24` by default, set in
+[`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml)). The node's bonded
+network has no public address once OpenShift is installed: it reaches only the
+helper's registry, DNS and NTP. The helper keeps its public interface to stage
+content and serve the first boot, but does not forward traffic from the VLAN to
+the internet. The cluster API is only on the VLAN, so the controller reaches it
+through the helper (for example, an SSH tunnel). The optional `gitops/base/airgap-egress`
+MachineConfig adds a host egress filter on the node.
 
 ## Install sequence
 
@@ -48,12 +118,12 @@ flowchart TD
   Proof --> Repeat[Remove and reinstall CoCo software; repeat proofs]
 ```
 
-Fresh install replaces the node OS; it is not a customer upgrade. Successful
-installation closes temporary boot publication. The trial used public iPXE before
-the private Agent OS. Its clean repeat retained OpenShift and physical allocations.
-See [the results and limits](validation/README.md).
+A fresh install replaces the node's operating system; it is not an upgrade path
+for an existing cluster. A successful install also stops serving the boot files.
+The [quickstart](quickstart.md) walks through these steps, and
+[the Ansible README](../ansible/README.md) shows which playbook phase does what.
 
-## Proof sequence
+## Capability test sequence
 
 ```mermaid
 flowchart TD
@@ -65,7 +135,9 @@ flowchart TD
   Recover --> Cleanup[Verify cleanup, release lock and record result]
 ```
 
-Unrelated errors or skipped controls cannot pass. Failed restoration retains
-recovery material and the lock for inspection. [Capability tests](capability-status.md)
-define each negative control; [customer planning](design/customer-scoping.md)
-covers deployment and upgrade decisions.
+A denial only counts when Trustee logs a matching, specific refusal for that VM.
+Unrelated errors (DNS, registry, a missing image) and skipped steps cannot pass.
+If restoring the configuration fails, the runner keeps the recovery files and the
+lock so you can inspect them. [Capability tests](capability-status.md) define each
+negative control; [customer planning](customer-planning.md) covers deployment and
+upgrade decisions.

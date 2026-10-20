@@ -43,9 +43,9 @@ class CherryProviderTests(unittest.TestCase):
             with self.subTest(counts=(len(machines), len(servers), len(observations))), self.assertRaises(ValueError):
                 discovery.capture_cherry(machines, servers, observations)
 
-    def test_removed_provider_is_not_normalized_as_cherry(self):
+    def test_unsupported_provider_is_not_normalized_as_cherry(self):
         with self.assertRaisesRegex(ValueError, 'Unsupported provider'):
-            server_identity('latitude', self.server, '123', 'allocated-node', '456')
+            server_identity('other-provider', self.server, '123', 'allocated-node', '456')
 
     def test_identity_output_excludes_credentials(self):
         result = server_identity("cherry", self.server, "123", "allocated-node", "456")

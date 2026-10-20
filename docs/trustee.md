@@ -2,12 +2,33 @@
 
 This workflow uses Trustee 1.2.1 on AMD SEV-SNP. Customer defaults are
 **Restricted, HTTPS and a separate trust domain**. The completed
-[lab proofs](validation/README.md) used co-located Permissive HTTP with enforcing
+[lab proofs](validation.md) used co-located Permissive HTTP with enforcing
 resource policy; they do not validate the customer topology.
 
 Use Python 3.12+, the development requirements, `jq` and the selected `oc`.
 Set `TRUSTEE_CONTEXT` explicitly. Keep credentials and generated files in external
 `COCO_STATE_DIR` storage as described in the [quickstart](quickstart.md).
+
+Trustee decides whether a confidential VM gets its secrets (see
+[the attestation sequence](architecture.md#how-a-confidential-pod-gets-its-secrets)).
+Setting it up means giving it three things: the AMD certificate for each approved
+node (VCEK), the measurements a correct VM must report (reference values), and the
+policies that say which resources a passing VM may receive. The steps below run
+in this order:
+
+```mermaid
+flowchart TD
+  Op[Install the Trustee Operator] --> TLS[Provision HTTPS and token-signing Secrets]
+  TLS --> VCEK[Collect each node's VCEK into a Secret]
+  VCEK --> Boot[apply-trustee.sh bootstrap]
+  Boot --> Init[Freeze the workload initdata]
+  Init --> Refs[gen-rvps-veritas.sh: launch measurement]
+  Refs --> TCB[Add firmware levels and review the reference set]
+  TCB --> CPU[render-measurement-policy.sh: bind the initdata hash]
+  CPU --> Res[Write a default-deny resource policy and resource Secrets]
+  Res --> Conf[apply-trustee.sh configure]
+  Conf --> Tests[Capability tests]
+```
 
 ## Bootstrap
 
@@ -36,7 +57,7 @@ ownership, and selects SNP `OfflineStore`. It retains the cache path and existin
 resource entries but attaches no new customer workload resources.
 
 An independent older KbsConfig stops the workflow. This is a fresh bootstrap,
-not an automatic Trustee 1.1 upgrade. See [customer planning](design/customer-scoping.md)
+not an automatic Trustee 1.1 upgrade. See [customer planning](customer-planning.md)
 before migrating an existing deployment. Do not delete configuration or set migration
 markers by hand to bypass that check.
 

@@ -146,7 +146,7 @@ class BecomeModule(BecomeBase):
         return 'env COCO_FIXTURE_PRIVILEGED=1 ' + self._build_success_command(cmd, shell)
 ''')
         self.env['ANSIBLE_BECOME_PLUGINS'] = str(plugins)
-        # Simulate the rocky login's file-test behavior: inaccessible root-owned
+        # Simulate the helper login's file-test behavior: inaccessible root-owned
         # markers look absent. A fixture become plugin grants access without sudo
         # or user/permission changes on the test machine. The marker script itself
         # is unchanged and reads real files once that privilege is present.
@@ -264,6 +264,8 @@ print('success')
         self.addCleanup(webroot.chmod, 0o755)
         for mode, expected in ((0o755, 0), (0o000, 2)):
             with self.subTest(parent_mode=oct(mode)):
+                if mode == 0o000 and os.geteuid() == 0:
+                    self.skipTest('root reads a mode-000 directory; run as a normal user')
                 sentinel.unlink(missing_ok=True)
                 webroot.chmod(mode)
                 self.run_play({'vars': {'boot_artifacts_webroot': str(webroot), 'pxe_url_prefix': 'fixture-token'},

@@ -3,7 +3,7 @@
 This guide takes two freshly allocated servers to a single-node OpenShift
 cluster with the confidential-container Operators installed. It is written for
 a **disposable test rig**: step 5 erases the AMD node's disk. For an existing
-customer cluster, read [customer planning](design/customer-scoping.md) instead.
+customer cluster, read [customer planning](customer-planning.md) instead.
 
 The steps are:
 

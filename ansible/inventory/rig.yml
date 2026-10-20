@@ -1,5 +1,5 @@
 ---
-# Supplied Cherry helper; node discovery and rebuild use the controller.
+# The helper server you were given. Node discovery and reinstall run from the controller.
 all:
   children:
     bastions:
@@ -7,5 +7,5 @@ all:
         bastion:
           # Supply the allocated helper address and verified SSH inputs externally.
           ansible_host: "{{ bastion_ansible_host | default('REPLACE_WITH_BASTION_PUBLIC_IPV4') }}"
-          ansible_user: "{{ bastion_ssh_user | default('rocky') }}"
+          ansible_user: "{{ bastion_ssh_user }}"  # required; set it in your rig file
           ansible_ssh_private_key_file: "{{ bastion_ssh_key | default(omit) }}"

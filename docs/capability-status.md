@@ -1,7 +1,7 @@
 # Capability tests
 
 All five AMD CPU tests passed allow/deny/recovery on October 8, 2026, and again
-after a clean CoCo software reinstall. See [validation results](validation/README.md)
+after a clean CoCo software reinstall. See [validation results](validation.md)
 for exact versions, receipts and limits. The rig is retired; new runs need new inputs.
 
 ## What each test proves

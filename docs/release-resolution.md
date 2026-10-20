@@ -2,9 +2,15 @@
 
 The [manifest](../install/release-manifest.json) is the source of selected versions
 and immutable identities. The checked-in set was resolved with authenticated
-registry access on **October 5, 2026**; [the receipt](validation/release-resolution-2026-10-05.json)
-records the catalog, five bundles, related/helper images and dry-run outcome.
-The later [hardware results](validation/README.md) are separate evidence.
+registry access on **October 5, 2026**; its record of the catalog, five bundles,
+related and helper images and the dry-run outcome is kept in Git history
+(see [raw records](validation.md#raw-records)). The later
+[hardware results](validation.md) are separate evidence.
+
+As of October 20, 2026, OSC 1.13.1 and Trustee 1.2.1 are still the newest
+releases. OpenShift 4.20 has newer z-streams (4.20.42 at that date), but moving
+to one means repeating this process and the hardware tests, so the validated
+4.20.39 stays selected until someone does both.
 
 Use this process when changing versions. Resolution reads registries and writes
 protected external evidence; it does not approve an upgrade or validate hardware.

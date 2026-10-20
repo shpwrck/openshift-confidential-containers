@@ -2,7 +2,7 @@
 
 The repository has validated a disposable AMD SNO lab. Customer installation,
 Restricted HTTPS in a separate Trustee trust domain, HA/DR and upgrades need
-validation in the customer's environment. [The trial record](../validation/README.md)
+validation in the customer's environment. [The trial record](validation.md)
 states the demonstrated scope.
 
 ## Confirm before deployment
@@ -16,8 +16,8 @@ states the demonstrated scope.
 | Workloads | Protected resource paths, complete agent policy, approved image digests/signatures, memory requirements and negative controls |
 | Operations | Owners, monitoring, reference/certificate expiry, backups, tested recovery and rollback checkpoints |
 
-Start with [firmware preflight](../amd-firmware-preflight.md),
-[Trustee setup](../trustee.md) and [guest registry access](../guest-images.md).
+Start with [firmware preflight](amd-firmware-preflight.md),
+[Trustee setup](trustee.md) and [guest registry access](guest-images.md).
 BIOS automation depends on the actual vendor/BMC; manual setup was required in the lab.
 
 ## Existing OSC 1.12 / Trustee 1.1 deployments
@@ -49,5 +49,5 @@ cannot replace live support guidance.
 
 Reassess references and rerun affected proofs after firmware, guest artifacts,
 initdata, agent/resource/image policies or signing identities change. Track expiry
-and refresh before it blocks attestation. [Maintenance](../maintenance.md) maps the
+and refresh before it blocks attestation. [Maintenance](maintenance.md) maps the
 repository helpers; it does not provide a production backup or rotation service.

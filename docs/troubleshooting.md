@@ -60,6 +60,16 @@ Replace namespace/deployment names with the actual objects. Then locate the stag
 | Registry authentication fails | Credential entry keyed to the remapped host, repository existence/access and refreshed resource mounts. |
 | Manifests/blobs arrive but workload fails | Unpack/memory, effective runtime timeouts and guest policy. Keep default administrator exec denied. |
 
+To check what a pod was actually given, decode its initdata annotation (gzip,
+then base64). It holds the KBS URL, certificates, resource URIs and agent policy,
+never secret values:
+
+```bash
+oc --context="$WORKER_CONTEXT" -n coco-validation get pod '<pod>' \
+  -o jsonpath='{.metadata.annotations.io\.katacontainers\.config\.hypervisor\.cc_init_data}' \
+  | base64 -d | gunzip
+```
+
 See [guest registry access](guest-images.md) for CA chains and Artifactory. Discover
 host configuration from the installed runtime before reading logs; do not edit
 MCO-managed files to make an experiment pass. The narrow

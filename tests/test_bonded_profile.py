@@ -112,8 +112,8 @@ class BondedProfileTests(unittest.TestCase):
         self.machine["bond_ports"][1]["mac"] = self.machine["parent_mac"]
         self.fixture.run_render({"machines": [self.machine]}, success=False)
 
-    def test_removed_network_profile_cannot_create_installer_files(self):
-        self.fixture.run_render({"machines": [self.machine], "network_profile": "public-routed-lab"}, success=False)
+    def test_unsupported_network_profile_cannot_create_installer_files(self):
+        self.fixture.run_render({"machines": [self.machine], "network_profile": "unsupported-profile"}, success=False)
 
     def test_separate_public_nic_with_bond_rejects(self):
         self.machine["external_if"] = "eth2"

@@ -30,7 +30,7 @@
     "reason": "Authenticated raw-manifest SHA-256 and immutable reread verified 2026-10-05; AMD64 child rendered and opm validated.",
     "sourceRef": "registry.redhat.io/redhat/redhat-operator-index:v4.20",
     "amd64Ref": "registry.redhat.io/redhat/redhat-operator-index@sha256:5c23da6450c3c0fbc90dcbc2f465104b447fea3382c24d9b3387ef4170c5d089",
-    "evidence": "docs/validation/release-resolution-2026-10-05.json"
+    "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json"
   },
   "operators": {
     "osc": {
@@ -54,7 +54,7 @@
         "registry.redhat.io/openshift-sandboxed-containers/osc-storage-helper@sha256:c65fb8f12888705d4989d6b8f0e4e3f144224b43f72b609d5f496e77b3b73917"
       ],
       "dependencyCSVs": [],
-      "evidence": "docs/validation/release-resolution-2026-10-05.json"
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json"
     },
     "trustee": {
       "package": "trustee-operator",
@@ -70,7 +70,7 @@
         "registry.redhat.io/build-of-trustee/trustee-rhel9@sha256:85312d29d6ea7b96396b567c96893ae2527d83b9fc7a459044ba610c98593fae"
       ],
       "dependencyCSVs": [],
-      "evidence": "docs/validation/release-resolution-2026-10-05.json"
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json"
     },
     "nfd": {
       "package": "nfd",
@@ -86,7 +86,7 @@
         "registry.redhat.io/openshift4/ose-node-feature-discovery-rhel9@sha256:93419edbdf47716d02894f3add1e54ecc8a2489918d30596fbf66ed900114f84"
       ],
       "dependencyCSVs": [],
-      "evidence": "docs/validation/release-resolution-2026-10-05.json"
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json"
     },
     "certManager": {
       "package": "openshift-cert-manager-operator",
@@ -105,7 +105,7 @@
         "registry.redhat.io/cert-manager/jetstack-cert-manager-rhel9@sha256:b3305a06bff4a344ba1b19c8142d7e605fc723841981c97aab2310ff8a82c66d"
       ],
       "dependencyCSVs": [],
-      "evidence": "docs/validation/release-resolution-2026-10-05.json"
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json"
     },
     "gatekeeper": {
       "package": "gatekeeper-operator-product",
@@ -121,7 +121,7 @@
         "registry.redhat.io/gatekeeper/gatekeeper-rhel9@sha256:21108b429068a3b7d07623bec45de3be42ecfec8e0223b115d6b76a604bab2be"
       ],
       "dependencyCSVs": [],
-      "evidence": "docs/validation/release-resolution-2026-10-05.json"
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json"
     }
   },
   "images": {
@@ -130,7 +130,7 @@
       "tag": "0.5.1",
       "resolution": "verified",
       "reason": "Authenticated raw-manifest SHA-256, immutable reread and Linux/AMD64 image config verified 2026-10-05. Hardware/runtime compatibility remains unvalidated.",
-      "evidence": "docs/validation/release-resolution-2026-10-05.json",
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json",
       "compatibilityValidated": false,
       "sourceRef": "quay.io/openshift_sandboxed_containers/coco-tools@sha256:3d8227aedb4423ecc6d6e868a43d38ab8ed7fb9683cbb1b9a1d2bee6d1994667",
       "amd64Ref": "quay.io/openshift_sandboxed_containers/coco-tools@sha256:ad6e652427ca263faf7e1ab089871c35bf62f8822b817db6ffc5a19d2acfbefb"
@@ -143,7 +143,7 @@
       "release": "1790754119",
       "architecture": "amd64",
       "compatibilityValidated": false,
-      "evidence": "docs/validation/release-resolution-2026-10-05.json",
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json",
       "sourceRef": "registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e",
       "amd64Ref": "registry.access.redhat.com/ubi9/ubi-minimal@sha256:eba570d04193d1523a8576b1c0ff00e681c9edb1a41d4742559b6e3ff457601e"
     },
@@ -154,7 +154,7 @@
       "sourceRef": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9:1.13.1",
       "amd64Ref": "registry.redhat.io/openshift-sandboxed-containers/osc-must-gather-rhel9@sha256:391d1f6f951475721b9bd58c0b7476e33824e2061dc5bc46a1ff285525f9e204",
       "compatibilityValidated": false,
-      "evidence": "docs/validation/release-resolution-2026-10-05.json",
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json",
       "imageVersionLabel": "1.13"
     },
     "trusteeMustGather": {
@@ -164,7 +164,7 @@
       "sourceRef": "registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9:1.2",
       "amd64Ref": "registry.redhat.io/build-of-trustee/trustee-must-gather-rhel9@sha256:fd6bc82026c741e0e95f92cdbc22b18e2adfe77a13f344138e614385efe603cf",
       "compatibilityValidated": false,
-      "evidence": "docs/validation/release-resolution-2026-10-05.json",
+      "evidence": "62d59de:docs/validation/release-resolution-2026-10-05.json",
       "imageVersionLabel": "1.2.0"
     }
   },

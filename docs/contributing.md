@@ -17,12 +17,27 @@ make lint
 
 Install ShellCheck separately through your operating system's package manager.
 `make install-dev-tools` fetches checksum-verified OPA/Kustomize. `make lint` runs
-shell, policy, manifest, documentation-link and offline regression checks.
+shell, policy, manifest, documentation-link and offline regression checks; the
+[tests README](../tests/README.md) explains what the unit tests cover.
 Local checks do not validate firmware or attestation.
 
 For documentation-only edits, run `python3 scripts/check-doc-links.py` and
 `git diff --check`. Keep commands aligned with `make help`, link to shared
 instructions rather than copying them, and retain the date/scope of validation claims.
+If you change a Mermaid diagram, `python3 scripts/check-mermaid.py` renders every
+diagram (it needs Node.js 22+; set `PUPPETEER_EXECUTABLE_PATH` to use an installed
+Chrome or Chromium).
+
+## Continuous integration
+
+`.github/workflows/scripts-ci.yml` runs `scripts/lint.sh` on every pull request and
+push to `main`: on Linux with Python 3.12 and 3.14, and on macOS with Python 3.12
+(macOS checks the portable workstation scripts under Bash 3.2). A separate job
+renders every Mermaid diagram. Dependabot proposes monthly updates for the pinned
+GitHub Actions and Python development requirements; the OPA and Kustomize pins in
+`scripts/install-dev-tools.py` and the product pins in the
+[release manifest](../install/release-manifest.json) are updated by hand (see
+[release resolution](release-resolution.md)).
 
 ## Where commands run
 

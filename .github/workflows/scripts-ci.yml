@@ -6,18 +6,33 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   validation:
+    # Python 3.12 is the oldest supported controller; 3.14 is the newest that
+    # the pinned ansible-core supports. macOS checks the portable workstation scripts.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: ubuntu-latest
+            python: '3.14'
+          - os: macos-latest
+            python: '3.12'
+    name: validation (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
         with:
-          python-version: '3.12'
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - name: Install Python and shell dependencies
@@ -31,8 +46,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          while IFS= read -r file; do /bin/bash -n "$file"; done < <(find scripts -type f -name '*.sh')
+          while IFS= read -r file; do /bin/bash -n "$file"; done < <(find scripts tests -type f -name '*.sh')
           /bin/bash -n ansible/up.sh
       - name: Run required offline checks
         shell: bash
         run: bash scripts/lint.sh
+  diagrams:
+    # GitHub renders Mermaid blocks in Markdown; a syntax error shows as a broken diagram.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Render every Mermaid diagram
+        run: python3 scripts/check-mermaid.py

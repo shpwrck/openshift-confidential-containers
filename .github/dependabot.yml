@@ -1,0 +1,19 @@
+# Monthly update PRs for the CI actions and the pinned Python development tools.
+# Product versions live in install/release-manifest.json and change only through
+# docs/release-resolution.md, so they are not managed here.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      dev-tools:
+        patterns: ["*"]

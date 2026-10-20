@@ -1,6 +1,6 @@
 # Cherry Servers setup
 
-The [October 8 trial](validation/README.md) ran on Cherry Servers. This guide
+The [October 8 trial](validation.md) ran on Cherry Servers. This guide
 lists what you need from Cherry and where to find each value. Allocating the
 servers is a manual step in the Cherry portal; the repository automates
 everything after the helper is running.
