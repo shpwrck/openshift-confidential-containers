@@ -4,12 +4,12 @@ kind: Kustomization
 # Subscriptions point `source` at the oc-mirror CatalogSource in openshift-marketplace; see
 # README.md. Populate from onboarding guide Gates 2-4 + Step 3.
 resources:
-  - operatorhub-disable-defaults.yaml   # disconnected: kill broken default catalogs (#57), else OLM can't resolve any sub
+  - operatorhub-disable-defaults.yaml   # disconnected: kill broken default catalogs, else OLM can't resolve any sub
   - namespaces.yaml
   - operatorgroups.yaml
   - subscriptions.yaml
 
-# ArgoCD sync-wave (#75): this tree mixes operator Subscriptions with CRs of the CRDs those
+# ArgoCD sync-wave: this tree mixes operator Subscriptions with CRs of the CRDs those
 # operators install, so an unordered apply races and fails "no matches for kind". Waves order
 # the ARGOCD path (the customer env). The rig's `oc apply -k` has no such ordering — use
 # scripts/apply-sno.sh, which stages the applies explicitly.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Endpoint-parameterization gate — epic #26 keystone (issue #34).
+# Endpoint-parameterization gate
 #
 # Asserts the mirror/registry endpoint is reached ONLY through the ARTIFACTORY_REGISTRY seam
 # (legacy alias MIRROR_REGISTRY), so a single variable switches every endpoint. No code path may
@@ -12,7 +12,7 @@
 # allowed construct excuses ONLY its own occurrence. (A line-oriented `grep -v` would let a same-line
 # comment or a legit `:-` default whitelist an unrelated hardcode on the same physical line.)
 #
-# Portable on purpose (bash 3.2 / BSD userland — see epic #25): no mapfile, no `xargs -r`; sed -E,
+# Portable on purpose (bash 3.2 / BSD userland): no mapfile, no `xargs -r`; sed -E,
 # grep -E, and [[:space:]] are BSD-safe.
 set -euo pipefail
 
@@ -53,7 +53,7 @@ for f in ${surface}; do
 done
 
 if [ "${violations}" -ne 0 ]; then
-	echo "endpoint-parameterization gate FAILED (#34): route the endpoint through ARTIFACTORY_REGISTRY (legacy MIRROR_REGISTRY), not the literal host." >&2
+	echo "endpoint-parameterization gate FAILED: route the endpoint through ARTIFACTORY_REGISTRY (legacy MIRROR_REGISTRY), not the literal host." >&2
 	exit 1
 fi
-echo "endpoint-parameterization gate OK (#34)"
+echo "endpoint-parameterization gate OK"

@@ -8,7 +8,7 @@ source "${REPO_ROOT}/scripts/lib/compat.sh"
 # shellcheck source=scripts/lib/release.sh
 source "${REPO_ROOT}/scripts/lib/release.sh"
 UBI_IMAGE="$(release_value images.ubiMinimal.ref)"
-MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam: ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 # Default to the MIRROR copy: this repo targets an air-gapped bastion where the public
 # registry.access.redhat.com is unreachable. The mirror preserves the manifest digest; override
 # SOURCE_IMAGE for a connected build.

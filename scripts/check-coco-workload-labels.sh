@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CoCo workload-label gate — issue #68.
+# CoCo workload-label gate.
 #
 # Asserts every CoCo pod manifest in the shipped surface carries the
 # `coco-resource-default: "true"` label. That label is the SELECTOR both halves of the
@@ -26,7 +26,7 @@
 # Soundness: comments are MASKED before matching, so prose like `# runtimeClassName: kata-cc`
 # (which appears in several explanatory headers) never trips the gate.
 #
-# Portable on purpose (bash 3.2 / BSD userland — see epic #25): POSIX awk only, no gawk
+# Portable on purpose (bash 3.2 / BSD userland): POSIX awk only, no gawk
 # extensions (no gensub/asort), no mapfile, no `xargs -r`.
 set -euo pipefail
 
@@ -36,7 +36,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 surface="$(find gitops docs -type f \
 	\( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null || true)"
 
-[ -n "${surface}" ] || { echo "coco workload-label gate OK (#68) — no manifests found"; exit 0; }
+[ -n "${surface}" ] || { echo "coco workload-label gate OK — no manifests found"; exit 0; }
 
 # shellcheck disable=SC2086 # word-splitting the newline-separated file list is intended
 if awk '
@@ -73,8 +73,8 @@ FNR == 1 { if (NR > 1) flush(); curfile = FILENAME }
 }
 END { flush(); exit bad }
 ' ${surface}; then
-	echo "coco workload-label gate OK (#68)"
+	echo "coco workload-label gate OK"
 else
-	echo "coco workload-label gate FAILED (#68): add 'coco-resource-default: \"true\"' to that pod's metadata.labels (pod template, for a controller), or the Gatekeeper memory floor silently does not apply to it." >&2
+	echo "coco workload-label gate FAILED: add 'coco-resource-default: \"true\"' to that pod's metadata.labels (pod template, for a controller), or the Gatekeeper memory floor silently does not apply to it." >&2
 	exit 1
 fi

@@ -10,7 +10,7 @@
 # NODE_FEATURE_DISCOVERY_IMAGE — a registry.redhat.io/openshift4 DIGEST that the digest-based IDMS
 # redirects to the mirror, and that default always matches the mirrored operator version. A
 # hardcoded digest silently drifts per z-stream: if it isn't the exact one oc-mirror mirrored,
-# nfd-worker goes ImagePullBackOff -> no SEV-SNP label -> KataConfig never installs (see #58).
+# nfd-worker goes ImagePullBackOff -> no SEV-SNP label -> KataConfig never installs.
 apiVersion: nfd.openshift.io/v1
 kind: NodeFeatureDiscovery
 metadata:

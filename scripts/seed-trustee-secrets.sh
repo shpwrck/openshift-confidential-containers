@@ -19,7 +19,7 @@ oc() {
 }
 HWID="${HWID:-}"
 HWIDS="${HWIDS:-}"
-MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam (#26): ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
+MIRROR_REGISTRY="${ARTIFACTORY_REGISTRY:-${MIRROR_REGISTRY:-mirror.rig.local:8443}}"  # endpoint seam: ARTIFACTORY_REGISTRY canonical, MIRROR_REGISTRY legacy alias
 MIRROR_PULL_SECRET="${MIRROR_PULL_SECRET:-}"   # dockerconfigjson pull secret (the customer model): when set, the
                                                # mirror credential is read FROM it and MIRROR_USERNAME/PASSWORD are ignored.
 MIRROR_USERNAME="${MIRROR_USERNAME:-init}"

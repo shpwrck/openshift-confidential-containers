@@ -14,7 +14,7 @@ raw_node_ssh_key: ""
 private_link_probe_timeout: 3
 
 # wait-for install-complete timeout (minutes). A bootstrap-complete timeout is treated as
-# NON-fatal (fix #9) — we fall through to polling clusterversion.
+# NON-fatal — we fall through to polling clusterversion.
 install_wait_timeout_min: 90
 
 # clusterversion poll: total attempts * delay should comfortably exceed a slow SNO install.

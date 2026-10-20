@@ -1,9 +1,9 @@
 ---
-# pxe_serve — translates scripts/serve-boot-artifacts.sh (hard-won fix #8).
+# pxe_serve — translates scripts/serve-boot-artifacts.sh.
 # Builds the agent PXE/iPXE boot artifacts, then serves them via nginx under a TOKENIZED URL
 # path (autoindex off, server_tokens off) and verifies HTTP 206 (Range) on the tokenized path
 # while confirming the guessable root is NOT listable. A `stop` mode tears the endpoint down
-# once the node has booted (the secret-bearing initrd must not stay public — issue #33).
+# once the node has booted (the secret-bearing initrd must not stay public).
 
 - name: Pxe_serve STOP mode (tear the endpoint down)
   when: pxe_mode == 'stop'

@@ -48,7 +48,7 @@ cluster_network_host_prefix: 23
 service_network_cidr: "172.30.0.0/16"
 
 # ---- Mirror registry -------------------------------------------------------
-# Endpoint seam (#26 keystone): artifactory_registry is the canonical, provider-neutral registry
+# Endpoint seam: artifactory_registry is the canonical, provider-neutral registry
 # endpoint; mirror_endpoint stays as the in-tree consumer name (every task reads {{ mirror_endpoint }})
 # and as a back-compat alias. Env precedence ARTIFACTORY_REGISTRY > MIRROR_REGISTRY mirrors
 # scripts/*.sh + the Makefile ; `-e mirror_endpoint=...` still wins.
@@ -57,7 +57,7 @@ artifactory_registry: >-
   | default(lookup('ansible.builtin.env', 'MIRROR_REGISTRY'), true)
   | default('mirror.rig.local:8443', true) }}
 mirror_endpoint: "{{ artifactory_registry }}"   # host:port consumed as {{ mirror_endpoint }} everywhere
-mirror_dns_name: "mirror.rig.local"          # DNS name / cert SAN companion (no port); #36/#37 retarget for Artifactory
+mirror_dns_name: "mirror.rig.local"          # DNS name / cert SAN companion (no port)
 mirror_user: "init"                          # quay initUser; password looked up at runtime
 # Single pull secret (customer model): a dockerconfigjson path whose .auths[mirror_endpoint] entry
 # supplies the mirror credential — no mirror admin password. Env MIRROR_PULL_SECRET (exported by the
@@ -84,7 +84,7 @@ boot_artifacts_dir: "/opt/install/cluster-assets/boot-artifacts"
 # Keep published copies outside the private /opt/install source and assets tree.
 boot_artifacts_webroot: "/var/www/coco-boot-artifacts"
 # secure_path omits /usr/local/bin, so every sudo invocation of the OpenShift tools must
-# pass this PATH explicitly (hard-won fix #6).
+# pass this PATH explicitly.
 tool_path: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 local_bin: "/usr/local/bin"
 
@@ -94,7 +94,7 @@ pull_secret_remote_path: "{{ ansible_facts['env']['HOME'] }}/pull-secret.json"
 # SSH public key embedded in install-config sshKey (for core@ node debugging). Already on
 # the bastion per the proven script (~/coco-rig.pub).
 node_ssh_pubkey_path: "{{ ansible_facts['env']['HOME'] }}/coco-rig.pub"
-# CONTROLLER-side source for the above (#73). Nothing used to create the bastion copy, so a
+# CONTROLLER-side source for the above. Nothing used to create the bastion copy, so a
 # from-zero run aborted in render_configs AFTER the BIOS gate and the full mirror push. Staged
 # automatically from here when present; override with -e node_ssh_pubkey_src=<path>.
 # Deliberately NOT derived from ansible_ssh_private_key_file: the inventory defaults that to
@@ -106,7 +106,7 @@ ocp_clients_base: "{{ coco_release.platform.clientBase }}"
 
 # ---- Boot artifacts serve (iPXE) -------------------------------------------
 boot_artifacts_port: 8080
-# UNGUESSABLE path segment for the secret-bearing initrd (issue #33). Generate per-run with
+# UNGUESSABLE path segment for the secret-bearing initrd. Generate per-run with
 # `openssl rand -hex 16` and pass via -e boot_artifacts_token=... ; the placeholder below is
 # intentionally obvious so an un-overridden run is caught in review, not shipped.
 boot_artifacts_token: "REPLACE_WITH_openssl_rand_hex_16"

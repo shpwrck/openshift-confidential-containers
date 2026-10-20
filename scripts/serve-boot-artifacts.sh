@@ -6,7 +6,7 @@
 # endpoint must be reachable on the bastion's PUBLIC IP. nginx is used because BMC/iPXE fetches
 # need HTTP Range (206) — Python's http.server returns 200 for full file only and breaks iPXE.
 #
-# SECURITY (issue #33): the agent initrd embeds the install ignition, which carries the
+# SECURITY: the agent initrd embeds the install ignition, which carries the
 # install-config pullSecret (mirror creds) and sshKey. So this endpoint must NOT be a guessable,
 # directory-listable public URL. This script therefore:
 #   - serves ONLY under the exact path the generated .ipxe encodes (set via agent-config
