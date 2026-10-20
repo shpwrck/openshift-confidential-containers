@@ -17,7 +17,7 @@ states the demonstrated scope.
 | Operations | Owners, monitoring, reference/certificate expiry, backups, tested recovery and rollback checkpoints |
 
 Start with [firmware preflight](../amd-firmware-preflight.md),
-[Trustee setup](../trustee-current.md) and [guest registry access](../guest-images.md).
+[Trustee setup](../trustee.md) and [guest registry access](../guest-images.md).
 BIOS automation depends on the actual vendor/BMC; manual setup was required in the lab.
 
 ## Existing OSC 1.12 / Trustee 1.1 deployments

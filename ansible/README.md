@@ -1,9 +1,10 @@
 # Ansible workflow
 
-Start with the [quickstart](../docs/current-quickstart.md) and
-[provider setup](../docs/cherry-validation.md). Ansible prepares a supplied helper
-and explicitly installs a disposable AMD node. Cherry allocation and BIOS setup
-are manual. The shared [mirror bootstrap](bootstrap/mirror-registry.yaml.j2) is a
+Start with the [quickstart](../docs/quickstart.md) and
+[Cherry Servers setup](../docs/cherry-servers.md). Ansible prepares a supplied helper
+and explicitly installs a disposable AMD node. Allocating the servers and setting
+the BIOS are manual. Copy [`rig.example.yml`](rig.example.yml) outside the checkout
+to describe your servers. The shared [mirror bootstrap](bootstrap/mirror-registry.yaml.j2) is a
 Jinja cloud-init template for supplied helpers.
 
 ## Modes
@@ -34,7 +35,7 @@ invalidates stale data on failure. Rendering checks current names/server IDs and
 preserves reviewed disk, network and NIC inputs. Recheck after reprovisioning.
 
 Keep credentials, state, boot tokens, kubeconfigs and recovery files outside the
-checkout and Homelab. Installer sources/assets remain private under `/opt/install`;
+checkout. Installer sources/assets remain private under `/opt/install`;
 nginx receives separate copies under `/var/www/coco-boot-artifacts`. Provider request
 journals live outside replaceable assets. Do not loosen private permissions for publication.
 

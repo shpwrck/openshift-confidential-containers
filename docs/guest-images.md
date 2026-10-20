@@ -21,7 +21,7 @@ endpoint and image policy. Its annotation key is
 
 Use HTTPS and the endpoint CA in customer mode. Resource URIs are
 `kbs:///default/<secret>/<key>`; their names/keys must match the Secrets attached
-to the actual KbsConfig. [Trustee setup](trustee-current.md) explains that publication.
+to the actual KbsConfig. [Trustee setup](trustee.md) explains that publication.
 
 The registry credential must match the remapped `host:port` and contain inline
 Docker `auth` material; a workstation credential helper is not available in the

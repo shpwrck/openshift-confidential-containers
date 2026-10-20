@@ -14,4 +14,4 @@ package/channel/CSV/bundle inventory before approval. Keep public default catalo
 and floating selections out of the disconnected path.
 
 Provision cluster pull authentication out of band. Trustee resource Secrets are
-separate from the host pull secret; see [Trustee setup](../../../docs/trustee-current.md).
+separate from the host pull secret; see [Trustee setup](../../../docs/trustee.md).

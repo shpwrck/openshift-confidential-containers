@@ -17,8 +17,8 @@ oc-mirror v2, Skopeo and opm. Obtain Skopeo through its
 and opm through [Red Hat's CLI guide](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/cli_tools/opm-cli).
 Verify downloaded binaries against published checksums.
 
-Keep the authentication file, candidate inputs and captured outputs outside Git
-and Homelab. Set `AUTH_FILE` to the external pull-secret path and `OUT` to a new
+Keep the authentication file, candidate inputs and captured outputs outside the
+checkout. Set `AUTH_FILE` to the external pull-secret path and `OUT` to a new
 protected evidence directory. Record source commit, input hashes, date and tool versions.
 Never print or hash the credential file into shared evidence.
 

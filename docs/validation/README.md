@@ -1,6 +1,6 @@
 # Validation results
 
-**Validated October 8, 2026; both Cherry servers and their task project/key are deleted.**
+**Validated October 8, 2026. Both Cherry servers and their project and SSH key have since been deleted.**
 This page summarizes the dated receipts. It does not reverify a live environment.
 
 ## Tested release and environment
@@ -52,18 +52,15 @@ denied. Network isolation is separate from the wrong-VCEK attestation test.
 
 ## Preserved evidence
 
-Public JSON receipts contain identifiers, hashes and outcomes. Raw logs, credentials,
-installer assets and proof recovery files remain outside Git. The
-[Cherry leave-behind](../runbooks/cherry-qualification/README.md) records backup
-locations and recovery limits. New runs require fresh inputs and evidence.
+The JSON receipts in this directory contain identifiers, hashes and outcomes.
+Raw logs, credentials, installer assets and proof recovery files were never
+committed, and the private backup of the trial is not part of this repository.
+A new run needs new inputs and produces its own evidence.
 
-Earlier Latitude checks remain as dated receipts: [preparation](latitude-preflight-2026-10-05.json),
-[host SNP](latitude-mia2-host-2026-10-05.json), [private-network failure](latitude-mia2-network-2026-10-05.json),
-[fresh bootstrap](latitude-fresh-bootstrap-2026-10-05.json),
-[signing controls](latitude-mia2-signed-controls-2026-10-05.json),
-[boot-publication cleanup](latitude-pxe-cleanup-2026-10-05.json),
-[Chrony repair](latitude-mia2-chrony-2026-10-05.json),
-[abandoned public-route check](latitude-mia2-public-route-2026-10-05.json),
-and [retirement](latitude-retirement-2026-10-05.json).
-No OpenShift cluster was installed there. The [AWS boot-mode check](aws-amd-boot-modes-2026-10-08.json)
-is provider-selection evidence, not a deployment result.
+## Provider history
+
+An earlier attempt on Latitude.sh (October 5, 2026) was abandoned before an
+OpenShift install because its private network could not meet the isolation
+requirement. Cherry Servers' private VLAN with LACP bonding did. AWS bare-metal
+AMD instance types were ruled out because they only offered legacy BIOS boot,
+and OSC 1.13 requires UEFI; see the [AWS boot-mode check](aws-amd-boot-modes-2026-10-08.json).

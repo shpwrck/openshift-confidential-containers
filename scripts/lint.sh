@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 for tool in python3 shellcheck opa kustomize ansible-playbook ansible-lint; do
-  command -v "$tool" >/dev/null || { echo "ERROR: missing $tool; see docs/current-quickstart.md" >&2; exit 2; }
+  command -v "$tool" >/dev/null || { echo "ERROR: missing $tool; see docs/contributing.md" >&2; exit 2; }
 done
 while IFS= read -r file; do bash -n "$file"; done < <(find scripts -type f -name '*.sh')
 shellcheck --severity=warning -x scripts/*.sh scripts/lib/*.sh ansible/up.sh

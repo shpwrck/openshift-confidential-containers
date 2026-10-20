@@ -1,23 +1,33 @@
 # Documentation
 
-Start with the [quickstart](current-quickstart.md). The
+New here? Read the [project README](../README.md) first: it explains what this
+repository does, lists the guides in the order you use them, and has a glossary.
+Then start with the [quickstart](quickstart.md). The
 [release manifest](../install/release-manifest.json) defines the selected versions;
 [validation results](validation/README.md) describe what was actually tested.
+
+Guides in the order you use them:
+
+| Step | Guide |
+|---|---|
+| 1. Check the AMD hardware and BIOS | [Firmware preflight](amd-firmware-preflight.md) |
+| 2. Collect the provider inputs | [Cherry Servers setup](cherry-servers.md) |
+| 3. Install OpenShift and the CoCo Operators | [Quickstart](quickstart.md) |
+| 4. Configure attestation and secret release | [Trustee setup](trustee.md) |
+| 5. Let the confidential VM pull images | [Guest images](guest-images.md) |
+| 6. Prove the security controls work | [Capability tests](capability-status.md) |
+
+Reference:
 
 | Task | Guide |
 |---|---|
 | Understand the components and sequence | [Architecture](architecture.md) |
-| Qualify AMD hardware and BIOS | [Firmware preflight](amd-firmware-preflight.md) |
-| Prepare a supplied Cherry rig | [Cherry setup](cherry-validation.md) |
-| Configure offline attestation and release policy | [Trustee setup](trustee-current.md) |
-| Configure guest registry access | [Guest images](guest-images.md) |
-| Run the capability rungs | [Capability tests](capability-status.md) |
 | Diagnose a failed install or workload | [Troubleshooting](troubleshooting.md) |
-| Refresh artifacts or reset a disposable lab | [Maintenance](maintenance.md) |
-| Select and resolve a new release set | [Release resolution](release-resolution.md) |
-| Prepare a customer deployment or upgrade | [Customer planning](design/customer-scoping.md) |
-| Run local checks | [Contributing](contributing.md) |
-| Find trial backups and retirement details | [Cherry leave-behind](runbooks/cherry-qualification/README.md) |
+| Refresh certificates and policies, or reset a test cluster | [Maintenance](maintenance.md) |
+| Move to newer product versions | [Release resolution](release-resolution.md) |
+| Plan a customer deployment or upgrade | [Customer planning](design/customer-scoping.md) |
+| See what was tested and when | [Validation results](validation/README.md) |
+| Run the offline checks | [Contributing](contributing.md) |
 
 Component references: [Ansible](../ansible/README.md), [installer artifacts](../install/README.md),
 and [GitOps](../gitops/README.md).

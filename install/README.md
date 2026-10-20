@@ -1,6 +1,6 @@
 # Installer inputs
 
-Use [the quickstart](../docs/current-quickstart.md) for installation. This directory
+Use [the quickstart](../docs/quickstart.md) for installation. This directory
 contains the selected release inventory and templates, not an independent manual procedure.
 
 | File | Purpose |

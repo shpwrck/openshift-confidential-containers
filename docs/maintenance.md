@@ -28,7 +28,7 @@ current host/TCB before reuse; collection does not renew collateral automaticall
 
 Recalculate launch references after guest/release/runtime command-line changes.
 Rebind initdata after any byte change, including policy or certificate changes.
-Use [Trustee setup](trustee-current.md), preserve CPU/hardware checks, and run the
+Use [Trustee setup](trustee.md), preserve CPU/hardware checks, and run the
 relevant positive/negative/recovery proofs. Reference expiry is deliberate;
 extending it requires renewed review, not a documentation date change.
 
@@ -68,7 +68,7 @@ make validate-sno-baseline
 
 The reset retains controllers until their operands finish deletion. If it stops,
 inspect finalizers and reconciliation before retrying; do not clear them blindly.
-Reinstall through [the quickstart](current-quickstart.md#install-coco-and-trustee),
+Reinstall through [the quickstart](quickstart.md#6-install-the-coco-operators),
 recollect current collateral, reconfigure Trustee and rerun all proofs/isolation.
 `make test-rung WHICH=all` runs fresh proofs; reset/reinstallation is separate.
 
@@ -80,5 +80,3 @@ archive hashes and recovery limits before deleting resources.
 
 Delete only the intended provider objects and confirm absence through fresh inventory
 reads. Power-off or failed SSH is not proof of deletion. Keep the provider ownership and retirement records.
-The [Cherry leave-behind](runbooks/cherry-qualification/README.md) records the completed
-trial's retirement and protected backups; it is not a credential set for a new rig.

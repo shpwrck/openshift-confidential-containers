@@ -18,7 +18,7 @@ unvalidated in the [completed SNO trial](../docs/validation/README.md).
 Versions come from [the release manifest](../install/release-manifest.json).
 Worker installation waits for NFD discovery, scoped Kata convergence, `kata-cc`
 with `kata-snp`, and Gatekeeper policy. Trustee configuration follows actual
-Operator-owned resources; [the guide](../docs/trustee-current.md) describes the order.
+Operator-owned resources; [the guide](../docs/trustee.md) describes the order.
 
 Recollect VCEKs for the actual worker/TCB and recalculate approved launch references
 when artifacts change. Initdata bytes, endpoint certificates and policies are
