@@ -36,15 +36,15 @@ VERIFY_RUNG_ARTIFACTS_AFTER_BUILD="${VERIFY_RUNG_ARTIFACTS_AFTER_BUILD:-1}"
 VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT="${VERIFY_RUNG_ENCRYPTED_KEY_WRAP_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-encrypted-key-wrap.sh}"
 VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT="${VERIFY_RUNG_SIGNED_SIGNATURE_SCRIPT:-${REPO_ROOT}/scripts/verify-rung-signed-signature.sh}"
 
-# Keys and registry credentials must never be generated in the checkout or Homelab.
+# Keys and registry credentials must never be generated in the checkout.
 python3 - "$REPO_ROOT" "$ARTIFACT_DIR" "$COSIGN_KEY" "$RUNG_ENCRYPTED_KEY_FILE" <<'PYGUARD'
 from pathlib import Path
 import sys
 repo = Path(sys.argv[1]).resolve()
 for item in sys.argv[2:]:
     path = Path(item).expanduser().resolve()
-    if path == repo or repo in path.parents or str(path).lower() == '/mnt/c/homelab' or str(path).lower().startswith('/mnt/c/homelab/'):
-        sys.exit('ERROR: image artifacts and keys must be outside the repository and Homelab; use COCO_STATE_DIR')
+    if path == repo or repo in path.parents:
+        sys.exit('ERROR: image artifacts and keys must be outside the repository; use COCO_STATE_DIR')
 PYGUARD
 umask 077
 

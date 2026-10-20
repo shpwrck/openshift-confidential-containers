@@ -7,7 +7,7 @@
 # requires its own validation; historical rig results do not validate this release.
 #
 # Credentials are read from external files or CHERRY_SERVERS_API_KEY.
-# Keep secret-bearing environment files outside the checkout and Homelab.
+# Keep secret-bearing environment files outside the checkout.
 # ============================================================================
 
 # ---- OpenShift / cluster identity ------------------------------------------

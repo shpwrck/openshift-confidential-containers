@@ -106,14 +106,14 @@ raise SystemExit(int(os.environ['COSIGN_UNSIGNED_RC' if negative else 'COSIGN_SI
         self.assertIn('restore the missing companion', result.stderr)
         self.assertEqual(key.read_text(), 'existing-fixture-key')
 
-    def test_builder_rejects_homelab_root_even_with_external_key_paths(self):
-        self.env.update(ARTIFACT_DIR='/mnt/c/homelab', COSIGN_KEY=str(self.base / 'key'),
+    def test_builder_rejects_checkout_artifact_dir_even_with_external_key_paths(self):
+        self.env.update(ARTIFACT_DIR=str(ROOT / 'rung-image-artifacts'), COSIGN_KEY=str(self.base / 'key'),
                         RUNG_ENCRYPTED_KEY_FILE=str(self.base / 'image-key'))
         result = subprocess.run(['bash', str(ROOT / 'scripts/build-rung-images.sh'), 'digest-ref',
                                  'example/image:tag', 'sha256:' + 'a' * 64],
                                 cwd=self.base, env=self.env, text=True, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('outside the repository and Homelab', result.stderr)
+        self.assertIn('outside the repository', result.stderr)
 
 
 if __name__ == '__main__':

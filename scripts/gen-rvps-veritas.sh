@@ -88,8 +88,8 @@ import pathlib, sys
 repo = pathlib.Path(sys.argv[1]).resolve()
 for item in sys.argv[2:]:
     path = pathlib.Path(item).resolve()
-    if path == repo or repo in path.parents or str(path).casefold() == '/mnt/c/homelab' or str(path).casefold().startswith('/mnt/c/homelab/'):
-        raise SystemExit("ERROR: pull secret and RVPS output must be outside the checkout and Homelab")
+    if path == repo or repo in path.parents:
+        raise SystemExit("ERROR: pull secret and RVPS output must be outside the checkout")
 CHECK
 mkdir -p "$(dirname "$OUT")"
 cleanup_paths=()

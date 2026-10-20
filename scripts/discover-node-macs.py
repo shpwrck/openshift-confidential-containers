@@ -149,8 +149,8 @@ def merge(machines, cached=None):
 def cache_path():
     default = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "openshift-confidential-containers"
     state = Path(os.environ.get("COCO_STATE_DIR", str(default))).expanduser().resolve()
-    if state == ROOT or ROOT in state.parents or str(state).lower().startswith("/mnt/c/homelab/") or str(state).lower() == "/mnt/c/homelab":
-        raise InvalidDiscovery("COCO_STATE_DIR must be outside the repository and Homelab")
+    if state == ROOT or ROOT in state.parents:
+        raise InvalidDiscovery("COCO_STATE_DIR must be outside the repository")
     return state / "discovery/node-macs.json"
 
 

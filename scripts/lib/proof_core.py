@@ -45,9 +45,6 @@ def state_directory(repo: Path) -> Path:
     path = Path(os.environ.get("COCO_STATE_DIR", str(default))).expanduser().resolve()
     if path == repo or repo in path.parents:
         raise Incomplete("COCO_STATE_DIR must be outside the checkout; it holds protected recovery material")
-    # This checkout can be used from Homelab, whose credential policy is stricter than gitignore.
-    if str(path).lower() == "/mnt/c/homelab" or str(path).lower().startswith("/mnt/c/homelab/"):
-        raise Incomplete("COCO_STATE_DIR must be outside /mnt/c/Homelab")
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.chmod(0o700)
     return path

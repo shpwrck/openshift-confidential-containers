@@ -240,7 +240,7 @@ def check_tls(args):
 def evidence_path(value):
     path = Path(value).expanduser().absolute()
     resolved = path.resolve()
-    forbidden_paths = [Path('/mnt/c/homelab')]
+    forbidden_paths = []
     # The standalone script is copied to raw hosts. Only treat its grandparent
     # as the checkout when the repository markers are actually present.
     checkout = Path(__file__).resolve().parents[1]
@@ -248,7 +248,7 @@ def evidence_path(value):
         forbidden_paths.append(checkout)
     for forbidden in forbidden_paths:
         if resolved == forbidden or forbidden in resolved.parents:
-            raise ValueError('Evidence must be outside the repository and Homelab')
+            raise ValueError('Evidence must be outside the repository')
     parent = path.parent.stat()
     if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.geteuid() or parent.st_mode & 0o077:
         raise ValueError('Evidence parent must be an existing owner-only directory owned by this account')

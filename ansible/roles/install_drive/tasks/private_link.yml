@@ -55,11 +55,11 @@
         from pathlib import Path
         x=json.load(sys.stdin)
         ipaddress.IPv4Address(x['address'])
-        roots=[Path(x['repo']).resolve(),Path('/mnt/c/homelab')]
+        roots=[Path(x['repo']).resolve()]
         for value in [*x['files'],x['state']]:
             p=Path(value).expanduser().resolve()
             if any(p==r or r in p.parents for r in roots):
-                raise SystemExit('SSH credentials, known_hosts and evidence must remain outside repository/Homelab')
+                raise SystemExit('SSH credentials, known_hosts and evidence must remain outside the repository')
         for value in x['files']:
             p=Path(value)
             if not p.is_file(): raise SystemExit('Missing explicit SSH key or known_hosts file: '+value)

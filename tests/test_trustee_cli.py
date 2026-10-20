@@ -141,7 +141,7 @@ class TrusteeCliTests(unittest.TestCase):
         self.env["MIRROR_PASSWORD_FILE"] = str(self.repo / "do-not-read")
         result = self.run_seed()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside Homelab", result.stderr)
+        self.assertIn("outside the repository", result.stderr)
         self.assertEqual((self.data / "calls.jsonl").read_text(), "")
 
     def test_protected_state_beside_an_external_checkout_is_allowed(self):
@@ -154,13 +154,6 @@ class TrusteeCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("credential", json.loads((self.data / "state.json").read_text()))
 
-    def test_homelab_input_is_refused_when_checkout_is_elsewhere(self):
-        self.env["MIRROR_PULL_SECRET"] = "/mnt/c/Homelab/do-not-read.json"
-        result = self.run_seed()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside Homelab", result.stderr)
-        self.assertEqual((self.data / "calls.jsonl").read_text(), "")
-
     def test_external_symlink_into_checkout_is_refused_before_cluster_access(self):
         target = self.repo / "do-not-read"
         target.write_text("synthetic-offline-fixture")
@@ -169,7 +162,7 @@ class TrusteeCliTests(unittest.TestCase):
         self.env["MIRROR_PASSWORD_FILE"] = str(link)
         result = self.run_seed()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside Homelab", result.stderr)
+        self.assertIn("outside the repository", result.stderr)
         self.assertEqual((self.data / "calls.jsonl").read_text(), "")
 
 

@@ -32,9 +32,8 @@ COCO_STATE_DIR="$(python3 - "$COCO_STATE_DIR" "$REPO" <<'PY'
 from pathlib import Path
 import sys
 state, repo = (Path(p).expanduser().resolve() for p in sys.argv[1:])
-for forbidden in (repo, Path('/mnt/c/homelab')):
-    if str(state).lower() == str(forbidden).lower() or str(state).lower().startswith(str(forbidden).lower() + '/'):
-        raise SystemExit('ERROR: COCO_STATE_DIR must be outside the checkout and Homelab; select a private external state directory')
+if state == repo or repo in state.parents:
+    raise SystemExit('ERROR: COCO_STATE_DIR must be outside the checkout; select a private external state directory')
 print(state)
 PY
 )"
