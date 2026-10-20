@@ -30,4 +30,4 @@ Reference:
 | Run the offline checks | [Contributing](contributing.md) |
 
 Component references: [Ansible](../ansible/README.md), [installer artifacts](../install/README.md),
-and [GitOps](../gitops/README.md).
+[GitOps](../gitops/README.md), [scripts](../scripts/README.md) and [tests](../tests/README.md).

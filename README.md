@@ -7,6 +7,15 @@ small, hardware-encrypted VM. Before the VM receives any secrets, it must prove
 to a separate service (Trustee) that it is running the expected software on
 genuine AMD hardware.
 
+```mermaid
+flowchart LR
+  Pod[Confidential pod] -->|runs inside| VM[Encrypted SEV-SNP VM on the AMD node]
+  VM -->|proves its hardware and software| Trustee
+  Trustee -->|releases secrets only if the proof passes| VM
+```
+
+The [architecture overview](docs/architecture.md) shows the full exchange.
+
 The repository gives you:
 
 - Ansible automation that turns two supplied bare-metal servers (a helper and an
@@ -86,9 +95,9 @@ make lint           # run all offline checks (see docs/contributing.md for tools
 | [`install/`](install/README.md) | Release manifest (exact versions and digests) and the oc-mirror image set |
 | [`ansible/`](ansible/README.md) | Helper preparation and OpenShift installation |
 | [`gitops/`](gitops/README.md) | Kustomize manifests for the Operators, Kata runtime, Trustee and test workloads |
-| `scripts/` | Install steps, Trustee configuration, image signing and the test runner |
-| `tests/` | Offline regression tests (no cluster or hardware needed) |
-| [`docs/`](docs/README.md) | Guides and dated validation records |
+| [`scripts/`](scripts/README.md) | Install steps, Trustee configuration, image signing and the test runner |
+| [`tests/`](tests/README.md) | Offline regression tests (no cluster or hardware needed) |
+| [`docs/`](docs/README.md) | Guides and the dated validation results |
 
 ## Keep secrets out of the checkout
 

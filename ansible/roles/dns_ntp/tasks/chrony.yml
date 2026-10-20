@@ -24,7 +24,7 @@
   become: true
   notify: Restart chronyd
 
-# Rocky's main configuration does not automatically load /etc/chrony.d.
+# The RHEL 9-family chrony.conf does not automatically load /etc/chrony.d.
 # Without this include chronyd can be synchronized but never serve UDP 123.
 - name: Include the managed rig configuration in the daemon configuration
   ansible.builtin.lineinfile:

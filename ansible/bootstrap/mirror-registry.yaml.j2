@@ -1,11 +1,11 @@
 #cloud-config
-# Bastion bootstrap (Rocky Linux 9 lab): private-VLAN L3 + Red Hat mirror-registry (quay).
+# Helper (bastion) bootstrap for a RHEL 9-family host: private-VLAN L3 + Red Hat mirror-registry (quay).
 # Jinja cloud-init template: render with reviewed external environment inputs.
 # Bootstrap log lands in /var/log/cloud-init-output.log.
 #
-# OS: Rocky 9 is the compatible lab baseline. Red Hat documents RHEL 8/9 as supported
-# mirror-registry hosts; Rocky is not a supported RHEL substitute. The helper host choice needs
-# its own compatibility validation. The network stack is NetworkManager; verify the Quay pod under SELinux.
+# OS: Red Hat supports RHEL 8/9 as mirror-registry hosts. The trial helper ran AlmaLinux 9.8 as a
+# compatibility test, which is not a supported RHEL substitute; validate any other helper OS.
+# The network stack is NetworkManager; verify the Quay pod under SELinux.
 #
 # Network model (the REAL air gap, not a cosmetic VLAN):
 #   - this host gets a STATIC private IP ({{ bastion_vlan_ip }}/{{ vlan_prefix }}) on the rig VLAN
@@ -115,7 +115,7 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      # Rocky does not load chrony.d automatically. Keep the image's upstream
+      # RHEL 9-family chrony.conf does not load chrony.d automatically. Keep the image's upstream
       # time sources and include only the managed private rig policy.
       if ! grep -Eq '^[[:space:]]*include[[:space:]]+/etc/chrony[.]d/rig[.]conf[[:space:]]*$' /etc/chrony.conf; then
         printf '\ninclude /etc/chrony.d/rig.conf\n' >> /etc/chrony.conf
@@ -171,7 +171,7 @@ write_files:
         || { echo "FATAL: mirror-registry checksum mismatch"; exit 1; }
       mkdir -p /opt/mirror-registry && tar -xzf mirror-registry.tar.gz -C /opt/mirror-registry
 
-      # mirror-registry installs quay via ANSIBLE over SSH to the target host. Rocky images have
+      # mirror-registry installs quay via ANSIBLE over SSH to the target host. Cloud images have
       # no root SSH by default, so set up passwordless root self-SSH (else: "root@<host> UNREACHABLE,
       # Permission denied"). We target localhost explicitly to dodge hostname-resolution quirks.
       install -d -m700 /root/.ssh

@@ -197,7 +197,7 @@
       {{ node_ssh_pubkey_path }} is missing on the bastion and could not be derived from the
       controller's --private-key. This is the key baked into the install config, so the
       install cannot proceed without it. Stage it explicitly:
-      scp -i <key> <key>.pub {{ ansible_user | default('rocky') }}@<bastion>:{{ node_ssh_pubkey_path | basename }}
+      scp -i <key> <key>.pub {{ ansible_user | default('<helper-user>') }}@<bastion>:{{ node_ssh_pubkey_path | basename }}
     success_msg: "node SSH public key present at {{ node_ssh_pubkey_path }}"
 
 - name: Read the node SSH public key

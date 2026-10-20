@@ -146,7 +146,7 @@ class BecomeModule(BecomeBase):
         return 'env COCO_FIXTURE_PRIVILEGED=1 ' + self._build_success_command(cmd, shell)
 ''')
         self.env['ANSIBLE_BECOME_PLUGINS'] = str(plugins)
-        # Simulate the rocky login's file-test behavior: inaccessible root-owned
+        # Simulate the helper login's file-test behavior: inaccessible root-owned
         # markers look absent. A fixture become plugin grants access without sudo
         # or user/permission changes on the test machine. The marker script itself
         # is unchanged and reads real files once that privilege is present.
