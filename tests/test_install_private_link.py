@@ -159,8 +159,8 @@ class PrivateLinkInstallTests(unittest.TestCase):
         self.assertEqual(self.requests, ['GET'])
         self.assertFalse(self.journal.exists())
 
-    def test_removed_network_profile_rejects_before_provider_access(self):
-        self.variables['network_profile'] = 'public-routed-lab'
+    def test_unsupported_network_profile_rejects_before_provider_access(self):
+        self.variables['network_profile'] = 'unsupported-profile'
         self.run_role(2)
         self.assertEqual(self.requests, [])
         self.assertFalse(self.journal.exists())

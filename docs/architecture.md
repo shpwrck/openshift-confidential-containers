@@ -51,7 +51,7 @@ flowchart TD
 Fresh install replaces the node OS; it is not a customer upgrade. Successful
 installation closes temporary boot publication. The trial used public iPXE before
 the private Agent OS. Its clean repeat retained OpenShift and physical allocations.
-See [the results and limits](validation/README.md).
+See [the results and limits](validation.md).
 
 ## Proof sequence
 
@@ -67,5 +67,5 @@ flowchart TD
 
 Unrelated errors or skipped controls cannot pass. Failed restoration retains
 recovery material and the lock for inspection. [Capability tests](capability-status.md)
-define each negative control; [customer planning](design/customer-scoping.md)
+define each negative control; [customer planning](customer-planning.md)
 covers deployment and upgrade decisions.

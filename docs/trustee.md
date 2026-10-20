@@ -2,7 +2,7 @@
 
 This workflow uses Trustee 1.2.1 on AMD SEV-SNP. Customer defaults are
 **Restricted, HTTPS and a separate trust domain**. The completed
-[lab proofs](validation/README.md) used co-located Permissive HTTP with enforcing
+[lab proofs](validation.md) used co-located Permissive HTTP with enforcing
 resource policy; they do not validate the customer topology.
 
 Use Python 3.12+, the development requirements, `jq` and the selected `oc`.
@@ -36,7 +36,7 @@ ownership, and selects SNP `OfflineStore`. It retains the cache path and existin
 resource entries but attaches no new customer workload resources.
 
 An independent older KbsConfig stops the workflow. This is a fresh bootstrap,
-not an automatic Trustee 1.1 upgrade. See [customer planning](design/customer-scoping.md)
+not an automatic Trustee 1.1 upgrade. See [customer planning](customer-planning.md)
 before migrating an existing deployment. Do not delete configuration or set migration
 markers by hand to bypass that check.
 

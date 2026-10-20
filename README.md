@@ -22,7 +22,7 @@ The repository gives you:
 | | |
 |---|---|
 | Validated release | OpenShift 4.20.39, OSC 1.13.1, Trustee 1.2.1 (exact pins in the [release manifest](install/release-manifest.json)) |
-| Last hardware validation | October 8, 2026, on Cherry Servers (AMD EPYC 9124). See [validation results](docs/validation/README.md). |
+| Last hardware validation | October 8, 2026, on Cherry Servers (AMD EPYC 9124). See [validation results](docs/validation.md). |
 | Live environment | None. The test servers were deleted after validation. You need new hardware to run anything beyond the offline checks. |
 
 What passed: offline attestation, secret release, measured-initdata and

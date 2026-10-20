@@ -197,7 +197,6 @@ with open(os.environ['FIXTURE_CALLS'], 'a') as f:
         self.assertEqual(calls[0], ['playbooks/site.yml', '--tags', 'drive', '-e',
                                    'install_mode=fresh', '-e', 'resume_install_only=true'])
         self.assertEqual(calls[1], ['playbooks/site.yml', '--tags', 'pxe-stop'])
-        self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'resume-install', '--apply-tf'], 2)
 
     def test_wrapper_verify_has_no_provisioning_and_uses_absolute_config(self):
         write_executable(self.bin / 'ansible-playbook', '''#!/usr/bin/env python3
@@ -218,20 +217,11 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:
         self.assertEqual(spaced_record['argv'], ['playbooks/site.yml', '--tags', 'drive',
             '-e', 'test_text=value with spaces', '--limit', 'bastion', '-e', 'install_mode=verify'])
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'upgrade'], 2)
-        self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify', '--apply-tf'], 2)
 
     def test_wrapper_rejects_secret_state_inside_checkout(self):
         self.env['COCO_STATE_DIR'] = str(ROOT / 'state')
         out = self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify'], 1)
         self.assertIn('outside', out)
-
-    def test_removed_provisioning_flags_fail_before_any_operation(self):
-        write_executable(self.bin / 'ansible-playbook', '#!/bin/sh\necho unexpected >> "$FIXTURE_CALLS"\nexit 97\n')
-        for mode in ('prepare', 'fresh-install', 'verify', 'resume-install'):
-            for flag in ('--plan-tf', '--apply-tf'):
-                with self.subTest(mode=mode, flag=flag):
-                    self.assertIn('removed', self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', mode, flag], 2))
-                    self.assertFalse(self.log.exists())
 
     def test_wrapper_fresh_install_uses_supplied_inputs_and_closes_endpoint(self):
         repo = self.base / 'wrapper-repo'

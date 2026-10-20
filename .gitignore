@@ -27,10 +27,8 @@ ansible/*.retry
 ansible/.vault-pass
 ansible/.ansible/
 
-# Secret-bearing local environment and state
+# Secret-bearing local environment
 .env
-*.tfstate
-*.tfstate.*
 
 # Local Python tooling
 __pycache__/

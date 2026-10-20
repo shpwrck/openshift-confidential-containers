@@ -10,9 +10,6 @@ while [[ $# -gt 0 ]]; do
     --mode)
       [[ $# -ge 2 ]] || { echo "ERROR: --mode needs prepare, fresh-install, resume-install, or verify" >&2; exit 2; }
       MODE="$2"; shift 2 ;;
-    --apply-tf|--plan-tf)
-      echo "ERROR: provisioning flags have been removed; supply an allocated Cherry rig" >&2
-      exit 2 ;;
     --help|-h)
       echo "Usage: $0 [--mode prepare|fresh-install|resume-install|verify] [Ansible options]"
       echo "prepare: mirror/tools/DNS only (default); fresh-install: explicit machine reinstall; resume-install: finish an accepted request; verify: read-only cluster release check"

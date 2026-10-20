@@ -41,4 +41,4 @@ journals live outside replaceable assets. Do not loosen private permissions for 
 
 `public_console_enabled` defaults on; set it false when not needed. The `machines`
 list supports rendering multiple hosts, but multi-node/customer topologies remain
-unvalidated by the SNO trial. [Dated results](../docs/validation/README.md) define scope.
+unvalidated by the SNO trial. [Dated results](../docs/validation.md) define scope.
