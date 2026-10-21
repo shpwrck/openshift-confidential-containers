@@ -20,7 +20,7 @@ Then continue with [Trustee setup](trustee.md) and the
 ## Before you start
 
 - [ ] You have two servers on one private VLAN: the AMD node and a helper whose
-      first boot set up the mirror registry. After step 1, order both with
+      bootstrap set up the mirror registry. After step 1, order both with
       [Cherry Servers setup](cherry-servers.md#order-the-servers), which also starts
       your rig file.
 - [ ] The node's BIOS is configured and SEV-SNP works on the provider's original OS.

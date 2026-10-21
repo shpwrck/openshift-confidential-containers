@@ -4,26 +4,22 @@
 mock_provider "cherryservers" {}
 
 variables {
-  project_id            = 123456
-  region                = "LT-Siauliai"
-  node_plan             = "fixture-amd-plan"
-  node_image            = "fixture-node-image"
-  helper_plan           = "fixture-helper-plan"
-  helper_image          = "fixture-helper-image"
-  helper_user_data_file = "tests/fixture-user-data.yaml"
-  ssh_key_ids           = ["42"]
+  project_id   = 123456
+  region       = "LT-Siauliai"
+  node_plan    = "fixture-amd-plan"
+  node_image   = "fixture-node-image"
+  helper_plan  = "fixture-helper-plan"
+  helper_image = "fixture-helper-image"
+  ssh_key_ids  = ["42"]
 }
 
-run "orders_both_servers_with_the_rendered_user_data" {
+run "orders_both_servers_without_user_data" {
   command = plan
 
+  # With user data, Cherry installs neither the SSH key nor the private VLAN.
   assert {
-    condition     = cherryservers_server.helper.user_data == filebase64("tests/fixture-user-data.yaml")
-    error_message = "The helper must get the rendered user data."
-  }
-  assert {
-    condition     = cherryservers_server.node.user_data == null
-    error_message = "The node boots its original OS without user data."
+    condition     = cherryservers_server.helper.user_data == null && cherryservers_server.node.user_data == null
+    error_message = "Neither server may be ordered with user data."
   }
   assert {
     condition = alltrue([
@@ -57,15 +53,14 @@ run "the_untouched_example_values_are_refused" {
 
   # The placeholders from terraform.tfvars.example.
   variables {
-    project_id            = 0
-    region                = "REPLACE_WITH_REGION_SLUG"
-    node_plan             = "REPLACE_WITH_AMD_SNP_PLAN_SLUG"
-    node_image            = "REPLACE_WITH_NODE_IMAGE_SLUG"
-    helper_plan           = "REPLACE_WITH_HELPER_PLAN_SLUG"
-    helper_image          = "REPLACE_WITH_RHEL9_FAMILY_IMAGE_SLUG"
-    helper_user_data_file = "tests/not-rendered-yet.yaml"
-    ssh_public_key_file   = "/path/outside/checkout/rig-ssh-key.pub"
-    ssh_key_ids           = []
+    project_id          = 0
+    region              = "REPLACE_WITH_REGION_SLUG"
+    node_plan           = "REPLACE_WITH_AMD_SNP_PLAN_SLUG"
+    node_image          = "REPLACE_WITH_NODE_IMAGE_SLUG"
+    helper_plan         = "REPLACE_WITH_HELPER_PLAN_SLUG"
+    helper_image        = "REPLACE_WITH_RHEL9_FAMILY_IMAGE_SLUG"
+    ssh_public_key_file = "/path/outside/checkout/rig-ssh-key.pub"
+    ssh_key_ids         = []
   }
 
   expect_failures = [
@@ -75,7 +70,6 @@ run "the_untouched_example_values_are_refused" {
     var.node_image,
     var.helper_plan,
     var.helper_image,
-    var.helper_user_data_file,
     var.ssh_public_key_file,
   ]
 }

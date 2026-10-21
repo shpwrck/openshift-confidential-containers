@@ -28,6 +28,7 @@
 # vlan_vid_override: "REPLACE_WITH_VLAN_TAG"
 
 # ---- Helper (bastion) access ---------------------------------------------
+# root on Cherry Servers images.
 bastion_ssh_user: "REPLACE_WITH_HELPER_SSH_USER"
 bastion_ssh_key: "/path/outside/checkout/helper-ssh-key"
 # Interface names: VLAN_IFACE and PUBLIC_IFACE in the helper's /etc/rig-network.env.
@@ -36,6 +37,7 @@ bastion_external_if: "REPLACE_WITH_HELPER_PUBLIC_INTERFACE"
 
 # ---- AMD node, as delivered by the provider ------------------------------
 # SSH into the provider's original OS, used for discovery and the private-link check.
+# root on Cherry Servers images.
 raw_node_ssh_user: "REPLACE_WITH_NODE_SSH_USER"
 raw_node_ssh_key: "/path/outside/checkout/node-ssh-key"
 # known_hosts file that pins the helper and node host keys.

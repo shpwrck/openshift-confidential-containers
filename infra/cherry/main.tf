@@ -1,5 +1,6 @@
 # Orders the AMD node and the mirror/admin helper. Everything after ordering
-# (helper preparation, the node's iPXE rebuild into OpenShift) is Ansible's job.
+# (the helper's mirror bootstrap, the node's iPXE rebuild into OpenShift) runs
+# over SSH or through Ansible.
 
 resource "cherryservers_ssh_key" "rig" {
   count      = length(var.ssh_key_ids) == 0 ? 1 : 0
@@ -38,13 +39,7 @@ resource "cherryservers_server" "helper" {
   ssh_key_ids = local.ssh_key_ids
   cycle       = var.billing_cycle
   tags        = var.tags
-  # The bootstrap adopts the helper's own private VLAN address at first boot,
-  # so the user data does not depend on anything assigned during ordering.
-  user_data = filebase64(pathexpand(var.helper_user_data_file))
-
-  lifecycle {
-    # cloud-init runs once. A re-rendered file only takes effect on a new
-    # helper: terraform apply -replace=cherryservers_server.helper
-    ignore_changes = [user_data]
-  }
+  # No user data: Cherry Servers installs neither the order's SSH key nor the
+  # private VLAN on a server ordered with it. The mirror bootstrap runs over
+  # SSH once the helper is up (docs/cherry-servers.md).
 }

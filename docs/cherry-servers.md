@@ -27,29 +27,29 @@ network profile are the defaults, so the rig file does not need to select them.
 
 Cherry puts both servers on the project's private VLAN in that region and configures
 it in their original OS as a tagged child of the uplink (for example `bond0.2738`).
-The helper's first-boot bootstrap adopts that interface and its address, so nothing
-from the order has to go back into its user data.
+It also installs the order's SSH key for `root`. Cherry skips both when a server is
+ordered with cloud-init user data, so the helper is ordered plain, like the node, and
+its mirror bootstrap runs over SSH afterwards. The bootstrap adopts the VLAN interface
+and address Cherry configured.
 
 1. Pick a versioned mirror-registry archive; `/latest/` links are refused. Red Hat lists
    each version under <https://mirror.openshift.com/pub/cgw/mirror-registry/>, with the
    archive's SHA-256 in that version's signed `sha256sum.txt`. The trial used 2.0.12;
    its x86_64 archive and checksum are in the command below.
-2. Render the helper's cloud-init user data. `--ssh-user` is the helper image's default
-   login user (for example `cloud-user` on RHEL or `almalinux` on AlmaLinux); use the
-   same name for `bastion_ssh_user` in the rig file. The file holds no secrets: the
-   registry password is generated on the helper.
+2. Render the helper's bootstrap script. It holds no secrets: the registry password is
+   generated on the helper.
 
    ```bash
    python3 scripts/render-helper-bootstrap.py \
-     --ssh-user '<helper-image-login-user>' \
      --mirror-registry-url 'https://developers.redhat.com/content-gateway/file/pub/cgw/mirror-registry/2.0.12/mirror-registry-amd64.tar.gz' \
      --mirror-registry-sha256 '6de43edfd77a61bb27116bb7a9a5715884722a811f92cd5d9dfca406afb457b2' \
-     > "$COCO_STATE_DIR/helper-user-data.yaml"
+     > "$COCO_STATE_DIR/helper-bootstrap.sh"
    ```
 
    The registry name (`mirror.rig.local`), `/opt/mirror` and registry user `init` match
    [`group_vars/all.yml`](../ansible/group_vars/all.yml). Run the script with `--help`
-   to change them, or to give an explicit VLAN tag and address instead of adopting them.
+   to change them, to give an explicit VLAN tag and address instead of adopting them,
+   or to print cloud-init user data for a provider that keeps its own setup with it.
 
 3. Fill in the Terraform variables: project, region, plan and image slugs, and the
    SSH key for both servers. [Choosing the Terraform variables](#choosing-the-terraform-variables)
@@ -69,9 +69,10 @@ from the order has to go back into its user data.
    terraform -chdir=infra/cherry apply -var-file="$COCO_STATE_DIR/cherry.tfvars"
    ```
 
-   `init` checks the provider against the committed lock file. The apply ends with an
-   error, after ordering, if the two servers did not land on the same private network:
-   Cherry VLANs do not span switches. Replace the helper with
+   `init` checks the provider against the committed lock file. Bare-metal delivery can
+   take 20 minutes or more. The apply ends with an error, after ordering, if the two
+   servers did not land on the same private network: Cherry VLANs do not span
+   switches. Replace the helper with
    `terraform -chdir=infra/cherry apply -var-file="$COCO_STATE_DIR/cherry.tfvars" -replace=cherryservers_server.helper`,
    or ask Cherry support to move it.
 
@@ -84,23 +85,43 @@ from the order has to go back into its user data.
    terraform -chdir=infra/cherry output -raw rig_values >> "$COCO_STATE_DIR/rig.yml"
    ```
 
-6. Check the helper. `MIRROR_READY` means the registry is serving; `MIRROR_FAILED`
-   means a step failed, and the log says which. `rig-network.env` names the adopted
-   interface: its `VLAN_IFACE` is `bastion_private_if`, its `PUBLIC_IFACE` is
-   `bastion_external_if`, and its `VLAN_VID` must equal `vlan_vid_override`.
+   Both servers log in as `root`, so set `bastion_ssh_user` and `raw_node_ssh_user` to
+   `root`. If your key has a passphrase, load it into an agent first
+   (`eval "$(ssh-agent -s)" && ssh-add <private-key>`): SSH and Ansible then stop
+   asking for it.
+
+6. Start the bootstrap on the helper. It runs as a systemd unit, as cloud-init would,
+   so it keeps going after SSH disconnects and refuses to start a second time.
 
    ```bash
-   ssh '<helper-image-login-user>'@"$(terraform -chdir=infra/cherry output -raw helper_public_ipv4)"
-   sudo ls /opt/mirror/MIRROR_READY /opt/mirror/MIRROR_FAILED
-   sudo tail -n 20 /var/log/mirror-bootstrap.log
+   ssh root@"$(terraform -chdir=infra/cherry output -raw helper_public_ipv4)" \
+     'install -m 700 /dev/stdin /usr/local/sbin/helper-bootstrap.sh && systemd-run --unit=helper-bootstrap /usr/local/sbin/helper-bootstrap.sh' \
+     < "$COCO_STATE_DIR/helper-bootstrap.sh"
+   ```
+
+7. Check the helper. The bootstrap installs packages, then downloads and installs the
+   registry, so allow a while. `MIRROR_READY` means the registry is serving;
+   `MIRROR_FAILED` means a step failed, and the log says which. `rig-network.env`
+   names the adopted interface: its `VLAN_IFACE` is `bastion_private_if`, its
+   `PUBLIC_IFACE` is `bastion_external_if`, and its `VLAN_VID` must equal
+   `vlan_vid_override`.
+
+   ```bash
+   ssh root@"$(terraform -chdir=infra/cherry output -raw helper_public_ipv4)"
+   systemctl status helper-bootstrap --no-pager --lines=0
+   ls /opt/mirror/MIRROR_READY /opt/mirror/MIRROR_FAILED
+   tail -n 20 /var/log/mirror-bootstrap.log
    cat /etc/rig-network.env
    ```
 
-7. Check the node's tag on its original OS. The number after `id` must equal
+   Before the registry step starts, `journalctl -u helper-bootstrap` shows the progress.
+
+8. Check the node's tag on its original OS. The number after `id` must equal
    `vlan_vid_override`; Ansible checks it again before installing.
 
    ```bash
-   ip -d link show type vlan | grep -o '802.1Q id [0-9]*'
+   ssh root@"$(terraform -chdir=infra/cherry output -raw node_public_ipv4)" \
+     "ip -d link show type vlan | grep -o '802.1Q id [0-9]*'"
    ```
 
 Terraform never reinstalls the node after ordering: Ansible rebuilds it into
@@ -124,7 +145,6 @@ read `CHERRY_SERVERS_API_KEY`.
 | `node_image` | Any Linux image the plan offers. It only runs the firmware preflight; Ansible later replaces it with OpenShift. SNP host support was first shown on Ubuntu 26.04 (`ubuntu_26_04_64bit`, kernel 7.0). | `GET /v1/plans/<plan>/images`. |
 | `helper_plan` | The cheapest plan in the same region with stock and enough disk for the mirror. It needs no SEV-SNP. | The plan list below, without the EPYC filter. |
 | `helper_image` | `almalinux_9_64bit`. Cherry offers no RHEL image; Red Hat supports RHEL for mirror-registry, and AlmaLinux 9 was the trial's compatibility test. | `GET /v1/plans/<plan>/images`. |
-| `helper_user_data_file` | The file rendered in step 2. The example path matches the default `COCO_STATE_DIR`. | Step 2. |
 | `ssh_public_key_file` or `ssh_key_ids` | One key for both servers. Give a public key file to register it, or the numeric ID of a key already in your account. Keep its private half: the rig file's `raw_node_ssh_key` and `bastion_ssh_key` use it. | `GET /v1/ssh-keys` lists your keys and their IDs. |
 | `node_hostname`, `helper_hostname`, `billing_cycle`, `tags` | Optional. Billing defaults to `hourly`: both servers bill from ordering until they are [retired](maintenance.md#retire-the-infrastructure). | |
 
@@ -149,9 +169,9 @@ curl -s -H "Authorization: Bearer $CHERRY_SERVERS_API_KEY" https://api.cherryser
 
 ### Ordering in the portal instead
 
-Order both servers together in one region and project, so they share a switch, and
-paste the rendered file into the helper's cloud-init user data field. Then copy the
-provider values into the rig file by hand, using the table below.
+Order both servers together in one region and project, so they share a switch,
+without user data. Copy the provider values into the rig file by hand, using the
+table below, then continue from step 6.
 
 ## Where to find each rig-file value
 
@@ -168,10 +188,10 @@ servers themselves.
 | `node_vlan_ip`, `bastion_vlan_ip`, `machine_network`, `vlan_cidr`, `vlan_prefix` | `rig_values`, or each server's private IPv4 and its network. Cherry assigns these; the `group_vars` defaults do not apply on Cherry. |
 | `node_parent_mac`, `node_bond_ports` (name and MAC of each member) | `ip link` on the node's original OS. Use permanent MACs. |
 | `node_external_if`, `node_external_mac` | The node's separate public NIC, if it has one; otherwise leave empty. |
-| `vlan_vid_override` | `rig_values`, checked against the node's original network config (step 7 above). It is the tag on the wire, not a VLAN object ID. |
+| `vlan_vid_override` | `rig_values`, checked against the node's original network config (step 8 above). It is the tag on the wire, not a VLAN object ID. |
 | `bastion_private_if`, `bastion_external_if` | `VLAN_IFACE` and `PUBLIC_IFACE` in the helper's `/etc/rig-network.env`. |
 | `node_root_device` | A `/dev/disk/by-path/...` path on the node. Check the disk serial with `lsblk -o NAME,SERIAL,SIZE` first. |
-| `raw_node_ssh_user`, `raw_node_ssh_key`, `bastion_ssh_key`, `private_link_known_hosts` | Your SSH access to both servers, with their host keys pinned in the `known_hosts` file. |
+| `bastion_ssh_user`, `raw_node_ssh_user`, `raw_node_ssh_key`, `bastion_ssh_key`, `private_link_known_hosts` | Your SSH access to both servers: `root` on Cherry's images, the key from the order, and their host keys pinned in the `known_hosts` file. |
 
 The tested network was an 802.3ad (LACP) bond of two physical NICs. The installed
 bond has no public address; only its private VLAN interface gets one.
