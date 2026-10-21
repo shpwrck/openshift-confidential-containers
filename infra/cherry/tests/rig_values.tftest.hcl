@@ -52,6 +52,34 @@ run "registers_the_public_key_when_no_ids_are_given" {
   }
 }
 
+run "the_untouched_example_values_are_refused" {
+  command = plan
+
+  # The placeholders from terraform.tfvars.example.
+  variables {
+    project_id            = 0
+    region                = "REPLACE_WITH_REGION_SLUG"
+    node_plan             = "REPLACE_WITH_AMD_SNP_PLAN_SLUG"
+    node_image            = "REPLACE_WITH_NODE_IMAGE_SLUG"
+    helper_plan           = "REPLACE_WITH_HELPER_PLAN_SLUG"
+    helper_image          = "REPLACE_WITH_RHEL9_FAMILY_IMAGE_SLUG"
+    helper_user_data_file = "tests/not-rendered-yet.yaml"
+    ssh_public_key_file   = "/path/outside/checkout/rig-ssh-key.pub"
+    ssh_key_ids           = []
+  }
+
+  expect_failures = [
+    var.project_id,
+    var.region,
+    var.node_plan,
+    var.node_image,
+    var.helper_plan,
+    var.helper_image,
+    var.helper_user_data_file,
+    var.ssh_public_key_file,
+  ]
+}
+
 run "rig_values_carry_the_assigned_addresses" {
   module {
     source = "./modules/rig_values"

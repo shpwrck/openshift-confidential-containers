@@ -6,8 +6,8 @@ rig-file value comes from. Ansible does everything after the servers are up.
 
 ## Prerequisites
 
-- A Cherry Servers project and API key, and a budget: confirm the hourly price of both
-  plans before ordering. The servers bill until you [retire them](maintenance.md#retire-the-infrastructure).
+- A Cherry Servers project and [API key](https://portal.cherryservers.com/settings/api-keys),
+  and a budget: confirm the hourly price of both plans before ordering. The servers bill until you [retire them](maintenance.md#retire-the-infrastructure).
 - An AMD EPYC bare-metal plan whose board supports SEV-SNP for the node, and any plan
   with enough disk for the mirror for the helper. Red Hat documents RHEL as the
   supported mirror-registry host; the trial's AlmaLinux 9.8 helper was a compatibility test.
@@ -30,17 +30,20 @@ it in their original OS as a tagged child of the uplink (for example `bond0.2738
 The helper's first-boot bootstrap adopts that interface and its address, so nothing
 from the order has to go back into its user data.
 
-1. Pick a versioned mirror-registry archive (the trial used 2.0.12; `/latest/` links are
-   refused). Use the release's published SHA-256 if it has one; otherwise download the
-   archive once on a trusted machine and run `sha256sum` on it.
-2. Render the helper's cloud-init user data. The file holds no secrets: the registry
-   password is generated on the helper.
+1. Pick a versioned mirror-registry archive; `/latest/` links are refused. Red Hat lists
+   each version under <https://mirror.openshift.com/pub/cgw/mirror-registry/>, with the
+   archive's SHA-256 in that version's signed `sha256sum.txt`. The trial used 2.0.12;
+   its x86_64 archive and checksum are in the command below.
+2. Render the helper's cloud-init user data. `--ssh-user` is the helper image's default
+   login user (for example `cloud-user` on RHEL or `almalinux` on AlmaLinux); use the
+   same name for `bastion_ssh_user` in the rig file. The file holds no secrets: the
+   registry password is generated on the helper.
 
    ```bash
    python3 scripts/render-helper-bootstrap.py \
      --ssh-user '<helper-image-login-user>' \
-     --mirror-registry-url '<versioned-archive-url>' \
-     --mirror-registry-sha256 '<archive-sha256>' \
+     --mirror-registry-url 'https://developers.redhat.com/content-gateway/file/pub/cgw/mirror-registry/2.0.12/mirror-registry-amd64.tar.gz' \
+     --mirror-registry-sha256 '6de43edfd77a61bb27116bb7a9a5715884722a811f92cd5d9dfca406afb457b2' \
      > "$COCO_STATE_DIR/helper-user-data.yaml"
    ```
 
@@ -49,7 +52,9 @@ from the order has to go back into its user data.
    to change them, or to give an explicit VLAN tag and address instead of adopting them.
 
 3. Fill in the Terraform variables: project, region, plan and image slugs, and the
-   SSH public key for both servers.
+   SSH key for both servers. [Choosing the Terraform variables](#choosing-the-terraform-variables)
+   says what each one means and how to look it up. Terraform refuses to plan while an
+   example value is left.
 
    ```bash
    cp infra/cherry/terraform.tfvars.example "$COCO_STATE_DIR/cherry.tfvars"
@@ -64,10 +69,9 @@ from the order has to go back into its user data.
    terraform -chdir=infra/cherry apply -var-file="$COCO_STATE_DIR/cherry.tfvars"
    ```
 
-   `init` checks the provider against the committed lock file and may add your
-   platform's hash to it. The apply ends with an error, after ordering, if the two
-   servers did not land on the same private network: Cherry VLANs do not span
-   switches. Replace the helper with
+   `init` checks the provider against the committed lock file. The apply ends with an
+   error, after ordering, if the two servers did not land on the same private network:
+   Cherry VLANs do not span switches. Replace the helper with
    `terraform -chdir=infra/cherry apply -var-file="$COCO_STATE_DIR/cherry.tfvars" -replace=cherryservers_server.helper`,
    or ask Cherry support to move it.
 
@@ -101,6 +105,47 @@ from the order has to go back into its user data.
 
 Terraform never reinstalls the node after ordering: Ansible rebuilds it into
 OpenShift through the Cherry API, and the configuration ignores that drift.
+
+### Choosing the Terraform variables
+
+A few Cherry Servers terms first. A **team** is the billing account. A **project**
+inside it holds servers and gives the servers in each region a shared private VLAN.
+A **region** is a data center. A **plan** is a hardware model, and an **image** is the
+operating system Cherry installs on delivery. Plans are ordered from stock, so a plan
+can be listed in a region with none available. API keys are created at
+<https://portal.cherryservers.com/settings/api-keys>; the commands below that need one
+read `CHERRY_SERVERS_API_KEY`.
+
+| Variable | What to set | How to look it up |
+|---|---|---|
+| `project_id` | The numeric ID of the project to order into. Use a project with nothing else in it, so the rig's VLAN holds only these two servers. | `GET /v1/teams` for your team ID, then `GET /v1/teams/<team-id>/projects` (commands below). |
+| `region` | One region for both servers, with stock of both plans. The trial used `US-Chicago`. | The plan list below shows the stock per region. |
+| `node_plan` | A bare-metal AMD EPYC plan. SEV-SNP needs an EPYC 7003, 8004, 9004 or 9005 series CPU (not Ryzen, EPYC 4004 or EPYC 7002), and a board and BIOS that expose it, which the [firmware preflight](amd-firmware-preflight.md) checks. The trial used `amd-epyc-9124p`. | The plan list below. |
+| `node_image` | Any Linux image the plan offers. It only runs the firmware preflight; Ansible later replaces it with OpenShift. SNP host support was first shown on Ubuntu 26.04 (`ubuntu_26_04_64bit`, kernel 7.0). | `GET /v1/plans/<plan>/images`. |
+| `helper_plan` | The cheapest plan in the same region with stock and enough disk for the mirror. It needs no SEV-SNP. | The plan list below, without the EPYC filter. |
+| `helper_image` | `almalinux_9_64bit`. Cherry offers no RHEL image; Red Hat supports RHEL for mirror-registry, and AlmaLinux 9 was the trial's compatibility test. | `GET /v1/plans/<plan>/images`. |
+| `helper_user_data_file` | The file rendered in step 2. The example path matches the default `COCO_STATE_DIR`. | Step 2. |
+| `ssh_public_key_file` or `ssh_key_ids` | One key for both servers. Give a public key file to register it, or the numeric ID of a key already in your account. Keep its private half: the rig file's `raw_node_ssh_key` and `bastion_ssh_key` use it. | `GET /v1/ssh-keys` lists your keys and their IDs. |
+| `node_hostname`, `helper_hostname`, `billing_cycle`, `tags` | Optional. Billing defaults to `hourly`: both servers bill from ordering until they are [retired](maintenance.md#retire-the-infrastructure). | |
+
+The plan list and the image lists are public. This shows each bare-metal EPYC plan's
+hourly price in euros and the regions with stock:
+
+```bash
+curl -s https://api.cherryservers.com/v1/plans | jq -r '.[]
+  | select(.type == "baremetal" and (.specs.cpus.name | test("EPYC")))
+  | "\(.slug)  \([.pricing[] | select(.unit == "Hourly") | .price][0] // "-") EUR/h  \([.available_regions[] | select(.stock_qty > 0) | "\(.slug):\(.stock_qty)"] | join(" "))"'
+curl -s https://api.cherryservers.com/v1/plans/<plan>/images | jq -r '.[].slug'
+```
+
+Remove `and (.specs.cpus.name | test("EPYC"))` to see every plan when picking the
+helper. Teams, projects and SSH keys need your API key:
+
+```bash
+curl -s -H "Authorization: Bearer $CHERRY_SERVERS_API_KEY" https://api.cherryservers.com/v1/teams | jq '.[] | {id, name}'
+curl -s -H "Authorization: Bearer $CHERRY_SERVERS_API_KEY" https://api.cherryservers.com/v1/teams/<team-id>/projects | jq '.[] | {id, name}'
+curl -s -H "Authorization: Bearer $CHERRY_SERVERS_API_KEY" https://api.cherryservers.com/v1/ssh-keys | jq '.[] | {id, label, fingerprint}'
+```
 
 ### Ordering in the portal instead
 
