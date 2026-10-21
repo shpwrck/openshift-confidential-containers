@@ -11,6 +11,20 @@ The installation path requires UEFI; verify both the firmware selection and
 `test -d /sys/firmware/efi` on the running OS. Changing a BIOS boot selection does
 not convert an existing legacy installation to UEFI.
 
+On the node's original OS:
+
+```bash
+lscpu | grep 'Model name'
+sudo dmidecode -s system-product-name; sudo dmidecode -s baseboard-product-name
+sudo dmidecode -s bios-version; sudo dmidecode -s bios-release-date
+uname -r; cat /proc/cmdline
+lsblk -d -o NAME,SERIAL,SIZE,MODEL
+test -d /sys/firmware/efi && echo UEFI || echo 'NOT UEFI'
+```
+
+Read the BMC firmware version from the BMC web console, or with
+`sudo ipmitool mc info` if `ipmitool` is installed.
+
 ## Set the board's SNP controls
 
 The October 8 **H13SST-G / EPYC 9124 / BIOS 3.7** trial used:
