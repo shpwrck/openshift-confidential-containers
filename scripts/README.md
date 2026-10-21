@@ -25,6 +25,7 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 
 | Script | Make target | Runs on | What it does |
 |---|---|---|---|
+| `render-helper-bootstrap.py` | (none) | controller | Renders the helper's cloud-init user data from the mirror bootstrap template; see [Cherry Servers setup](../docs/cherry-servers.md#render-the-helper-bootstrap) |
 | `host-snp-check.sh` | (copy to the node) | node | Read-only SEV-SNP check on the provider's original OS; see [firmware preflight](../docs/amd-firmware-preflight.md) |
 | `check-private-link.py` | (Ansible) | node | Read-only check that the node reaches the helper's registry (TLS), DNS and NTP over the private VLAN |
 | `discover-node-macs.py` | (Ansible) | controller | Validates the node's NIC names and permanent MACs and merges them into the install inputs |

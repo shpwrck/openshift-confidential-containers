@@ -1,6 +1,6 @@
 #cloud-config
 # Helper (bastion) bootstrap for a RHEL 9-family host: private-VLAN L3 + Red Hat mirror-registry (quay).
-# Jinja cloud-init template: render with reviewed external environment inputs.
+# Jinja cloud-init template: render with scripts/render-helper-bootstrap.py (docs/cherry-servers.md).
 # Bootstrap log lands in /var/log/cloud-init-output.log.
 #
 # OS: Red Hat supports RHEL 8/9 as mirror-registry hosts. The trial helper ran AlmaLinux 9.8 as a
@@ -14,7 +14,7 @@
 #   - the registry is served under DNS name {{ registry_dns_name }}, mapped to the PRIVATE IP in
 #     /etc/hosts, so quay's TLS cert SAN matches what the node dials (no x509 IP-SAN failure);
 #   - the SNP node reaches the mirror ONLY over this private IP (its egress nftables allow just
-#     {{ bastion_vlan_ip }}); see runbook Phase 1.
+#     {{ bastion_vlan_ip }}); see docs/architecture.md.
 #   # VERIFY on first provision: the VLAN parent interface is '{{ vlan_parent_interface }}'
 #   # (`ip -br link` / `nmcli device`). Adjust below if the naming differs — it is hardware-bound.
 #
@@ -162,7 +162,7 @@ write_files:
 
       # --- fetch the explicit mirror-registry archive; verification is mandatory -------
       URL="{{ mirror_registry_url }}"
-      SHA="${mirror_registry_sha256}"
+      SHA="{{ mirror_registry_sha256 }}"
       [[ "$URL" == https://* && "$URL" != */latest/* && "$SHA" =~ ^[0-9a-fA-F]{64}$ ]] \
         || { echo "FATAL: versioned HTTPS mirror-registry URL and SHA-256 are required"; exit 1; }
       cd /opt

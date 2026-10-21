@@ -9,7 +9,8 @@ Copy [`rig.example.yml`](rig.example.yml) outside the checkout to describe your
 servers, and pass it with `-e "@$COCO_STATE_DIR/rig.yml"`. Defaults for everything
 else are in [`group_vars/all.yml`](group_vars/all.yml). The
 [mirror bootstrap](bootstrap/mirror-registry.yaml.j2) is a cloud-init template that
-sets up the helper's network and mirror registry before Ansible runs.
+sets up the helper's network and mirror registry before Ansible runs;
+[Cherry Servers setup](../docs/cherry-servers.md#render-the-helper-bootstrap) shows how to render it.
 
 ## Modes
 

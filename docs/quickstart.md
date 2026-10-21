@@ -22,7 +22,8 @@ Then continue with [Trustee setup](trustee.md) and the
 - [ ] You have two servers on one private VLAN: the AMD node and a helper.
       [Cherry Servers setup](cherry-servers.md) lists what the trial used.
 - [ ] The helper runs the mirror registry. The
-      [cloud-init template](../ansible/bootstrap/mirror-registry.yaml.j2) sets it up.
+      [cloud-init template](../ansible/bootstrap/mirror-registry.yaml.j2) sets it up;
+      [render it](cherry-servers.md#render-the-helper-bootstrap) before ordering the helper.
 - [ ] The node's BIOS is configured and SEV-SNP works on the provider's original OS.
       Follow [firmware preflight](amd-firmware-preflight.md).
 - [ ] The node's private VLAN interface is configured in its original OS, and from

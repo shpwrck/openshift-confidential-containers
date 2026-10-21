@@ -13,9 +13,8 @@ everything after the helper is running.
   H13SST-G needed manual setup; its Redfish BIOS API required a licence.
 - A prepared TLS mirror registry on the helper. Red Hat documents RHEL as its supported
   host; the trial's AlmaLinux 9.8 helper was a compatibility test.
-  The shared [cloud-init bootstrap](../ansible/bootstrap/mirror-registry.yaml.j2) uses
-  Jinja inputs for the actual helper network, registry archive/checksum and SSH user;
-  render it with protected external values before uploading it to the provider.
+  The shared [cloud-init bootstrap](../ansible/bootstrap/mirror-registry.yaml.j2) sets it
+  up on the helper's first boot; [render it](#render-the-helper-bootstrap) before ordering the helper.
 - Private DNS and NTP, no upstream DNS forwarding for the node, and no private-to-public
   forwarding through the helper. The helper may remain connected for staging content.
 - External credentials, pinned SSH access and environment inputs from the [quickstart](quickstart.md).
@@ -23,6 +22,53 @@ everything after the helper is running.
 Export your Cherry API key as `CHERRY_SERVERS_API_KEY` without putting it in shell
 history or the checkout (the quickstart shows one way). Cherry and the private VLAN
 network profile are the defaults, so the rig file does not need to select them.
+
+## Render the helper bootstrap
+
+The helper gets its network, DNS, NTP and mirror registry from cloud-init user data
+on its first boot, so render the file before you order the helper. The render needs
+the VLAN tag, which you read from a server that is already on the VLAN:
+
+1. Order the node with the private VLAN and read the tag from its original OS. The
+   number after `id` is the tag; Cherry's VLAN object ID is a different number.
+
+   ```bash
+   ip -d link show type vlan | grep -o '802.1Q id [0-9]*'
+   ```
+
+2. Pick a versioned mirror-registry archive (the trial used 2.0.12; `/latest/` links are
+   refused). Use the release's published SHA-256 if it has one; otherwise download the
+   archive once on a trusted machine and run `sha256sum` on it.
+3. Render the user data from the checkout, with the Python environment from
+   [quickstart step 1](quickstart.md#1-set-up-the-controller) (you can do that step before
+   ordering anything):
+
+   ```bash
+   python3 scripts/render-helper-bootstrap.py \
+     --ssh-user '<helper-login-user>' \
+     --vlan-vid '<vlan-tag>' \
+     --mirror-registry-url '<versioned-archive-url>' \
+     --mirror-registry-sha256 '<archive-sha256>' \
+     > "$COCO_STATE_DIR/helper-user-data.yaml"
+   ```
+
+   The other inputs default to the values in
+   [`group_vars/all.yml`](../ansible/group_vars/all.yml): helper `192.168.66.10` on
+   `192.168.66.0/24`, registry name `mirror.rig.local`, `/opt/mirror` and registry user
+   `init`. Run the script with `--help` to change them. `--vlan-parent-interface`
+   defaults to `auto`, which picks the first connected physical NIC that has no address;
+   if the helper's private network is a bond, pass the bond's name instead.
+
+4. Order the helper on the same VLAN with that file as its cloud-init user data (the
+   portal field, or base64 for the API's `user_data`). The file holds no secrets: the
+   registry password is generated on the helper.
+5. When the helper is up, check the result on it. `MIRROR_READY` means the registry is
+   serving; `MIRROR_FAILED` means a step failed, and the log says which.
+
+   ```bash
+   sudo ls /opt/mirror/MIRROR_READY /opt/mirror/MIRROR_FAILED
+   sudo tail -n 20 /var/log/mirror-bootstrap.log
+   ```
 
 ## Where to find each rig-file value
 
