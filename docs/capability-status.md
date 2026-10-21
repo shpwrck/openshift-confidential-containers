@@ -31,10 +31,31 @@ Choose the actual contexts and namespaces. The runner requires:
 - Endpoint/mirror trust and the reviewed complete agent policy. Customer mode uses
   Restricted HTTPS; co-location requires explicit `TRUSTEE_LAB=1`.
 
-For the validated co-located lab, set the same worker/Trustee context,
-`TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1`, the actual HTTP endpoint and mirror CA.
-Publish the enforcing resource policy/references before testing. Customer mode
-instead uses the following inputs (replace all example names/paths):
+Create the workload namespace, then mark it and the Trustee namespace as disposable
+once you have confirmed both belong to this test environment:
+
+```bash
+oc --context="$WORKER_CONTEXT" create namespace coco-validation
+oc --context="$WORKER_CONTEXT" label namespace coco-validation coco.openshift.io/disposable=true
+oc --context="$TRUSTEE_CONTEXT" label namespace trustee-operator-system coco.openshift.io/disposable=true
+```
+
+For the validated co-located lab, publish the enforcing resource policy and
+references first ([Trustee setup](trustee.md#disposable-lab)), then run every test:
+
+```bash
+export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
+export COCO_DISPOSABLE_TEST=1 TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1
+export MIRROR_CA="$COCO_STATE_DIR/mirror-ca.pem"
+export PROOF_NODE='<worker-node>'
+export VCEK_SECRET_NAME="$(python3 scripts/lib/trustee_config.py mounts --hwids "$HWIDS" | jq -r '.[0].secretName')"
+source "$COCO_STATE_DIR/rung-image-artifacts/rung-signed.env"   # from the signed image build below
+make proof-plan
+make test-rung WHICH=all
+```
+
+`KBS_URL` defaults to the in-cluster HTTP service, which only the lab accepts.
+Customer mode instead uses the following inputs (replace all example names/paths):
 
 ```bash
 export WORKER_CONTEXT=validation-workers TRUSTEE_CONTEXT=validation-trustee
@@ -49,7 +70,8 @@ make test-rung WHICH=rung-kbs WORKLOAD_NS=coco-validation NS=trustee-operator-sy
 
 `WORKLOAD_NS` selects the workloads; Make's `NS` selects Trustee. For the SNP
 endorsement test, also set `PROOF_NODE` and that worker's `VCEK_SECRET_NAME`.
-Derive the Secret from the actual KbsConfig cache entry; do not select a random peer.
+Derive the Secret from that worker's HWID, as above, so it matches the KbsConfig
+cache entry; do not select a random peer.
 
 `INITDATA_FILE` reuses approved bytes and checks the rung's image-policy URI.
 `EMIT_INITDATA=1` prints the renderer's bytes for reference preparation. Initdata is
@@ -94,8 +116,60 @@ guest error requires a specific, matching Trustee denial from that guest/time wi
 
 `make test-rung WHICH=all` runs all five CPU tests with fresh controls and excludes
 encryption. It does **not** reinstall CoCo; [maintenance](maintenance.md) covers
-that separate operation. Test host, ordinary-pod and guest isolation independently,
-with working private-service controls and a deliberately failing probe calibration.
+that separate operation. Test host, ordinary-pod and guest isolation independently
+([network isolation](#network-isolation)).
+
+## Network isolation
+
+Isolation is a separate check from the capability tests, made at three layers: the
+node, an ordinary pod and a confidential guest. At each layer public addresses and
+names must be unreachable while a private destination answers, so a blocked result
+can't come from a broken probe. Repeat the checks after every reboot or rollout.
+The commands use the repository's default mirror name.
+
+```bash
+NODE='<worker-node>'
+# Node: the mirror answers over TLS (401 without credentials); public TCP and names fail.
+oc --context="$WORKER_CONTEXT" debug node/"$NODE" -- chroot /host sh -c '
+  curl -sS -m 10 -o /dev/null -w "mirror %{http_code}\n" https://mirror.rig.local:8443/v2/
+  curl -sS -m 10 -o /dev/null https://1.1.1.1 && echo FAIL-public-tcp || echo ok-no-public-tcp
+  curl -sS -m 10 -o /dev/null https://quay.io && echo FAIL-public-name || echo ok-no-public-name'
+
+# Ordinary pod: the in-cluster Trustee service answers; public TCP and names fail.
+oc --context="$WORKER_CONTEXT" -n coco-validation run egress-probe --rm -i --restart=Never \
+  --image="$(python3 scripts/verify-release.py --get images.ubiMinimal.ref)" -- sh -c '
+  curl -sS -m 10 -o /dev/null -w "kbs %{http_code}\n" http://kbs-service.trustee-operator-system.svc:8080/
+  curl -sS -m 10 -o /dev/null https://1.1.1.1 && echo FAIL-public-tcp || echo ok-no-public-tcp
+  curl -sS -m 10 -o /dev/null https://quay.io && echo FAIL-public-name || echo ok-no-public-name'
+```
+
+For the guest, render the `rung-kbs` workload and replace its application command
+with the same probes. The pod only starts after attestation, and its image comes
+from the private registry inside the VM, so a started pod is the positive control:
+
+```bash
+RENDER_ONLY=1 POD_NAME=guest-probe make -s run-rung-kbs > "$COCO_STATE_DIR/guest-probe.yaml"
+python3 - "$COCO_STATE_DIR/guest-probe.yaml" <<'PY'
+import sys, yaml
+path = sys.argv[1]
+pod = yaml.safe_load(open(path))
+pod["spec"]["containers"][0]["command"] = ["/bin/sh", "-c",
+    "curl -sS -m 10 -o /dev/null -w 'kbs %{http_code}\\n' http://kbs-service.trustee-operator-system.svc:8080/; "
+    "curl -sS -m 10 -o /dev/null https://1.1.1.1 && echo FAIL-public-tcp || echo ok-no-public-tcp; "
+    "curl -sS -m 10 -o /dev/null https://quay.io && echo FAIL-public-name || echo ok-no-public-name"]
+yaml.safe_dump(pod, open(path, "w"), sort_keys=False)
+PY
+oc --context="$WORKER_CONTEXT" apply -f "$COCO_STATE_DIR/guest-probe.yaml"
+oc --context="$WORKER_CONTEXT" -n coco-validation wait pod/guest-probe \
+  --for=jsonpath='{.status.phase}'=Succeeded --timeout=10m
+oc --context="$WORKER_CONTEXT" -n coco-validation logs guest-probe
+oc --context="$WORKER_CONTEXT" -n coco-validation delete pod guest-probe
+```
+
+A pass is a numeric HTTP status from the private destination and `ok-` on every
+other line at all three layers. `000` or any `FAIL-` line needs investigation.
+While a confidential pod is running, `oc exec` into it must also be refused by the
+agent policy.
 
 ## Encryption and demos
 

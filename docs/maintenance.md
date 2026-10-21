@@ -61,6 +61,10 @@ must already carry `coco.openshift.io/disposable=true`: the workload namespace,
 Mark only namespaces deliberately owned by the disposable test.
 
 ```bash
+for ns in coco-validation trustee-operator-system openshift-sandboxed-containers-operator \
+  openshift-nfd cert-manager-operator cert-manager openshift-gatekeeper-system; do
+  oc --context="$WORKER_CONTEXT" label namespace "$ns" coco.openshift.io/disposable=true --overwrite
+done
 TRUSTEE_LAB=1 ALLOW_DISPOSABLE_UNINSTALL=1 make uninstall-coco
 make validate-coco-uninstalled
 make validate-sno-baseline
