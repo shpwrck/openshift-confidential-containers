@@ -59,6 +59,21 @@ from the order has to go back into its user data.
    cp infra/cherry/terraform.tfvars.example "$COCO_STATE_DIR/cherry.tfvars"
    ```
 
+   Cherry's plan list is public. Both servers need stock in the same region. This lists
+   each AMD EPYC plan's hourly price and the regions that have it in stock:
+
+   ```bash
+   curl -s https://api.cherryservers.com/v1/plans | jq -r '.[]
+     | select(.type == "baremetal" and (.specs.cpus.name | test("EPYC")))
+     | "\(.slug)  \([.pricing[] | select(.unit == "Hourly") | .price][0] // "-") EUR/h  \([.available_regions[] | select(.stock_qty > 0) | "\(.slug):\(.stock_qty)"] | join(" "))"'
+   ```
+
+   Drop the CPU filter to find a cheap helper in the same region, and list a plan's
+   images with `curl -s https://api.cherryservers.com/v1/plans/<plan>/images | jq -r '.[].slug'`.
+   The trial ran the node on `amd-epyc-9124p` in `US-Chicago`. Cherry has no RHEL image,
+   so use `almalinux_9_64bit` for the helper. For the node's original OS, SNP host
+   support was first shown on Ubuntu 26.04 (`ubuntu_26_04_64bit`, kernel 7.0).
+
 4. Order both servers. State and the provider cache stay in `COCO_STATE_DIR`; keep these
    two exports for every `terraform` command below.
 

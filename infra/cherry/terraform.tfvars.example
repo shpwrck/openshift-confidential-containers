@@ -1,7 +1,8 @@
 # Copy outside the checkout and fill in every REPLACE value:
 #   cp infra/cherry/terraform.tfvars.example "$COCO_STATE_DIR/cherry.tfvars"
-# Slugs come from the Cherry portal or API (GET /v1/regions, /v1/teams/<team>/plans,
-# /v1/plans/<plan>/images). Confirm the hourly price of both plans first.
+# Slugs come from the Cherry portal or the public API (GET /v1/plans for plans, prices
+# and stock per region; GET /v1/plans/<plan>/images). docs/cherry-servers.md has the
+# commands. Confirm the hourly price of both plans first.
 
 project_id   = 0 # REPLACE with the project ID
 region       = "REPLACE_WITH_REGION_SLUG"
@@ -13,7 +14,8 @@ helper_image = "REPLACE_WITH_RHEL9_FAMILY_IMAGE_SLUG"
 # Written by scripts/render-helper-bootstrap.py.
 helper_user_data_file = "~/.local/state/openshift-confidential-containers/helper-user-data.yaml"
 
-# Registered for both servers. Or list existing key IDs in ssh_key_ids instead.
+# Registered for both servers. If the key is already in your Cherry account, delete
+# this line and give its numeric ID instead (portal SSH Keys page, or GET /v1/ssh-keys).
 ssh_public_key_file = "/path/outside/checkout/rig-ssh-key.pub"
 # ssh_key_ids = ["1234"]
 
