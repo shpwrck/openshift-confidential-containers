@@ -33,8 +33,11 @@ Chrome or Chromium).
 `.github/workflows/scripts-ci.yml` runs `scripts/lint.sh` on every pull request and
 push to `main`: on Linux with Python 3.12 and 3.14, and on macOS with Python 3.12
 (macOS checks the portable workstation scripts under Bash 3.2). A separate job
-renders every Mermaid diagram. Dependabot proposes monthly updates for the pinned
-GitHub Actions and Python development requirements; the OPA and Kustomize pins in
+renders every Mermaid diagram, and another formats, validates and tests the
+[Cherry Servers Terraform](../infra/cherry/) offline with a mocked provider
+(`terraform -chdir=infra/cherry init -backend=false && terraform -chdir=infra/cherry test`
+runs the same locally). Dependabot proposes monthly updates for the pinned GitHub
+Actions, Python development requirements and Terraform provider; the OPA and Kustomize pins in
 `scripts/install-dev-tools.py` and the product pins in the
 [release manifest](../install/release-manifest.json) are updated by hand (see
 [release resolution](release-resolution.md)).

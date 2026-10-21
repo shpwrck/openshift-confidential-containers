@@ -45,7 +45,7 @@ upgrades of an existing deployment, and fully private boot from power-on.
 ## What you need
 
 - **A Linux controller** (your workstation or a jump host) with Bash, Python 3.12+,
-  `jq`, SSH and Ansible. Everything is driven from here.
+  `jq`, SSH, Ansible and Terraform. Everything is driven from here.
 - **Two bare-metal servers on the same private VLAN**:
   - an AMD EPYC node with SEV-SNP support and UEFI boot (this becomes OpenShift), and
   - a helper running RHEL 9 (it hosts the mirror registry, DNS and NTP; the trial
@@ -61,17 +61,19 @@ will need changes to the discovery and reinstall steps in
 
 Follow these guides in order. Each one ends where the next begins.
 
-1. **[Check the AMD hardware](docs/amd-firmware-preflight.md)**: set the BIOS
+1. **[Order the servers](docs/cherry-servers.md)**: set up the controller
+   ([quickstart step 1](docs/quickstart.md#1-set-up-the-controller)), then order the
+   node and the helper with Terraform. The helper sets up its mirror registry on
+   first boot, and Terraform starts your rig file.
+2. **[Check the AMD hardware](docs/amd-firmware-preflight.md)**: set the BIOS
    options and prove SEV-SNP is working on the node before installing anything.
-2. **[Install OpenShift and the CoCo Operators](docs/quickstart.md)**: set up the
-   controller, describe your servers in a rig file, prepare the helper, install
-   the node and add the Operators. [Cherry Servers setup](docs/cherry-servers.md)
-   covers the provider-specific inputs.
-3. **[Set up Trustee](docs/trustee.md)**: collect the node's AMD certificate,
+3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md)**: finish the
+   rig file, prepare the helper, install the node and add the Operators.
+4. **[Set up Trustee](docs/trustee.md)**: collect the node's AMD certificate,
    calculate the approved reference values and publish the attestation policies.
-4. **[Configure guest image pulls](docs/guest-images.md)**: give the confidential
+5. **[Configure guest image pulls](docs/guest-images.md)**: give the confidential
    VM access to the private registry.
-5. **[Run the capability tests](docs/capability-status.md)**: prove that each
+6. **[Run the capability tests](docs/capability-status.md)**: prove that each
    security control allows the right workload and denies a tampered one.
 
 When something fails, see [troubleshooting](docs/troubleshooting.md). The
@@ -93,6 +95,7 @@ make lint           # run all offline checks (see docs/contributing.md for tools
 | Directory | Contents |
 |---|---|
 | [`install/`](install/README.md) | Release manifest (exact versions and digests) and the oc-mirror image set |
+| [`infra/cherry/`](infra/cherry/README.md) | Terraform that orders the node and the helper on Cherry Servers |
 | [`ansible/`](ansible/README.md) | Helper preparation and OpenShift installation |
 | [`gitops/`](gitops/README.md) | Kustomize manifests for the Operators, Kata runtime, Trustee and test workloads |
 | [`scripts/`](scripts/README.md) | Install steps, Trustee configuration, image signing and the test runner |

@@ -51,6 +51,24 @@ jobs:
       - name: Run required offline checks
         shell: bash
         run: bash scripts/lint.sh
+  terraform:
+    # Offline: formats, validates and tests infra/cherry with a mocked provider.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+      - name: Check the Cherry Servers Terraform
+        run: |
+          terraform -chdir=infra/cherry fmt -check -recursive -diff
+          terraform -chdir=infra/cherry init -backend=false -input=false
+          terraform -chdir=infra/cherry validate
+          terraform -chdir=infra/cherry test
   diagrams:
     # GitHub renders Mermaid blocks in Markdown; a syntax error shows as a broken diagram.
     runs-on: ubuntu-latest

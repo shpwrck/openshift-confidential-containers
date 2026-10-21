@@ -84,3 +84,12 @@ archive hashes and recovery limits before deleting resources.
 
 Delete only the intended provider objects and confirm absence through fresh inventory
 reads. Power-off or failed SSH is not proof of deletion. Keep the provider ownership and retirement records.
+
+If you ordered with Terraform, it deletes exactly the servers and SSH key it created.
+Use the same exports as [the order](cherry-servers.md#order-the-servers), then confirm
+in the Cherry portal or API that both servers are gone:
+
+```bash
+export CHERRY_API_KEY="$CHERRY_SERVERS_API_KEY" TF_DATA_DIR="$COCO_STATE_DIR/terraform"
+terraform -chdir=infra/cherry destroy -var-file="$COCO_STATE_DIR/cherry.tfvars"
+```
