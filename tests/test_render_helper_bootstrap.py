@@ -34,8 +34,10 @@ else:
 '''
 
 
-def render(*extra):
-    args = ['--ssh-user', 'root', '--mirror-registry-url', URL, '--mirror-registry-sha256', SHA, *extra]
+def render(*extra, cloud_config=True):
+    args = ['--mirror-registry-url', URL, '--mirror-registry-sha256', SHA, *extra]
+    if cloud_config:
+        args = ['--cloud-config', '--ssh-user', 'root', *args]
     return subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True, timeout=30)
 
 
@@ -87,6 +89,48 @@ class RenderHelperBootstrap(unittest.TestCase):
                 result = render(*extra)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertEqual(result.stdout, '')
+
+
+class HelperBootstrapScript(unittest.TestCase):
+    """The default output: the same bootstrap as one root script, run over SSH (Cherry ignores its setup with user data)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='coco-helper-script-')
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+        self.bin = self.base / 'stubs'
+        self.bin.mkdir()
+        self.calls = self.base / 'calls'
+        # dnf and the runcmd's bash only record their arguments; id reports root.
+        for name in ('dnf', 'bash'):
+            (self.bin / name).write_text(f'#!/bin/sh\nprintf "%s\\0" {name} "$@" >> "$FIXTURE_CALLS"\nprintf "\\036" >> "$FIXTURE_CALLS"\n')
+        (self.bin / 'id').write_text('#!/bin/sh\necho 0\n')
+        for name in ('dnf', 'bash', 'id'):
+            (self.bin / name).chmod(0o755)
+
+    def test_script_writes_the_same_files_and_runs_the_same_commands_as_cloud_init(self):
+        cloud = yaml.safe_load(render().stdout)
+        result = render(cloud_config=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.startswith('#!/bin/bash\n'))
+        target = self.base / 'root'
+        script = result.stdout.replace('/usr/local/bin', f'{target}/usr/local/bin')
+        env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ['PATH'], FIXTURE_CALLS=str(self.calls))
+        run = subprocess.run([shutil.which('bash'), '-c', script], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        for item in cloud['write_files']:
+            with self.subTest(path=item['path']):
+                written = Path(f"{target}{item['path']}")
+                self.assertEqual(written.read_text(), item['content'])
+                self.assertEqual(oct(written.stat().st_mode & 0o777), oct(int(item['permissions'], 8)))
+        calls = [call.split('\0')[:-1] for call in self.calls.read_text().split('\036')[:-1]]
+        self.assertEqual(calls[0], ['dnf', '-y', 'install', *cloud['packages']])
+        expected_runcmd = [[part.replace('/usr/local/bin', f'{target}/usr/local/bin') for part in command]
+                           for command in cloud['runcmd']]
+        self.assertEqual(calls[1:], expected_runcmd)
+
+    def test_script_ignores_the_ssh_user(self):
+        self.assertEqual(render('--ssh-user', 'someone', cloud_config=False).stdout, render(cloud_config=False).stdout)
 
 
 class HelperVlanSetup(unittest.TestCase):

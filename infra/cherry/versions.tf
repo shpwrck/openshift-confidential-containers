@@ -8,8 +8,8 @@ terraform {
     }
   }
 
-  # State holds server identities and the helper's user data: keep it in
-  # COCO_STATE_DIR, outside the checkout (see docs/cherry-servers.md).
+  # State holds server identities and addresses: keep it in COCO_STATE_DIR,
+  # outside the checkout (see docs/cherry-servers.md).
   #   terraform -chdir=infra/cherry init -backend-config="path=$COCO_STATE_DIR/cherry.tfstate"
   backend "local" {}
 }

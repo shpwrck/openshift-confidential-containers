@@ -63,8 +63,8 @@ Follow these guides in order. Each one ends where the next begins.
 
 1. **[Order the servers](docs/cherry-servers.md)**: set up the controller
    ([quickstart step 1](docs/quickstart.md#1-set-up-the-controller)), then order the
-   node and the helper with Terraform. The helper sets up its mirror registry on
-   first boot, and Terraform starts your rig file.
+   node and the helper with Terraform, then start the helper's mirror bootstrap over
+   SSH. Terraform also starts your rig file.
 2. **[Check the AMD hardware](docs/amd-firmware-preflight.md)**: set the BIOS
    options and prove SEV-SNP is working on the node before installing anything.
 3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md)**: finish the

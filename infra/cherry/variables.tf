@@ -58,16 +58,6 @@ variable "helper_image" {
   }
 }
 
-variable "helper_user_data_file" {
-  type        = string
-  description = "Path to the helper's cloud-init user data from scripts/render-helper-bootstrap.py."
-
-  validation {
-    condition     = fileexists(pathexpand(var.helper_user_data_file))
-    error_message = "No file at helper_user_data_file. Render it with scripts/render-helper-bootstrap.py first (docs/cherry-servers.md)."
-  }
-}
-
 variable "ssh_public_key_file" {
   type        = string
   default     = ""
