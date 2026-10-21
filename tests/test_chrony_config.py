@@ -45,14 +45,16 @@ print(os.environ['FIXTURE_EFFECTIVE'], end='')
     def cloud_script(self):
         document = yaml.safe_load(CLOUD.read_text().replace('{{ bastion_ssh_user | to_json }}', '"fixture-user"'))
         content = {item['path']: item['content'] for item in document['write_files']}
-        self.managed.parent.mkdir(exist_ok=True)
-        self.managed.write_text(content['/etc/chrony.d/rig.conf'].replace('{{ vlan_subnet }}', '192.168.66.0/24'))
+        # setup-rig-vlan.sh records the private network before this step runs.
+        network = self.base / 'rig-network.env'
+        network.write_text('VLAN_SUBNET=192.168.66.0/24\n')
         script = content['/usr/local/bin/setup-rig-ntp.sh']
         # Scope filesystem writes to the fixture; retain actual shell guards/flow.
-        return script.replace('/etc/chrony.conf', str(self.main)).replace(
+        return script.replace('/etc/rig-network.env', str(network)).replace(
+            '/etc/chrony.conf', str(self.main)).replace(
             '/etc/chrony.d/rig.conf', str(self.managed)).replace(
             '/etc/chrony[.]d/rig[.]conf', str(self.managed).replace('.', '[.]')).replace(
-            '{{ vlan_subnet }}', '192.168.66.0/24')
+            'mkdir -p /etc/chrony.d', 'mkdir -p ' + str(self.managed.parent))
 
     def test_cloud_init_includes_private_policy_once_and_preserves_image_sources(self):
         script = self.cloud_script()

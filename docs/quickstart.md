@@ -19,10 +19,10 @@ Then continue with [Trustee setup](trustee.md) and the
 
 ## Before you start
 
-- [ ] You have two servers on one private VLAN: the AMD node and a helper.
-      [Cherry Servers setup](cherry-servers.md) lists what the trial used.
-- [ ] The helper runs the mirror registry. The
-      [cloud-init template](../ansible/bootstrap/mirror-registry.yaml.j2) sets it up.
+- [ ] You have two servers on one private VLAN: the AMD node and a helper whose
+      first boot set up the mirror registry. After step 1, order both with
+      [Cherry Servers setup](cherry-servers.md#order-the-servers), which also starts
+      your rig file.
 - [ ] The node's BIOS is configured and SEV-SNP works on the provider's original OS.
       Follow [firmware preflight](amd-firmware-preflight.md).
 - [ ] The node's private VLAN interface is configured in its original OS, and from
@@ -57,6 +57,9 @@ To move to newer product versions, follow [release resolution](release-resolutio
 
 All site-specific values go in one file outside the checkout:
 
+If you ordered with Terraform, [Cherry Servers setup](cherry-servers.md#order-the-servers)
+already created the file and appended the values Cherry assigned. Otherwise:
+
 ```bash
 cp ansible/rig.example.yml "$COCO_STATE_DIR/rig.yml"
 ```
@@ -66,14 +69,15 @@ comments say where each one comes from. In short:
 
 | Group | Values |
 |---|---|
-| Helper access | Public IP, SSH user and key, private and public interface names |
-| Node identity | Provider server ID, hostname and project ID; SSH user and key for the original OS; a `known_hosts` file that pins both servers |
-| Node network | Bond and member NIC names and permanent MACs, the VLAN tag on the wire |
+| Helper access | SSH user and key, private and public interface names (public IP from Terraform) |
+| Node identity | SSH user and key for the original OS; a `known_hosts` file that pins both servers (server ID, hostname and project from Terraform) |
+| Node network | Bond and member NIC names and permanent MACs (private addresses and VLAN tag from Terraform) |
 | Install disk | A stable `/dev/disk/by-path/...` path whose serial you have checked |
 | Credentials | Paths to the pull secret and node public key; a fresh `boot_artifacts_token` |
 
-Defaults for everything else (cluster name, private addresses, DNS names) are in
-[`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml).
+Defaults for everything else (cluster name, DNS names) are in
+[`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml). Its private addresses
+do not apply on Cherry, which assigns them; Terraform supplies the real ones.
 
 Export the provider API key without writing it to your shell history, for example:
 

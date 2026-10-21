@@ -30,6 +30,12 @@ ansible/.ansible/
 # Secret-bearing local environment
 .env
 
+# Terraform working files: state and variables live in COCO_STATE_DIR
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
 # Local Python tooling
 __pycache__/
 *.py[cod]

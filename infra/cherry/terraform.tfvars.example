@@ -1,0 +1,21 @@
+# Copy outside the checkout and fill in every REPLACE value:
+#   cp infra/cherry/terraform.tfvars.example "$COCO_STATE_DIR/cherry.tfvars"
+# Slugs come from the Cherry portal or API (GET /v1/regions, /v1/teams/<team>/plans,
+# /v1/plans/<plan>/images). Confirm the hourly price of both plans first.
+
+project_id   = 0 # REPLACE with the project ID
+region       = "REPLACE_WITH_REGION_SLUG"
+node_plan    = "REPLACE_WITH_AMD_SNP_PLAN_SLUG"
+node_image   = "REPLACE_WITH_NODE_IMAGE_SLUG"
+helper_plan  = "REPLACE_WITH_HELPER_PLAN_SLUG"
+helper_image = "REPLACE_WITH_RHEL9_FAMILY_IMAGE_SLUG"
+
+# Written by scripts/render-helper-bootstrap.py.
+helper_user_data_file = "~/.local/state/openshift-confidential-containers/helper-user-data.yaml"
+
+# Registered for both servers. Or list existing key IDs in ssh_key_ids instead.
+ssh_public_key_file = "/path/outside/checkout/rig-ssh-key.pub"
+# ssh_key_ids = ["1234"]
+
+# node_hostname   = "sno-coco-node"
+# helper_hostname = "sno-coco-helper"

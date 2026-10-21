@@ -1,6 +1,6 @@
 #cloud-config
 # Helper (bastion) bootstrap for a RHEL 9-family host: private-VLAN L3 + Red Hat mirror-registry (quay).
-# Jinja cloud-init template: render with reviewed external environment inputs.
+# Jinja cloud-init template: render with scripts/render-helper-bootstrap.py (docs/cherry-servers.md).
 # Bootstrap log lands in /var/log/cloud-init-output.log.
 #
 # OS: Red Hat supports RHEL 8/9 as mirror-registry hosts. The trial helper ran AlmaLinux 9.8 as a
@@ -8,15 +8,15 @@
 # The network stack is NetworkManager; verify the Quay pod under SELinux.
 #
 # Network model (the REAL air gap, not a cosmetic VLAN):
-#   - this host gets a STATIC private IP ({{ bastion_vlan_ip }}/{{ vlan_prefix }}) on the rig VLAN
-#     (vid {{ vlan_vid }}) via a NetworkManager VLAN connection, plus its public IP (kept for
-#     internet egress while mirroring);
+#   - this host serves the rig from its private VLAN address, plus its public IP (kept for
+#     internet egress while mirroring). With vlan_vid "auto" it adopts the private VLAN the
+#     provider already configured (Cherry: a tagged child of the uplink such as bond0.2738);
+#     otherwise it creates a NetworkManager VLAN connection with a static address;
+#   - setup-rig-vlan.sh records the result in /etc/rig-network.env for the later steps;
 #   - the registry is served under DNS name {{ registry_dns_name }}, mapped to the PRIVATE IP in
 #     /etc/hosts, so quay's TLS cert SAN matches what the node dials (no x509 IP-SAN failure);
 #   - the SNP node reaches the mirror ONLY over this private IP (its egress nftables allow just
-#     {{ bastion_vlan_ip }}); see runbook Phase 1.
-#   # VERIFY on first provision: the VLAN parent interface is '{{ vlan_parent_interface }}'
-#   # (`ip -br link` / `nmcli device`). Adjust below if the naming differs — it is hardware-bound.
+#     the helper); see docs/architecture.md.
 #
 # Security: the admin password is GENERATED on the bastion on first boot, 0600 root-only (never
 # included in the rendered cloud-init or provider user-data). Retrieve after boot with:
@@ -57,11 +57,13 @@ write_files:
         exit 1
       fi
 
-  # --- VLAN L3 setup: AUTO-DETECT the parent NIC, then write the NM keyfile + dnsmasq iface ---
-  # The parent interface is hardware-bound. With vlan_parent_interface="auto" we
-  # pick the cabled, un-addressed, physical, non-USB NIC (= the private/VLAN port). Set the var to
-  # an explicit name to override. (Discovered on metal 2026-06-26: hardcoding bond0 cascaded into
-  # dnsmasq + mirror-registry failures because the VLAN never came up.)
+  # --- VLAN L3 setup: adopt or create the private VLAN, then record it for the later steps ---
+  # vlan_vid="auto" adopts the provider's existing private VLAN interface: exactly one 802.1Q
+  # interface holding a private IPv4 address. Otherwise the tag and address are explicit and the
+  # parent is hardware-bound: vlan_parent_interface="auto" picks the cabled, un-addressed,
+  # physical, non-USB NIC (= the private/VLAN port), which is wrong for a bonded uplink; name the
+  # bond instead. (Discovered on metal 2026-06-26: hardcoding bond0 cascaded into dnsmasq +
+  # mirror-registry failures because the VLAN never came up.)
   - path: /usr/local/bin/setup-rig-vlan.sh
     permissions: "0755"
     content: |
@@ -69,20 +71,48 @@ write_files:
       set -euo pipefail
       PARENT="{{ vlan_parent_interface }}"
       VID="{{ vlan_vid }}"
-      if [ "$PARENT" = "auto" ] || [ -z "$PARENT" ]; then
-        for i in $(ls /sys/class/net); do
-          [ "$i" = lo ] && continue
-          [ -e "/sys/class/net/$i/device" ] || continue                     # physical only
-          readlink -f "/sys/class/net/$i/device" | grep -q usb && continue  # skip BMC (usb NIC)
-          ip -4 addr show "$i" | grep -q 'inet ' && continue                # skip the addressed (public) NIC
-          [ "$(cat /sys/class/net/$i/carrier 2>/dev/null)" = 1 ] || continue # require carrier
-          PARENT="$i"; break
-        done
-      fi
-      [ -n "$PARENT" ] && [ "$PARENT" != "auto" ] || { echo "FATAL: no VLAN parent NIC detected"; exit 1; }
-      IFACE="$PARENT.$VID"
-      echo "rig VLAN: parent=$PARENT iface=$IFACE"
-      cat > /etc/NetworkManager/system-connections/rigvlan.nmconnection <<EOF
+      ADDRESS="{{ bastion_vlan_ip }}"
+      PREFIX="{{ vlan_prefix }}"
+      SUBNET="{{ vlan_subnet }}"
+      if [ "$VID" = "auto" ]; then
+        DETECTED="$(python3 - <<'PY'
+      import ipaddress, json, subprocess
+
+      def ip(*args):
+          return json.loads(subprocess.run(['ip', '-j', *args], check=True,
+                                           capture_output=True, text=True).stdout or '[]')
+
+      vlans = {link['ifname']: link for link in ip('-d', 'link', 'show', 'type', 'vlan')}
+      found = []
+      for item in ip('-4', 'addr', 'show'):
+          link = vlans.get(item.get('ifname'))
+          for address in item.get('addr_info', []) if link else []:
+              interface = ipaddress.ip_interface(f"{address['local']}/{address['prefixlen']}")
+              if interface.ip.is_private:
+                  found.append((item['ifname'], link['link'], link['linkinfo']['info_data']['id'],
+                                interface.ip, interface.network.prefixlen, interface.network))
+      if len(found) != 1:
+          raise SystemExit(f'FATAL: expected one private VLAN address to adopt, found {len(found)}')
+      print(*found[0])
+      PY
+        )"
+        read -r IFACE PARENT VID ADDRESS PREFIX SUBNET <<< "$DETECTED"
+        echo "rig VLAN: adopted provider interface $IFACE (parent=$PARENT vid=$VID address=$ADDRESS/$PREFIX)"
+      else
+        if [ "$PARENT" = "auto" ] || [ -z "$PARENT" ]; then
+          for i in $(ls /sys/class/net); do
+            [ "$i" = lo ] && continue
+            [ -e "/sys/class/net/$i/device" ] || continue                     # physical only
+            readlink -f "/sys/class/net/$i/device" | grep -q usb && continue  # skip BMC (usb NIC)
+            ip -4 addr show "$i" | grep -q 'inet ' && continue                # skip the addressed (public) NIC
+            [ "$(cat /sys/class/net/$i/carrier 2>/dev/null)" = 1 ] || continue # require carrier
+            PARENT="$i"; break
+          done
+        fi
+        [ -n "$PARENT" ] && [ "$PARENT" != "auto" ] || { echo "FATAL: no VLAN parent NIC detected"; exit 1; }
+        IFACE="$PARENT.$VID"
+        echo "rig VLAN: parent=$PARENT iface=$IFACE"
+        cat > /etc/NetworkManager/system-connections/rigvlan.nmconnection <<EOF
       [connection]
       id=rigvlan
       type=vlan
@@ -92,49 +122,52 @@ write_files:
       id=$VID
       [ipv4]
       method=manual
-      address1={{ bastion_vlan_ip }}/{{ vlan_prefix }}
+      address1=$ADDRESS/$PREFIX
       [ipv6]
       method=ignore
       EOF
-      chmod 600 /etc/NetworkManager/system-connections/rigvlan.nmconnection
-      # dnsmasq must bind the SAME detected VLAN iface
+        chmod 600 /etc/NetworkManager/system-connections/rigvlan.nmconnection
+        nmcli connection reload
+        nmcli connection up rigvlan
+      fi
+      [[ "$VID" =~ ^[0-9]+$ && "$PREFIX" =~ ^[0-9]+$ && -n "$ADDRESS" && "$SUBNET" == */* ]] \
+        || { echo "FATAL: incomplete rig VLAN settings"; exit 1; }
+      # Name the public uplink for the isolation step (no traffic is sent).
+      PUBLIC_IFACE="$(ip -j route get 1.1.1.1 | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["dev"])')" \
+        || PUBLIC_IFACE=""
+      cat > /etc/rig-network.env <<EOF
+      VLAN_IFACE=$IFACE
+      VLAN_PARENT=$PARENT
+      VLAN_VID=$VID
+      BASTION_VLAN_IP=$ADDRESS
+      VLAN_PREFIX=$PREFIX
+      VLAN_SUBNET=$SUBNET
+      PUBLIC_IFACE=$PUBLIC_IFACE
+      EOF
+      chmod 644 /etc/rig-network.env
+      # dnsmasq must bind the SAME VLAN iface and answer the mirror name with its address.
+      # RHCOS can't use /etc/hosts at install time; the agent-config points dns-resolver here.
       printf 'interface=%s\nbind-interfaces\nno-dhcp-interface=%s\n' "$IFACE" "$IFACE" > /etc/dnsmasq.d/rig-iface.conf
-      nmcli connection reload
-      nmcli connection up rigvlan
+      printf 'address=/%s/%s\n' "{{ registry_dns_name }}" "$ADDRESS" > /etc/dnsmasq.d/rig.conf
 
   # --- NTP: serve time to the air-gapped node over the VLAN --------------------------------
-  - path: /etc/chrony.d/rig.conf
-    permissions: "0644"
-    content: |
-      # Serve the rig VLAN even before the bastion itself syncs upstream.
-      allow {{ vlan_subnet }}
-      local stratum 10
-
   - path: /usr/local/bin/setup-rig-ntp.sh
     permissions: "0755"
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
+      . /etc/rig-network.env
+      # Serve the rig VLAN even before the bastion itself syncs upstream.
+      mkdir -p /etc/chrony.d
+      printf 'allow %s\nlocal stratum 10\n' "$VLAN_SUBNET" > /etc/chrony.d/rig.conf
       # RHEL 9-family chrony.conf does not load chrony.d automatically. Keep the image's upstream
       # time sources and include only the managed private rig policy.
       if ! grep -Eq '^[[:space:]]*include[[:space:]]+/etc/chrony[.]d/rig[.]conf[[:space:]]*$' /etc/chrony.conf; then
         printf '\ninclude /etc/chrony.d/rig.conf\n' >> /etc/chrony.conf
       fi
       EFFECTIVE_CONFIG="$(chronyd -p -f /etc/chrony.conf)"
-      grep -Fxq 'allow {{ vlan_subnet }}' <<< "$EFFECTIVE_CONFIG"
+      grep -Fxq "allow $VLAN_SUBNET" <<< "$EFFECTIVE_CONFIG"
       grep -Fxq 'local stratum 10' <<< "$EFFECTIVE_CONFIG"
-
-  # --- DNS: resolve the mirror name to the bastion's PRIVATE IP over the VLAN --------------
-  # RHCOS can't use /etc/hosts at install time; the agent-config points dns-resolver here.
-  # The interface= binding is written by setup-rig-vlan.sh (rig-iface.conf) from the detected NIC.
-  - path: /etc/dnsmasq.d/rig.conf
-    permissions: "0644"
-    content: |
-      address=/{{ registry_dns_name }}/{{ bastion_vlan_ip }}
-      # add cluster records here too if the bastion is the node's DNS, e.g.:
-      # address=/apps.<cluster>.<basedomain>/<node_vlan_ip>
-      # host-record=api.<cluster>.<basedomain>,<node_vlan_ip>
-      # host-record=api-int.<cluster>.<basedomain>,<node_vlan_ip>
 
   - path: /usr/local/bin/bootstrap-mirror.sh
     permissions: "0755"
@@ -149,8 +182,9 @@ write_files:
 
       # registry DNS name -> private VLAN IP, so quayHostname resolves to the private segment
       # on the bastion (and the node uses the same name -> same IP over the VLAN).
+      . /etc/rig-network.env
       if ! grep -q "{{ registry_dns_name }}" /etc/hosts; then
-        echo "{{ bastion_vlan_ip }} {{ registry_dns_name }}" >> /etc/hosts
+        echo "$BASTION_VLAN_IP {{ registry_dns_name }}" >> /etc/hosts
       fi
 
       # --- admin password generated on-box, never in TF state / user-data --------------
@@ -162,7 +196,7 @@ write_files:
 
       # --- fetch the explicit mirror-registry archive; verification is mandatory -------
       URL="{{ mirror_registry_url }}"
-      SHA="${mirror_registry_sha256}"
+      SHA="{{ mirror_registry_sha256 }}"
       [[ "$URL" == https://* && "$URL" != */latest/* && "$SHA" =~ ^[0-9a-fA-F]{64}$ ]] \
         || { echo "FATAL: versioned HTTPS mirror-registry URL and SHA-256 are required"; exit 1; }
       cd /opt
