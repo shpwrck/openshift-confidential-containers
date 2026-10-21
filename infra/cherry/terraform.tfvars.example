@@ -1,8 +1,7 @@
 # Copy outside the checkout and fill in every REPLACE value:
 #   cp infra/cherry/terraform.tfvars.example "$COCO_STATE_DIR/cherry.tfvars"
-# Slugs come from the Cherry portal or the public API (GET /v1/plans for plans, prices
-# and stock per region; GET /v1/plans/<plan>/images). docs/cherry-servers.md has the
-# commands. Confirm the hourly price of both plans first.
+# "Choosing the Terraform variables" in docs/cherry-servers.md explains each value
+# and has the commands that look them up. Confirm the hourly price of both plans first.
 
 project_id   = 0 # REPLACE with the project ID
 region       = "REPLACE_WITH_REGION_SLUG"
