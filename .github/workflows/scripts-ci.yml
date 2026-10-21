@@ -69,6 +69,14 @@ jobs:
           terraform -chdir=infra/cherry init -backend=false -input=false
           terraform -chdir=infra/cherry validate
           terraform -chdir=infra/cherry test
+      - name: Check the lock file covers every controller platform
+        # init adds the h1 checksum of any platform the lock file lacks,
+        # which leaves a contributor's checkout modified.
+        run: |
+          terraform -chdir=infra/cherry providers lock \
+            -platform=linux_amd64 -platform=linux_arm64 \
+            -platform=darwin_amd64 -platform=darwin_arm64 -platform=windows_amd64
+          git diff --exit-code -- infra/cherry/.terraform.lock.hcl
   diagrams:
     # GitHub renders Mermaid blocks in Markdown; a syntax error shows as a broken diagram.
     runs-on: ubuntu-latest

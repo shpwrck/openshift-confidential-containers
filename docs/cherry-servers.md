@@ -30,17 +30,20 @@ it in their original OS as a tagged child of the uplink (for example `bond0.2738
 The helper's first-boot bootstrap adopts that interface and its address, so nothing
 from the order has to go back into its user data.
 
-1. Pick a versioned mirror-registry archive (the trial used 2.0.12; `/latest/` links are
-   refused). Use the release's published SHA-256 if it has one; otherwise download the
-   archive once on a trusted machine and run `sha256sum` on it.
-2. Render the helper's cloud-init user data. The file holds no secrets: the registry
-   password is generated on the helper.
+1. Pick a versioned mirror-registry archive; `/latest/` links are refused. Red Hat lists
+   each version under <https://mirror.openshift.com/pub/cgw/mirror-registry/>, with the
+   archive's SHA-256 in that version's signed `sha256sum.txt`. The trial used 2.0.12;
+   its x86_64 archive and checksum are in the command below.
+2. Render the helper's cloud-init user data. `--ssh-user` is the helper image's default
+   login user (for example `cloud-user` on RHEL or `almalinux` on AlmaLinux); use the
+   same name for `bastion_ssh_user` in the rig file. The file holds no secrets: the
+   registry password is generated on the helper.
 
    ```bash
    python3 scripts/render-helper-bootstrap.py \
      --ssh-user '<helper-image-login-user>' \
-     --mirror-registry-url '<versioned-archive-url>' \
-     --mirror-registry-sha256 '<archive-sha256>' \
+     --mirror-registry-url 'https://developers.redhat.com/content-gateway/file/pub/cgw/mirror-registry/2.0.12/mirror-registry-amd64.tar.gz' \
+     --mirror-registry-sha256 '6de43edfd77a61bb27116bb7a9a5715884722a811f92cd5d9dfca406afb457b2' \
      > "$COCO_STATE_DIR/helper-user-data.yaml"
    ```
 
@@ -49,7 +52,8 @@ from the order has to go back into its user data.
    to change them, or to give an explicit VLAN tag and address instead of adopting them.
 
 3. Fill in the Terraform variables: project, region, plan and image slugs, and the
-   SSH public key for both servers.
+   SSH public key for both servers. Terraform refuses to plan while an example value
+   is left.
 
    ```bash
    cp infra/cherry/terraform.tfvars.example "$COCO_STATE_DIR/cherry.tfvars"
@@ -64,10 +68,9 @@ from the order has to go back into its user data.
    terraform -chdir=infra/cherry apply -var-file="$COCO_STATE_DIR/cherry.tfvars"
    ```
 
-   `init` checks the provider against the committed lock file and may add your
-   platform's hash to it. The apply ends with an error, after ordering, if the two
-   servers did not land on the same private network: Cherry VLANs do not span
-   switches. Replace the helper with
+   `init` checks the provider against the committed lock file. The apply ends with an
+   error, after ordering, if the two servers did not land on the same private network:
+   Cherry VLANs do not span switches. Replace the helper with
    `terraform -chdir=infra/cherry apply -var-file="$COCO_STATE_DIR/cherry.tfvars" -replace=cherryservers_server.helper`,
    or ask Cherry support to move it.
 
