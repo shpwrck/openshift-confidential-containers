@@ -142,7 +142,15 @@ This finishes the existing installation without sending a second reinstall reque
 The cluster's kubeconfig is on the helper at
 `/opt/install/cluster-assets/auth/kubeconfig`, and the API is only reachable on
 the private VLAN. Copy the kubeconfig to `$COCO_STATE_DIR` and give the
-controller a route to the API (for example, an SSH tunnel through the helper).
+controller a route to the API, for example an SSH tunnel through the helper. The
+names and address below are the defaults in `ansible/group_vars/all.yml`:
+
+```bash
+ssh '<helper>' 'sudo cat /opt/install/cluster-assets/auth/kubeconfig' > "$COCO_STATE_DIR/kubeconfig"
+ssh -f -N -L 6443:192.168.66.11:6443 '<helper>'
+echo '127.0.0.1 api.sno-coco.coco.lab.local' | sudo tee -a /etc/hosts
+```
+
 Then name the context so every command targets this cluster on purpose:
 
 ```bash
