@@ -70,10 +70,18 @@ make validate-coco-uninstalled
 make validate-sno-baseline
 ```
 
+`not labeled` means a namespace already has the label. Removing the Kata runtime
+reboots the node, so the uninstall prints a watch error or two while the API is down.
+The removal check polls until everything is gone and prints `Waiting:` for what is
+left meanwhile; `FAIL:` only appears if it times out.
+
 The reset retains controllers until their operands finish deletion. If it stops,
 inspect finalizers and reconciliation before retrying; do not clear them blindly.
 Reinstall through [the quickstart](quickstart.md#6-install-the-coco-operators),
-recollect current collateral, reconfigure Trustee and rerun all proofs/isolation.
+then repeat the [Trustee lab sequence](trustee.md#disposable-lab) from step 1 and
+the [capability tests](capability-status.md) with the isolation checks. The reset
+leaves `$COCO_STATE_DIR` alone, so the signed images and their env file from the
+first build can be used again.
 `make test-rung WHICH=all` runs fresh proofs; reset/reinstallation is separate.
 
 ## Retire the infrastructure
@@ -86,8 +94,9 @@ Delete only the intended provider objects and confirm absence through fresh inve
 reads. Power-off or failed SSH is not proof of deletion. Keep the provider ownership and retirement records.
 
 If you ordered with Terraform, it deletes exactly the servers and SSH key it created.
-Use the same exports as [the order](cherry-servers.md#order-the-servers), then confirm
-in the Cherry portal or API that both servers are gone:
+Use the same exports as [the order](cherry-servers.md#order-the-servers). The plan
+lists the two servers; type `yes` to delete them, then confirm in the Cherry portal
+or API that both servers are gone:
 
 ```bash
 export CHERRY_API_KEY="$CHERRY_SERVERS_API_KEY" TF_DATA_DIR="$COCO_STATE_DIR/terraform"

@@ -153,6 +153,19 @@ class WorkerSafetyTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("coco-proof-dynamic-123", result.stdout)
 
+    def test_reset_validation_reports_waiting_until_the_timeout(self):
+        self.fixture["namespaces"] = {"cert-manager":{"metadata":{"labels":{}}}}
+        result = self.run_script("uninstall-coco.sh", "validate", env={"WORKER_CONTEXT":"fixture-worker", "WAIT_TIMEOUT":"1", "SLEEP_SECONDS":"1"})
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Waiting: namespace still exists: cert-manager", result.stdout)
+        self.assertTrue(result.stdout.rstrip().endswith("FAIL: namespace still exists: cert-manager"), result.stdout)
+        self.assertIn("did not converge", result.stderr)
+
+    def test_reset_validation_passes_without_waiting_when_nothing_is_left(self):
+        result = self.run_script("uninstall-coco.sh", "validate", env={"WORKER_CONTEXT":"fixture-worker"})
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("CoCo uninstall validation OK\n", result.stdout)
+
     def test_reset_keeps_arguments_intact_for_namespaced_and_cluster_resources(self):
         self.fixture["allowDelete"] = True
         self.fixture["namespaces"] = {"coco-validation":{"metadata":{"labels":{"coco.openshift.io/disposable":"true"}}}}
