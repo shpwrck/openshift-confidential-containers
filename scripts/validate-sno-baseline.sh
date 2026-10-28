@@ -126,10 +126,13 @@ check_once() {
 }
 
 deadline=$((SECONDS + BASELINE_WAIT))
+first=1
 while :; do
   rc=0
   report="$(check_once)" || rc=$?
-  if (( rc == 1 && SECONDS < deadline )); then
+  # Any wait checks at least twice, however long one round of checks takes.
+  if (( rc == 1 && BASELINE_WAIT > 0 && (first || SECONDS < deadline) )); then
+    first=0
     # Still settling: show what is left as waiting, not as a failure.
     grep '^FAIL: ' <<<"$report" | sed 's/^FAIL: /Waiting: /'
     echo "Checking again in ${SLEEP_SECONDS}s..."
