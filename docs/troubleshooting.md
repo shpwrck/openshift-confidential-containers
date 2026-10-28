@@ -9,6 +9,7 @@ and Trustee contexts, and correlate the same pod UID/IP and time window across l
 | Symptom | Check and next action |
 |---|---|
 | Raw-host SNP fails | Use [firmware preflight](amd-firmware-preflight.md). Check actual board, kernel and RMP evidence; do not guess from one PSP code. |
+| Render says the discovery cache is for different machines | `COCO_STATE_DIR/discovery/node-macs.json` is from an earlier rig. Run discovery again for the current node: add `discover` to the tags, as in [quickstart step 4](quickstart.md#4-build-boot-files-and-check-the-private-network). It only reads the node. |
 | Helper ready but node cannot reach it | Keep the raw provider OS. Verify VLAN wire tag, actual NIC/bond members, direct route, ARP, registry TLS, DNS and NTP from the node. |
 | New Cherry node's bond has one member | `/sys/class/net/bond0/bonding/slaves` lists one port and another keeps its kernel name (for example `enp5s0f0np0`): netplan's rename by MAC missed it on the first boot, so it never joined `bond0`. Reboot the original OS once and check again; the installer requires both members. Name the ports in the rig file as netplan does, since the installer binds names to MACs. |
 | Registry TLS fails | Check hostname/SAN, validity, server leaf/intermediates and trusted CA. Keep verification enabled. Preparation can repair the known malformed mirror-registry leaf while preserving its CA/key. |

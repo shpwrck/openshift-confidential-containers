@@ -125,19 +125,21 @@ results as long as the inputs have not changed.
 
 ## 4. Build boot files and check the private network
 
-Render the installer configuration, build the boot files, then check from the
-node's original OS that it can reach the helper's registry, DNS and NTP over the
-private VLAN:
+Read the node's network identity, render the installer configuration and build
+the boot files. Then check from the node's original OS that it can reach the
+helper's registry, DNS and NTP over the private VLAN:
 
 ```bash
 ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
-  ansible/playbooks/site.yml --tags render,pxe -e install_mode=fresh \
+  ansible/playbooks/site.yml --tags discover,render,pxe -e install_mode=fresh \
   -e "@$COCO_STATE_DIR/rig.yml"
 ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
   ansible/playbooks/qualify-private-link.yml -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-The check does not change either server. If it fails, fix the node's network in
+Neither command changes the node. Discovery reads it through the Cherry API and
+the pinned SSH, and replaces any `discovery/node-macs.json` left in
+`COCO_STATE_DIR` by an earlier rig. If the check fails, fix the node's network in
 its original OS before continuing; [troubleshooting](troubleshooting.md#installation)
 lists the usual causes.
 
