@@ -83,14 +83,40 @@ administrator `ExecProcessRequest`.
 
 Signing is not a newly introduced OSC 1.13 feature. The October 8 test establishes
 guest enforcement with the selected payload and mirror-registry 2.0.12.
-Prepare Skopeo, Cosign, registry CA/authentication and the external signing-key
-password. Create writable destination repositories before building.
+Build on a machine with Skopeo and Cosign that can reach the registry. In the
+lab that is the controller, through a tunnel to the helper's mirror; `HELPER`,
+`MIRROR_CA` and `MIRROR_PASSWORD_FILE` are as in
+[Trustee setup](trustee.md#disposable-lab). The lab mirror creates the
+`coco/rung-b` and `coco/rung-b-unsigned` repositories on the first push.
+`SSL_CERT_FILE` makes both tools trust the mirror's CA for that one command:
 
 ```bash
-make build-rung-signed
-source "$COCO_STATE_DIR/rung-image-artifacts/rung-signed.env"
-make verify-rung-signed-signature
+sudo dnf install -y skopeo cosign
+ssh -f -N -L 8443:mirror.rig.local:8443 "$HELPER"
+echo '127.0.0.1 mirror.rig.local' | sudo tee -a /etc/hosts
+SSL_CERT_FILE="$MIRROR_CA" skopeo login -u init --password-stdin mirror.rig.local:8443 < "$MIRROR_PASSWORD_FILE"
+SSL_CERT_FILE="$MIRROR_CA" cosign login -u init --password-stdin mirror.rig.local:8443 < "$MIRROR_PASSWORD_FILE"
 ```
+
+The first build creates the signing key pair in
+`$COCO_STATE_DIR/rung-image-artifacts`, protected by a password you choose. Run
+this line on its own; it waits silently for the password:
+
+```bash
+read -rs COSIGN_PASSWORD && export COSIGN_PASSWORD
+```
+
+Then build and load the image references:
+
+```bash
+SSL_CERT_FILE="$MIRROR_CA" make build-rung-signed
+source "$COCO_STATE_DIR/rung-image-artifacts/rung-signed.env"
+```
+
+The build ends with the checks of `make verify-rung-signed-signature` (run that
+later with the same `SSL_CERT_FILE`): the signed image verifies with the key, and
+the unsigned control is rejected for a missing signature. Both repositories can
+hold the same image digest; the signature is stored per repository.
 
 Use the selected `ARTIFACT_DIR` if overridden. The env file supplies immutable
 signed/unsigned images, public key and manifest. Configure the guest image policy
@@ -136,8 +162,9 @@ oc --context="$WORKER_CONTEXT" debug node/"$NODE" -- chroot /host sh -c '
   curl -sS -m 10 -o /dev/null https://quay.io && echo FAIL-public-name || echo ok-no-public-name'
 
 # Ordinary pod: the in-cluster Trustee service answers; public TCP and names fail.
+# The pause lets oc attach before the first line prints.
 oc --context="$WORKER_CONTEXT" -n coco-validation run egress-probe --rm -i --restart=Never \
-  --image="$(python3 scripts/verify-release.py --get images.ubiMinimal.ref)" -- sh -c '
+  --image="$(python3 scripts/verify-release.py --get images.ubiMinimal.ref)" -- sh -c 'sleep 5
   curl -sS -m 10 -o /dev/null -w "kbs %{http_code}\n" http://kbs-service.trustee-operator-system.svc:8080/
   curl -sS -m 10 -o /dev/null https://1.1.1.1 && echo FAIL-public-tcp || echo ok-no-public-tcp
   curl -sS -m 10 -o /dev/null https://quay.io && echo FAIL-public-name || echo ok-no-public-name'
@@ -145,7 +172,9 @@ oc --context="$WORKER_CONTEXT" -n coco-validation run egress-probe --rm -i --res
 
 For the guest, render the `rung-kbs` workload and replace its application command
 with the same probes. The pod only starts after attestation, and its image comes
-from the private registry inside the VM, so a started pod is the positive control:
+from the private registry inside the VM, so a started pod is the positive control.
+The guest's agent policy blocks `oc logs` as well as `oc exec`, so the probe reports
+through its exit code instead:
 
 ```bash
 RENDER_ONLY=1 POD_NAME=guest-probe make -s run-rung-kbs > "$COCO_STATE_DIR/guest-probe.yaml"
@@ -154,22 +183,37 @@ import sys, yaml
 path = sys.argv[1]
 pod = yaml.safe_load(open(path))
 pod["spec"]["containers"][0]["command"] = ["/bin/sh", "-c",
-    "curl -sS -m 10 -o /dev/null -w 'kbs %{http_code}\\n' http://kbs-service.trustee-operator-system.svc:8080/; "
-    "curl -sS -m 10 -o /dev/null https://1.1.1.1 && echo FAIL-public-tcp || echo ok-no-public-tcp; "
-    "curl -sS -m 10 -o /dev/null https://quay.io && echo FAIL-public-name || echo ok-no-public-name"]
+    "code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' http://kbs-service.trustee-operator-system.svc:8080/); "
+    "[ \"$code\" != 000 ] || exit 10; "
+    "curl -s -m 10 -o /dev/null https://1.1.1.1 && exit 11; "
+    "curl -s -m 10 -o /dev/null https://quay.io && exit 12; exit 0"]
 yaml.safe_dump(pod, open(path, "w"), sort_keys=False)
 PY
 oc --context="$WORKER_CONTEXT" apply -f "$COCO_STATE_DIR/guest-probe.yaml"
-oc --context="$WORKER_CONTEXT" -n coco-validation wait pod/guest-probe \
-  --for=jsonpath='{.status.phase}'=Succeeded --timeout=10m
-oc --context="$WORKER_CONTEXT" -n coco-validation logs guest-probe
+until phase="$(oc --context="$WORKER_CONTEXT" -n coco-validation get pod guest-probe -o jsonpath='{.status.phase}')" &&
+  [[ "$phase" == Succeeded || "$phase" == Failed ]]; do sleep 10; done
+echo "$phase exit=$(oc --context="$WORKER_CONTEXT" -n coco-validation get pod guest-probe \
+  -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
 oc --context="$WORKER_CONTEXT" -n coco-validation delete pod guest-probe
 ```
 
 A pass is a numeric HTTP status from the private destination and `ok-` on every
-other line at all three layers. `000` or any `FAIL-` line needs investigation.
+other line at the node and pod layers, and `Succeeded exit=0` for the guest.
+`000`, any `FAIL-` line or a guest exit of 10 (no private answer), 11 (public TCP)
+or 12 (public name) needs investigation.
+
 While a confidential pod is running, `oc exec` into it must also be refused by the
-agent policy.
+agent policy:
+
+```bash
+RENDER_ONLY=1 POD_NAME=exec-probe make -s run-rung-kbs | oc --context="$WORKER_CONTEXT" create -f -
+oc --context="$WORKER_CONTEXT" -n coco-validation wait pod/exec-probe --for=condition=Ready --timeout=10m
+oc --context="$WORKER_CONTEXT" -n coco-validation exec exec-probe -c app -- true; echo "exec exit=$?"
+oc --context="$WORKER_CONTEXT" -n coco-validation delete pod exec-probe
+```
+
+A pass is an error that says `ExecProcessRequest is blocked by policy` and a
+non-zero `exec exit`.
 
 ## Encryption and demos
 
