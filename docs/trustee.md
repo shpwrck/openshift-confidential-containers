@@ -254,12 +254,14 @@ from `oc get nodes`.
 5. Generate the launch reference on the controller. Veritas runs in podman and
    needs Red Hat registry access, so pull its image with your pull secret first
    (`pull_secret_src` in the rig file; write `~` out as your home directory).
-   Paste the printed command line between the quotes:
+   Paste the printed command line between the quotes. The empty `NODE=` keeps
+   Veritas on the controller even if you exported `NODE`; with a node name set,
+   the script runs on the node instead and needs a mirrored debug image.
 
    ```bash
    PULL_SECRET='<path to your pull secret>'
    podman pull --authfile "$PULL_SECRET" "$(python3 scripts/verify-release.py --get images.cocoTools.ref)"
-   PULL_SECRET="$PULL_SECRET" INITDATA="$COCO_STATE_DIR/initdata.toml" \
+   NODE= PULL_SECRET="$PULL_SECRET" INITDATA="$COCO_STATE_DIR/initdata.toml" \
      OUT="$COCO_STATE_DIR/rvps-generated.yaml" \
      VERITAS_KERNEL_CMDLINE='<printed command line>' \
      scripts/gen-rvps-veritas.sh
