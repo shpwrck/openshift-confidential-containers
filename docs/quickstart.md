@@ -161,6 +161,20 @@ OpenShift version and health, applies the mirror configuration and stops serving
 the boot files. `verify` repeats the version and health checks without
 reinstalling anything.
 
+The install also publishes the OpenShift web console through the helper's public
+address, at `https://console-openshift-console.apps.sno-coco.<helper public IP>.sslip.io`.
+Its certificate is self-signed. Log in as `kubeadmin`; the password is in
+`/opt/install/cluster-assets/auth/kubeadmin-password` on the helper. To leave the
+console private, add `-e public_console_enabled=false`. If the console step
+fails, the run stops before it closes the boot files: close them with the
+`pxe-stop` command in [troubleshooting](troubleshooting.md#installation), then
+rerun the console step alone:
+
+```bash
+ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
+  ansible/playbooks/site.yml --tags public-console -e "@$COCO_STATE_DIR/rig.yml"
+```
+
 If the controller is interrupted after the provider has accepted the reinstall,
 do not start over. Keep the same rig file and run:
 
