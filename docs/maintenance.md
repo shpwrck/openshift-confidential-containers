@@ -74,11 +74,11 @@ already carry the disposable label, so label only namespaces the test owns.
 
 The reset keeps each controller until its operands finish deletion. If it stops,
 inspect finalizers and reconciliation before retrying; do not clear them blindly.
-Reinstall through [the quickstart](quickstart.md#5-install-the-coco-operators),
-then repeat the [Trustee lab sequence](trustee.md#disposable-lab) from step 1 and
-the [capability tests](capability-status.md) with the isolation checks. The signed
-images and their env file in `$COCO_STATE_DIR` from the first build can be used
-again. `make test-rung WHICH=all` runs fresh proofs; it does not reset anything.
+Reinstall with `make install-coco-operators`, then run `make trustee-lab`,
+`source scripts/env.sh` and `make test-rung WHICH=all` again
+([Trustee setup](trustee.md#disposable-lab), [capability tests](capability-status.md)).
+The signing key pair in `$COCO_STATE_DIR` from the first build is used again.
+`make test-rung WHICH=all` runs fresh proofs; it does not reset anything.
 
 ## Retire the infrastructure
 

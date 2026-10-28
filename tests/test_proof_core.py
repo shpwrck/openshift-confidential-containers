@@ -218,3 +218,106 @@ class ProofRestorationOrder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeWorker:
+    """The worker cluster for the isolation case: probe outputs, pods and their deletion."""
+    context = "fixture-worker"
+
+    def __init__(self, node="private 401\npublic-address blocked\npublic-name blocked\n",
+                 pod="private 404\npublic-address blocked\npublic-name blocked\n", guest_exit=0):
+        self.outputs = {"node": node, "pod": pod}
+        self.guest_exit, self.pods, self.deleted = guest_exit, {}, []
+
+    def call(self, *args, data=None, optional=False):
+        if args[0] == "debug":
+            return self.outputs["node"]
+        if args[0] == "create":
+            self.pods[data["metadata"]["name"]] = data
+            return ""
+        if args[0] == "logs":
+            return self.outputs["pod"]
+        if args[:2] == ("get", "pod"):
+            name = args[2]
+            return "" if name in self.deleted or name not in self.pods else json.dumps(self.live(name))
+        if args[0] == "delete":
+            self.deleted.append(args[2])
+            return ""
+        raise AssertionError(f"unexpected oc call {args}")
+
+    def live(self, name):
+        pod = self.pods[name]
+        status = {"phase": "Succeeded", "containerStatuses": []}
+        if name.endswith("isolation-guest"):
+            status = {"phase": "Succeeded" if self.guest_exit == 0 else "Failed",
+                      "containerStatuses": [{"name": "app", "state": {"terminated": {"exitCode": self.guest_exit}}}]}
+        elif name.endswith("isolation-exec"):
+            status = {"phase": "Running", "containerStatuses": [{"name": "app", "ready": True, "state": {"running": {"startedAt": "2026-10-28T00:00:00Z"}}}]}
+        return {"metadata": {**pod["metadata"], "uid": "uid-" + name}, "spec": pod["spec"], "status": status}
+
+    def get(self, kind, name="", namespace=""):
+        return self.live(name)
+
+
+class ProofIsolation(unittest.TestCase):
+    def runner(self, worker, exec_result=None):
+        runner = suite.Runner({"WORKER_CONTEXT": "fixture-worker", "TRUSTEE_CONTEXT": "fixture-worker",
+                               "TRUSTEE_LAB": "1", "PROOF_NODE": "node-a"}, Path("/tmp"))
+        runner.worker = worker
+
+        def render(case, suffix, **overrides):
+            return {"apiVersion": "v1", "kind": "Pod",
+                    "metadata": {"name": f"proof-{runner.id}-{suffix}", "namespace": runner.ns,
+                                 "labels": {"coco.openshift.io/proof-run": runner.id}},
+                    "spec": {"runtimeClassName": "kata-cc", "containers": [{"name": "app", "command": ["sleep", "3600"]}]}}
+
+        runner.render = render
+        refused = exec_result or subprocess.CompletedProcess([], 1, "", "ExecProcessRequest is blocked by policy")
+        return runner, patch.object(suite.subprocess, "run", return_value=refused)
+
+    def test_every_layer_blocked_with_a_private_answer_passes_and_removes_its_pods(self):
+        worker = FakeWorker()
+        runner, exec_patch = self.runner(worker)
+        with exec_patch as run:
+            runner.run("isolation")
+        isolation = runner.evidence["isolation"]
+        self.assertEqual({"private": "401", "publicAddress": "blocked", "publicName": "blocked"}, isolation["node"])
+        self.assertEqual("404", isolation["ordinary pod"]["private"])
+        self.assertEqual({"phase": "Succeeded", "exitCode": 0}, isolation["confidential guest"])
+        self.assertEqual({"exitCode": 1, "blockedByPolicy": True}, isolation["exec"])
+        self.assertEqual(sorted(worker.pods), sorted(worker.deleted))
+        self.assertIn("exec", run.call_args.args[0])
+        # The ordinary pod meets PodSecurity restricted, so it prints no warnings.
+        probe = next(p for n, p in worker.pods.items() if n.endswith("isolation-pod"))
+        self.assertTrue(probe["spec"]["securityContext"]["runAsNonRoot"])
+        self.assertEqual(["ALL"], probe["spec"]["containers"][0]["securityContext"]["capabilities"]["drop"])
+        self.assertEqual(["/bin/sh", "-c"], worker.pods[f"proof-{runner.id}-isolation-guest"]["spec"]["containers"][0]["command"][:2])
+
+    def test_a_blocked_result_needs_a_private_answer(self):
+        runner, exec_patch = self.runner(FakeWorker(node="private 000\npublic-address blocked\npublic-name blocked\n"))
+        with exec_patch, self.assertRaisesRegex(Incomplete, "private destination did not answer from the node"):
+            runner.run("isolation")
+
+    def test_reachable_public_destinations_fail(self):
+        runner, exec_patch = self.runner(FakeWorker(pod="private 404\npublic-address reachable\npublic-name blocked\n"))
+        with exec_patch, self.assertRaisesRegex(ProofFailure, "publicAddress reachable from the ordinary pod"):
+            runner.run("isolation")
+        for code, error, text in ((11, ProofFailure, "a public address is reachable"),
+                                  (12, ProofFailure, "a public name is reachable"),
+                                  (10, Incomplete, "the private destination did not answer")):
+            with self.subTest(guest_exit=code):
+                runner, exec_patch = self.runner(FakeWorker(guest_exit=code))
+                with exec_patch, self.assertRaisesRegex(error, text):
+                    runner.run("isolation")
+
+    def test_exec_into_the_guest_must_be_refused_by_the_agent_policy(self):
+        runner, exec_patch = self.runner(FakeWorker(), subprocess.CompletedProcess([], 0, "", ""))
+        with exec_patch, self.assertRaisesRegex(ProofFailure, "exec into the confidential guest succeeded"):
+            runner.run("isolation")
+        runner, exec_patch = self.runner(FakeWorker(), subprocess.CompletedProcess([], 1, "", "connection refused"))
+        with exec_patch, self.assertRaisesRegex(Incomplete, "not with the agent policy's refusal"):
+            runner.run("isolation")
+
+    def test_all_includes_isolation_last(self):
+        self.assertEqual("isolation", suite.DEFAULT_CASES[-1])
+        self.assertIn("isolation", suite.CASES)

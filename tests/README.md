@@ -28,7 +28,7 @@ because root can read a directory with mode `000`.
 | Release manifest, mirror, cluster access and Operator selection | `test_release_manifest`, `test_mirror_resources`, `test_mirror_bootstrap`, `test_bootstrap_release`, `test_connect_cluster`, `test_worker_install`, `test_worker_safety` |
 | Helper, network and install automation | `test_bastion_network`, `test_bastion_prerequisites`, `test_bonded_profile`, `test_boot_publication`, `test_bootstrap`, `test_chrony_config`, `test_install_resolver`, `test_install_private_link`, `test_private_link`, `test_render_helper_bootstrap` |
 | Provider, ordering and hardware discovery | `test_cherry_provider`, `test_order_rig`, `test_discovery`, `test_host_snp_check`, `test_node_checks` |
-| Trustee configuration and lifecycle | `test_trustee_config`, `test_trustee_cli`, `test_trustee_lifecycle`, `test_veritas_node`, `test_vcek_bundle`, `test_review_references`, `test_policy_binding` |
+| Trustee configuration and lifecycle | `test_trustee_lab`, `test_trustee_config`, `test_trustee_cli`, `test_trustee_lifecycle`, `test_veritas_node`, `test_vcek_bundle`, `test_review_references`, `test_policy_binding` |
 | Workloads, image signing and the capability-test runner | `test_workload`, `test_signature_verifier`, `test_signed_policy`, `test_proof_core` |
 | Gatekeeper memory policy (Rego, needs `opa`) | `test-coco-mem-rego.sh` |
 

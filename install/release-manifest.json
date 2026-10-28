@@ -180,6 +180,17 @@
       "url": "https://developers.redhat.com/content-gateway/file/pub/cgw/mirror-registry/2.0.12/mirror-registry-amd64.tar.gz",
       "sha256": "6de43edfd77a61bb27116bb7a9a5715884722a811f92cd5d9dfca406afb457b2",
       "checksumsSource": "https://mirror.openshift.com/pub/cgw/mirror-registry/2.0.12/sha256sum.txt"
+    },
+    "cosign": {
+      "version": "2.6.1",
+      "url": "https://github.com/sigstore/cosign/releases/download/v2.6.1/cosign-linux-amd64",
+      "sha256": "064954c5d8c7e3b28188eee5b1727b31c411550bc5fefd41aa672d3c761d103a",
+      "checksumsSource": "https://github.com/sigstore/cosign/releases/download/v2.6.1/cosign_checksums.txt"
+    },
+    "trusteeResourcePolicy": {
+      "version": "1.2.1",
+      "url": "https://raw.githubusercontent.com/openshift/trustee-operator/v1.2.1/config/templates/resource-policy-restrictive.rego",
+      "sha256": "ef676196f41bceabb5c342d599803684825b5ab4caeed2bee8cd6ef4e060ae4a"
     }
   },
   "profiles": {

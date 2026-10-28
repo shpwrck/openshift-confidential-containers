@@ -191,115 +191,52 @@ infer refresh from a sleep or an event.
 ## Disposable lab
 
 The validated lab runs Trustee on the worker cluster in the Permissive profile
-over HTTP, with the restrictive resource policy above enforcing. It follows the
-same steps as the sections above; the commands below are the complete lab
-sequence, so you don't need to adapt the customer blocks. No HTTPS or token
-Secrets are needed. `HELPER` and `NODE` are your helper login
-(`bastion_ssh_user@bastion_ansible_host` from the rig file) and the node name
-from `oc get nodes`.
+over HTTP, with the restrictive resource policy above enforcing. One command runs
+the whole lab sequence. It runs Veritas in [Podman](https://podman.io/) on the
+controller, so install that first. In a terminal where you ran
+`source scripts/env.sh` after [`make connect`](quickstart.md#5-install-the-coco-operators):
 
-1. Set the lab variables, collect the node's VCEK and check that the bundle holds
-   only this node's chip ID. The count must be `1` on a single-node lab; a larger
-   count means a certificate left from another machine, so remove that directory
-   before you go on.
+```bash
+make trustee-lab
+```
 
-   ```bash
-   export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
-   export TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1 TEE=snp
-   make collect-vcek NODE="$NODE"
-   export HWIDS="$(ls "$COCO_STATE_DIR/vcek-bundle" | grep -E '^[0-9a-f]{128}$' | tr '\n' ' ')"
-   echo "$HWIDS" | wc -w
-   ```
+It runs these steps in order and names each one as it starts:
 
-2. Publish the certificate and bootstrap Trustee:
+| Step | What it does |
+|---|---|
+| `vcek` | Collects the node's VCEK certificate into a bundle for this server only, so a certificate from an earlier rig is never published, and publishes it to Trustee |
+| `bootstrap` | Creates the TrusteeConfig, creates the `coco-validation` namespace and marks it and `trustee-operator-system` with `coco.openshift.io/disposable=true` |
+| `mirror` | Copies the mirror registry's CA and password from the helper to `$COCO_STATE_DIR` |
+| `initdata` | Writes the test workloads' initdata |
+| `cmdline` | Starts a throwaway `kata-cc` pod, reads the guest kernel command line on the node and removes the pod. The pod never attests; its VM only has to start |
+| `veritas` | Pulls the Veritas image with your pull secret (`pull_secret_src` in the rig file) and calculates the launch reference |
+| `references` | Adds the node's four firmware levels from its VCEK request, drops Veritas's unused SHA-384 `init_data` record, prints every record and asks you to approve them |
+| `images` | Builds and signs the [signed test images](capability-status.md#signed-images) on the helper, which reaches the mirror by name |
+| `configure` | Downloads the restrictive resource policy pinned in the release manifest (the Operator's Permissive policy enforces no appraisal), then publishes it with the references and the synthetic lab resources: registry credential and configuration, image policies, signing key and a sample secret |
 
-   ```bash
-   make seed-vcek
-   make preflight
-   scripts/apply-trustee.sh bootstrap
-   ```
+Only `references` asks anything. `snp_launch_measurement` is the value Veritas
+calculated for this release and initdata; the firmware levels are the ones this
+node reported. Type `yes` only if they are the levels you approve for this node.
+Without a terminal, approve ahead with `APPROVE_REFERENCES=1 make trustee-lab`.
 
-3. Copy the mirror CA and password from the helper. The initdata, the resource
-   seeder and the capability tests all use them, so export them before the next
-   step. `ARTIFACTORY_REGISTRY` (default `mirror.rig.local:8443`) and
-   `MIRROR_USERNAME` (default `init`) match the Ansible defaults.
+The `images` step installs Skopeo from the helper's package repositories and the
+Cosign release pinned in the [release manifest](../install/release-manifest.json),
+after checking its SHA-256. It copies the signing key pair and the image digests
+back to `$COCO_STATE_DIR/rung-image-artifacts` and then removes its working
+directory on the helper, key included. The first build creates the key pair with
+a generated password, saved next to it as `cosign-password`. A key pair from an
+earlier manual build needs its password: run with `COSIGN_PASSWORD` set.
 
-   ```bash
-   ssh "$HELPER" 'sudo cat /opt/mirror/ca/rootCA.pem' > "$COCO_STATE_DIR/mirror-ca.pem"
-   ssh "$HELPER" 'sudo cat /opt/mirror/mirror-admin-password' > "$COCO_STATE_DIR/mirror-password"
-   export MIRROR_CA="$COCO_STATE_DIR/mirror-ca.pem" MIRROR_PASSWORD_FILE="$COCO_STATE_DIR/mirror-password"
-   ```
+At the end it writes `$COCO_STATE_DIR/trustee-lab.env` with the capability tests'
+settings (node, chip ID, VCEK Secret, mirror CA and image digests), which
+`source scripts/env.sh` loads. Run that, then continue with the
+[capability tests](capability-status.md).
 
-4. Write the test workloads' initdata, then start a throwaway `kata-cc` pod so you
-   can read the guest kernel command line. The pod never attests; it only needs
-   its VM to start, which takes about a minute. The namespace is only created the
-   first time; a [lab reset](maintenance.md#reset-a-disposable-coco-lab) keeps it.
-
-   ```bash
-   EMIT_INITDATA=1 make -s run-rung-kbs > "$COCO_STATE_DIR/initdata.toml"
-   oc --context="$WORKER_CONTEXT" get namespace coco-validation >/dev/null 2>&1 ||
-     oc --context="$WORKER_CONTEXT" create namespace coco-validation
-   RENDER_ONLY=1 POD_NAME=cmdline-probe make -s run-rung-kbs | oc --context="$WORKER_CONTEXT" create -f -
-   ```
-
-   Then print the command line, as in [Calculate the approved references](#calculate-the-approved-references),
-   and remove the pod. Rerun the first command if it prints nothing yet.
-
-   ```bash
-   oc --context="$WORKER_CONTEXT" debug node/"$NODE" -- chroot /host sh -c \
-     'for p in $(pgrep -f qemu); do tr "\0" "\n" < /proc/$p/cmdline | grep -A1 -x -- -append | tail -n 1; done'
-   oc --context="$WORKER_CONTEXT" -n coco-validation delete pod cmdline-probe
-   ```
-
-5. Generate the launch reference on the controller. Veritas runs in podman and
-   needs Red Hat registry access, so pull its image with your pull secret first
-   (`pull_secret_src` in the rig file; write `~` out as your home directory).
-   Paste the printed command line between the quotes. The empty `NODE=` keeps
-   Veritas on the controller even if you exported `NODE`; with a node name set,
-   the script runs on the node instead and needs a mirrored debug image.
-
-   ```bash
-   PULL_SECRET='<path to your pull secret>'
-   podman pull --authfile "$PULL_SECRET" "$(python3 scripts/verify-release.py --get images.cocoTools.ref)"
-   NODE= PULL_SECRET="$PULL_SECRET" INITDATA="$COCO_STATE_DIR/initdata.toml" \
-     OUT="$COCO_STATE_DIR/rvps-generated.yaml" \
-     VERITAS_KERNEL_CMDLINE='<printed command line>' \
-     scripts/gen-rvps-veritas.sh
-   ```
-
-6. Build the reviewed reference set. The script adds the node's four firmware
-   levels from its VCEK request (the CPU policy checks them against the guest's
-   reported TCB), drops Veritas's unused SHA-384 `init_data` record and prints
-   every record. Check that `snp_launch_measurement` is the one Veritas printed
-   and that the firmware levels are the ones you approve for this node.
-
-   ```bash
-   scripts/review-references.py "$COCO_STATE_DIR/rvps-generated.yaml" \
-     "$COCO_STATE_DIR/rvps-reviewed.yaml" --drop init_data
-   ```
-
-7. Build the [signed test images](capability-status.md#signed-images) and source
-   their env file, so the seeder also publishes the signing key and the
-   signed-image policy.
-
-8. Download the restrictive resource policy (the Operator's Permissive policy
-   enforces no appraisal) and configure. Configure runs the synthetic resource
-   seeder, which Restricted mode never does: it builds the registry credential,
-   registry configuration, image policies and a sample secret for the helper's
-   mirror registry. Leave out `sig-public-key` if you skipped the signed images.
-
-   ```bash
-   curl -fsSL -o "$COCO_STATE_DIR/resource-policy.rego" \
-     https://raw.githubusercontent.com/openshift/trustee-operator/v1.2.1/config/templates/resource-policy-restrictive.rego
-   TRUSTEE_RESOURCE_POLICY_FILE="$COCO_STATE_DIR/resource-policy.rego" \
-     TRUSTEE_RVPS_FILE="$COCO_STATE_DIR/rvps-reviewed.yaml" \
-     KBS_RESOURCE_NAMES='regcred attestation-cert attestation-status sample credential security-policy registry-configuration sig-public-key' \
-     scripts/apply-trustee.sh configure
-   ```
+If a step fails, fix the cause and start again at that step, for example
+`make trustee-lab FROM=veritas`; the earlier steps' files are kept.
 
 Skip the CPU-policy binding: the `rung-initdata` test adds it for its own workload.
 This does not change HTTP or token trust, or establish customer separation.
-Continue with [capability tests](capability-status.md).
 
 Implementation references: [Operator ownership/migration](https://github.com/openshift/trustee-operator/tree/v1.2.1/internal/controller)
 and [reference-value format](https://github.com/openshift/trustee/blob/v1.2.1/rvps/src/reference_value.rs).

@@ -57,6 +57,7 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 
 | Script | Make target | Runs on | What it does |
 |---|---|---|---|
+| `trustee-lab.py` | `trustee-lab` | controller | Runs the whole Trustee lab sequence: VCEK, bootstrap, mirror CA, initdata, guest command line, Veritas, one approval of the references, signed images built on the helper, configure; writes `trustee-lab.env` |
 | `apply-trustee.sh` | `bootstrap-trustee`, `deploy-trustee` | workstation | `bootstrap` creates the TrusteeConfig and attaches VCEK collateral; `configure` publishes the reviewed resource policy, reference values and resources |
 | `collect-vcek.sh` | `collect-vcek`, `seed-vcek` | workstation | Collects a node's VCEK certificate into external state, or publishes a collected bundle as Trustee Secrets |
 | `gen-rvps-veritas.sh` | `gen-rvps` | workstation | Calculates the expected launch measurement from the release's guest artifacts with coco-tools |
@@ -74,7 +75,7 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 | `verify-rung-encrypted-key-wrap.sh` | `verify-rung-encrypted-key-wrap` | workstation | Checks the encrypted image's layer key wrapping |
 | `render-workload.py` | (none) | anywhere | Prints the exact initdata or test pod without contacting a cluster |
 | `apply-rung-kbs.sh`, `apply-rung-signed.sh`, `apply-rung-encrypted.sh` | `run-rung-kbs`, `run-rung-signed`, `run-rung-encrypted` | workstation | Render and start one test workload (`RENDER_ONLY=1` prints it instead); share `apply-rung-image.sh` and `lib/apply-workload.sh` |
-| `run-proofs.py` | `proof-plan`, `test-rung` | workstation | Runs the allow, deny, restore and recovery sequence for each [capability test](../docs/capability-status.md) |
+| `run-proofs.py` | `proof-plan`, `test-rung` | workstation | Runs the allow, deny, restore and recovery sequence for each [capability test](../docs/capability-status.md), then the network isolation checks |
 
 ## Repository checks
 
@@ -94,6 +95,7 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 | `cluster-context.sh` | Requiring explicit worker and Trustee contexts |
 | `compat.sh` | Hashing and base64 that work with macOS Bash 3.2 and Linux |
 | `apply-workload.sh`, `workload.py` | Rendering initdata and test pods |
+| `lab_access.py` | The lab's state directory, rig file and pinned SSH access to the helper, for `connect-cluster.py` and `trustee-lab.py` |
 | `trustee_config.py` | Offline checks and patches for Trustee resources |
 | `vcek_bundle.py` | The external VCEK store with source and content hashes |
 | `worker_install.py` | Rendering Operator stages and checking InstallPlans |

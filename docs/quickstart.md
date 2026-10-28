@@ -13,14 +13,15 @@ The steps are:
 4. [Install OpenShift](#4-install-openshift)
 5. [Install the CoCo Operators](#5-install-the-coco-operators)
 
-Then continue with [Trustee setup](trustee.md) and the
+Then continue with [Trustee setup](trustee.md#disposable-lab) and the
 [capability tests](capability-status.md).
 
 ## Before you start
 
 - [ ] A Linux machine to run everything from (the controller), with Bash, Python
-      3.12 or later, `curl`, `jq`, `make`, OpenSSH and
-      [Terraform](https://developer.hashicorp.com/terraform/install) 1.9 or later.
+      3.12 or later, `curl`, `jq`, `make`, OpenSSH,
+      [Terraform](https://developer.hashicorp.com/terraform/install) 1.9 or later
+      and, for the Trustee step, [Podman](https://podman.io/).
 - [ ] A [Cherry Servers](https://portal.cherryservers.com/) account with an empty
       project and an [API key](https://portal.cherryservers.com/settings/api-keys).
       The tested rig costs about 1.25 EUR per hour until you

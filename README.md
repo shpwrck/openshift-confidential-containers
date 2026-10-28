@@ -70,12 +70,14 @@ Follow these guides in order. Each one ends where the next begins.
    `bash ansible/up.sh --mode fresh-install` checks the node, asks once before it
    erases it, then prepares the helper and installs the node. `make connect` reaches
    the cluster, and `make install-coco-operators` adds the Operators after one approval.
-4. **[Set up Trustee](docs/trustee.md)**: collect the node's AMD certificate,
-   calculate the approved reference values and publish the attestation policies.
-5. **[Configure guest image pulls](docs/guest-images.md)**: give the confidential
-   VM access to the private registry.
-6. **[Run the capability tests](docs/capability-status.md)**: prove that each
-   security control allows the right workload and denies a tampered one.
+4. **[Set up Trustee](docs/trustee.md#disposable-lab)**: `make trustee-lab`
+   collects the node's AMD certificate, calculates the reference values, asks you
+   to approve them once and publishes the attestation policies. On the lab it also
+   gives the confidential VM access to the private registry; elsewhere,
+   [configure guest image pulls](docs/guest-images.md) yourself.
+5. **[Run the capability tests](docs/capability-status.md)**: `make test-rung WHICH=all`
+   proves that each security control allows the right workload and denies a
+   tampered one, then checks network isolation.
 
 When something fails, see [troubleshooting](docs/troubleshooting.md). The
 [documentation index](docs/README.md) lists every guide, and the
