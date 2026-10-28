@@ -19,23 +19,12 @@ import time
 
 import yaml  # From the controller requirements.
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from lab_access import HELPER_KEYS, Stop, helper_destination, load_rig, ssh_options, state_dir, write_private  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 CONTEXT = "validation"
 KUBECONFIG_ON_HELPER = "/opt/install/cluster-assets/auth/kubeconfig"
-ACCESS_KEYS = ("bastion_ssh_user", "bastion_ansible_host", "bastion_ssh_key", "private_link_known_hosts",
-               "node_vlan_ip")
-
-
-class Stop(Exception):
-    """Something the operator has to fix first."""
-
-
-def write_private(path, text):
-    temporary = path.with_name(path.name + ".tmp")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as handle:
-        handle.write(text)
-    os.replace(temporary, path)
 
 
 def cluster_names(rig):
@@ -68,18 +57,11 @@ def lab_env(kubeconfig):
 
 
 def main():
-    state = Path(os.environ.get("COCO_STATE_DIR") or "")
-    if not os.environ.get("COCO_STATE_DIR") or not (state / "rig.yml").is_file():
-        raise Stop("no rig file found; run 'source scripts/env.sh' in this terminal, and make order-rig first")
-    rig = yaml.safe_load((state / "rig.yml").read_text()) or {}
-    missing = [key for key in ACCESS_KEYS if not rig.get(key)]
-    if missing:
-        raise Stop(f"the rig file has no {', '.join(missing)}")
+    state = state_dir()
+    rig = load_rig(state, (*HELPER_KEYS, "node_vlan_ip"))
     port = int(os.environ.get("API_PORT", "6443"))
-    helper = f"{rig['bastion_ssh_user']}@{rig['bastion_ansible_host']}"
-    ssh = ["ssh", "-i", rig["bastion_ssh_key"], "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
-           "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={rig['private_link_known_hosts']}",
-           "-o", "GlobalKnownHostsFile=/dev/null", "-o", "ConnectTimeout=15"]
+    helper = helper_destination(rig)
+    ssh = ssh_options(rig)
     kubeconfig = state / "kubeconfig"
     env = dict(os.environ, KUBECONFIG=str(kubeconfig), WORKER_CONTEXT=CONTEXT, TRUSTEE_CONTEXT=CONTEXT,
                TRUSTEE_LAB="1", INSTALL_TOPOLOGY="sno")

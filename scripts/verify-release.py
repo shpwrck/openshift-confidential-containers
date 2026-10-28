@@ -54,6 +54,17 @@ def validate(bom, root, tee="snp", require_resolved=False, environ=None):
           and all(u.startswith("https://") and f"/{registry_version}/" in u for u in registry_urls),
           "tools.mirrorRegistry needs an exact version and HTTPS URLs that name it")
     check(bool(re.fullmatch(r"[0-9a-f]{64}", registry.get("sha256") or "")), "tools.mirrorRegistry.sha256 must be 64 lowercase hex characters")
+    # make trustee-lab installs cosign on the helper and downloads the resource policy.
+    for name in ("cosign", "trusteeResourcePolicy"):
+        pin = bom["tools"].get(name) or {}
+        pin_version = pin.get("version") or ""
+        urls = [pin.get("url") or ""] + ([pin["checksumsSource"]] if "checksumsSource" in pin else [])
+        check(bool(re.fullmatch(r"\d+\.\d+\.\d+", pin_version))
+              and all(u.startswith("https://") and f"/v{pin_version}/" in u for u in urls),
+              f"tools.{name} needs an exact version and HTTPS URLs that name it")
+        check(bool(re.fullmatch(r"[0-9a-f]{64}", pin.get("sha256") or "")), f"tools.{name}.sha256 must be 64 lowercase hex characters")
+    check((bom["tools"].get("trusteeResourcePolicy") or {}).get("version") == bom["operators"]["trustee"]["version"],
+          "tools.trusteeResourcePolicy must come from the selected Trustee Operator version")
     if tee != "snp" or tee not in bom["profiles"]:
         raise ValueError("this deployment supports the AMD SNP profile only")
     bindings = {"OCP_VERSION":"platform.version", "OCP_RELEASE_IMAGE":"platform.releaseImage", "OSC_VERSION":"operators.osc.version", "TRUSTEE_VERSION":"operators.trustee.version", "CATALOGSOURCE":"catalog.source", "TOOLS_IMG":"images.cocoTools.ref"}
