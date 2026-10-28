@@ -168,65 +168,34 @@ This finishes the existing installation without sending a second reinstall reque
 
 ## 5. Install the CoCo Operators
 
-The cluster's kubeconfig is on the helper at
-`/opt/install/cluster-assets/auth/kubeconfig`, and the API is only reachable on
-the private VLAN. Copy the kubeconfig to `$COCO_STATE_DIR` and reach the API
-through an SSH tunnel via the helper. Take the helper's login and the node's
-private address from your rig file:
-
 ```bash
-grep -E '^(bastion_ssh_user|bastion_ansible_host|node_vlan_ip):' "$COCO_STATE_DIR/rig.yml"
-```
-
-Put those values in the first two lines, then run the rest. The API name is
-built from the default `cluster_name` and `base_domain` in
-[`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml):
-
-```bash
-HELPER='root@203.0.113.10'   # bastion_ssh_user@bastion_ansible_host
-NODE_IP='10.0.0.7'           # node_vlan_ip
-ssh "$HELPER" 'sudo cat /opt/install/cluster-assets/auth/kubeconfig' > "$COCO_STATE_DIR/kubeconfig"
-ssh -f -N -L 6443:"$NODE_IP":6443 "$HELPER"
-echo '127.0.0.1 api.sno-coco.coco.lab.local' | sudo tee -a /etc/hosts
-```
-
-Then name the context so every command targets this cluster on purpose:
-
-```bash
-export KUBECONFIG="$COCO_STATE_DIR/kubeconfig"
-oc config rename-context admin validation
-oc --context=validation get nodes
-```
-
-The test rig runs Trustee on the same cluster as the workloads, so both contexts
-point at the same cluster. Save these settings in `lab.env`, which
-`source scripts/env.sh` loads in every new terminal:
-
-```bash
-cat > "$COCO_STATE_DIR/lab.env" <<EOF
-export KUBECONFIG="$COCO_STATE_DIR/kubeconfig"
-export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
-export TRUSTEE_LAB=1 INSTALL_TOPOLOGY=sno
-EOF
-source "$COCO_STATE_DIR/lab.env"
-make validate-sno-baseline
+make connect
+source scripts/env.sh
 make install-coco-operators
 ```
 
-The tunnel keeps running after its terminal closes. If `oc --context=validation get nodes`
-can't connect later, open it again with the `ssh -f -N -L` line above.
+The cluster API is only reachable on the private VLAN. `make connect` copies the
+cluster's kubeconfig from the helper to `$COCO_STATE_DIR/kubeconfig`, names its
+context `validation` and opens an SSH tunnel to the API through the helper. It
+then writes `$COCO_STATE_DIR/lab.env`, shows the node and waits, up to 15
+minutes, while a new install settles. The test rig runs Trustee on the same
+cluster as the workloads, so `lab.env` points both `WORKER_CONTEXT` and
+`TRUSTEE_CONTEXT` at `validation`. `source scripts/env.sh` loads it, here and in
+every new terminal.
 
-The first run stops at each pending InstallPlan (all Subscriptions use Manual
-approval). Check that the plans list the versions in the
-[release manifest](../install/release-manifest.json), then approve them:
+The tunnel keeps running after the terminal closes. If `oc` cannot reach the
+cluster later, for example after the controller restarts, run `make connect`
+again.
 
-```bash
-APPROVE_INSTALLPLANS=1 make install-coco-operators
-```
-
-The installer approves only plans that match the manifest. It waits for Node
-Feature Discovery to label the node, for the Kata runtime to roll out (the node
-reboots), and for the `kata-cc` RuntimeClass to use the `kata-snp` handler.
+`make install-coco-operators` creates the Subscriptions with Manual approval and
+waits until each one has its InstallPlan. It checks every plan against the
+[release manifest](../install/release-manifest.json), shows the plans in one
+table and asks you to type `yes`. Without a terminal, approve them ahead with
+`APPROVE_INSTALLPLANS=1 make install-coco-operators`; plans that do not match the
+manifest are refused either way. Then it waits for Node Feature Discovery to
+label the node, for the Kata runtime to roll out (the node reboots, and the API
+stops answering for a few minutes) and for the `kata-cc` RuntimeClass to use the
+`kata-snp` handler.
 
 ## Next steps
 
