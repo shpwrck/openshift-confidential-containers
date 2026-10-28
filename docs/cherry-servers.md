@@ -199,7 +199,7 @@ servers themselves.
 | `node_server_id`, `node_provider_hostname`, `node_provider_project_id` | `rig_values`, or the Cherry portal or API for the node. The automation checks them against the API before reinstalling. |
 | `bastion_ansible_host`, `bastion_public_ipv4_override` | `rig_values`, or the helper's public IPv4 in the portal. |
 | `node_vlan_ip`, `bastion_vlan_ip`, `machine_network`, `vlan_cidr`, `vlan_prefix` | `rig_values`, or each server's private IPv4 and its network. Cherry assigns these; the `group_vars` defaults do not apply on Cherry. |
-| `node_parent_mac`, `node_bond_ports` (name and MAC of each member) | `ip link` on the node's original OS. Use permanent MACs. |
+| `node_parent_mac`, `node_bond_ports` (name and MAC of each member) | `ip link` and `/proc/net/bonding/bond0` on the node's original OS. Use permanent MACs. Both members must be in `/sys/class/net/bond0/bonding/slaves`; if one is missing, see [troubleshooting](troubleshooting.md#installation). |
 | `node_external_if`, `node_external_mac` | The node's separate public NIC, if it has one; otherwise leave empty. |
 | `vlan_vid_override` | `rig_values`, checked against the node's original network config (step 8 above). It is the tag on the wire, not a VLAN object ID. |
 | `bastion_private_if`, `bastion_external_if` | `VLAN_IFACE` and `PUBLIC_IFACE` in the helper's `/etc/rig-network.env`. |
