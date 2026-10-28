@@ -125,19 +125,21 @@ results as long as the inputs have not changed.
 
 ## 4. Build boot files and check the private network
 
-Render the installer configuration, build the boot files, then check from the
-node's original OS that it can reach the helper's registry, DNS and NTP over the
-private VLAN:
+Read the node's network identity, render the installer configuration and build
+the boot files. Then check from the node's original OS that it can reach the
+helper's registry, DNS and NTP over the private VLAN:
 
 ```bash
 ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
-  ansible/playbooks/site.yml --tags render,pxe -e install_mode=fresh \
+  ansible/playbooks/site.yml --tags discover,render,pxe -e install_mode=fresh \
   -e "@$COCO_STATE_DIR/rig.yml"
 ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
   ansible/playbooks/qualify-private-link.yml -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-The check does not change either server. If it fails, fix the node's network in
+Neither command changes the node. Discovery reads it through the Cherry API and
+the pinned SSH, and replaces any `discovery/node-macs.json` left in
+`COCO_STATE_DIR` by an earlier rig. If the check fails, fix the node's network in
 its original OS before continuing; [troubleshooting](troubleshooting.md#installation)
 lists the usual causes.
 
@@ -172,13 +174,23 @@ This finishes the existing installation without sending a second reinstall reque
 
 The cluster's kubeconfig is on the helper at
 `/opt/install/cluster-assets/auth/kubeconfig`, and the API is only reachable on
-the private VLAN. Copy the kubeconfig to `$COCO_STATE_DIR` and give the
-controller a route to the API, for example an SSH tunnel through the helper. The
-names and address below are the defaults in `ansible/group_vars/all.yml`:
+the private VLAN. Copy the kubeconfig to `$COCO_STATE_DIR` and reach the API
+through an SSH tunnel via the helper. Take the helper's login and the node's
+private address from your rig file:
 
 ```bash
-ssh '<helper>' 'sudo cat /opt/install/cluster-assets/auth/kubeconfig' > "$COCO_STATE_DIR/kubeconfig"
-ssh -f -N -L 6443:192.168.66.11:6443 '<helper>'
+grep -E '^(bastion_ssh_user|bastion_ansible_host|node_vlan_ip):' "$COCO_STATE_DIR/rig.yml"
+```
+
+Put those values in the first two lines, then run the rest. The API name is
+built from the default `cluster_name` and `base_domain` in
+[`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml):
+
+```bash
+HELPER='root@203.0.113.10'   # bastion_ssh_user@bastion_ansible_host
+NODE_IP='10.0.0.7'           # node_vlan_ip
+ssh "$HELPER" 'sudo cat /opt/install/cluster-assets/auth/kubeconfig' > "$COCO_STATE_DIR/kubeconfig"
+ssh -f -N -L 6443:"$NODE_IP":6443 "$HELPER"
 echo '127.0.0.1 api.sno-coco.coco.lab.local' | sudo tee -a /etc/hosts
 ```
 

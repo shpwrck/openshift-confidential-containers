@@ -107,14 +107,15 @@ and address Cherry configured.
    `vlan_vid_override`.
 
    ```bash
-   ssh root@"$(terraform -chdir=infra/cherry output -raw helper_public_ipv4)"
-   systemctl status helper-bootstrap --no-pager --lines=0
-   ls /opt/mirror/MIRROR_READY /opt/mirror/MIRROR_FAILED
-   tail -n 20 /var/log/mirror-bootstrap.log
-   cat /etc/rig-network.env
+   ssh root@"$(terraform -chdir=infra/cherry output -raw helper_public_ipv4)" \
+     'systemctl status helper-bootstrap --no-pager --lines=0
+      ls /opt/mirror/MIRROR_READY /opt/mirror/MIRROR_FAILED
+      tail -n 20 /var/log/mirror-bootstrap.log
+      cat /etc/rig-network.env'
    ```
 
-   Before the registry step starts, `journalctl -u helper-bootstrap` shows the progress.
+   Before the registry step starts, `journalctl -u helper-bootstrap` on the helper
+   shows the progress.
 
 8. Check the node's tag on its original OS. The number after `id` must equal
    `vlan_vid_override`; Ansible checks it again before installing.
@@ -122,6 +123,18 @@ and address Cherry configured.
    ```bash
    ssh root@"$(terraform -chdir=infra/cherry output -raw node_public_ipv4)" \
      "ip -d link show type vlan | grep -o '802.1Q id [0-9]*'"
+   ```
+
+9. Pin both host keys for Ansible. Steps 6 and 8 added them to your own
+   `known_hosts`; Ansible reads only the file `private_link_known_hosts` names and
+   refuses any host missing from it. Expect several lines: after the first login
+   OpenSSH also records each server's other host key types.
+
+   ```bash
+   { ssh-keygen -F "$(terraform -chdir=infra/cherry output -raw helper_public_ipv4)"
+     ssh-keygen -F "$(terraform -chdir=infra/cherry output -raw node_public_ipv4)"; } \
+     | grep -v '^#' > "$COCO_STATE_DIR/known_hosts"
+   cut -d' ' -f2 "$COCO_STATE_DIR/known_hosts"
    ```
 
 Terraform never reinstalls the node after ordering: Ansible rebuilds it into
@@ -186,12 +199,12 @@ servers themselves.
 | `node_server_id`, `node_provider_hostname`, `node_provider_project_id` | `rig_values`, or the Cherry portal or API for the node. The automation checks them against the API before reinstalling. |
 | `bastion_ansible_host`, `bastion_public_ipv4_override` | `rig_values`, or the helper's public IPv4 in the portal. |
 | `node_vlan_ip`, `bastion_vlan_ip`, `machine_network`, `vlan_cidr`, `vlan_prefix` | `rig_values`, or each server's private IPv4 and its network. Cherry assigns these; the `group_vars` defaults do not apply on Cherry. |
-| `node_parent_mac`, `node_bond_ports` (name and MAC of each member) | `ip link` on the node's original OS. Use permanent MACs. |
+| `node_parent_mac`, `node_bond_ports` (name and MAC of each member) | `ip link` and `/proc/net/bonding/bond0` on the node's original OS. Use permanent MACs. Both members must be in `/sys/class/net/bond0/bonding/slaves`; if one is missing, see [troubleshooting](troubleshooting.md#installation). |
 | `node_external_if`, `node_external_mac` | The node's separate public NIC, if it has one; otherwise leave empty. |
 | `vlan_vid_override` | `rig_values`, checked against the node's original network config (step 8 above). It is the tag on the wire, not a VLAN object ID. |
 | `bastion_private_if`, `bastion_external_if` | `VLAN_IFACE` and `PUBLIC_IFACE` in the helper's `/etc/rig-network.env`. |
 | `node_root_device` | A `/dev/disk/by-path/...` path on the node. Check the disk serial with `lsblk -o NAME,SERIAL,SIZE` first. |
-| `bastion_ssh_user`, `raw_node_ssh_user`, `raw_node_ssh_key`, `bastion_ssh_key`, `private_link_known_hosts` | Your SSH access to both servers: `root` on Cherry's images, the key from the order, and their host keys pinned in the `known_hosts` file. |
+| `bastion_ssh_user`, `raw_node_ssh_user`, `raw_node_ssh_key`, `bastion_ssh_key`, `private_link_known_hosts` | Your SSH access to both servers: `root` on Cherry's images, the key from the order, and their host keys pinned in the `known_hosts` file (step 9 above). |
 
 The tested network was an 802.3ad (LACP) bond of two physical NICs. The installed
 bond has no public address; only its private VLAN interface gets one.

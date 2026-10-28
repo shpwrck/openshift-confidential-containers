@@ -218,6 +218,24 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:
             '-e', 'test_text=value with spaces', '--limit', 'bastion', '-e', 'install_mode=verify'])
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'upgrade'], 2)
 
+    def test_wrapper_checks_vars_files_and_passes_absolute_paths(self):
+        write_executable(self.bin / 'ansible-playbook', '''#!/usr/bin/env python3
+import json,os,sys
+with open(os.environ['FIXTURE_CALLS'],'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')
+''')
+        out = self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify',
+                            '-e', '@/rig.yml'], 2)
+        self.assertIn("vars file '/rig.yml' not found", out)
+        self.assertIn('COCO_STATE_DIR', out)
+        self.assertFalse(self.log.exists())
+        (self.base / 'rig.yml').write_text('rig: reviewed\n')
+        self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify',
+                      '-e', '@rig.yml', '-e@rig.yml', '--extra-vars=@rig.yml', '-e', 'x=@y'])
+        rig = str(self.base.resolve() / 'rig.yml')
+        self.assertEqual(json.loads(self.log.read_text()), ['playbooks/site.yml', '--tags', 'drive',
+            '-e', '@' + rig, '-e@' + rig, '--extra-vars=@' + rig, '-e', 'x=@y',
+            '-e', 'install_mode=verify'])
+
     def test_wrapper_rejects_secret_state_inside_checkout(self):
         self.env['COCO_STATE_DIR'] = str(ROOT / 'state')
         out = self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify'], 1)
