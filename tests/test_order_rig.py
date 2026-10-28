@@ -337,7 +337,8 @@ class WholeRun(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='coco-order-rig-')
         self.addCleanup(self.tmp.cleanup)
-        base = Path(self.tmp.name)
+        # Resolved, as the script resolves COCO_STATE_DIR: macOS's temporary directory is a symlink.
+        base = Path(self.tmp.name).resolve()
         self.fixture, self.state, stubs = base / 'fixture', base / 'state', base / 'stubs'
         for d in (self.fixture, self.state, stubs):
             d.mkdir()
