@@ -232,11 +232,13 @@ from `oc get nodes`.
 
 4. Write the test workloads' initdata, then start a throwaway `kata-cc` pod so you
    can read the guest kernel command line. The pod never attests; it only needs
-   its VM to start, which takes about a minute.
+   its VM to start, which takes about a minute. The namespace is only created the
+   first time; a [lab reset](maintenance.md#reset-a-disposable-coco-lab) keeps it.
 
    ```bash
    EMIT_INITDATA=1 make -s run-rung-kbs > "$COCO_STATE_DIR/initdata.toml"
-   oc --context="$WORKER_CONTEXT" create namespace coco-validation
+   oc --context="$WORKER_CONTEXT" get namespace coco-validation >/dev/null 2>&1 ||
+     oc --context="$WORKER_CONTEXT" create namespace coco-validation
    RENDER_ONLY=1 POD_NAME=cmdline-probe make -s run-rung-kbs | oc --context="$WORKER_CONTEXT" create -f -
    ```
 
