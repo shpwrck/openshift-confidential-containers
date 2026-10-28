@@ -54,6 +54,11 @@ make proof-plan
 make test-rung WHICH=all
 ```
 
+Each test pod prints PodSecurity `restricted` warnings and a warning about the
+`node-role.kubernetes.io/master` selector when it is created. Both are expected:
+the namespace only warns, and the selector, which the Operator's `kata-cc`
+RuntimeClass adds on a single-node cluster, still matches the node.
+
 `KBS_URL` defaults to the in-cluster HTTP service, which only the lab accepts.
 Customer mode instead uses the following inputs (replace all example names/paths):
 
