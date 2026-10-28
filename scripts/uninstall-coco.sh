@@ -72,6 +72,9 @@ delete_object() {
       resource_oc "$ns" patch "$kind" "$name" --type=merge -p '{"metadata":{"finalizers":[]}}'
     fi
   fi
+  if [[ "$kind" == kataconfigs.kataconfiguration.openshift.io ]]; then
+    echo "Removing the Kata runtime reboots the node; watch errors while the API is down are expected."
+  fi
   # Keep the owning controller installed until its operands finish deletion.
   resource_oc "$ns" wait --for=delete "$kind/$name" --timeout="${WAIT_TIMEOUT}s" || die "$kind/$name still exists; controllers retained. Inspect finalizers before any explicit FORCE_FINALIZERS=1 retry."
 }
@@ -121,19 +124,21 @@ uninstall() {
 }
 
 validate_once() {
-  local failures=0 entry kind name ns object names
+  local mark="${1:-FAIL}" failures=0 entry kind name ns object names
   for entry in "${operands[@]}"; do
     IFS='|' read -r kind name ns <<<"$entry"
     object="$(get_object "$kind" "$name" "$ns")" || return 1
-    if [[ -n "$object" ]]; then echo "FAIL: operand still exists: $kind/$name"; failures=1; fi
+    if [[ -n "$object" ]]; then echo "$mark: operand still exists: $kind/$name"; failures=1; fi
   done
   for ns in "${target_namespaces[@]}"; do
     object="$(get_object namespaces "$ns")" || return 1
-    if [[ -n "$object" ]]; then echo "FAIL: namespace still exists: $ns"; failures=1; fi
+    if [[ -n "$object" ]]; then echo "$mark: namespace still exists: $ns"; failures=1; fi
   done
   names="$(workload_names)" || return 1
-  if [[ -n "$names" ]]; then echo "FAIL: proof/legacy workload pods still exist: $names"; failures=1; fi
-  worker_oc wait node --all --for=condition=Ready --timeout=30s >/dev/null 2>&1 || failures=1
+  if [[ -n "$names" ]]; then echo "$mark: proof/legacy workload pods still exist: $names"; failures=1; fi
+  if ! worker_oc wait node --all --for=condition=Ready --timeout=30s >/dev/null 2>&1; then
+    echo "$mark: not every node is Ready"; failures=1
+  fi
   return "$failures"
 }
 
@@ -152,10 +157,13 @@ case "$MODE" in
   validate-once) validate_once ;;
   validate)
     deadline=$((SECONDS + WAIT_TIMEOUT))
+    # Deletion takes a few polls, so what is left is reported as waiting until the timeout.
     while (( SECONDS < deadline )); do
-      if validate_once; then echo "CoCo uninstall validation OK"; exit 0; fi
+      if validate_once Waiting; then echo "CoCo uninstall validation OK"; exit 0; fi
+      echo "Checking again in ${SLEEP_SECONDS}s..."
       sleep "$SLEEP_SECONDS"
     done
+    if validate_once FAIL; then echo "CoCo uninstall validation OK"; exit 0; fi
     die "uninstall did not converge within ${WAIT_TIMEOUT}s"
     ;;
   *) die "usage: uninstall-coco.sh [uninstall|validate|validate-once]" ;;

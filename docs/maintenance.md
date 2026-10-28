@@ -70,6 +70,11 @@ make validate-coco-uninstalled
 make validate-sno-baseline
 ```
 
+`not labeled` means a namespace already has the label. Removing the Kata runtime
+reboots the node, so the uninstall prints a watch error or two while the API is down.
+The removal check polls until everything is gone and prints `Waiting:` for what is
+left meanwhile; `FAIL:` only appears if it times out.
+
 The reset retains controllers until their operands finish deletion. If it stops,
 inspect finalizers and reconciliation before retrying; do not clear them blindly.
 Reinstall through [the quickstart](quickstart.md#6-install-the-coco-operators),
