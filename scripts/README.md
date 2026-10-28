@@ -23,7 +23,7 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 | Script | Make target | Runs on | What it does |
 |---|---|---|---|
 | `install-dev-tools.py` | `install-dev-tools` | controller | Downloads checksum-verified OPA and Kustomize for the offline checks |
-| `install-tools.sh` | `fetch-cli-tools` | controller, helper | Downloads checksum-verified `oc`, `openshift-install` and `oc-mirror` for the pinned OpenShift version |
+| `install-tools.sh` | `fetch-cli-tools` | controller, helper | Downloads checksum-verified `oc`, `openshift-install` and `oc-mirror` for the pinned OpenShift version. `source scripts/env.sh` runs it with `INSTALL_OC_MIRROR=0`, since only the helper runs oc-mirror |
 | `verify-release.py` | `check-release`, `preflight` | anywhere | Checks that the manifest, ImageSet and Subscriptions agree; `--require-resolved` also requires every image to be pinned by digest. `--get <key>` prints one manifest value |
 | `mirror.sh` | `mirror-content` | helper | Runs oc-mirror v2 for the selected ImageSet into the private registry |
 | `normalize-mirror-resources.py` | (Ansible) | helper | Checks the mirrored catalog and writes the cluster's mirror resources |
