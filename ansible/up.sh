@@ -35,6 +35,30 @@ print(state)
 PY
 )"
 export COCO_STATE_DIR
+# Check vars files and pass them as absolute paths before entering the Ansible
+# directory. In a shell without COCO_STATE_DIR, "@$COCO_STATE_DIR/rig.yml" is "@/rig.yml".
+vars_file_path() {
+  [[ -f "$1" && -r "$1" ]] || {
+    echo "ERROR: vars file '$1' not found; for the rig file, export COCO_STATE_DIR in this terminal first (docs/quickstart.md, \"Coming back in a new terminal\")" >&2
+    exit 2
+  }
+  python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$1"
+}
+CHECKED=()
+expect_vars=0
+for arg in ${EXTRA[@]+"${EXTRA[@]}"}; do
+  if (( expect_vars )) && [[ "$arg" == @* ]]; then
+    arg="@$(vars_file_path "${arg#@}")"
+  elif [[ "$arg" == -e@* ]]; then
+    arg="-e@$(vars_file_path "${arg#-e@}")"
+  elif [[ "$arg" == --extra-vars=@* ]]; then
+    arg="--extra-vars=@$(vars_file_path "${arg#--extra-vars=@}")"
+  fi
+  expect_vars=0
+  if [[ "$arg" == -e || "$arg" == --extra-vars ]]; then expect_vars=1; fi
+  CHECKED+=("$arg")
+done
+EXTRA=(${CHECKED[@]+"${CHECKED[@]}"})
 # Normalize selected input paths before entering the Ansible directory.
 for config_var in RELEASE_MANIFEST IMAGESET_CONFIG; do
   if [[ -n "${!config_var:-}" ]]; then
