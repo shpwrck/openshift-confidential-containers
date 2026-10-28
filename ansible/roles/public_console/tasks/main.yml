@@ -60,12 +60,16 @@
           Public console publishing needs bastion_public_ipv4_override and a cluster kubeconfig.
           Pass the bastion public IP, or opt out with -e public_console_enabled=false.
 
+    # RHEL-compatible images can supply curl-minimal, which conflicts with the full
+    # curl package. The login probe below needs only the curl command.
+    - name: Check for an existing curl command
+      ansible.builtin.stat:
+        path: /usr/bin/curl
+      register: public_console_curl
+
     - name: Ensure nginx and openssl are installed
       ansible.builtin.package:
-        name:
-          - curl
-          - nginx
-          - openssl
+        name: "{{ ['nginx', 'openssl'] + ([] if public_console_curl.stat.exists else ['curl']) }}"
         state: present
       become: true
 
