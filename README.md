@@ -68,7 +68,8 @@ Follow these guides in order. Each one ends where the next begins.
    node's console.
 3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md#4-install-openshift)**:
    `bash ansible/up.sh --mode fresh-install` checks the node, asks once before it
-   erases it, then prepares the helper and installs the node; then add the Operators.
+   erases it, then prepares the helper and installs the node. `make connect` reaches
+   the cluster, and `make install-coco-operators` adds the Operators after one approval.
 4. **[Set up Trustee](docs/trustee.md)**: collect the node's AMD certificate,
    calculate the approved reference values and publish the attestation policies.
 5. **[Configure guest image pulls](docs/guest-images.md)**: give the confidential

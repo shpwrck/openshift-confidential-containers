@@ -19,6 +19,8 @@ if "--context=fixture-worker" not in args and "--context=fixture-trustee" not in
 args = [a for a in args if not a.startswith(("--context=", "--request-timeout="))]
 fixture = json.load(open(os.environ["MOCK_FIXTURE"]))
 if args == ["whoami"]: print("fixture-user")
+elif args == ["whoami", "--show-server"]: print("https://127.0.0.1:6443")
+elif args == ["get", "nodes"]: print("NAME           STATUS   ROLES")
 elif args[:1] == ["api-resources"]: print("\n".join(["namespaces", "pods"]+fixture.get("extraResources", [])))
 elif args[:3] == ["get", "clusterversion", "version"]: print(json.dumps(fixture["cv"]))
 elif args[:2] == ["get", "mcp"]:
@@ -26,6 +28,13 @@ elif args[:2] == ["get", "mcp"]:
 elif args[:2] == ["get", "namespaces"]:
     if args[2] in fixture.get("namespaces", {}): print(json.dumps(fixture["namespaces"][args[2]]))
 elif args[:2] == ["wait", "node"]: pass
+elif args[:2] == ["label", "namespace"]:
+    key, value = args[3].split("=")
+    fixture["namespaces"][args[2]].setdefault("metadata", {}).setdefault("labels", {})[key] = value
+    json.dump(fixture, open(os.environ["MOCK_FIXTURE"], "w"))
+elif fixture.get("allowDelete") and args[:2] == ["delete", "namespace"]:
+    fixture["namespaces"].pop(args[2], None)
+    json.dump(fixture, open(os.environ["MOCK_FIXTURE"], "w"))
 elif args[:1] == ["-n"] and args[2:4] == ["get", "catalogsource"]: print("READY", end="")
 elif args[:1] == ["-n"] and args[2:] == ["get", "pods", "-o", "json"]: print(json.dumps({"items":fixture.get("pods", [])}))
 else:
@@ -37,6 +46,25 @@ else:
     elif fixture.get("allowDelete") and args[:1] in (["delete"], ["patch"], ["wait"]): pass
     else: raise SystemExit("unexpected mocked oc call: " + repr(args))
 '''
+
+
+def run_in_terminal(command, env, answer):
+    """Run with a terminal on stdin, type the answer, and return (exit code, everything printed)."""
+    leader, follower = os.openpty()
+    process = subprocess.Popen(command, cwd=ROOT, env=env, stdin=follower, stdout=follower, stderr=follower)
+    os.close(follower)
+    os.write(leader, answer.encode() + b"\n")
+    chunks = []
+    while True:
+        try:
+            chunk = os.read(leader, 4096)
+        except OSError:  # The script exited and closed the terminal.
+            break
+        if not chunk:
+            break
+        chunks.append(chunk)
+    os.close(leader)
+    return process.wait(timeout=60), b"".join(chunks).decode()
 
 
 class WorkerSafetyTests(unittest.TestCase):
@@ -95,6 +123,21 @@ class WorkerSafetyTests(unittest.TestCase):
                 self.assertNotEqual(0, self.baseline().returncode)
                 self.fixture["cv"]["status"]["conditions"] = [{**c, "status":"False" if c["status"] == "True" else "True"} if c["type"] == kind else c for c in original]
                 self.assertNotEqual(0, self.baseline().returncode)
+
+    def test_baseline_waits_only_for_conditions_that_settle(self):
+        self.fixture["cv"]["status"]["conditions"][1]["status"] = "True"  # still Progressing
+        result = self.run_script("validate-sno-baseline.sh", env={"WORKER_CONTEXT":"fixture-worker",
+                                                                  "BASELINE_WAIT":"1", "SLEEP_SECONDS":"1"})
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Waiting: selected OCP rollout is incomplete", result.stdout)
+        self.assertIn("FAIL: selected OCP rollout is incomplete", result.stdout.split("Checking again")[-1])
+        # A different payload cannot settle, so it fails at once however long the wait.
+        self.fixture["cv"]["status"]["desired"]["version"] = "4.20.1"
+        result = self.run_script("validate-sno-baseline.sh", env={"WORKER_CONTEXT":"fixture-worker",
+                                                                  "BASELINE_WAIT":"600", "SLEEP_SECONDS":"1"})
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn("Waiting:", result.stdout)
+        self.assertIn("FAIL: OCP payload mismatch", result.stdout)
 
     def test_collector_and_host_check_require_worker_context_before_oc(self):
         for script in ("collect-vcek.sh", "verify-snp-host.sh"):
@@ -165,6 +208,63 @@ class WorkerSafetyTests(unittest.TestCase):
         result = self.run_script("uninstall-coco.sh", "validate", env={"WORKER_CONTEXT":"fixture-worker"})
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("CoCo uninstall validation OK\n", result.stdout)
+
+    LAB = {"WORKER_CONTEXT":"fixture-worker", "TRUSTEE_CONTEXT":"fixture-worker", "TRUSTEE_LAB":"1"}
+
+    def lab_namespaces(self):
+        self.fixture["namespaces"] = {"coco-validation":{"metadata":{"labels":{"coco.openshift.io/disposable":"true"}}},
+                                      "openshift-nfd":{"metadata":{"labels":{}}}, "cert-manager":{"metadata":{}}}
+
+    def mutations(self):
+        return [call for call in self.calls() if any(word in call for word in ("label", "delete", "patch", "apply"))]
+
+    def test_reset_lab_refuses_outside_the_lab_before_oc(self):
+        for env in ({"WORKER_CONTEXT":"fixture-worker", "TRUSTEE_CONTEXT":"fixture-worker"},
+                    {**self.LAB, "TRUSTEE_CONTEXT":"fixture-trustee"}):
+            with self.subTest(env=env):
+                result = self.run_script("reset-lab.sh", env={**env, "ALLOW_DISPOSABLE_UNINSTALL":"1"})
+                self.assertEqual(2, result.returncode)
+                self.assertEqual([], self.calls())
+
+    def test_reset_lab_shows_what_goes_and_asks_before_changing_anything(self):
+        self.lab_namespaces()
+        result = self.run_script("reset-lab.sh", env=self.LAB)
+        self.assertEqual(2, result.returncode)
+        for line in ("from context fixture-worker, API https://127.0.0.1:6443", "delete namespace coco-validation",
+                     "delete namespace openshift-nfd", "delete namespace cert-manager"):
+            self.assertIn(line, result.stdout)
+        self.assertNotIn("delete namespace openshift-gatekeeper-system", result.stdout)  # It does not exist.
+        self.assertIn("without a terminal, set ALLOW_DISPOSABLE_UNINSTALL=1", result.stderr)
+        self.assertEqual([], self.mutations())
+        self.fixture_file.write_text(json.dumps(self.fixture))
+        code, output = run_in_terminal(["bash", "scripts/reset-lab.sh"], {**self.env, **self.LAB}, "no")
+        self.assertEqual(2, code, output)
+        self.assertIn("Type reset to remove them", output)
+        self.assertIn("nothing was changed", output)
+        self.assertEqual([], self.mutations())
+
+    def test_reset_lab_marks_the_lab_namespaces_then_removes_them_and_checks_the_cluster(self):
+        self.lab_namespaces()
+        self.fixture["allowDelete"] = True
+        result = self.run_script("reset-lab.sh", env={**self.LAB, "ALLOW_DISPOSABLE_UNINSTALL":"1"})
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        calls = [[a for a in call if not a.startswith(("--context=", "--request-timeout="))] for call in self.calls()]
+        labels = [call for call in calls if call[:1] == ["label"]]
+        # Only the unlabeled namespaces that exist get the label.
+        self.assertEqual([["label", "namespace", "openshift-nfd", "coco.openshift.io/disposable=true"],
+                          ["label", "namespace", "cert-manager", "coco.openshift.io/disposable=true"]], labels)
+        self.assertIn(["delete", "namespace", "openshift-nfd", "--ignore-not-found", "--wait=false"], calls)
+        self.assertIn("CoCo uninstall validation OK", result.stdout)
+        self.assertIn("SNO baseline validation OK", result.stdout)
+        self.assertTrue(result.stdout.rstrip().endswith("Install again with: make install-coco-operators"), result.stdout)
+
+    def test_uninstall_lists_its_namespaces_without_cluster_access(self):
+        result = self.run_script("uninstall-coco.sh", "namespaces", env={"WORKLOAD_NS":"coco-validation"})
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["coco-validation", "trustee-operator-system", "openshift-sandboxed-containers-operator",
+                          "openshift-nfd", "cert-manager-operator", "cert-manager", "openshift-gatekeeper-system"],
+                         result.stdout.split())
+        self.assertEqual([], self.calls())
 
     def test_reset_keeps_arguments_intact_for_namespaced_and_cluster_resources(self):
         self.fixture["allowDelete"] = True

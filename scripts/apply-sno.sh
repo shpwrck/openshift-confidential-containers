@@ -30,6 +30,9 @@ render_stage() {
   python3 "$REPO_ROOT/scripts/lib/worker_install.py" "${args[@]}"
 }
 
+# Returns 0 when the expected CSV has succeeded, 1 while the Subscription has no
+# InstallPlan yet, 2 while an approved plan installs, and 3 when its plan matches
+# the manifest and waits for approval (recorded in PENDING_PLANS).
 manage_subscription() {
   local key="$1" ns="$2" name="$3" expected actual phase plan plan_json args
   expected="$(release_value "operators.${key}.startingCSV")" || die "unresolved CSV for $key"
@@ -44,19 +47,56 @@ manage_subscription() {
   args=(check-plan --manifest "${RELEASE_MANIFEST:-$REPO_ROOT/install/release-manifest.json}" --tee "$TEE" --expected-csv "$expected")
   [[ "${TRUSTEE_LAB:-0}" != 1 ]] || args+=(--lab)
   python3 "$REPO_ROOT/scripts/lib/worker_install.py" "${args[@]}" <<<"$plan_json" || die "refusing InstallPlan $ns/$plan: resolve catalog/CSV mismatch before retrying"
-  if [[ "$(jq -r '.spec.approved // false' <<<"$plan_json")" != true ]]; then
-    [[ "${APPROVE_INSTALLPLANS:-0}" == 1 ]] || die "pending reviewed InstallPlan $ns/$plan for $expected; inspect it, then explicitly set APPROVE_INSTALLPLANS=1 to allow matching plans"
-    worker_oc -n "$ns" patch installplan "$plan" --type=merge -p '{"spec":{"approved":true}}'
+  [[ "$(jq -r '.spec.approved // false' <<<"$plan_json")" == true ]] && return 2
+  PENDING_PLANS+=("$ns|$plan|$(jq -r '.spec.clusterServiceVersionNames // [] | join(",")' <<<"$plan_json")")
+  return 3
+}
+
+# Approve the pending plans together: at once with APPROVE_INSTALLPLANS=1,
+# otherwise after showing them in one table and one typed yes.
+approve_pending_plans() {
+  local entry ns plan csvs answer
+  if [[ "${APPROVE_INSTALLPLANS:-0}" != 1 ]]; then
+    [[ -t 0 ]] || die "${#PENDING_PLANS[@]} InstallPlans wait for approval; without a terminal, set APPROVE_INSTALLPLANS=1 to approve the plans that match the release manifest"
+    printf '\nEach of these InstallPlans installs exactly the CSV in the release manifest\n(%s):\n\n' "${RELEASE_MANIFEST:-install/release-manifest.json}"
+    {
+      printf 'NAMESPACE\tINSTALLPLAN\tCSV\n'
+      for entry in "${PENDING_PLANS[@]}"; do
+        IFS='|' read -r ns plan csvs <<<"$entry"
+        printf '%s\t%s\t%s\n' "$ns" "$plan" "$csvs"
+      done
+    } | if command -v column >/dev/null; then column -t -s $'\t'; else cat; fi
+    echo
+    read -r -p "Type yes to approve these ${#PENDING_PLANS[@]} InstallPlans: " answer
+    [[ "$answer" == yes ]] || die "InstallPlans not approved; nothing was installed"
+    # A plan that appears later in this run is checked against the manifest the same way.
+    APPROVE_INSTALLPLANS=1
   fi
-  return 1
+  for entry in "${PENDING_PLANS[@]}"; do
+    IFS='|' read -r ns plan csvs <<<"$entry"
+    worker_oc -n "$ns" patch installplan "$plan" --type=merge -p '{"spec":{"approved":true}}' >/dev/null
+    echo "  approved $ns/$plan ($csvs)"
+  done
 }
 
 operators_ready() {
-  local entry key ns name ready=0
+  local entry key ns name rc ready=0 planless=0
+  PENDING_PLANS=()
   for entry in "${OPERATORS[@]}"; do
     IFS=: read -r key ns name <<<"$entry"
-    manage_subscription "$key" "$ns" "$name" || ready=1
+    rc=0
+    manage_subscription "$key" "$ns" "$name" || rc=$?
+    (( rc == 0 )) || ready=1
+    (( rc != 1 )) || planless=1
   done
+  # Ask once, when every Subscription has its plan, so that the table is complete.
+  if (( ${#PENDING_PLANS[@]} > 0 )); then
+    if [[ "${APPROVE_INSTALLPLANS:-0}" == 1 || planless -eq 0 ]]; then
+      approve_pending_plans
+    else
+      echo "  ${#PENDING_PLANS[@]} InstallPlans are ready; waiting for the other Subscriptions' plans."
+    fi
+  fi
   return "$ready"
 }
 
@@ -145,6 +185,8 @@ main() {
   log "Stage 3: confidential runtime on selected nodes (rollout may reboot)"
   wait_until "KataConfig CRD" crd_ready kataconfigs.kataconfiguration.openshift.io
   oc kustomize "$REPO_ROOT/gitops/base/kataconfig" | render_stage kata > "$INSTALL_TMP/kata.yaml"
+  echo "The runtime rollout reboots the node. The API stops answering for a few minutes"
+  echo "meanwhile; the wait below reports that as waiting."
   worker_oc apply -f "$INSTALL_TMP/kata.yaml"
   wait_until "expected confidential runtime handler" runtime_ready
   wait_until "KataConfig and selected nodes have completed the runtime rollout" kata_ready

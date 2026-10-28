@@ -45,10 +45,12 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 
 | Script | Make target | Runs on | What it does |
 |---|---|---|---|
-| `validate-sno-baseline.sh` | `validate-sno-baseline` | workstation | Read-only node, MachineConfigPool and catalog health check |
+| `connect-cluster.py` | `connect` | controller | Copies the cluster's kubeconfig from the helper, opens the API tunnel through it, writes `lab.env` and checks the cluster |
+| `validate-sno-baseline.sh` | `validate-sno-baseline` | workstation | Read-only node, MachineConfigPool and catalog health check; `BASELINE_WAIT=<seconds>` waits while a new install settles |
 | `repair-sno-baseline.sh` | `repair-sno-baseline` | workstation | Fixes one known MachineConfig drift (`kubelet.conf` content mismatch), with a backup |
-| `apply-sno.sh` | `install-coco-operators`, `apply-overlay` | workstation | Installs NFD, cert-manager, OSC, Gatekeeper (and Trustee in a lab) in order, approves only matching InstallPlans, and waits for the Kata runtime |
+| `apply-sno.sh` | `install-coco-operators`, `apply-overlay` | workstation | Installs NFD, cert-manager, OSC, Gatekeeper (and Trustee in a lab) in order, shows the matching InstallPlans in one table and approves them after one `yes`, and waits for the Kata runtime |
 | `verify-snp-host.sh` | `verify-snp-host` | workstation | Checks SEV-SNP prerequisites on an installed OpenShift node through `oc debug` |
+| `reset-lab.sh` | `reset-lab` | workstation | Resets the disposable lab to plain OpenShift: shows what goes, asks once, labels the lab namespaces, uninstalls and checks the cluster |
 | `uninstall-coco.sh` | `uninstall-coco`, `validate-coco-uninstalled` | workstation | Removes the CoCo Operators and operands from a disposable lab, or checks that they are gone |
 
 ## Trustee

@@ -16,6 +16,29 @@ worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
 
 
+# Subscriptions and InstallPlans for operators_ready, one per namespace, in $PLAN_STATE.
+PLAN_OC = r"""#!/usr/bin/env python3
+import json, os, sys
+args = [a for a in sys.argv[1:] if not a.startswith(("--context=", "--request-timeout="))]
+path = os.environ["PLAN_STATE"]
+state = json.load(open(path))
+ns, verb, kind, name = args[1], args[2], args[3], args[4]
+entry = state[ns]
+if verb == "get" and kind == "subscription":
+    if "installedCSV" in args[-1]:
+        sys.exit(0)
+    print(entry["plan"] or "", end="")
+elif verb == "get" and kind == "installplan":
+    print(json.dumps({"spec": {"approval": "Manual", "approved": entry["approved"],
+                               "clusterServiceVersionNames": [entry["csv"]]}}))
+elif verb == "patch" and kind == "installplan" and name == entry["plan"]:
+    entry["approved"] = True
+    json.dump(state, open(path, "w"))
+else:
+    sys.exit("unexpected oc call: " + repr(args))
+"""
+
+
 class WorkerInstallTests(unittest.TestCase):
     def setUp(self):
         self.bom = json.loads((ROOT / "install/release-manifest.json").read_text())
@@ -170,6 +193,76 @@ class WorkerInstallTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("unresolved", result.stderr)
             self.assertFalse(log.exists(), "unresolved artifact identities must stop before accessing any context")
+
+    def run_operators_ready(self, state, env=None, answer=None):
+        """operators_ready from apply-sno.sh against a fake oc; the plan check itself is tested above."""
+        directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
+        tmp = Path(directory.name)
+        (tmp / "state.json").write_text(json.dumps(state))
+        oc = tmp / "oc"
+        oc.write_text(PLAN_OC); oc.chmod(0o755)
+        script = ('source scripts/apply-sno.sh; release_value() { printf "%s\\n" "${1#operators.}"; }; '
+                  'python3() { if [[ "$1" == */worker_install.py ]]; then cat >/dev/null; return 0; fi; command python3 "$@"; }; '
+                  'TEE=snp; OPERATORS=("nfd:openshift-nfd:nfd" "osc:openshift-sandboxed-containers-operator:osc"); '
+                  'operators_ready')
+        env = {"PATH":str(tmp)+":"+os.environ["PATH"], "WORKER_CONTEXT":"fixture-worker", "PLAN_STATE":str(tmp / "state.json"), **(env or {})}
+        if answer is None:
+            result = subprocess.run(["bash", "-c", script], cwd=ROOT, env=env, text=True, capture_output=True, stdin=subprocess.DEVNULL)
+            output = result.stdout + result.stderr
+        else:  # A terminal, so that the script asks.
+            leader, follower = os.openpty()
+            process = subprocess.Popen(["bash", "-c", script], cwd=ROOT, env=env, stdin=follower, stdout=follower, stderr=follower)
+            os.close(follower)
+            os.write(leader, answer.encode() + b"\n")
+            chunks = []
+            while True:
+                try:
+                    chunk = os.read(leader, 4096)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            os.close(leader)
+            process.wait(timeout=30)
+            result = subprocess.CompletedProcess(process.args, process.returncode)
+            output = b"".join(chunks).decode()
+        return result, output, json.loads((tmp / "state.json").read_text())
+
+    @staticmethod
+    def plans(nfd=None, osc=None):
+        return {"openshift-nfd": {"plan": nfd, "approved": False, "csv": "nfd.startingCSV"},
+                "openshift-sandboxed-containers-operator": {"plan": osc, "approved": False, "csv": "osc.startingCSV"}}
+
+    def test_operator_plans_wait_until_every_subscription_has_one(self):
+        result, output, state = self.run_operators_ready(self.plans(nfd="install-nfd"))
+        self.assertEqual(1, result.returncode, output)
+        self.assertIn("1 InstallPlans are ready; waiting for the other Subscriptions' plans", output)
+        self.assertFalse(any(ns["approved"] for ns in state.values()))
+
+    def test_operator_plans_need_a_terminal_or_explicit_approval(self):
+        result, output, state = self.run_operators_ready(self.plans("install-nfd", "install-osc"))
+        self.assertEqual(2, result.returncode, output)
+        self.assertIn("2 InstallPlans wait for approval; without a terminal, set APPROVE_INSTALLPLANS=1", output)
+        self.assertFalse(any(ns["approved"] for ns in state.values()))
+        result, output, state = self.run_operators_ready(self.plans("install-nfd", "install-osc"), env={"APPROVE_INSTALLPLANS":"1"})
+        self.assertEqual(1, result.returncode, output)  # Approved, not installed yet.
+        self.assertTrue(all(ns["approved"] for ns in state.values()))
+        self.assertIn("approved openshift-nfd/install-nfd (nfd.startingCSV)", output)
+
+    def test_operator_plans_are_shown_in_one_table_and_approved_with_one_yes(self):
+        result, output, state = self.run_operators_ready(self.plans("install-nfd", "install-osc"), answer="no")
+        self.assertEqual(2, result.returncode, output)
+        self.assertIn("nothing was installed", output)
+        self.assertFalse(any(ns["approved"] for ns in state.values()))
+        result, output, state = self.run_operators_ready(self.plans("install-nfd", "install-osc"), answer="yes")
+        self.assertEqual(1, result.returncode, output)
+        table = output.split("Type yes")[0]
+        for line in ("NAMESPACE", "openshift-nfd", "install-nfd", "nfd.startingCSV",
+                     "openshift-sandboxed-containers-operator", "install-osc", "osc.startingCSV"):
+            self.assertIn(line, table)
+        self.assertEqual(1, output.count("Type yes to approve these 2 InstallPlans"))
+        self.assertTrue(all(ns["approved"] for ns in state.values()))
 
     def test_worker_only_context_is_sufficient(self):
         result = subprocess.run(["bash", "-c", 'source scripts/lib/cluster-context.sh; WORKER_CONTEXT=fixture-worker; load_worker_context'], cwd=ROOT, env={"PATH":os.environ["PATH"]}, capture_output=True, text=True)
