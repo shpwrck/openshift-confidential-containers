@@ -30,6 +30,20 @@
         - public_console_conf_removed.changed
         - (public_console_nginx_t_disabled.rc | default(1)) == 0
 
+    - name: Remove the public console name from the cluster's DNS
+      ansible.builtin.file:
+        path: "{{ public_console_dnsmasq_conf_path }}"
+        state: absent
+      become: true
+      register: public_console_dnsmasq_removed
+
+    - name: Restart dnsmasq after public console opt-out
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: restarted
+      become: true
+      when: public_console_dnsmasq_removed.changed
+
     - name: Report public console opt-out
       ansible.builtin.debug:
         msg: "Public console exposure disabled (public_console_enabled=false)."
@@ -304,6 +318,28 @@
       changed_when: true
       when: public_console_secret_needs_apply | bool
 
+    # The cluster resolves names only through the helper's dnsmasq, which serves no
+    # outside names (no-resolv). The console operator checks the custom route by its
+    # public name, so answer that name with the cluster's own ingress address.
+    - name: Resolve the public console name inside the cluster
+      ansible.builtin.copy:
+        content: |
+          # Managed by Ansible role public_console.
+          host-record={{ public_console_host }},{{ public_console_cluster_upstream_ip }}
+        dest: "{{ public_console_dnsmasq_conf_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      register: public_console_dnsmasq_conf
+
+    - name: Restart dnsmasq with the public console name
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: restarted
+      become: true
+      when: public_console_dnsmasq_conf.changed
+
     - name: Patch the OpenShift console custom route
       ansible.builtin.command:
         argv:
@@ -396,6 +432,54 @@
           - public_console_host in public_console_login_probe.stdout
         fail_msg: "Public console login redirect did not include the public console/OAuth hostnames."
         success_msg: "Public console login redirects through the public OAuth hostname."
+
+    # The OAuth server restarts after the route change; until it is back, the login
+    # page behind the console's redirect returns 502.
+    - name: Probe public OAuth through local nginx
+      ansible.builtin.command:
+        argv:
+          - curl
+          - -ksS
+          - -o
+          - /dev/null
+          - -w
+          - "%{http_code}"
+          - --connect-timeout
+          - "10"
+          - --max-time
+          - "20"
+          - --resolve
+          - "{{ public_oauth_host }}:443:{{ public_console_proxy_probe_address }}"
+          - "https://{{ public_oauth_host }}/healthz"
+      register: public_console_oauth_probe
+      changed_when: false
+      failed_when: public_console_oauth_probe.stdout != '200'
+      retries: 30
+      delay: 10
+      until: public_console_oauth_probe.stdout == '200'
+
+    - name: Wait for the console operator to pass its route check
+      ansible.builtin.command:
+        argv:
+          - oc
+          - --kubeconfig
+          - "{{ cluster_assets_dir }}/auth/kubeconfig"
+          - get
+          - clusteroperator
+          - console
+          - -o
+          - 'jsonpath={range .status.conditions[*]}{.type}={.status}{"\n"}{end}'
+      become: true
+      environment:
+        PATH: "{{ tool_path }}"
+      register: public_console_operator_conditions
+      changed_when: false
+      retries: 30
+      delay: 10
+      until:
+        - public_console_operator_conditions.rc == 0
+        - "'Available=True' in public_console_operator_conditions.stdout_lines"
+        - "'Degraded=False' in public_console_operator_conditions.stdout_lines"
 
     - name: Report the public console URL
       ansible.builtin.debug:
