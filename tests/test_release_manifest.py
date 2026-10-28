@@ -31,6 +31,19 @@ class ReleaseContractTests(unittest.TestCase):
     def test_snp_profile_agrees_without_claiming_readiness(self):
         self.assertEqual([], self.check("snp"))
 
+    def test_mirror_registry_must_be_a_pinned_version(self):
+        registry = self.bom["tools"]["mirrorRegistry"]
+        for field, bad in [("url", registry["url"].replace("/2.0.12/", "/latest/")),
+                           ("url", registry["url"].replace("https://", "http://")),
+                           ("checksumsSource", registry["checksumsSource"].replace("/2.0.12/", "/2.0.11/")),
+                           ("sha256", registry["sha256"][:-1]),
+                           ("version", "2.0")]:
+            with self.subTest(field=field, value=bad):
+                self.bom["tools"]["mirrorRegistry"] = dict(registry, **{field: bad})
+                self.assertTrue(any("tools.mirrorRegistry" in x for x in self.check()))
+        del self.bom["tools"]["mirrorRegistry"]
+        self.assertTrue(any("tools.mirrorRegistry" in x for x in self.check()))
+
     def test_candidate_artifacts_block_deployment(self):
         self.bom["operators"]["osc"]["resolution"] = "candidate"
         self.bom["images"]["cocoTools"]["resolution"] = "candidate"

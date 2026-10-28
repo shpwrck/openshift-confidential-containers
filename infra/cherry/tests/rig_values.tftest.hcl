@@ -101,24 +101,20 @@ run "rig_values_carry_the_assigned_addresses" {
   }
 
   assert {
-    condition = output.rig_values == join("\n", [
-      "",
-      "# ---- From the Cherry Servers API (terraform output rig_values) ----",
-      "bastion_ansible_host: \"84.32.48.9\"",
-      "bastion_public_ipv4_override: \"84.32.48.9\"",
-      "node_server_id: \"1025551\"",
-      "node_provider_hostname: \"sno-coco-node\"",
-      "node_provider_project_id: \"123456\"",
-      "node_vlan_ip: \"10.191.48.7\"",
-      "bastion_vlan_ip: \"10.191.48.8\"",
-      "machine_network: \"10.191.48.0/24\"",
-      "vlan_cidr: \"10.191.48.0/24\"",
-      "vlan_prefix: 24",
-      "# Ansible checks this tag against the node's and the helper's VLAN interfaces.",
-      "vlan_vid_override: \"2738\"",
-      "",
-    ])
-    error_message = "rig_values does not match the assigned addresses:\n${output.rig_values}"
+    condition = output.rig_values == {
+      project_id          = "123456"
+      node_id             = "1025551"
+      node_hostname       = "sno-coco-node"
+      node_public_ipv4    = "84.32.48.3"
+      node_private_ipv4   = "10.191.48.7"
+      helper_id           = "1025601"
+      helper_hostname     = "sno-coco-helper"
+      helper_public_ipv4  = "84.32.48.9"
+      helper_private_ipv4 = "10.191.48.8"
+      private_network     = "10.191.48.0/24"
+      vlan_tag            = "2738"
+    }
+    error_message = "rig_values does not match the assigned addresses: ${jsonencode(output.rig_values)}"
   }
   assert {
     condition     = output.node_public_ipv4 == "84.32.48.3" && output.helper_public_ipv4 == "84.32.48.9"
@@ -126,7 +122,7 @@ run "rig_values_carry_the_assigned_addresses" {
   }
 }
 
-run "a_missing_vlan_tag_stays_a_placeholder" {
+run "a_missing_vlan_tag_is_reported_as_null" {
   module {
     source = "./modules/rig_values"
   }
@@ -153,8 +149,8 @@ run "a_missing_vlan_tag_stays_a_placeholder" {
   }
 
   assert {
-    condition     = strcontains(output.rig_values, "vlan_vid_override: \"REPLACE_WITH_VLAN_TAG\"")
-    error_message = "Without a tag from the API the rig file must keep the placeholder."
+    condition     = output.rig_values.vlan_tag == null
+    error_message = "Without a tag from the API there is no tag to report; the rig file takes the one seen on the node."
   }
 }
 

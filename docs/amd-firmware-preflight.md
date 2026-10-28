@@ -27,21 +27,14 @@ Read the BMC firmware version from the BMC web console, or with
 
 ## Set the board's SNP controls
 
-The October 8 **H13SST-G / EPYC 9124 / BIOS 3.7** trial used:
+The settings that worked on the tested Supermicro H13SST-G boards (EPYC 9124 and
+9254, BIOS 3.7), and how to reach the BIOS through the Cherry console, are in
+[Set the BIOS](cherry-servers.md#set-the-bios).
 
-| Setting | Value |
-|---|---|
-| SVM / SEV | Enabled (already set on the trial) |
-| SMEE | Enabled |
-| SNP Memory / RMP Table Coverage | Enabled, covering all system memory |
-| SEV-ES ASID Space Limit | 100 on this tested board |
-| IOMMU | Enabled |
-| SEV-SNP Support | Enabled |
-
-These appeared under Advanced CPU/NB Configuration. Inspect the exact board's
-menus and help text; H12/Milan can use different ASID controls. Do not transplant
-an H13 key sequence or treat `Auto` as evidence of enablement. TSME is separate
-from SMEE. No memory-interleaving change was needed for the successful trial.
+On another board, inspect its menus and help text; H12/Milan can use different
+ASID controls. Do not transplant an H13 key sequence or treat `Auto` as evidence
+of enablement. TSME is separate from SMEE. No memory-interleaving change was
+needed on the tested boards.
 
 BIOS console setup was manual. The tested Redfish BIOS endpoint required a licence.
 Settings survived the Kata reboot, but must be verified after each reinstall or
@@ -62,11 +55,17 @@ using its supported recovery procedure; this repository does not flash firmware.
 
 ## Prove the running host
 
-Copy the reviewed script to the raw node and run:
+On a rig ordered with `make order-rig`, run the check from the controller. It runs
+the checker on the node's original OS over the pinned SSH connection, after
+printing the board, BIOS version and boot mode, and saves the output in
+`$COCO_STATE_DIR/evidence`:
 
 ```bash
-sudo bash /path/to/host-snp-check.sh
+make check-node-snp
 ```
+
+On other servers, copy the reviewed script to the raw node and run
+`sudo bash /path/to/host-snp-check.sh`.
 
 [The checker](../scripts/host-snp-check.sh) reads module/device/current-boot evidence;
 it does not load modules or change firmware. Require `sev_snp=Y`, `/dev/sev`,

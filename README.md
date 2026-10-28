@@ -61,14 +61,13 @@ will need changes to the discovery and reinstall steps in
 
 Follow these guides in order. Each one ends where the next begins.
 
-1. **[Order the servers](docs/cherry-servers.md)**: set up the controller
-   ([quickstart step 1](docs/quickstart.md#1-set-up-the-controller)), then order the
-   node and the helper with Terraform, then start the helper's mirror bootstrap over
-   SSH. Terraform also starts your rig file.
-2. **[Check the AMD hardware](docs/amd-firmware-preflight.md)**: set the BIOS
-   options and prove SEV-SNP is working on the node before installing anything.
-3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md)**: finish the
-   rig file, prepare the helper, install the node and add the Operators.
+1. **[Order the rig](docs/quickstart.md#2-order-the-rig)**: `source scripts/env.sh`
+   sets up the controller, and `make order-rig` orders the node and the helper on
+   Cherry Servers, starts the helper's mirror registry and writes your rig file.
+2. **[Set the BIOS](docs/quickstart.md#3-set-the-bios)**: switch on SEV-SNP in the
+   node's console, then `make check-node-snp` proves it works before anything is installed.
+3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md#4-prepare-the-helper)**:
+   prepare the helper, install the node and add the Operators.
 4. **[Set up Trustee](docs/trustee.md)**: collect the node's AMD certificate,
    calculate the approved reference values and publish the attestation policies.
 5. **[Configure guest image pulls](docs/guest-images.md)**: give the confidential
