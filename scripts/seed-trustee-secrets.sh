@@ -11,7 +11,8 @@ source "$REPO_ROOT/scripts/lib/release.sh"
 NS="${NS:-trustee-operator-system}"
 TRUSTEE_NAME="${TRUSTEE_NAME:-trustee-config}"
 TEE="${TEE:-snp}"
-VCEK_BUNDLE="${VCEK_BUNDLE:-${HOME}/.local/state/coco/vcek-bundle}"
+# Same default as collect-vcek.sh, which writes the bundle.
+VCEK_BUNDLE="${VCEK_BUNDLE:-${COCO_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/openshift-confidential-containers}/vcek-bundle}"
 TRUSTEE_CONTEXT="${TRUSTEE_CONTEXT:-}"
 oc() {
 	if [[ -n "$TRUSTEE_CONTEXT" ]]; then command oc --context "$TRUSTEE_CONTEXT" "$@";

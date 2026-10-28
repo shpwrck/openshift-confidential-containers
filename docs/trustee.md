@@ -112,10 +112,18 @@ Review the output and build the **complete** approved reference set:
 - Trustee 1.2 `reference_value` maps names to base64-encoded JSON records with
   `name`, UTC-seconds `expiration` and typed `value`. Malformed, duplicate or expired
   records are rejected.
-- Add `snp_bootloader`, `snp_microcode`, `snp_snp_svn` and `snp_tee_svn` as integers
-  from the approved platform/verified quote. The generator does not collect hardware TCB.
+- Add `snp_bootloader`, `snp_microcode`, `snp_snp_svn` and `snp_tee_svn` as lists of
+  integers (the CPU policy checks them with `in`) for the approved platforms. The
+  generator does not collect hardware TCB. Each collected VCEK was requested for the
+  node's reported TCB, so its URL carries the four values; `scripts/review-references.py`
+  adds them from the bundle for every HWID in `HWIDS` and prints the result for review.
 - Omit coco-tools 0.5.1's unused SHA-384 `init_data` record when binding SHA-256 initdata
-  through the CPU-policy extension below.
+  through the CPU-policy extension below (`--drop init_data`).
+
+```bash
+scripts/review-references.py "$COCO_STATE_DIR/rvps-generated.yaml" \
+  "$COCO_STATE_DIR/rvps-reviewed.yaml" --drop init_data
+```
 
 Generating or observing a value does not approve it. Confirm its source, expected
 platform and expiry before publication.
@@ -183,40 +191,109 @@ infer refresh from a sleep or an event.
 ## Disposable lab
 
 The validated lab runs Trustee on the worker cluster in the Permissive profile
-over HTTP, with the restrictive resource policy above enforcing. Use the same
-VCEK, bootstrap, reference and configure steps, with these differences:
+over HTTP, with the restrictive resource policy above enforcing. It follows the
+same steps as the sections above; the commands below are the complete lab
+sequence, so you don't need to adapt the customer blocks. No HTTPS or token
+Secrets are needed. `HELPER` and `NODE` are your helper login
+(`bastion_ssh_user@bastion_ansible_host` from the rig file) and the node name
+from `oc get nodes`.
 
-- Set `TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1` and the same context in
-  `WORKER_CONTEXT` and `TRUSTEE_CONTEXT`. No HTTPS or token Secrets are needed.
-- Configure runs the synthetic resource seeder, which Restricted mode never does.
-  It builds the registry credential, registry configuration, image policies and a
-  sample secret for the helper's mirror registry. Copy the mirror CA and password
-  from the helper and point the seeder at them:
+1. Set the lab variables, collect the node's VCEK and check that the bundle holds
+   only this node's chip ID. The count must be `1` on a single-node lab; a larger
+   count means a certificate left from another machine, so remove that directory
+   before you go on.
 
-  ```bash
-  ssh '<helper>' 'sudo cat /opt/mirror/ca/rootCA.pem' > "$COCO_STATE_DIR/mirror-ca.pem"
-  ssh '<helper>' 'sudo cat /opt/mirror/mirror-admin-password' > "$COCO_STATE_DIR/mirror-password"
-  export MIRROR_CA="$COCO_STATE_DIR/mirror-ca.pem"
-  export MIRROR_PASSWORD_FILE="$COCO_STATE_DIR/mirror-password"
-  ```
+   ```bash
+   export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
+   export TRUSTEE_PROFILE=Permissive TRUSTEE_LAB=1 TEE=snp
+   make collect-vcek NODE="$NODE"
+   export HWIDS="$(ls "$COCO_STATE_DIR/vcek-bundle" | grep -E '^[0-9a-f]{128}$' | tr '\n' ' ')"
+   echo "$HWIDS" | wc -w
+   ```
 
-  `ARTIFACTORY_REGISTRY` (default `mirror.rig.local:8443`) and `MIRROR_USERNAME`
-  (default `init`) match the Ansible defaults. Build the
-  [signed test images](capability-status.md#signed-images) and source their env
-  file first, so the seeder also publishes the signing key and the signed-image policy.
-- The Operator's Permissive resource policy enforces no appraisal. Supply **both**
-  the reviewed policy and reference files, and the resource list, as in Restricted
-  mode. The lab's list is the seeder's resources:
+2. Publish the certificate and bootstrap Trustee:
 
-  ```bash
-  TRUSTEE_RESOURCE_POLICY_FILE="$COCO_STATE_DIR/resource-policy.rego" \
-    TRUSTEE_RVPS_FILE="$COCO_STATE_DIR/rvps-reviewed.yaml" \
-    KBS_RESOURCE_NAMES='regcred attestation-cert attestation-status sample credential security-policy registry-configuration sig-public-key' \
-    scripts/apply-trustee.sh configure
-  ```
+   ```bash
+   make seed-vcek
+   make preflight
+   scripts/apply-trustee.sh bootstrap
+   ```
 
-  Leave out `sig-public-key` if you haven't built the signed images.
+3. Copy the mirror CA and password from the helper. The initdata, the resource
+   seeder and the capability tests all use them, so export them before the next
+   step. `ARTIFACTORY_REGISTRY` (default `mirror.rig.local:8443`) and
+   `MIRROR_USERNAME` (default `init`) match the Ansible defaults.
 
+   ```bash
+   ssh "$HELPER" 'sudo cat /opt/mirror/ca/rootCA.pem' > "$COCO_STATE_DIR/mirror-ca.pem"
+   ssh "$HELPER" 'sudo cat /opt/mirror/mirror-admin-password' > "$COCO_STATE_DIR/mirror-password"
+   export MIRROR_CA="$COCO_STATE_DIR/mirror-ca.pem" MIRROR_PASSWORD_FILE="$COCO_STATE_DIR/mirror-password"
+   ```
+
+4. Write the test workloads' initdata, then start a throwaway `kata-cc` pod so you
+   can read the guest kernel command line. The pod never attests; it only needs
+   its VM to start, which takes about a minute.
+
+   ```bash
+   EMIT_INITDATA=1 make -s run-rung-kbs > "$COCO_STATE_DIR/initdata.toml"
+   oc --context="$WORKER_CONTEXT" create namespace coco-validation
+   RENDER_ONLY=1 POD_NAME=cmdline-probe make -s run-rung-kbs | oc --context="$WORKER_CONTEXT" create -f -
+   ```
+
+   Then print the command line, as in [Calculate the approved references](#calculate-the-approved-references),
+   and remove the pod. Rerun the first command if it prints nothing yet.
+
+   ```bash
+   oc --context="$WORKER_CONTEXT" debug node/"$NODE" -- chroot /host sh -c \
+     'for p in $(pgrep -f qemu); do tr "\0" "\n" < /proc/$p/cmdline | grep -A1 -x -- -append | tail -n 1; done'
+   oc --context="$WORKER_CONTEXT" -n coco-validation delete pod cmdline-probe
+   ```
+
+5. Generate the launch reference on the controller. Veritas runs in podman and
+   needs Red Hat registry access, so pull its image with your pull secret first
+   (`pull_secret_src` in the rig file; write `~` out as your home directory).
+   Paste the printed command line between the quotes:
+
+   ```bash
+   PULL_SECRET='<path to your pull secret>'
+   podman pull --authfile "$PULL_SECRET" "$(python3 scripts/verify-release.py --get images.cocoTools.ref)"
+   PULL_SECRET="$PULL_SECRET" INITDATA="$COCO_STATE_DIR/initdata.toml" \
+     OUT="$COCO_STATE_DIR/rvps-generated.yaml" \
+     VERITAS_KERNEL_CMDLINE='<printed command line>' \
+     scripts/gen-rvps-veritas.sh
+   ```
+
+6. Build the reviewed reference set. The script adds the node's four firmware
+   levels from its VCEK request (the CPU policy checks them against the guest's
+   reported TCB), drops Veritas's unused SHA-384 `init_data` record and prints
+   every record. Check that `snp_launch_measurement` is the one Veritas printed
+   and that the firmware levels are the ones you approve for this node.
+
+   ```bash
+   scripts/review-references.py "$COCO_STATE_DIR/rvps-generated.yaml" \
+     "$COCO_STATE_DIR/rvps-reviewed.yaml" --drop init_data
+   ```
+
+7. Build the [signed test images](capability-status.md#signed-images) and source
+   their env file, so the seeder also publishes the signing key and the
+   signed-image policy.
+
+8. Download the restrictive resource policy (the Operator's Permissive policy
+   enforces no appraisal) and configure. Configure runs the synthetic resource
+   seeder, which Restricted mode never does: it builds the registry credential,
+   registry configuration, image policies and a sample secret for the helper's
+   mirror registry. Leave out `sig-public-key` if you skipped the signed images.
+
+   ```bash
+   curl -fsSL -o "$COCO_STATE_DIR/resource-policy.rego" \
+     https://raw.githubusercontent.com/openshift/trustee-operator/v1.2.1/config/templates/resource-policy-restrictive.rego
+   TRUSTEE_RESOURCE_POLICY_FILE="$COCO_STATE_DIR/resource-policy.rego" \
+     TRUSTEE_RVPS_FILE="$COCO_STATE_DIR/rvps-reviewed.yaml" \
+     KBS_RESOURCE_NAMES='regcred attestation-cert attestation-status sample credential security-policy registry-configuration sig-public-key' \
+     scripts/apply-trustee.sh configure
+   ```
+
+Skip the CPU-policy binding: the `rung-initdata` test adds it for its own workload.
 This does not change HTTP or token trust, or establish customer separation.
 Continue with [capability tests](capability-status.md).
 

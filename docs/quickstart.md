@@ -76,8 +76,22 @@ echo "${#CHERRY_SERVERS_API_KEY}"
 ```
 
 For Terraform, also export `CHERRY_API_KEY` and `TF_DATA_DIR` as in
-[Order the servers](cherry-servers.md#order-the-servers). After step 6, export
-`KUBECONFIG` and the context variables again and reopen the SSH tunnel to the API.
+[Order the servers](cherry-servers.md#order-the-servers). After step 6, also set
+the cluster variables again. The tunnel keeps running after its terminal closes;
+reopen it only if `get nodes` can't connect (`HELPER` and `NODE_IP` as in step 6):
+
+```bash
+export KUBECONFIG="$COCO_STATE_DIR/kubeconfig"
+export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
+export TRUSTEE_LAB=1 INSTALL_TOPOLOGY=sno
+oc --context=validation get nodes
+# Only if that can't connect:
+ssh -f -N -L 6443:"$NODE_IP":6443 "$HELPER"
+```
+
+After [Trustee setup](trustee.md#disposable-lab), the lab also needs
+`TRUSTEE_PROFILE=Permissive TEE=snp` and the `MIRROR_CA`, `MIRROR_PASSWORD_FILE`
+and `HWIDS` lines from that page.
 
 ## 2. Write the rig file
 

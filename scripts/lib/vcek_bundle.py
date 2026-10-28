@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import warnings
 
 
 def digest(data):
@@ -27,7 +28,11 @@ def atomic(path, data):
 
 def validate_certificate(data):
     from cryptography import x509
-    cert = x509.load_der_x509_certificate(data)
+    # AMD KDS issues VCEKs with serial number 0, which cryptography reports with a
+    # deprecation warning on every load. The certificate is still valid input here.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Parsed a serial number which wasn't positive")
+        cert = x509.load_der_x509_certificate(data)
     now = datetime.now(timezone.utc)
     if not cert.not_valid_before_utc <= now < cert.not_valid_after_utc:
         raise ValueError("VCEK certificate is expired or not yet valid")

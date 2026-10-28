@@ -50,6 +50,7 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 | `apply-trustee.sh` | `bootstrap-trustee`, `deploy-trustee` | workstation | `bootstrap` creates the TrusteeConfig and attaches VCEK collateral; `configure` publishes the reviewed resource policy, reference values and resources |
 | `collect-vcek.sh` | `collect-vcek`, `seed-vcek` | workstation | Collects a node's VCEK certificate into external state, or publishes a collected bundle as Trustee Secrets |
 | `gen-rvps-veritas.sh` | `gen-rvps` | workstation | Calculates the expected launch measurement from the release's guest artifacts with coco-tools |
+| `review-references.py` | (none) | workstation | Adds the node's firmware levels from its VCEK request to the Veritas output and prints the reference set for review |
 | `render-measurement-policy.sh` | `render-measurement-policy` | anywhere | Adds the initdata hash check to the vendor CPU attestation policy |
 | `refresh-trustee.py` | (none) | workstation | Replaces Trustee's serving pods and confirms they serve the current configuration |
 | `seed-trustee-secrets.sh` | `seed-trustee-secrets` | workstation | Creates synthetic resources for a disposable Permissive lab only |

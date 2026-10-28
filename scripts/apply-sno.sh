@@ -76,14 +76,24 @@ kata_ready() {
     selector+=",${COCO_WORKER_POOL_LABEL}=${COCO_WORKER_POOL_VALUE}"
     pool="kata-oc"
   fi
-  kata="$(worker_oc get kataconfig cluster-kataconfig -o json)" || return 1
-  nodes="$(worker_oc get nodes -l "$selector" -o json)" || return 1
-  mcp="$(worker_oc get mcp "$pool" -o json)" || return 1
-  runtime="$(worker_oc get runtimeclass "$COCO_RUNTIMECLASS" -o json)" || return 1
-  jq -n --argjson kata "$kata" --argjson nodes "$nodes" --argjson mcp "$mcp" --argjson runtime "$runtime" \
+  # The rollout reboots the node, so API errors and an unconverged KataConfig are
+  # expected for a while; report them as waiting, not as errors.
+  if ! kata="$(worker_oc get kataconfig cluster-kataconfig -o json 2>/dev/null)" ||
+     ! nodes="$(worker_oc get nodes -l "$selector" -o json 2>/dev/null)" ||
+     ! mcp="$(worker_oc get mcp "$pool" -o json 2>/dev/null)" ||
+     ! runtime="$(worker_oc get runtimeclass "$COCO_RUNTIMECLASS" -o json 2>/dev/null)"; then
+    echo "  API not answering yet; the node may be rebooting for the runtime rollout."
+    return 1
+  fi
+  local reason
+  if reason="$(jq -n --argjson kata "$kata" --argjson nodes "$nodes" --argjson mcp "$mcp" --argjson runtime "$runtime" \
     '{kata:$kata,nodes:$nodes,mcp:$mcp,runtime:$runtime}' | \
     python3 "$REPO_ROOT/scripts/lib/worker_install.py" check-kata \
-      --manifest "${RELEASE_MANIFEST:-$REPO_ROOT/install/release-manifest.json}" --tee "$TEE" --topology "$INSTALL_TOPOLOGY"
+      --manifest "${RELEASE_MANIFEST:-$REPO_ROOT/install/release-manifest.json}" --tee "$TEE" --topology "$INSTALL_TOPOLOGY" 2>&1)"; then
+    return 0
+  fi
+  echo "  Not finished yet: ${reason#ERROR: worker install: }"
+  return 1
 }
 baseline_ready() {
   bash "$REPO_ROOT/scripts/validate-sno-baseline.sh" > "$INSTALL_TMP/baseline.log" 2>&1

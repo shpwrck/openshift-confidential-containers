@@ -89,7 +89,9 @@ def check_kata(state, bom, tee, topology):
         raise ValueError("KataConfig must use the bare-metal runtime")
     progress = [c for c in status.get("conditions", []) if c.get("type") == "InProgress"]
     if len(progress) != 1 or progress[0].get("status") != "False" or progress[0].get("reason") or status.get("waitingForMcoToStart", False):
-        raise ValueError("KataConfig reconciliation is pending, failed or waiting for MCO")
+        state_text = "waiting for MCO to start" if status.get("waitingForMcoToStart", False) else (
+            f"InProgress={progress[0].get('status')} reason={progress[0].get('reason') or 'none'}" if len(progress) == 1 else "no InProgress condition yet")
+        raise ValueError(f"KataConfig reconciliation has not finished ({state_text})")
     pending = ("installing", "waitingToInstall", "failedToInstall", "uninstalling", "waitingToUninstall", "failedToUninstall")
     if any(counts.get(field) for field in pending) or counts.get("nodeCount") != len(names) or counts.get("readyNodeCount") != len(names) or set(counts.get("installed", [])) != names:
         raise ValueError("KataConfig installed/ready node set does not match selected nodes")
