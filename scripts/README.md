@@ -33,7 +33,8 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 | Script | Make target | Runs on | What it does |
 |---|---|---|---|
 | `render-helper-bootstrap.py` | (`order-rig`) | controller | Renders the mirror bootstrap template, with the manifest's pinned mirror-registry archive, as a root script to run on the helper over SSH, or as cloud-init user data; see [Cherry Servers setup](../docs/cherry-servers.md#ordering-by-hand) |
-| `host-snp-check.sh` | `check-node-snp` | node | Read-only SEV-SNP check on the provider's original OS; see [firmware preflight](../docs/amd-firmware-preflight.md) |
+| `host-snp-check.sh` | `check-node-snp`, (Ansible) | node | Read-only SEV-SNP check on the provider's original OS; see [firmware preflight](../docs/amd-firmware-preflight.md) |
+| `node-preflight.py` | (Ansible) | controller | The install's node checks before the erase: identity, UEFI boot, install disk and `host-snp-check.sh` over pinned SSH, with the output saved as evidence. Shares `lib/node_checks.py` with `check-node-snp` |
 | `check-private-link.py` | (Ansible) | node | Read-only check that the node reaches the helper's registry (TLS), DNS and NTP over the private VLAN |
 | `discover-node-macs.py` | (Ansible) | controller | Validates the node's NIC names and permanent MACs and merges them into the install inputs |
 | `provider-identity.py` | (Ansible) | controller | Validates a Cherry Servers API response and prints only public identity fields |
@@ -97,3 +98,4 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 | `proof_core.py` | The capability-test runner's cluster access, locking and restore logic |
 | `provider.py` | Normalizing Cherry Servers identity fields without credentials |
 | `cherry_rig.py` | Choosing tested Cherry Servers plans and writing the rig file from what the servers report |
+| `node_checks.py` | The read-only node checks before the erase, and their evidence file |

@@ -42,6 +42,13 @@ class BootstrapTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def state_rig_file(self):
+        """The rig file make order-rig writes, which up.sh uses without a vars file."""
+        rig = self.base / 'state/rig.yml'
+        rig.parent.mkdir(exist_ok=True)
+        rig.write_text('rig: ordered\n')
+        return ['-e', '@' + str(rig.resolve())]
+
     def run_cmd(self, args, expected=0, **kwargs):
         result = subprocess.run(args, env=self.env, cwd=self.base, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs)
@@ -191,12 +198,13 @@ import json, os, sys
 with open(os.environ['FIXTURE_CALLS'], 'a') as f:
     print(json.dumps(sys.argv[1:]), file=f)
 """)
+        rig = self.state_rig_file()
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'resume-install'])
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
         self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[0], ['playbooks/site.yml', '--tags', 'drive', '-e',
+        self.assertEqual(calls[0], ['playbooks/site.yml', '--tags', 'drive', *rig, '-e',
                                    'install_mode=fresh', '-e', 'resume_install_only=true'])
-        self.assertEqual(calls[1], ['playbooks/site.yml', '--tags', 'pxe-stop'])
+        self.assertEqual(calls[1], ['playbooks/site.yml', '--tags', 'pxe-stop', *rig])
 
     def test_wrapper_verify_has_no_provisioning_and_uses_absolute_config(self):
         write_executable(self.bin / 'ansible-playbook', '''#!/usr/bin/env python3
@@ -205,6 +213,7 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:
  f.write(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),'config':os.environ['ANSIBLE_CONFIG']})+'\\n')
 ''')
         self.env.pop('ANSIBLE_CONFIG', None)
+        rig = self.state_rig_file()
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify'])
         record = json.loads(self.log.read_text())
         self.assertEqual(record['cwd'], str(ROOT / 'ansible'))
@@ -214,7 +223,7 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f:
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify', '--',
                       '-e', 'test_text=value with spaces', '--limit', 'bastion'])
         spaced_record = json.loads(self.log.read_text())
-        self.assertEqual(spaced_record['argv'], ['playbooks/site.yml', '--tags', 'drive',
+        self.assertEqual(spaced_record['argv'], ['playbooks/site.yml', '--tags', 'drive', *rig,
             '-e', 'test_text=value with spaces', '--limit', 'bastion', '-e', 'install_mode=verify'])
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'upgrade'], 2)
 
@@ -227,6 +236,9 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f: f.write(json.dumps(sys.argv[1:]
                             '-e', '@/rig.yml'], 2)
         self.assertIn("vars file '/rig.yml' not found", out)
         self.assertIn('COCO_STATE_DIR', out)
+        out = self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify'], 2)
+        self.assertIn('make order-rig', out)
+        self.assertIn('source scripts/env.sh', out)
         self.assertFalse(self.log.exists())
         (self.base / 'rig.yml').write_text('rig: reviewed\n')
         self.run_cmd(['bash', str(ROOT / 'ansible/up.sh'), '--mode', 'verify',
@@ -249,12 +261,17 @@ with open(os.environ['FIXTURE_CALLS'],'a') as f: f.write(json.dumps(sys.argv[1:]
         (repo / 'scripts/lib/release.sh').write_text('load_release_defaults() { :; }\nrequire_resolved_release() { :; }\n')
         write_executable(self.bin / 'ansible-playbook', '#!' + shutil.which('python3') +
             '\nimport json,os,sys\nwith open(os.environ["FIXTURE_CALLS"],"a") as f: print(json.dumps(sys.argv[1:]),file=f)\n')
+        rig = self.state_rig_file()
         self.run_cmd(['bash', str(repo / 'ansible/up.sh'), '--mode', 'fresh-install', '-e', 'rig=reviewed'])
         plays = [json.loads(line) for line in self.log.read_text().splitlines()]
-        self.assertEqual(len(plays), 3)
-        self.assertEqual(plays[0], ['playbooks/site.yml', '--tags', 'bastion-prep', '-e', 'rig=reviewed'])
-        self.assertIn('install_mode=fresh', plays[1])
-        self.assertEqual(plays[2], ['playbooks/site.yml', '--tags', 'pxe-stop', '-e', 'rig=reviewed'])
+        given = [*rig, '-e', 'rig=reviewed']
+        # The node checks and the erase question come before the long helper
+        # preparation; the install run then skips them.
+        self.assertEqual(plays, [
+            ['playbooks/site.yml', '--tags', 'bios', *given],
+            ['playbooks/site.yml', '--tags', 'bastion-prep', *given],
+            ['playbooks/site.yml', '--tags', 'install', '--skip-tags', 'bios', *given, '-e', 'install_mode=fresh'],
+            ['playbooks/site.yml', '--tags', 'pxe-stop', *given]])
 
     def ansible(self, task_file, variables, expected=0):
         if shutil.which('ansible-playbook') is None:

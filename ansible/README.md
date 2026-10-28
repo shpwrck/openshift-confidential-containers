@@ -5,8 +5,9 @@ OpenShift on a disposable AMD node. `make order-rig` orders the servers on Cherr
 Servers and writes the rig file; setting the BIOS is manual. Start with the
 [quickstart](../docs/quickstart.md).
 
-The rig file (`$COCO_STATE_DIR/rig.yml`) describes your servers; pass it with
-`-e "@$COCO_STATE_DIR/rig.yml"`. For servers ordered another way, copy
+The rig file (`$COCO_STATE_DIR/rig.yml`) describes your servers. `up.sh` uses it
+unless you pass another vars file with `-e @<file>`; a direct `ansible-playbook`
+run needs `-e "@$COCO_STATE_DIR/rig.yml"`. For servers ordered another way, copy
 [`rig.example.yml`](rig.example.yml) outside the checkout and fill it in. Defaults
 for everything else are in [`group_vars/all.yml`](group_vars/all.yml). The
 [mirror bootstrap](bootstrap/mirror-registry.yaml.j2) is a cloud-init template that
@@ -21,22 +22,23 @@ sets up the helper's network and mirror registry before Ansible runs;
 | Command | Behavior |
 |---|---|
 | `bash ansible/up.sh --mode prepare` | Default: prepare tools, mirror, DNS and NTP on the helper. Does not touch the node |
-| `--mode fresh-install` | Prepare, check the node's hardware and private network, then **erase the node** and install OpenShift |
+| `--mode fresh-install` | Check the node and ask once to erase it, prepare the helper, check the private network, then **erase the node** and install OpenShift |
 | `--mode resume-install` | Finish an install the provider already accepted, with unchanged inputs; sends no new reinstall |
 | `--mode verify` | Check the installed OpenShift version and health without reinstalling |
 
 ```mermaid
 flowchart TD
   Start([up.sh]) --> Check[Check the release manifest]
-  Check --> Prep
+  Check -->|prepare| Prep
+  Check -->|fresh-install| Gate[bios: node identity, UEFI, install disk and SEV-SNP checks, then type the server ID]
+  Gate --> Prep
   subgraph Prep[prepare: bastion-prep tag, on the helper]
     Tools[mirror_tools: oc, oc-mirror, CA trust] --> Push[mirror_push: oc-mirror v2 into the registry]
     Push --> DNS[dns_ntp: dnsmasq records and chrony]
     DNS --> Iso[bastion_isolation: no VLAN-to-internet forwarding]
   end
   Prep -->|prepare stops here| Done([Done])
-  Prep -->|fresh-install| Gate[BIOS gate: type SNP-SET]
-  Gate --> Disc[discover: provider identity and NIC MACs]
+  Prep -->|fresh-install| Disc[discover: provider identity and NIC MACs]
   Disc --> Render[render_configs: install-config and agent-config]
   Render --> PXE[pxe_serve: build and publish boot files]
   PXE --> Drive[install_drive: private-link check, provider reinstall, wait, verify release and health, apply mirror resources]
@@ -53,7 +55,8 @@ only the release and health checks in `install_drive`.
 | Tag | Responsibility |
 |---|---|
 | `bastion-prep` | Checked tools, mirror transfer, DNS/NTP and helper isolation |
-| `bios`, `discover` | Explicit BIOS acknowledgement and the node's actual provider and NIC identity |
+| `bios` | Read-only node checks over pinned SSH (identity, UEFI, install disk, SEV-SNP), then one typed confirmation, or `-e confirm_erase=<server ID>` |
+| `discover` | The node's actual provider and NIC identity |
 | `render`, `pxe` | Installer configuration and boot files tied to the current inputs |
 | `drive` | Journaled reinstall request, install wait, exact release, health and mirror-resource checks |
 | `pxe-stop` | Remove published boot files and their nginx configuration |

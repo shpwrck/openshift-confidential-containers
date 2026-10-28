@@ -65,9 +65,10 @@ Follow these guides in order. Each one ends where the next begins.
    sets up the controller, and `make order-rig` orders the node and the helper on
    Cherry Servers, starts the helper's mirror registry and writes your rig file.
 2. **[Set the BIOS](docs/quickstart.md#3-set-the-bios)**: switch on SEV-SNP in the
-   node's console, then `make check-node-snp` proves it works before anything is installed.
-3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md#4-prepare-the-helper)**:
-   prepare the helper, install the node and add the Operators.
+   node's console.
+3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md#4-install-openshift)**:
+   `bash ansible/up.sh --mode fresh-install` checks the node, asks once before it
+   erases it, then prepares the helper and installs the node; then add the Operators.
 4. **[Set up Trustee](docs/trustee.md)**: collect the node's AMD certificate,
    calculate the approved reference values and publish the attestation policies.
 5. **[Configure guest image pulls](docs/guest-images.md)**: give the confidential

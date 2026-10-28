@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Preparation is the default. A machine reinstall requires --mode fresh-install.
-# Provision the Cherry rig separately; this wrapper prepares and installs supplied hosts.
+# Order the rig first (make order-rig); this wrapper prepares and installs it.
+# Without a vars file it uses the rig file $COCO_STATE_DIR/rig.yml.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
@@ -12,7 +13,11 @@ while [[ $# -gt 0 ]]; do
       MODE="$2"; shift 2 ;;
     --help|-h)
       echo "Usage: $0 [--mode prepare|fresh-install|resume-install|verify] [Ansible options]"
-      echo "prepare: mirror/tools/DNS only (default); fresh-install: explicit machine reinstall; resume-install: finish an accepted request; verify: read-only cluster release check"
+      echo "prepare: the helper's tools, mirror, DNS and NTP only (default)"
+      echo "fresh-install: check the node and ask once, then prepare the helper, build the boot files,"
+      echo "  check the private network, erase and install the node, and verify the cluster"
+      echo "resume-install: finish an accepted install request; verify: read-only cluster release check"
+      echo "Without -e @<file>, the rig file \$COCO_STATE_DIR/rig.yml is used."
       echo "Keep credentials and generated state in COCO_STATE_DIR outside the checkout."
       exit 0 ;;
     --) shift; break ;;
@@ -46,18 +51,29 @@ vars_file_path() {
 }
 CHECKED=()
 expect_vars=0
+vars_files=0
 for arg in ${EXTRA[@]+"${EXTRA[@]}"}; do
   if (( expect_vars )) && [[ "$arg" == @* ]]; then
-    arg="@$(vars_file_path "${arg#@}")"
+    arg="@$(vars_file_path "${arg#@}")"; vars_files=1
   elif [[ "$arg" == -e@* ]]; then
-    arg="-e@$(vars_file_path "${arg#-e@}")"
+    arg="-e@$(vars_file_path "${arg#-e@}")"; vars_files=1
   elif [[ "$arg" == --extra-vars=@* ]]; then
-    arg="--extra-vars=@$(vars_file_path "${arg#--extra-vars=@}")"
+    arg="--extra-vars=@$(vars_file_path "${arg#--extra-vars=@}")"; vars_files=1
   fi
   expect_vars=0
   if [[ "$arg" == -e || "$arg" == --extra-vars ]]; then expect_vars=1; fi
   CHECKED+=("$arg")
 done
+# The rig file make order-rig writes, unless another vars file was given. It comes
+# first, so later -e values on the command line override it.
+if (( ! vars_files )); then
+  [[ -f "$COCO_STATE_DIR/rig.yml" ]] || {
+    echo "ERROR: no rig file at $COCO_STATE_DIR/rig.yml. Run 'make order-rig' first, or pass -e @<rig file>." >&2
+    echo "In a new terminal, run 'source scripts/env.sh' first: it sets COCO_STATE_DIR." >&2
+    exit 2
+  }
+  CHECKED=(-e "@$(vars_file_path "$COCO_STATE_DIR/rig.yml")" ${CHECKED[@]+"${CHECKED[@]}"})
+fi
 EXTRA=(${CHECKED[@]+"${CHECKED[@]}"})
 # Normalize selected input paths before entering the Ansible directory.
 for config_var in RELEASE_MANIFEST IMAGESET_CONFIG; do
@@ -89,11 +105,17 @@ if [[ "$MODE" == fresh-install && "${TEE:-snp}" != snp ]]; then
   exit 2
 fi
 require_resolved_release
+if [[ "$MODE" == fresh-install ]]; then
+  # The node checks and the one question come first, so the long helper
+  # preparation and the install then run without anyone at the terminal.
+  echo "Check the node and confirm its erase before anything is changed"
+  ansible-playbook playbooks/site.yml --tags bios ${EXTRA[@]+"${EXTRA[@]}"}
+fi
 echo "Prepare the bastion and verify the requested mirror inputs"
 ansible-playbook playbooks/site.yml --tags bastion-prep ${EXTRA[@]+"${EXTRA[@]}"}
 [[ "$MODE" == fresh-install ]] || exit 0
-echo "Fresh installation: selected provider machines will be reinstalled after the BIOS gate"
-ansible-playbook playbooks/site.yml --tags install ${EXTRA[@]+"${EXTRA[@]}"} -e install_mode=fresh
+echo "Fresh installation: the node is reinstalled after its checks pass and you confirm"
+ansible-playbook playbooks/site.yml --tags install --skip-tags bios ${EXTRA[@]+"${EXTRA[@]}"} -e install_mode=fresh
 # Close the secret-bearing endpoint as part of successful installation.
 ansible-playbook playbooks/site.yml --tags pxe-stop ${EXTRA[@]+"${EXTRA[@]}"}
 echo "Fresh installation completed; boot-artifact endpoint closed."

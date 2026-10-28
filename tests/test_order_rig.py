@@ -84,6 +84,10 @@ BLOCK = {'blockdevices': [
 BY_PATH = {'pci-0000:01:00.0-nvme-1': '/dev/nvme1n1', 'pci-0000:01:00.0-nvme-1-part1': '/dev/nvme1n1p1',
            'pci-0000:02:00.0-nvme-1': '/dev/nvme0n1', 'pci-0000:c3:00.0-usb-0:1:1.0-scsi-0:0:0:0': '/dev/sda'}
 OBSERVATION = {'hostname': 'sno-coco-node', 'links': LINKS, 'addresses': ADDRESSES, 'block': BLOCK, 'by_path': BY_PATH}
+# What scripts/lib/node_checks.py reads on the node before it is erased.
+IDENTITY = {'hostname': 'sno-coco-node', 'cpu': 'AMD EPYC 9254 24-Core Processor', 'system': 'Supermicro Super Server',
+            'board': 'H13SST-G', 'bios_version': '3.7', 'bios_date': '06/12/2025', 'uefi': True,
+            'disks': [{k: d.get(k) for k in ('name', 'path', 'type', 'size', 'serial', 'model', 'tran')} for d in BLOCK['blockdevices']]}
 VALUES = {'project_id': '295530', 'node_id': '1047102', 'node_hostname': 'sno-coco-node',
           'node_public_ipv4': '84.32.220.45', 'node_private_ipv4': '10.198.229.47',
           'helper_id': '1047103', 'helper_hostname': 'sno-coco-helper',
@@ -295,11 +299,11 @@ sys.exit('unexpected terraform call: ' + ' '.join(args))
 '''
 
 FAKE_SSH = r'''#!/usr/bin/env python3
-import os, sys
+import json, os, sys
 from pathlib import Path
 fixture = Path(os.environ['FIXTURE_DIR'])
 host, command = sys.argv[-2], sys.argv[-1]
-stdin = sys.stdin.read() if command in ('python3 -', 'bash -s') or 'systemd-run' in command else ''
+stdin = sys.stdin.read() if command.startswith('python3 -') or command == 'bash -s' or 'systemd-run' in command else ''
 with open(fixture / 'ssh.log', 'a') as log:
     log.write(f'{host} {command.splitlines()[0]}\n')
 started = fixture / 'bootstrap-started'
@@ -309,6 +313,11 @@ if 'MIRROR_READY' in command:
     print('ready' if started.exists() else 'none')
 elif 'systemd-run' in command:
     started.write_text(stdin)
+elif command.startswith('python3 -') and '/sys/class/dmi/id' in stdin:
+    identity = json.loads(os.environ['FIXTURE_IDENTITY'])
+    root = command.split(' ', 2)[2] if command.count(' ') > 1 else ''
+    identity.update(root_device=root, root_path='/dev/nvme1n1' if root.endswith('pci-0000:01:00.0-nvme-1') else '')
+    print(json.dumps(identity))
 elif command == 'python3 -':
     rebooted = (fixture / 'rebooted').exists()
     print(os.environ['FIXTURE_OBSERVATION' if rebooted else 'FIXTURE_FIRST_OBSERVATION'])
@@ -319,8 +328,6 @@ elif command.startswith('tail') or command.startswith('journalctl'):
     print('mirror-registry install finished')
 elif command == 'cat /etc/rig-network.env':
     print(os.environ['FIXTURE_HELPER_ENV'], end='')
-elif command == 'bash -s' and 'UEFI' in stdin:
-    print('  PASS  booted in UEFI mode')
 elif command == 'bash -s' and 'SEV-SNP host gate' in stdin:
     print('RESULT: ' + os.environ.get('FIXTURE_SNP', 'SEV-SNP host prerequisites passed.'))
     sys.exit(0 if 'FIXTURE_SNP' not in os.environ else 1)
@@ -354,7 +361,7 @@ class WholeRun(unittest.TestCase):
                'CHERRY_SERVERS_API_KEY': 'fixture-key', 'FIXTURE_DIR': str(self.fixture),
                'FIXTURE_VALUES': json.dumps(VALUES), 'FIXTURE_OBSERVATION': json.dumps(OBSERVATION),
                'FIXTURE_FIRST_OBSERVATION': json.dumps(OBSERVATION),
-               'FIXTURE_HELPER_ENV': HELPER_ENV}
+               'FIXTURE_HELPER_ENV': HELPER_ENV, 'FIXTURE_IDENTITY': json.dumps(IDENTITY)}
         patcher = patch.dict(os.environ, env)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -471,11 +478,16 @@ class WholeRun(unittest.TestCase):
         code, out, err = self.run_order_rig('check-snp')
         self.assertEqual(code, 0, out + err)
         self.assertIn('PASS  booted in UEFI mode', out)
-        evidence, = (self.state / 'evidence').glob('host-snp-check-raw-*.txt')
+        self.assertIn('PASS  SEV-SNP host check', out)
+        # The rig file names the install disk, so the check describes it.
+        self.assertIn('= /dev/nvme1n1, 960 GB', out)
+        evidence, = (self.state / 'evidence').glob('host-snp-check-1047102-*.txt')
         self.assertIn('server 1047102 at 84.32.220.45', evidence.read_text())
         self.assertIn('exit=0', evidence.read_text())
         os.environ['FIXTURE_SNP'] = 'host gate not passed'
-        self.assertEqual(self.run_order_rig('check-snp')[0], 1)
+        code, out, err = self.run_order_rig('check-snp')
+        self.assertEqual(code, 1)
+        self.assertIn('FAIL  the SEV-SNP host check did not pass', out)
 
     def test_host_keys_of_an_earlier_rig_are_moved_aside(self):
         (self.state / 'known_hosts').write_text('185.8.107.144 ssh-ed25519 AAAAold\n')
