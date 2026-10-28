@@ -1,6 +1,6 @@
 ---
 # Prepare supplied private-network infrastructure, then explicitly install and verify.
-# Complete docs/amd-firmware-preflight.md before acknowledging the BIOS gate.
+# up.sh --mode fresh-install checks the node and asks once before it is erased.
 
 # Validate the controller's release inputs before any selected preparation/install writes.
 # Cleanup stays available even when the BOM is unresolved. Verify mode reads cluster state only.
@@ -113,64 +113,130 @@
       when: bastion_node_isolation_enabled | default(false) | bool
 
 # =====================================================================================
-# STOP-GATE — acknowledge evidence for this node before its destructive reinstall.
-# Firmware menu locations and security-fix versions depend on the board and BIOS.
+# STOP-GATE — check this node, then confirm the erase, before its destructive reinstall.
+# up.sh --mode fresh-install runs this first, so the one question comes before the long
+# helper preparation. Firmware security fixes are not checked here; see
+# docs/amd-firmware-preflight.md.
 # =====================================================================================
-- name: "STOP — verify AMD firmware and SNP prerequisites before continuing"
+- name: "STOP — check the AMD node and confirm the erase before continuing"
   hosts: localhost
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
   tags: [bios, install]
+  vars:
+    install_machine: "{{ machines[0] }}"
+    gate_server_id: "{{ machines[0].server_id | string }}"
   tasks:
-    - name: Print the AMD firmware preflight requirements and pause
+    - name: Refuse the retired BIOS bypass
+      ansible.builtin.assert:
+        that: skip_bios_pause is not defined
+        fail_msg: >-
+          skip_bios_pause was replaced: the node checks now always run. To answer the
+          erase question ahead, for a run without a terminal, add
+          -e confirm_erase=<the node's server ID>.
+
+    - name: Require one node and pinned SSH inputs
+      ansible.builtin.assert:
+        that:
+          - machines | length == 1
+          - gate_server_id is match('^[1-9][0-9]*$')
+          - raw_node_ssh_user | default('') is match('^[a-z_][a-z0-9_-]*[$]?$')
+          - raw_node_ssh_key | default('') is match('^/[^\s]+$')
+          - private_link_known_hosts | default('') is match('^/[^\s]+$')
+          - install_machine.root_device | default('') is match('^/dev/')
+        fail_msg: >-
+          The node checks need one node, raw_node_ssh_user, raw_node_ssh_key,
+          private_link_known_hosts and node_root_device from the rig file.
+
+    - name: Read and validate the node's provider identity
+      ansible.builtin.import_tasks: ../roles/install_drive/tasks/provider_identity.yml
+
+    # Read-only: identity, boot mode, the install disk and scripts/host-snp-check.sh.
+    - name: Check the node's identity, UEFI boot, install disk and SEV-SNP over pinned SSH
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/node-preflight.py"
+          - --address
+          - "{{ provider_identity.public_ipv4 }}"
+          - --user
+          - "{{ raw_node_ssh_user }}"
+          - --key
+          - "{{ raw_node_ssh_key }}"
+          - --known-hosts
+          - "{{ private_link_known_hosts }}"
+          - --server-id
+          - "{{ gate_server_id }}"
+          - --hostname
+          - "{{ provider_identity.hostname | default('') }}"
+          - --root-device
+          - "{{ install_machine.root_device | default('') }}"
+          - --evidence-dir
+          - >-
+            {{ lookup('ansible.builtin.env', 'COCO_STATE_DIR')
+               | default(lookup('ansible.builtin.env', 'HOME') ~ '/.local/state/openshift-confidential-containers', true) }}/evidence
+      register: node_preflight
+      changed_when: false
+      failed_when: false
+
+    - name: Read the node check results
+      ansible.builtin.set_fact:
+        node_report: >-
+          {{ node_preflight.stdout | from_json if node_preflight.stdout.startswith('{')
+             else {'passed': false, 'lines': [], 'evidence': '',
+                   'problems': [node_preflight.stderr | default('', true) | trim or 'node-preflight.py failed']} }}
+
+    - name: Show the SEV-SNP host check output when it did not pass
+      ansible.builtin.debug:
+        msg: "{{ node_report.snp_output | default('') | split('\n') }}"
+      when: not node_report.passed and node_report.snp_output | default('') | length > 0
+
+    - name: Show the node checks
+      ansible.builtin.debug:
+        msg: "{{ node_report.lines + ['Evidence: ' ~ node_report.evidence] }}"
+      when: node_report.lines | length > 0
+
+    - name: Stop when any node check failed
+      ansible.builtin.assert:
+        that: node_preflight.rc == 0 and node_report.passed
+        fail_msg: >-
+          Stopped because {{ node_report.problems | join('; ') }}. Nothing was changed.
+          Evidence: {{ node_report.evidence or 'not saved' }}. Check the BIOS (docs/cherry-servers.md#set-the-bios) and the rig file, then run this again.
+        success_msg: "All node checks passed for {{ gate_server_id }}"
+
+    - name: Ask once before erasing the node
       ansible.builtin.pause:
         prompt: |
 
           ====================================================================
-          STOP — VERIFY THIS NODE'S AMD FIRMWARE AND SNP PREREQUISITES
+          Node {{ gate_server_id }} passed the checks above.
+          Installing OpenShift erases its install disk,
+            {{ install_machine.root_device }}
+            ({{ node_report.lines | select('match', '  = ') | first | default('') | regex_replace('^  = ', '') }}),
+          and replaces the node's operating system. Firmware security fixes
+          are not checked; see docs/amd-firmware-preflight.md#review-firmware-security.
           ====================================================================
-          Follow docs/amd-firmware-preflight.md before the node is reinstalled:
 
-            1. Match server ID, CPU, motherboard, BIOS and BMC to the actual node.
-            2. Verify saved firmware settings using this board's documentation.
-               Assess firmware security fixes separately from SNP functionality.
-            3. Verify UEFI boot mode and the intended UEFI installer boot path.
-            4. Pass scripts/host-snp-check.sh on this node after the saved settings
-               take effect; retain the command result and relevant kernel logs.
+          Type the node's server ID, {{ gate_server_id }}, to erase it and install
+          OpenShift. Anything else stops here. (Ctrl-C then A also stops.)
+      register: erase_ack
+      when: confirm_erase | default('') | string != gate_server_id
 
-          An unloaded module, pending BIOS changes or CPU feature flags are not a pass.
-          Missing RMP controls and IOMMU errors require board-specific diagnosis.
-          Recheck after reprovisioning; do not assume firmware settings were preserved.
-
-          docs/amd-firmware-preflight.md records the tested H13 settings and their limits.
-          It is not a universal H12/H13 BIOS configuration or a current security baseline.
-
-          Type SNP-SET (then ENTER) only after completing this preflight, to continue
-          to discover + install. This token records acknowledgement, not an automated
-          hardware or attestation result. (Ctrl-C then 'A' to abort.)
-      register: bios_ack
-      when: not (skip_bios_pause | default(false) | bool)
-
-    # The pause above is NOT a gate on its own: ansible.builtin.pause WARNS AND FALLS
-    # THROUGH when stdin is not a TTY, so under nohup / CI / `make bringup-sno-airgapped | tee`
-    # — i.e. the "hands-off" path this repo advertises — the one hands-on hardware step was
-    # silently skipped and the node netbooted with SEV-SNP off. Nothing downstream noticed: no
-    # task in Phase B/C re-checks /dev/sev, so the result was a healthy-looking cluster that
-    # simply was not confidential, with the first evidence a rung-0 failure hours later.
-    # A typed token, not ENTER, so a stray newline on a half-attached stdin cannot satisfy it.
-    - name: Fail closed if the SEV-SNP BIOS gate was not acknowledged
+    # ansible.builtin.pause WARNS AND FALLS THROUGH when stdin is not a TTY, so under nohup,
+    # CI or `| tee` the question above is silently skipped. A typed server ID, not ENTER,
+    # so a stray newline on a half-attached stdin cannot satisfy it, and an answer given
+    # ahead with -e confirm_erase only counts for this node.
+    - name: Fail closed unless the erase was confirmed for this node
       ansible.builtin.assert:
-        that: (bios_ack.user_input | default('') | trim) == 'SNP-SET'
+        that: >-
+          confirm_erase | default('') | string == gate_server_id
+          or erase_ack.user_input | default('') | trim == gate_server_id
         fail_msg: >-
-          AMD firmware preflight NOT acknowledged — refusing to netboot. This is what a
-          non-interactive run looks like (ansible.builtin.pause cannot prompt without a TTY);
-          re-run this phase from a real terminal. Only after recording this node's identity,
-          firmware security review, UEFI boot path and successful raw-host SNP check under
-          docs/amd-firmware-preflight.md may an unattended rerun deliberately use
-          -e skip_bios_pause=true. The bypass does not perform or establish these checks.
-        success_msg: "AMD firmware preflight acknowledged — proceeding to discover + install"
-      when: not (skip_bios_pause | default(false) | bool)
+          The erase of node {{ gate_server_id }} was not confirmed, so nothing was changed.
+          Without a terminal the question cannot be asked: run this from a terminal, or add
+          -e confirm_erase={{ gate_server_id }} after reading the checks above.
+        success_msg: "Erase of node {{ gate_server_id }} confirmed"
 
 # =====================================================================================
 # PHASE B — Verify allocated Cherry identity and NICs through pinned SSH.
