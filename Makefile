@@ -93,7 +93,9 @@ stop-boot-artifacts: ## Stop boot-artifact publishing
 install-wait: ## Wait for the selected fresh installation
 	"$(INSTALL)" --dir "$(ASSETS)" agent wait-for install-complete
 
-.PHONY: verify-snp-host validate-sno-baseline repair-sno-baseline install-coco-operators apply-overlay render-overlay diff-overlay
+.PHONY: connect verify-snp-host validate-sno-baseline repair-sno-baseline install-coco-operators apply-overlay render-overlay diff-overlay
+connect: ## Copy the cluster's kubeconfig, open the API tunnel through the helper, write lab.env and check the cluster
+	python3 scripts/connect-cluster.py
 verify-snp-host: ## Check the selected SNP node (NODE and WORKER_CONTEXT required)
 	@test -n "$(NODE)" && test -n "$(WORKER_CONTEXT)" || { echo 'Set NODE and WORKER_CONTEXT'; exit 2; }
 	bash scripts/verify-snp-host.sh "$(NODE)"
@@ -115,7 +117,9 @@ diff-overlay: ## Server diff; report real errors (a difference is exit 1)
 	@test -n "$(WORKER_CONTEXT)" || { echo 'Set WORKER_CONTEXT'; exit 2; }
 	@oc --context="$(WORKER_CONTEXT)" diff -k "gitops/overlays/$(OVERLAY)"; rc=$$?; test $$rc -le 1
 
-.PHONY: bootstrap-trustee deploy-trustee seed-trustee-secrets collect-vcek seed-vcek gen-rvps render-measurement-policy
+.PHONY: trustee-lab bootstrap-trustee deploy-trustee seed-trustee-secrets collect-vcek seed-vcek gen-rvps render-measurement-policy
+trustee-lab: ## Set up Trustee on the disposable lab in one command (asks once; FROM=<step> starts at a step)
+	python3 scripts/trustee-lab.py $(if $(FROM),--from "$(FROM)")
 bootstrap-trustee: ## Create Restricted TrusteeConfig, wait for migration, install collateral
 	NS="$(NS)" bash scripts/apply-trustee.sh bootstrap
 deploy-trustee: ## Configure approved resource policy/RVPS and explicitly named resources
@@ -151,10 +155,12 @@ run-rung-encrypted: ## Experimental encrypted workload (explicit opt-in required
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" bash scripts/apply-rung-encrypted.sh
 proof-plan: ## List proof cases without cluster access
 	python3 scripts/run-proofs.py --list
-test-rung: ## Fresh allow/deny/restore/recovery proof; WHICH=all or a named case
+test-rung: ## Fresh allow/deny/restore/recovery proofs; WHICH=all (adds the isolation checks) or a named case
 	NS="$(WORKLOAD_NS)" TRUSTEE_NS="$(NS)" python3 scripts/run-proofs.py "$(WHICH)"
 
-.PHONY: uninstall-coco validate-coco-uninstalled
+.PHONY: reset-lab uninstall-coco validate-coco-uninstalled
+reset-lab: ## Put the disposable lab back to plain OpenShift (shows what goes, asks once)
+	bash scripts/reset-lab.sh
 uninstall-coco: ## Remove the explicitly selected disposable rig stack
 	bash scripts/uninstall-coco.sh
 validate-coco-uninstalled: ## Read-only uninstall check

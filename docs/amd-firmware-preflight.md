@@ -1,7 +1,9 @@
 # AMD firmware preflight
 
-Run this before acknowledging the BIOS gate. A plan name, CPU flag, saved BIOS
-selection or `/dev/sev` alone does not prove working SEV-SNP.
+Check these before a node is erased. A plan name, CPU flag, saved BIOS
+selection or `/dev/sev` alone does not prove working SEV-SNP. On a rig ordered
+with `make order-rig`, the install runs the identity, boot-mode and host checks
+itself before it asks to erase the node; the firmware security review stays yours.
 
 ## Identify the delivered machine
 
@@ -11,7 +13,8 @@ The installation path requires UEFI; verify both the firmware selection and
 `test -d /sys/firmware/efi` on the running OS. Changing a BIOS boot selection does
 not convert an existing legacy installation to UEFI.
 
-On the node's original OS:
+`make check-node-snp` and the install print most of this. On another server, on
+the node's original OS:
 
 ```bash
 lscpu | grep 'Model name'
@@ -76,7 +79,7 @@ An unloaded `kvm_amd` module or missing SNP parameter needs kernel/module diagno
 A disabled parameter needs module-option, command-line and initialization-log checks.
 A PSP error code alone does not uniquely identify a BIOS fix.
 
-Enter the Ansible **SNP-SET** acknowledgement only after these checks pass.
-`skip_bios_pause=true` acknowledges a previously verified unattended rerun; it does
-not waive preflight. Repeat under installed RHCOS and after the Kata rollout,
-then complete hardware-backed guest proofs.
+`bash ansible/up.sh --mode fresh-install` runs these checks again before it asks
+to erase the node, and stops on any failure. `-e confirm_erase=<server ID>` only
+answers that question ahead; it does not skip the checks. Repeat under installed
+RHCOS and after the Kata rollout, then complete hardware-backed guest proofs.

@@ -96,15 +96,20 @@ PY
   fi
   export TF_DATA_DIR="$COCO_STATE_DIR/terraform"
 
-  # Written once the cluster is connected: KUBECONFIG, contexts and lab settings.
-  if [[ -r "$COCO_STATE_DIR/lab.env" ]]; then
-    # shellcheck source=/dev/null
-    source "$COCO_STATE_DIR/lab.env" || return 1
-  fi
+  # make connect writes lab.env (KUBECONFIG, contexts and lab settings); make
+  # trustee-lab writes trustee-lab.env (the capability tests' settings).
+  local file
+  for file in lab.env trustee-lab.env; do
+    if [[ -r "$COCO_STATE_DIR/$file" ]]; then
+      # shellcheck source=/dev/null
+      source "$COCO_STATE_DIR/$file" || return 1
+    fi
+  done
 
   echo "Ready: state in $COCO_STATE_DIR"
   [[ -n "${CHERRY_SERVERS_API_KEY:-}" ]] && echo "  Cherry Servers API key loaded"
   [[ -r "$COCO_STATE_DIR/lab.env" ]] && echo "  Cluster settings loaded from lab.env"
+  [[ -r "$COCO_STATE_DIR/trustee-lab.env" ]] && echo "  Capability test settings loaded from trustee-lab.env"
   return 0
 }
 

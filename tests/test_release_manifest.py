@@ -44,6 +44,22 @@ class ReleaseContractTests(unittest.TestCase):
         del self.bom["tools"]["mirrorRegistry"]
         self.assertTrue(any("tools.mirrorRegistry" in x for x in self.check()))
 
+    def test_lab_downloads_are_pinned_versions(self):
+        for name in ("cosign", "trusteeResourcePolicy"):
+            pin = self.bom["tools"][name]
+            version = pin["version"]
+            for field, bad in [("url", pin["url"].replace(f"/v{version}/", "/latest/")),
+                               ("url", pin["url"].replace("https://", "http://")),
+                               ("sha256", pin["sha256"].upper()),
+                               ("version", "2")]:
+                with self.subTest(name=name, field=field, value=bad):
+                    self.bom["tools"][name] = dict(pin, **{field: bad})
+                    self.assertTrue(any(f"tools.{name}" in x for x in self.check()))
+            self.bom["tools"][name] = pin
+        self.bom["tools"]["trusteeResourcePolicy"] = dict(self.bom["tools"]["trusteeResourcePolicy"], version="1.2.0",
+            url=self.bom["tools"]["trusteeResourcePolicy"]["url"].replace("/v1.2.1/", "/v1.2.0/"))
+        self.assertIn("tools.trusteeResourcePolicy must come from the selected Trustee Operator version", self.check())
+
     def test_candidate_artifacts_block_deployment(self):
         self.bom["operators"]["osc"]["resolution"] = "candidate"
         self.bom["images"]["cocoTools"]["resolution"] = "candidate"

@@ -142,6 +142,11 @@ validate_once() {
   return "$failures"
 }
 
+# The namespaces this removes, for reset-lab.sh; no cluster access.
+if [[ "$MODE" == namespaces ]]; then
+  printf '%s\n' "$WORKLOAD_NS" "${target_namespaces[@]}"
+  exit 0
+fi
 command -v oc >/dev/null || die "oc not on PATH"
 command -v jq >/dev/null || die "jq not on PATH"
 load_worker_context
@@ -166,5 +171,5 @@ case "$MODE" in
     if validate_once FAIL; then echo "CoCo uninstall validation OK"; exit 0; fi
     die "uninstall did not converge within ${WAIT_TIMEOUT}s"
     ;;
-  *) die "usage: uninstall-coco.sh [uninstall|validate|validate-once]" ;;
+  *) die "usage: uninstall-coco.sh [uninstall|validate|validate-once|namespaces]" ;;
 esac

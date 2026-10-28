@@ -5,7 +5,7 @@
 # it to Ansible:
 #
 #   cp ansible/rig.example.yml "$COCO_STATE_DIR/rig.yml"
-#   bash ansible/up.sh --mode prepare -e "@$COCO_STATE_DIR/rig.yml"
+#   bash ansible/up.sh --mode fresh-install
 #
 # Read every value from the servers you were actually given; never copy values
 # from an old rig. docs/cherry-servers.md says where each one comes from, and

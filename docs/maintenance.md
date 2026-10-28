@@ -50,39 +50,35 @@ procedure; configure does not perform those operations.
 
 ## Reset a disposable CoCo lab
 
-This removes CoCo Operators and operands on an existing co-located lab, retaining
-OpenShift, the mirror and provider allocations. It may reboot the node. Back up
-Trustee configuration, Secrets, collateral, signing identities and proof evidence first.
-
-Confirm identical `WORKER_CONTEXT`/`TRUSTEE_CONTEXT`. Every existing target namespace
-must already carry `coco.openshift.io/disposable=true`: the workload namespace,
-`trustee-operator-system`, `openshift-sandboxed-containers-operator`, `openshift-nfd`,
-`cert-manager-operator`, `cert-manager`, and `openshift-gatekeeper-system`.
-Mark only namespaces deliberately owned by the disposable test.
+This puts the test rig back to plain OpenShift: it removes the CoCo Operators,
+Trustee, the test workloads and the Kata runtime, and keeps OpenShift, the mirror,
+the servers and `$COCO_STATE_DIR`. Back up any Trustee configuration, Secrets and
+proof evidence you want to keep first. In a terminal where you ran
+`source scripts/env.sh` after [`make connect`](quickstart.md#5-install-the-coco-operators):
 
 ```bash
-for ns in coco-validation trustee-operator-system openshift-sandboxed-containers-operator \
-  openshift-nfd cert-manager-operator cert-manager openshift-gatekeeper-system; do
-  oc --context="$WORKER_CONTEXT" label namespace "$ns" coco.openshift.io/disposable=true --overwrite
-done
-TRUSTEE_LAB=1 ALLOW_DISPOSABLE_UNINSTALL=1 make uninstall-coco
-make validate-coco-uninstalled
-make validate-sno-baseline
+make reset-lab
 ```
 
-`not labeled` means a namespace already has the label. Removing the Kata runtime
-reboots the node, so the uninstall prints a watch error or two while the API is down.
-The removal check polls until everything is gone and prints `Waiting:` for what is
-left meanwhile; `FAIL:` only appears if it times out.
+It shows the context, the API address, the node and every namespace it deletes,
+and asks you to type `reset`. Then it marks those namespaces with
+`coco.openshift.io/disposable=true`, removes the stack, waits until everything is
+gone and checks the cluster again. Removing the Kata runtime reboots the node, so
+a watch error or two while the API is down is expected. The removal check prints
+`Waiting:` for what is left meanwhile; `FAIL:` only appears if it times out.
 
-The reset retains controllers until their operands finish deletion. If it stops,
+`make reset-lab` refuses to run without the lab settings from `lab.env`
+(`TRUSTEE_LAB=1` and the same context for workloads and Trustee). On any other
+cluster, use `make uninstall-coco` directly: it removes only namespaces that
+already carry the disposable label, so label only namespaces the test owns.
+
+The reset keeps each controller until its operands finish deletion. If it stops,
 inspect finalizers and reconciliation before retrying; do not clear them blindly.
-Reinstall through [the quickstart](quickstart.md#7-install-the-coco-operators),
-then repeat the [Trustee lab sequence](trustee.md#disposable-lab) from step 1 and
-the [capability tests](capability-status.md) with the isolation checks. The reset
-leaves `$COCO_STATE_DIR` alone, so the signed images and their env file from the
-first build can be used again.
-`make test-rung WHICH=all` runs fresh proofs; reset/reinstallation is separate.
+Reinstall with `make install-coco-operators`, then run `make trustee-lab`,
+`source scripts/env.sh` and `make test-rung WHICH=all` again
+([Trustee setup](trustee.md#disposable-lab), [capability tests](capability-status.md)).
+The signing key pair in `$COCO_STATE_DIR` from the first build is used again.
+`make test-rung WHICH=all` runs fresh proofs; it does not reset anything.
 
 ## Retire the infrastructure
 

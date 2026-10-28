@@ -31,8 +31,22 @@ CASES = {
     "rung-signed": "Signed-image acceptance and unsigned/wrong-key rejection",
     "air-gap": "Offline SNP endorsement enforcement (egress is a separate preflight)",
     "rung-encrypted": "Experimental encrypted-image execution and policy key withholding",
+    "isolation": "No public egress from the node, an ordinary pod or a confidential guest; exec into the guest is refused",
 }
-DEFAULT_CASES = ["rung-kbs", "rung-initdata", "rung-rvps", "rung-signed", "air-gap"]
+DEFAULT_CASES = ["rung-kbs", "rung-initdata", "rung-rvps", "rung-signed", "air-gap", "isolation"]
+PLANS = {"isolation": "node → ordinary pod → confidential guest → exec refusal"}
+# At each layer a private destination must answer, so a blocked result cannot come from a broken
+# probe; then a public address and a public name must fail. Each line reports one check.
+EGRESS_PROBE = """private=$(curl -s -m 10 -o /dev/null -w '%{{http_code}}' {private}); echo "private $private"
+curl -s -m 10 -o /dev/null https://1.1.1.1 && echo 'public-address reachable' || echo 'public-address blocked'
+curl -s -m 10 -o /dev/null https://quay.io && echo 'public-name reachable' || echo 'public-name blocked'"""
+# The guest's agent policy blocks oc logs as well as oc exec, so the guest reports through its exit code.
+GUEST_PROBE = """code=$(curl -s -m 10 -o /dev/null -w '%{{http_code}}' {private}); [ "$code" != 000 ] || exit 10
+curl -s -m 10 -o /dev/null https://1.1.1.1 && exit 11
+curl -s -m 10 -o /dev/null https://quay.io && exit 12
+exit 0"""
+GUEST_EXITS = {10: "the private destination did not answer", 11: "a public address is reachable",
+               12: "a public name is reachable"}
 
 
 def now():
@@ -204,9 +218,87 @@ class Runner:
             raise Incomplete(f"KbsConfig is missing {field}")
         return ResourceEdit(self.trustee, "configmap", name, self.tns, self.state)
 
+    def egress(self, layer, output):
+        """Checks one probe's output: the private destination answers, public ones do not."""
+        lines = dict(line.split(" ", 1) for line in output.splitlines() if line.count(" ") == 1)
+        result = {"private": lines.get("private", ""), "publicAddress": lines.get("public-address", ""),
+                  "publicName": lines.get("public-name", "")}
+        self.evidence.setdefault("isolation", {})[layer] = result
+        if not re.fullmatch(r"[1-5]\d\d", result["private"]):
+            raise Incomplete(f"isolation: the private destination did not answer from the {layer}, so a blocked "
+                             "public result proves nothing; check the probe and the mirror/Trustee service")
+        reachable = [name for name in ("publicAddress", "publicName") if result[name] != "blocked"]
+        if reachable:
+            raise ProofFailure(f"isolation: {', '.join(reachable)} reachable from the {layer}")
+
+    def wait_pod(self, name, done):
+        deadline = time.monotonic() + max(self.timeout, 600)
+        while time.monotonic() < deadline:
+            live = self.worker.get("pod", name, self.ns)
+            if done(live):
+                return live
+            time.sleep(5)
+        raise Incomplete(f"isolation: pod {name} did not reach the expected state in time")
+
+    def isolation(self):
+        node = self.env.get("PROOF_NODE", "")
+        if not node:
+            raise Incomplete("set PROOF_NODE to the node whose egress is checked")
+        registry = self.env.get("ARTIFACTORY_REGISTRY") or self.env.get("MIRROR_REGISTRY") or "mirror.rig.local:8443"
+        kbs = f"http://kbs-service.{self.tns}.svc:8080/"
+        # Node: the mirror answers over TLS (401 without credentials).
+        output = self.worker.call("debug", f"node/{node}", "--", "chroot", "/host", "sh", "-c",
+                                  EGRESS_PROBE.format(private=f"https://{registry}/v2/"))
+        self.egress("node", output)
+        # Ordinary pod: the in-cluster Trustee service answers.
+        image = json.loads(Path(self.env.get("RELEASE_MANIFEST") or REPO / "install/release-manifest.json").read_text())["images"]["ubiMinimal"]["ref"]
+        name = f"proof-{self.id}-isolation-pod"
+        pod = {"apiVersion": "v1", "kind": "Pod",
+               "metadata": {"name": name, "namespace": self.ns, "labels": {"coco.openshift.io/proof-run": self.id}},
+               "spec": {"restartPolicy": "Never", "securityContext": {"runAsNonRoot": True, "seccompProfile": {"type": "RuntimeDefault"}},
+                        "containers": [{"name": "probe", "image": image, "command": ["/bin/sh", "-c", EGRESS_PROBE.format(private=kbs)],
+                                        "securityContext": {"allowPrivilegeEscalation": False, "runAsUser": 1001,
+                                                            "capabilities": {"drop": ["ALL"]}}}]}}
+        self.start(pod)
+        self.wait_pod(name, lambda live: live.get("status", {}).get("phase") in ("Succeeded", "Failed"))
+        self.egress("ordinary pod", self.worker.call("logs", name, "-n", self.ns))
+        self.delete_pod(name)
+        # Confidential guest: it only starts after attestation and pulls its image inside the VM,
+        # so a started pod is the positive control.
+        guest = self.render("rung-kbs", "isolation-guest")
+        guest["spec"]["containers"][0]["command"] = ["/bin/sh", "-c", GUEST_PROBE.format(private=kbs)]
+        name = self.start(guest)
+        live = self.wait_pod(name, lambda live: live.get("status", {}).get("phase") in ("Succeeded", "Failed"))
+        code = next((s.get("state", {}).get("terminated", {}).get("exitCode") for s in live.get("status", {}).get("containerStatuses", [])
+                     if s.get("name") == guest["spec"]["containers"][0]["name"]), None)
+        self.evidence["isolation"]["confidential guest"] = {"phase": live["status"]["phase"], "exitCode": code}
+        self.delete_pod(name)
+        if code is None:
+            raise Incomplete("isolation: the confidential guest did not run its probe; check attestation first")
+        if code in GUEST_EXITS:
+            raise (Incomplete if code == 10 else ProofFailure)(f"isolation: from the confidential guest, {GUEST_EXITS[code]}")
+        if code != 0:
+            raise Incomplete(f"isolation: the guest probe exited {code}")
+        # Exec into a running confidential guest must be refused by its agent policy.
+        name = self.start(self.render("rung-kbs", "isolation-exec"))
+        self.wait_pod(name, application_ready)
+        refused = subprocess.run(["oc", f"--context={self.worker.context}", "--request-timeout=60s", "-n", self.ns,
+                                  "exec", name, "-c", "app", "--", "true"], capture_output=True, text=True, timeout=120)
+        blocked = "ExecProcessRequest is blocked by policy" in refused.stderr
+        self.evidence["isolation"]["exec"] = {"exitCode": refused.returncode, "blockedByPolicy": blocked}
+        self.delete_pod(name)
+        if refused.returncode == 0:
+            raise ProofFailure("isolation: oc exec into the confidential guest succeeded")
+        if not blocked:
+            raise Incomplete("isolation: oc exec failed, but not with the agent policy's refusal")
+        self.evidence.setdefault("controls", []).append({"name": "isolation", "status": "PASS"})
+
     def run(self, case):
         self.id, self.evidence = uuid.uuid4().hex[:10], {}
         self.negative_name = None
+        if case == "isolation":
+            self.isolation()
+            return
         if case in ("rung-signed", "rung-encrypted"):
             key = "RUNG_SIGNED_IMAGE" if case == "rung-signed" else "RUNG_ENCRYPTED_IMAGE"
             if not re.search(r"@sha256:[a-f0-9]{64}$", self.env.get(key, "")):
@@ -332,7 +424,7 @@ def main():
         report["releaseManifestSHA256"] = hashlib.sha256(Path(os.environ.get("RELEASE_MANIFEST") or REPO / "install/release-manifest.json").read_bytes()).hexdigest()
         for case in selected:
             result = {"case": case, "startedAt": now(), "status": "INCOMPLETE"}
-            print(f"[{case}] positive → negative → restore → recovery", flush=True)
+            print(f"[{case}] {PLANS.get(case, 'positive → negative → restore → recovery')}", flush=True)
             try:
                 runner.run(case)
                 result["status"] = "PASS"

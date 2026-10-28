@@ -106,22 +106,80 @@ class Connection(LocalConnection):
             task['become'] = False
         return tasks
 
-    def test_firmware_acknowledgement_still_fails_closed_without_exact_token(self):
+    def test_erase_gate_checks_the_node_and_needs_its_server_id(self):
         phase = next(play for play in yaml.safe_load((ROOT / 'ansible/playbooks/site.yml').read_text())
                      if 'bios' in play.get('tags', []))
-        gate = copy.deepcopy(next(task for task in phase['tasks']
-                                  if 'ansible.builtin.assert' in task))
+        tasks = copy.deepcopy(phase['tasks'])
+        identity = next(i for i, task in enumerate(tasks) if 'ansible.builtin.import_tasks' in task)
+        # The provider read is tested with the install role; here it returns the node.
+        tasks[identity] = {'name': 'Fixture provider identity', 'ansible.builtin.set_fact': {
+            'provider_identity': {'id': '1047102', 'hostname': 'sno-coco-node', 'public_ipv4': '84.32.220.45'}}}
+        check = next(task for task in tasks if 'node-preflight.py' in str(task))
+        check['ansible.builtin.command']['argv'][1] = str(ROOT / 'scripts/node-preflight.py')
         sentinel = self.base / 'installation-started'
-        for variables, expected in (({}, 2), ({'bios_ack': {'user_input': ''}}, 2),
-                                    ({'bios_ack': {'user_input': 'yes'}}, 2),
-                                    ({'bios_ack': {'user_input': 'SNP-SET'}}, 0),
-                                    ({'skip_bios_pause': True}, 0)):
-            with self.subTest(variables=variables):
+        tasks.append({'ansible.builtin.copy': {'dest': str(sentinel), 'content': 'started', 'mode': '0600'}})
+        for name in ('key', 'known_hosts'):
+            (self.base / name).write_text('fixture\n')
+        self.executable('ssh', '#!' + sys.executable + r"""
+import json, os, sys
+command = sys.argv[-1]
+sys.stdin.read()
+if command.startswith('python3 -'):
+    root = command.split(' ', 2)[2] if command.count(' ') > 1 else ''
+    print(json.dumps({'hostname': 'sno-coco-node', 'cpu': 'AMD EPYC 9254 24-Core Processor',
+        'system': 'Supermicro Super Server', 'board': 'H13SST-G', 'bios_version': '3.7',
+        'bios_date': '06/12/2025', 'uefi': True, 'root_device': root,
+        'root_path': '/dev/nvme1n1' if root == '/dev/disk/by-path/pci-0000:01:00.0-nvme-1' else '',
+        'disks': [{'name': 'nvme0n1', 'path': '/dev/nvme0n1', 'type': 'disk', 'size': 960197124096,
+                   'serial': '24184896890A', 'model': 'MZ1L2960', 'tran': 'nvme'},
+                  {'name': 'nvme1n1', 'path': '/dev/nvme1n1', 'type': 'disk', 'size': 960197124096,
+                   'serial': '24184896895E', 'model': 'MZ1L2960', 'tran': 'nvme'}]}))
+elif command == 'bash -s':
+    passed = 'FIXTURE_SNP_FAIL' not in os.environ
+    print('  PASS  /dev/sev exists' if passed else '  FAIL  sev_snp=Y')
+    print('RESULT: ' + ('SEV-SNP host prerequisites passed.' if passed else 'host gate not passed'))
+    sys.exit(0 if passed else 1)
+else:
+    sys.exit('unexpected ssh command: ' + command)
+""")
+        self.env['COCO_STATE_DIR'] = str(self.base / 'state')
+        rig = {'machines': [{'name': 'sno-coco-node', 'server_id': '1047102',
+                             'root_device': '/dev/disk/by-path/pci-0000:01:00.0-nvme-1'}],
+               'raw_node_ssh_user': 'root', 'raw_node_ssh_key': str(self.base / 'key'),
+               'private_link_known_hosts': str(self.base / 'known_hosts')}
+        for variables, failure, expected in (
+                ({'confirm_erase': '1047102'}, None, 0),
+                ({'confirm_erase': 1047102}, None, 0),
+                ({}, None, 2),  # no terminal, so the question falls through
+                ({'confirm_erase': '1047103'}, None, 2),
+                ({'confirm_erase': 'SNP-SET'}, None, 2),
+                ({'confirm_erase': '1047102'}, 'snp', 2),
+                ({'confirm_erase': '1047102', 'machines': [{**rig['machines'][0], 'root_device': '/dev/sdz'}]},
+                 None, 2),
+                ({'confirm_erase': '1047102', 'skip_bios_pause': True}, None, 2)):
+            with self.subTest(variables=variables, failure=failure):
                 sentinel.unlink(missing_ok=True)
-                self.run_play({'vars': variables, 'tasks': [gate, {
-                    'ansible.builtin.copy': {'dest': str(sentinel), 'content': 'started',
-                                            'mode': '0600'}}]}, expected=expected)
+                self.env.pop('FIXTURE_SNP_FAIL', None)
+                if failure:
+                    self.env['FIXTURE_SNP_FAIL'] = '1'
+                output = self.run_play({'vars': {**rig, **phase['vars'], **variables}, 'tasks': tasks},
+                                       expected=expected)
                 self.assertEqual(sentinel.exists(), expected == 0)
+                if 'skip_bios_pause' in variables:
+                    self.assertIn('confirm_erase', output)
+                elif failure:
+                    self.assertIn('the SEV-SNP host check did not pass', output)
+                    self.assertIn('FAIL  sev_snp=Y', output)
+                elif variables.get('machines'):
+                    self.assertIn('/dev/sdz is not a disk on the node', output)
+                elif expected:
+                    self.assertIn('-e confirm_erase=1047102', output)
+                else:
+                    self.assertIn('/dev/nvme1n1, 960 GB, MZ1L2960, serial 24184896895E', output)
+                    self.assertIn('left as it is: /dev/nvme0n1', output)
+        evidence = sorted((self.base / 'state/evidence').glob('host-snp-check-1047102-*.txt'))
+        self.assertTrue(evidence)
+        self.assertIn('server 1047102 at 84.32.220.45', evidence[0].read_text())
 
     def test_bootstrap_marker_wait_uses_privilege_for_protected_directory(self):
         phase = next(play for play in yaml.safe_load((ROOT / 'ansible/playbooks/site.yml').read_text())

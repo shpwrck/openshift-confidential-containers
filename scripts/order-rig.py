@@ -27,6 +27,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 from cherry_rig import (RigError, disk_facts, matching_key_id, network_facts, parse_env_file,  # noqa: E402
                         render_rig_file, render_tfvars, rig_options)
+import node_checks  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 TERRAFORM_DIR = REPO / "infra/cherry"
@@ -61,13 +62,6 @@ elif systemctl is-active --quiet helper-bootstrap; then echo running
 elif [ -e {MIRROR_ROOT}/MIRROR_FAILED ] || systemctl is-failed --quiet helper-bootstrap; then echo failed
 else echo none; fi'''
 HELPER_LOG = "tail -n 25 /var/log/mirror-bootstrap.log 2>/dev/null || journalctl -u helper-bootstrap --no-pager -n 25"
-# Machine identity for the SEV-SNP evidence; the installer needs UEFI.
-IDENTIFY_NODE = r'''d=/sys/class/dmi/id
-echo "== Machine $(hostname) =="
-echo "  system: $(cat $d/sys_vendor $d/product_name 2>/dev/null | paste -sd' ')   board: $(cat $d/board_name 2>/dev/null)"
-echo "  BIOS: $(cat $d/bios_version 2>/dev/null), $(cat $d/bios_date 2>/dev/null)"
-if [ -d /sys/firmware/efi ]; then echo "  PASS  booted in UEFI mode"; else echo "  FAIL  booted in UEFI mode"; exit 1; fi
-'''
 
 
 class Stop(Exception):
@@ -579,26 +573,33 @@ def summary(rig, values, rig_file):
           f"helper at {values['helper_public_ipv4']}, private VLAN {rig_file.get('vlan_vid_override')}.\n"
           f"Install disk: {disk} (to use another one, edit node_root_device in {rig.rig_file}).\n"
           f"Billing: about {rig.order['price']:.2f} EUR/hour until you retire the rig.\n\n"
-          "Next: set the BIOS, quickstart step 3 (docs/quickstart.md#3-set-the-bios).")
+          "Next: set the BIOS, quickstart step 3 (docs/quickstart.md#3-set-the-bios), then install with\n"
+          "  bash ansible/up.sh --mode fresh-install")
 
 
 def check_snp(state):
-    """Run the read-only SEV-SNP host check on the node's original OS and keep its output."""
+    """Run the read-only node checks on the node's original OS and keep their output."""
     rig = Rig(state, Cherry(None), None)
     values = rig.rig_values() if rig.order else None
     if not values:
         raise Stop("no ordered rig found; run make order-rig first")
     host = values["node_public_ipv4"]
-    identity = rig.ssh(host, "bash -s", stdin=IDENTIFY_NODE, check=False)
-    snp = rig.ssh(host, "bash -s", stdin=(REPO / "scripts/host-snp-check.sh").read_text(), check=False)
-    if snp.returncode == 255:
-        raise Stop(f"no SSH to the node at {host}: {snp.stderr.strip()}")
-    output = identity.stdout + identity.stderr + "\n" + snp.stdout + snp.stderr
-    print(output, end="")
-    evidence = state / "evidence" / f"host-snp-check-raw-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.txt"
-    write_private(evidence, f"server {values['node_id']} at {host}\n{output}exit={snp.returncode}\n")
+    rig_file = read_rig_file(rig)
+    same_rig = str(rig_file.get("node_server_id")) == str(values["node_id"])
+    root_device = (rig_file.get("node_root_device") or "") if same_rig else ""
+
+    def ssh(command, stdin):
+        return rig.ssh(host, command, stdin=stdin, check=False, timeout=600)
+
+    try:
+        report = node_checks.check_node(ssh, values["node_hostname"], root_device)
+    except node_checks.NodeUnreachable as error:
+        raise Stop(f"no SSH to the node at {host}: {error}") from None
+    print(report["snp_output"], end="")
+    print("\n" + "\n".join(report["lines"]))
+    evidence = node_checks.save_evidence(report, state / "evidence", values["node_id"], host)
     print(f"\nSaved in {evidence}.")
-    return 0 if identity.returncode == 0 and snp.returncode == 0 else 1
+    return 0 if report["passed"] else 1
 
 
 def main(argv=None):

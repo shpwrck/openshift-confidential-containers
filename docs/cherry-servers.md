@@ -63,7 +63,7 @@ when something goes wrong. `python3 scripts/order-rig.py --help` lists them all.
 | `credentials/pull-secret.json` | A copy of your pull secret |
 | `helper-bootstrap.sh` | The mirror bootstrap it ran on the helper |
 | `rig.yml` | The rig file |
-| `evidence/` | The output of each `make check-node-snp` |
+| `evidence/` | The output of each `make check-node-snp`, and of the node checks the install runs |
 
 ## Set the BIOS
 
