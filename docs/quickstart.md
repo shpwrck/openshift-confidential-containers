@@ -53,6 +53,32 @@ contact any registry or test hardware. `make fetch-cli-tools` downloads `oc` and
 
 To move to newer product versions, follow [release resolution](release-resolution.md) first.
 
+### Coming back in a new terminal
+
+Exports last only as long as the terminal that set them. In a new terminal, run
+these from the checkout before any other command in this guide or the
+[Cherry Servers setup](cherry-servers.md); the install lines above need no repeat:
+
+```bash
+umask 077
+export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"
+source "$COCO_STATE_DIR/controller-venv/bin/activate"
+export PATH="$COCO_STATE_DIR/bin:$PATH"
+```
+
+Then set the provider API key. Run this line on its own: it waits silently for the
+key, so pasted together with other lines it reads the next line instead. The length
+it prints is `0` when nothing was read.
+
+```bash
+read -rs CHERRY_SERVERS_API_KEY && export CHERRY_SERVERS_API_KEY
+echo "${#CHERRY_SERVERS_API_KEY}"
+```
+
+For Terraform, also export `CHERRY_API_KEY` and `TF_DATA_DIR` as in
+[Order the servers](cherry-servers.md#order-the-servers). After step 6, export
+`KUBECONFIG` and the context variables again and reopen the SSH tunnel to the API.
+
 ## 2. Write the rig file
 
 All site-specific values go in one file outside the checkout:
@@ -79,7 +105,8 @@ Defaults for everything else (cluster name, DNS names) are in
 [`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml). Its private addresses
 do not apply on Cherry, which assigns them; Terraform supplies the real ones.
 
-Export the provider API key without writing it to your shell history, for example:
+Export the provider API key without writing it to your shell history, for example
+with this line, run on its own (it waits silently for the key):
 
 ```bash
 read -rs CHERRY_SERVERS_API_KEY && export CHERRY_SERVERS_API_KEY
