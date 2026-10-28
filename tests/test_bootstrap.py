@@ -55,7 +55,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(result.returncode, expected, result.stdout)
         return result.stdout
 
-    def tool_fixture(self):
+    def tool_fixture(self, oc_mirror='#!/bin/sh\necho mirror-version\n'):
         remote = self.base / 'remote'
         remote.mkdir()
         contents = self.base / 'contents'
@@ -64,7 +64,7 @@ class BootstrapTests(unittest.TestCase):
             'oc': '#!/bin/sh\necho "Client Version: ' + VERSION + '"\n',
             'kubectl': '#!/bin/sh\necho kubectl\n',
             'openshift-install': '#!/bin/sh\necho "openshift-install ' + VERSION + '"\n',
-            'oc-mirror': '#!/bin/sh\necho mirror-version\n',
+            'oc-mirror': oc_mirror,
         }
         for name, text in scripts.items():
             write_executable(contents / name, text)
@@ -118,6 +118,29 @@ shutil.copyfile(source, args[args.index('-o')+1])
         (remote / 'oc-mirror.rhel9.tar.gz').write_bytes(b'corrupt')
         self.assertIn('checksum mismatch', self.install_tools(1))
         self.assertEqual(original, (installed / 'openshift-install').read_bytes())
+
+    def test_tools_without_oc_mirror_never_fetch_it_and_reuse_the_set(self):
+        remote = self.tool_fixture()
+        (remote / 'oc-mirror.rhel9.tar.gz').unlink()
+        self.env['INSTALL_OC_MIRROR'] = '0'
+        installed = Path(self.env['BIN_DIR'])
+        self.assertIn('COCO_TOOLS_CHANGED=1', self.install_tools())
+        self.assertIn('COCO_TOOLS_CHANGED=0', self.install_tools())
+        self.assertEqual(sorted(p.name for p in installed.iterdir() if not p.name.startswith('.')),
+                         ['kubectl', 'oc', 'openshift-install'])
+        self.assertNotIn('oc-mirror', self.log.read_text())
+        # The full set is a different set, so asking for it fetches again instead of reusing this one.
+        self.env['INSTALL_OC_MIRROR'] = '1'
+        self.assertIn('unavailable', self.install_tools(1))
+
+    def test_tools_oc_mirror_that_cannot_run_here_replaces_nothing(self):
+        self.tool_fixture(oc_mirror='#!/bin/sh\necho "libgpgme.so.11: cannot open shared object file" >&2\nexit 127\n')
+        out = self.install_tools(1)
+        self.assertIn('oc-mirror.rhel9.tar.gz does not run on this host', out)
+        self.assertIn('INSTALL_OC_MIRROR=0', out)
+        self.assertFalse((Path(self.env['BIN_DIR']) / 'oc').exists())
+        self.env['INSTALL_OC_MIRROR'] = '0'
+        self.assertIn('COCO_TOOLS_CHANGED=1', self.install_tools())
 
     def test_tools_missing_release_never_falls_back_to_latest(self):
         self.tool_fixture()

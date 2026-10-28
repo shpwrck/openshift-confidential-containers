@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Install a checksum-verified OpenShift tool set; safe to rerun after a release change.
 # Also staged standalone by Ansible, which supplies OCP_VERSION explicitly.
+# INSTALL_OC_MIRROR=0 leaves out oc-mirror, which only the helper runs. source scripts/env.sh
+# sets it: oc-mirror needs libgpgme.so.11, which newer distributions such as Fedora 44 lack.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -r "$SCRIPT_DIR/lib/release.sh" ]]; then
@@ -14,6 +16,8 @@ BIN_DIR="${BIN_DIR:-$SCRIPT_DIR/../bin}"
 OCP_CLIENTS_BASE="${OCP_CLIENTS_BASE:-https://mirror.openshift.com/pub/openshift-v4/amd64/clients}"
 OCMIRROR_VARIANT="${OCMIRROR_VARIANT:-rhel9}"
 case "$OCMIRROR_VARIANT" in rhel9|glibc) ;; *) echo "ERROR: OCMIRROR_VARIANT must be rhel9 or glibc" >&2; exit 2 ;; esac
+INSTALL_OC_MIRROR="${INSTALL_OC_MIRROR:-1}"
+case "$INSTALL_OC_MIRROR" in 0|1) ;; *) echo "ERROR: INSTALL_OC_MIRROR must be 0 or 1" >&2; exit 2 ;; esac
 base="${OCP_CLIENTS_BASE%/}/ocp/$OCP_VERSION"
 umask 077
 TMP="$(mktemp -d)"
@@ -41,10 +45,16 @@ checksum() {
 }
 client="openshift-client-linux-$OCP_VERSION.tar.gz"
 installer="openshift-install-linux-$OCP_VERSION.tar.gz"
-mirror="oc-mirror.tar.gz"
-# A variant fallback stays in this exact release and requires its published checksum.
-if [[ "$OCMIRROR_VARIANT" == rhel9 ]] && checksum oc-mirror.rhel9.tar.gz >/dev/null; then mirror="oc-mirror.rhel9.tar.gz"; fi
-for archive in "$client" "$installer" "$mirror"; do
+archives=("$client" "$installer")
+binaries=(oc kubectl openshift-install)
+if [[ "$INSTALL_OC_MIRROR" == 1 ]]; then
+  mirror="oc-mirror.tar.gz"
+  # A variant fallback stays in this exact release and requires its published checksum.
+  if [[ "$OCMIRROR_VARIANT" == rhel9 ]] && checksum oc-mirror.rhel9.tar.gz >/dev/null; then mirror="oc-mirror.rhel9.tar.gz"; fi
+  archives+=("$mirror")
+  binaries+=(oc-mirror)
+fi
+for archive in "${archives[@]}"; do
   digest="$(checksum "$archive")" || die "no unique published checksum for $archive in $OCP_VERSION"
   printf '%s %s\n' "$archive" "$digest" >> "$TMP/archives"
 done
@@ -52,7 +62,7 @@ fingerprint="$(sha "$TMP/archives")"
 marker="$BIN_DIR/.coco-tools-manifest"
 reusable=1
 [[ -f "$marker" ]] && [[ "$(head -n 1 "$marker")" == "$OCP_VERSION $fingerprint" ]] || reusable=0
-for binary in oc kubectl openshift-install oc-mirror; do
+for binary in "${binaries[@]}"; do
   if [[ ! -x "$BIN_DIR/$binary" ]] || [[ ! -f "$marker" ]]; then reusable=0; continue; fi
   expected="$(awk -v name="$binary" '$1==name {print $2}' "$marker")"
   [[ "$expected" == "$(sha "$BIN_DIR/$binary")" ]] || reusable=0
@@ -62,21 +72,24 @@ if [[ "$reusable" == 1 ]]; then
   echo "COCO_TOOLS_CHANGED=0"
   exit 0
 fi
-for archive in "$client" "$installer" "$mirror"; do
+for archive in "${archives[@]}"; do
   fetch "$base/$archive" "$TMP/$archive" || die "requested archive unavailable: $base/$archive"
   [[ "$(sha "$TMP/$archive")" == "$(checksum "$archive")" ]] || die "checksum mismatch: $archive; installed tools were not replaced"
 done
 tar -xzf "$TMP/$client" -C "$TMP/stage" oc kubectl
 tar -xzf "$TMP/$installer" -C "$TMP/stage" openshift-install
-tar -xzf "$TMP/$mirror" -C "$TMP/stage" oc-mirror
-chmod 755 "$TMP/stage/oc" "$TMP/stage/kubectl" "$TMP/stage/openshift-install" "$TMP/stage/oc-mirror"
+[[ "$INSTALL_OC_MIRROR" == 0 ]] || tar -xzf "$TMP/$mirror" -C "$TMP/stage" oc-mirror
+for binary in "${binaries[@]}"; do chmod 755 "$TMP/stage/$binary"; done
 # Detect an incorrect platform/archive before replacing a working installation.
 "$TMP/stage/oc" version --client >/dev/null
 install_version="$("$TMP/stage/openshift-install" version)"
 [[ "$(printf '%s\n' "$install_version" | awk 'NR==1 {print $2}')" == "$OCP_VERSION" ]] || die "installer does not report requested release $OCP_VERSION"
-"$TMP/stage/oc-mirror" version >/dev/null 2>&1 || "$TMP/stage/oc-mirror" --v2 version >/dev/null
+if [[ "$INSTALL_OC_MIRROR" == 1 ]]; then
+  "$TMP/stage/oc-mirror" version >/dev/null 2>&1 || "$TMP/stage/oc-mirror" --v2 version >/dev/null ||
+    die "$mirror does not run on this host; installed tools were not replaced (INSTALL_OC_MIRROR=0 installs the others without it)"
+fi
 printf '%s %s\n' "$OCP_VERSION" "$fingerprint" > "$TMP/manifest"
-for binary in oc kubectl openshift-install oc-mirror; do
+for binary in "${binaries[@]}"; do
   printf '%s %s\n' "$binary" "$(sha "$TMP/stage/$binary")" >> "$TMP/manifest"
   # Publish each complete binary atomically. An interrupted set has no valid completion record.
   cp "$TMP/stage/$binary" "$BIN_DIR/.$binary.coco-new"

@@ -16,8 +16,8 @@
 # DO NOT set REGISTRY_AUTH_FILE: oc-mirror v2 embeds a `distribution` registry that consumes
 # ALL `REGISTRY_*` env vars as its own config, so REGISTRY_AUTH_FILE collides and panics
 # ("StorageDriver not registered"). We unset it defensively below and rely on the default
-# ~/.docker/config.json lookup. (Learned on metal 2026-06-26.) On a RHEL-family bastion, prefer
-# the `oc-mirror.rhel9.tar.gz` build (no libgpgme dependency).
+# ~/.docker/config.json lookup. (Learned on metal 2026-06-26.) install-tools.sh picks the
+# `oc-mirror.rhel9.tar.gz` build, which needs the libgpgme.so.11 that RHEL 9 ships.
 #
 # The node firewall lets ONLY the node reach the bastion; run this on the bastion/admin host.
 set -euo pipefail

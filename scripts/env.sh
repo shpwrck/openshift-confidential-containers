@@ -4,7 +4,8 @@
 #   source scripts/env.sh
 #
 # The first run also builds the controller: a Python environment, the pinned
-# OpenShift CLIs, and the Cherry Servers API key, asked for once and kept in
+# OpenShift CLIs (oc-mirror runs only on the helper, so the controller goes
+# without it), and the Cherry Servers API key, asked for once and kept in
 # COCO_STATE_DIR. The build runs again when the requirements or the release
 # manifest change. Later runs only set the variables, so they take a second.
 
@@ -61,7 +62,7 @@ PY
     echo
     python3 -m pip install --quiet --disable-pip-version-check -r "$repo/requirements-dev.txt" || return 1
     make -C "$repo" --no-print-directory preflight || return 1
-    make -C "$repo" --no-print-directory fetch-cli-tools || return 1
+    INSTALL_OC_MIRROR=0 make -C "$repo" --no-print-directory fetch-cli-tools || return 1
     printf '%s\n' "$stamp" > "$COCO_STATE_DIR/.controller-ready"
     echo
   fi

@@ -539,6 +539,24 @@ class ControllerEnvironment(unittest.TestCase):
         self.assertTrue(values['PATH'].startswith(f'{self.state}/bin:'))
         self.assertNotIn('fixture-key', result.stdout.split('status=')[0])
 
+    def test_the_first_setup_installs_the_tools_without_oc_mirror(self):
+        stamp = (self.state / '.controller-ready').read_text()
+        (self.state / '.controller-ready').unlink()
+        calls = self.state.parent / 'calls'
+        (self.stubs / 'python3').write_text(f'#!/bin/sh\nif [ "$1" = -m ] && [ "$2" = pip ]; then echo pip >> {calls}; exit 0; fi\n'
+                                            f'exec {sys.executable} "$@"\n')
+        (self.stubs / 'make').write_text(f'#!/bin/sh\necho "$* INSTALL_OC_MIRROR=${{INSTALL_OC_MIRROR:-unset}}" >> {calls}\n')
+        for name in ('python3', 'make'):
+            (self.stubs / name).chmod(0o755)
+        values, result = self.source()
+        self.assertEqual(values['status'], '0', result.stderr)
+        self.assertEqual(calls.read_text().splitlines(), [
+            'pip',
+            f'-C {ROOT} --no-print-directory preflight INSTALL_OC_MIRROR=unset',
+            f'-C {ROOT} --no-print-directory fetch-cli-tools INSTALL_OC_MIRROR=0',
+        ])
+        self.assertEqual((self.state / '.controller-ready').read_text(), stamp)
+
     def test_without_a_terminal_the_key_is_not_asked_for(self):
         values, result = self.source()
         self.assertEqual(values['status'], '0', result.stderr)
