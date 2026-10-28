@@ -67,7 +67,7 @@ for channel/default-channel and exact-version rules.
 
 | File | Values to keep aligned |
 |---|---|
-| `install/release-manifest.json` | Platform, catalog/bundle/image pins, exact package/channel/CSV/version, complete dependencies, evidence date/hashes |
+| `install/release-manifest.json` | Platform, catalog/bundle/image pins, exact package/channel/CSV/version, complete dependencies, evidence date/hashes. `tools.mirrorRegistry` pins the helper's mirror-registry archive: a versioned URL from <https://mirror.openshift.com/pub/cgw/mirror-registry/> and the SHA-256 from that version's signed `sha256sum.txt` |
 | `install/imageset-config.yaml` | Same catalog/helper images, exact operator version ranges, dependencies and included default channels |
 | `gitops/base/operators/subscriptions.yaml` | Same package/channel/source/startingCSV; keep Manual approval |
 | `gitops/base/gatekeeper/operator.yaml` | Same Gatekeeper selection and Manual approval |

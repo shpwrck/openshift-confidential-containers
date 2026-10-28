@@ -39,7 +39,7 @@ export COCO_STATE_DIR
 # directory. In a shell without COCO_STATE_DIR, "@$COCO_STATE_DIR/rig.yml" is "@/rig.yml".
 vars_file_path() {
   [[ -f "$1" && -r "$1" ]] || {
-    echo "ERROR: vars file '$1' not found; for the rig file, export COCO_STATE_DIR in this terminal first (docs/quickstart.md, \"Coming back in a new terminal\")" >&2
+    echo "ERROR: vars file '$1' not found; for the rig file, run 'source scripts/env.sh' in this terminal first: it sets COCO_STATE_DIR" >&2
     exit 2
   }
   python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$1"

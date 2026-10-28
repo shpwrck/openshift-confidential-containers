@@ -18,6 +18,6 @@ output "helper_public_ipv4" {
 }
 
 output "rig_values" {
-  description = "Rig-file lines for the values Cherry assigned; append them to the rig file."
+  description = "The values Cherry assigned, for scripts/order-rig.py to write into the rig file."
   value       = module.rig_values.rig_values
 }

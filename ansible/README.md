@@ -1,17 +1,18 @@
 # Ansible workflow
 
 Ansible prepares a helper server you were given and installs single-node
-OpenShift on a disposable AMD node. Allocating the servers and setting the BIOS
-are manual. Start with the [quickstart](../docs/quickstart.md) and
-[Cherry Servers setup](../docs/cherry-servers.md).
+OpenShift on a disposable AMD node. `make order-rig` orders the servers on Cherry
+Servers and writes the rig file; setting the BIOS is manual. Start with the
+[quickstart](../docs/quickstart.md).
 
-Copy [`rig.example.yml`](rig.example.yml) outside the checkout to describe your
-servers, and pass it with `-e "@$COCO_STATE_DIR/rig.yml"`. Defaults for everything
-else are in [`group_vars/all.yml`](group_vars/all.yml). The
+The rig file (`$COCO_STATE_DIR/rig.yml`) describes your servers; pass it with
+`-e "@$COCO_STATE_DIR/rig.yml"`. For servers ordered another way, copy
+[`rig.example.yml`](rig.example.yml) outside the checkout and fill it in. Defaults
+for everything else are in [`group_vars/all.yml`](group_vars/all.yml). The
 [mirror bootstrap](bootstrap/mirror-registry.yaml.j2) is a cloud-init template that
 sets up the helper's network and mirror registry before Ansible runs;
-[Cherry Servers setup](../docs/cherry-servers.md#order-the-servers) shows how to render
-it as a script and run it on the helper.
+`make order-rig` renders it as a script and runs it on the helper, as
+[ordering by hand](../docs/cherry-servers.md#ordering-by-hand) shows.
 
 ## Modes
 

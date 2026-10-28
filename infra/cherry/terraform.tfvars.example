@@ -1,7 +1,7 @@
-# Copy outside the checkout and fill in every REPLACE value:
-#   cp infra/cherry/terraform.tfvars.example "$COCO_STATE_DIR/cherry.tfvars"
-# "Choosing the Terraform variables" in docs/cherry-servers.md explains each value
-# and has the commands that look them up. Confirm the hourly price of both plans first.
+# make order-rig writes $COCO_STATE_DIR/cherry.tfvars from your answers. To write
+# it by hand instead, copy this file outside the checkout and fill in every REPLACE
+# value; "What make order-rig chooses" in docs/cherry-servers.md explains them, and
+# make cherry-plans lists the tested plans in stock with their hourly prices.
 
 project_id   = 0 # REPLACE with the project ID
 region       = "REPLACE_WITH_REGION_SLUG"

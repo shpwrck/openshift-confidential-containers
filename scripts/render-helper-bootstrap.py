@@ -11,6 +11,7 @@ import argparse
 import base64
 import ipaddress
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -21,6 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / 'ansible/bootstrap/mirror-registry.yaml.j2'
+MANIFEST = Path(os.environ.get('RELEASE_MANIFEST') or ROOT / 'install/release-manifest.json')
 
 
 def parse_args(argv):
@@ -31,8 +33,8 @@ def parse_args(argv):
                         help='login user that cloud-init configures (only with --cloud-config; default root)')
     parser.add_argument('--vlan-vid', default='auto',
                         help="VLAN tag on the wire, or auto (default) to adopt the provider's private VLAN on the helper")
-    parser.add_argument('--mirror-registry-url', required=True, help='versioned HTTPS mirror-registry archive URL')
-    parser.add_argument('--mirror-registry-sha256', required=True, help='SHA-256 of that archive')
+    parser.add_argument('--mirror-registry-url', help="versioned HTTPS mirror-registry archive URL (default: the release manifest's tools.mirrorRegistry)")
+    parser.add_argument('--mirror-registry-sha256', help='SHA-256 of that archive (default: from the release manifest)')
     parser.add_argument('--vlan-parent-interface', default='auto', help="helper NIC that carries the VLAN (default: auto)")
     # Used only with an explicit --vlan-vid. Defaults match ansible/group_vars/all.yml.
     parser.add_argument('--helper-vlan-ip', default='192.168.66.10')
@@ -40,7 +42,13 @@ def parse_args(argv):
     parser.add_argument('--registry-dns-name', default='mirror.rig.local')
     parser.add_argument('--mirror-root', default='/opt/mirror')
     parser.add_argument('--init-user', default='init')
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if (args.mirror_registry_url is None) != (args.mirror_registry_sha256 is None):
+        parser.error('give --mirror-registry-url and --mirror-registry-sha256 together')
+    if args.mirror_registry_url is None:
+        pin = json.loads(MANIFEST.read_text())['tools']['mirrorRegistry']
+        args.mirror_registry_url, args.mirror_registry_sha256 = pin['url'], pin['sha256']
+    return args
 
 
 def network_values(args):

@@ -46,6 +46,14 @@ def validate(bom, root, tee="snp", require_resolved=False, environ=None):
     check(p["channel"] == f"stable-{minor}", "platform channel/version mismatch")
     check(bool(IMAGE.fullmatch(p["releaseImage"])), "platform.releaseImage must be immutable")
     check(bom["compatibility"].get("gpus") is False, "this BOM is CPU-only")
+    # The helper bootstrap installs this archive; its URLs must name the pinned version.
+    registry = bom["tools"].get("mirrorRegistry") or {}
+    registry_version = registry.get("version") or ""
+    registry_urls = [registry.get("url") or "", registry.get("checksumsSource") or ""]
+    check(bool(re.fullmatch(r"\d+\.\d+\.\d+", registry_version))
+          and all(u.startswith("https://") and f"/{registry_version}/" in u for u in registry_urls),
+          "tools.mirrorRegistry needs an exact version and HTTPS URLs that name it")
+    check(bool(re.fullmatch(r"[0-9a-f]{64}", registry.get("sha256") or "")), "tools.mirrorRegistry.sha256 must be 64 lowercase hex characters")
     if tee != "snp" or tee not in bom["profiles"]:
         raise ValueError("this deployment supports the AMD SNP profile only")
     bindings = {"OCP_VERSION":"platform.version", "OCP_RELEASE_IMAGE":"platform.releaseImage", "OSC_VERSION":"operators.osc.version", "TRUSTEE_VERSION":"operators.trustee.version", "CATALOGSOURCE":"catalog.source", "TOOLS_IMG":"images.cocoTools.ref"}

@@ -1,0 +1,31 @@
+{
+  "_comment": "Cherry Servers plans that completed a full run (docs/validation.md). make order-rig prefers these. Add a plan only after it passes the whole quickstart and the capability tests.",
+  "node": [
+    {
+      "plan": "amd-epyc-9124p",
+      "image": "ubuntu_26_04_64bit",
+      "validated": "2026-10-08",
+      "hardware": "AMD EPYC 9124, Supermicro H13SST-G, BIOS 3.7"
+    },
+    {
+      "plan": "amd-epyc-9254p",
+      "image": "ubuntu_26_04_64bit",
+      "validated": "2026-10-28",
+      "hardware": "AMD EPYC 9254, Supermicro H13SST-G, BIOS 3.7"
+    }
+  ],
+  "helper": [
+    {
+      "plan": "2x-intel-gold-6330",
+      "image": "almalinux_9_64bit",
+      "validated": "2026-10-28"
+    }
+  ],
+  "untestedNode": {
+    "image": "ubuntu_26_04_64bit"
+  },
+  "untestedHelper": {
+    "image": "almalinux_9_64bit",
+    "minimumDiskGB": 400
+  }
+}

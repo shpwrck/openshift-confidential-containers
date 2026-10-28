@@ -62,6 +62,14 @@ test: lint ## Alias for the complete hardware-free check suite
 fetch-cli-tools: ## Fetch checksum-verified CLIs for the selected OCP version
 	bash scripts/install-tools.sh
 
+.PHONY: order-rig cherry-plans check-node-snp
+order-rig: ## Order a Cherry Servers test rig and write its rig file (asks before ordering)
+	python3 scripts/order-rig.py $(ARGS)
+cherry-plans: ## List the tested Cherry Servers plans in stock, with hourly prices
+	python3 scripts/order-rig.py plans $(ARGS)
+check-node-snp: ## Run the read-only SEV-SNP host check on the ordered node and save its output
+	python3 scripts/order-rig.py check-snp
+
 .PHONY: bringup-sno-airgapped ansible-lint pxe-stop mirror-content
 bringup-sno-airgapped: ## Prepare by default; ARGS='--mode fresh-install ...' explicitly installs
 	bash ansible/up.sh $(ARGS)

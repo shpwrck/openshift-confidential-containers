@@ -77,7 +77,7 @@ left meanwhile; `FAIL:` only appears if it times out.
 
 The reset retains controllers until their operands finish deletion. If it stops,
 inspect finalizers and reconciliation before retrying; do not clear them blindly.
-Reinstall through [the quickstart](quickstart.md#6-install-the-coco-operators),
+Reinstall through [the quickstart](quickstart.md#7-install-the-coco-operators),
 then repeat the [Trustee lab sequence](trustee.md#disposable-lab) from step 1 and
 the [capability tests](capability-status.md) with the isolation checks. The reset
 leaves `$COCO_STATE_DIR` alone, so the signed images and their env file from the
@@ -93,12 +93,11 @@ archive hashes and recovery limits before deleting resources.
 Delete only the intended provider objects and confirm absence through fresh inventory
 reads. Power-off or failed SSH is not proof of deletion. Keep the provider ownership and retirement records.
 
-If you ordered with Terraform, it deletes exactly the servers and SSH key it created.
-Use the same exports as [the order](cherry-servers.md#order-the-servers). The plan
-lists the two servers; type `yes` to delete them, then confirm in the Cherry portal
-or API that both servers are gone:
+If you ordered with `make order-rig`, Terraform deletes exactly the servers and SSH
+key it created. Run this in a terminal where you ran `source scripts/env.sh`. The
+plan lists the two servers; type `yes` to delete them, then confirm in the Cherry
+portal or API that both servers are gone:
 
 ```bash
-export CHERRY_API_KEY="$CHERRY_SERVERS_API_KEY" TF_DATA_DIR="$COCO_STATE_DIR/terraform"
 terraform -chdir=infra/cherry destroy -var-file="$COCO_STATE_DIR/cherry.tfvars"
 ```

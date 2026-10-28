@@ -10,9 +10,9 @@ Guides in the order you use them:
 
 | Step | Guide |
 |---|---|
-| 1. Check the AMD hardware and BIOS | [Firmware preflight](amd-firmware-preflight.md) |
-| 2. Collect the provider inputs | [Cherry Servers setup](cherry-servers.md) |
-| 3. Install OpenShift and the CoCo Operators | [Quickstart](quickstart.md) |
+| 1. Order the rig, set the BIOS, install OpenShift and the CoCo Operators | [Quickstart](quickstart.md) |
+| 2. Choose other plans, or order by hand | [Cherry Servers setup](cherry-servers.md) |
+| 3. Check an untested board's BIOS and firmware | [Firmware preflight](amd-firmware-preflight.md) |
 | 4. Configure attestation and secret release | [Trustee setup](trustee.md) |
 | 5. Let the confidential VM pull images | [Guest images](guest-images.md) |
 | 6. Prove the security controls work | [Capability tests](capability-status.md) |

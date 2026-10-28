@@ -1,31 +1,30 @@
 ---
-# Example rig file. Copy it outside the checkout, fill in every REPLACE value
-# and pass it to Ansible:
+# Example rig file, for servers that make order-rig did not order. On Cherry
+# Servers, make order-rig writes the complete file for you (docs/quickstart.md).
+# Otherwise copy this outside the checkout, fill in every REPLACE value and pass
+# it to Ansible:
 #
 #   cp ansible/rig.example.yml "$COCO_STATE_DIR/rig.yml"
 #   bash ansible/up.sh --mode prepare -e "@$COCO_STATE_DIR/rig.yml"
 #
 # Read every value from the servers you were actually given; never copy values
-# from an old rig. group_vars/all.yml documents the defaults you can override.
+# from an old rig. docs/cherry-servers.md says where each one comes from, and
+# group_vars/all.yml documents the defaults you can override.
 
-# Ordered with infra/cherry? `terraform output -raw rig_values >> rig.yml` appends
-# the values Cherry assigned (see docs/cherry-servers.md). Otherwise uncomment the
-# provider lines below and fill them in by hand.
-
-# ---- Provider values (from terraform output rig_values) ------------------
-# bastion_ansible_host: "REPLACE_WITH_HELPER_PUBLIC_IP"
-# bastion_public_ipv4_override: "REPLACE_WITH_HELPER_PUBLIC_IP"
-# node_server_id: "REPLACE_WITH_PROVIDER_SERVER_ID"
-# node_provider_hostname: "REPLACE_WITH_PROVIDER_HOSTNAME"
-# node_provider_project_id: "REPLACE_WITH_PROVIDER_PROJECT_ID"
+# ---- Provider values -----------------------------------------------------
+bastion_ansible_host: "REPLACE_WITH_HELPER_PUBLIC_IP"
+bastion_public_ipv4_override: "REPLACE_WITH_HELPER_PUBLIC_IP"
+node_server_id: "REPLACE_WITH_PROVIDER_SERVER_ID"
+node_provider_hostname: "REPLACE_WITH_PROVIDER_HOSTNAME"
+node_provider_project_id: "REPLACE_WITH_PROVIDER_PROJECT_ID"
 # Private addresses Cherry assigned, and their network.
-# node_vlan_ip: "REPLACE_WITH_NODE_PRIVATE_IP"
-# bastion_vlan_ip: "REPLACE_WITH_HELPER_PRIVATE_IP"
-# machine_network: "REPLACE_WITH_PRIVATE_NETWORK_CIDR"
-# vlan_cidr: "REPLACE_WITH_PRIVATE_NETWORK_CIDR"
-# vlan_prefix: 24
+node_vlan_ip: "REPLACE_WITH_NODE_PRIVATE_IP"
+bastion_vlan_ip: "REPLACE_WITH_HELPER_PRIVATE_IP"
+machine_network: "REPLACE_WITH_PRIVATE_NETWORK_CIDR"
+vlan_cidr: "REPLACE_WITH_PRIVATE_NETWORK_CIDR"
+vlan_prefix: 24
 # The VLAN tag seen on the wire. This is not the provider's VLAN object ID.
-# vlan_vid_override: "REPLACE_WITH_VLAN_TAG"
+vlan_vid_override: "REPLACE_WITH_VLAN_TAG"
 
 # ---- Helper (bastion) access ---------------------------------------------
 # root on Cherry Servers images.

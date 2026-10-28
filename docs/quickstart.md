@@ -1,132 +1,105 @@
 # Quickstart: install OpenShift and CoCo on a new rig
 
-This guide takes two freshly allocated servers to a single-node OpenShift
-cluster with the confidential-container Operators installed. It is written for
-a **disposable test rig**: step 5 erases the AMD node's disk. For an existing
-customer cluster, read [customer planning](customer-planning.md) instead.
+This guide orders two Cherry Servers machines and turns them into a single-node
+OpenShift cluster with the confidential-container Operators installed. It is
+written for a **disposable test rig**: step 6 erases the AMD node's disk. For an
+existing customer cluster, read [customer planning](customer-planning.md) instead.
 
 The steps are:
 
 1. [Set up the controller](#1-set-up-the-controller)
-2. [Write the rig file](#2-write-the-rig-file)
-3. [Prepare the helper](#3-prepare-the-helper)
-4. [Build boot files and check the private network](#4-build-boot-files-and-check-the-private-network)
-5. [Install OpenShift](#5-install-openshift)
-6. [Install the CoCo Operators](#6-install-the-coco-operators)
+2. [Order the rig](#2-order-the-rig)
+3. [Set the BIOS](#3-set-the-bios)
+4. [Prepare the helper](#4-prepare-the-helper)
+5. [Build boot files and check the private network](#5-build-boot-files-and-check-the-private-network)
+6. [Install OpenShift](#6-install-openshift)
+7. [Install the CoCo Operators](#7-install-the-coco-operators)
 
 Then continue with [Trustee setup](trustee.md) and the
 [capability tests](capability-status.md).
 
 ## Before you start
 
-- [ ] You have two servers on one private VLAN: the AMD node and a helper whose
-      bootstrap set up the mirror registry. After step 1, order both with
-      [Cherry Servers setup](cherry-servers.md#order-the-servers), which also starts
-      your rig file.
-- [ ] The node's BIOS is configured and SEV-SNP works on the provider's original OS.
-      Follow [firmware preflight](amd-firmware-preflight.md).
-- [ ] The node's private VLAN interface is configured in its original OS, and from
-      the node you can reach the helper's registry (HTTPS), DNS and NTP.
-- [ ] You have a Red Hat pull secret and an SSH key pair for the node.
+- [ ] A Linux machine to run everything from (the controller), with Bash, Python
+      3.12 or later, `curl`, `jq`, `make`, OpenSSH and
+      [Terraform](https://developer.hashicorp.com/terraform/install) 1.9 or later.
+- [ ] A [Cherry Servers](https://portal.cherryservers.com/) account with an empty
+      project and an [API key](https://portal.cherryservers.com/settings/api-keys).
+      The tested rig costs about 1.25 EUR per hour until you
+      [retire it](maintenance.md#retire-the-infrastructure).
+- [ ] An SSH key pair for both servers.
+- [ ] Your Red Hat [pull secret](https://console.redhat.com/openshift/install/pull-secret),
+      saved as a file.
 
 ## 1. Set up the controller
 
-Use a Linux machine with Bash, Python 3.12+, `jq`, SSH and Ansible. Run every
-command from the root of this checkout.
+From the root of this checkout, in every new terminal:
 
 ```bash
-umask 077
-export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"
-mkdir -p "$COCO_STATE_DIR"
-python3 -m venv "$COCO_STATE_DIR/controller-venv"
-source "$COCO_STATE_DIR/controller-venv/bin/activate"
-python3 -m pip install -r requirements-dev.txt
-make preflight
-make fetch-cli-tools
-export PATH="$COCO_STATE_DIR/bin:$PATH"
+source scripts/env.sh
 ```
 
-`make preflight` checks that the release files in this repository agree with
-each other and that every image and tool is pinned to a digest. It does not
-contact any registry or test hardware. `make fetch-cli-tools` downloads `oc` and
-`openshift-install` for the pinned OpenShift version and checks their hashes.
+The first time, this builds the controller in `COCO_STATE_DIR`, outside the
+checkout (by default `~/.local/state/openshift-confidential-containers`): a
+Python environment with the pinned requirements, and `oc` and
+`openshift-install` for the pinned OpenShift version, checked against their
+published hashes. It also checks that the release files in this repository agree
+and pin every image and tool to a digest; this contacts no registry or hardware.
+Then it asks once for your Cherry Servers API key, checks it, and keeps it in
+`$COCO_STATE_DIR/cherry-api-key`, readable only by you.
+
+Later runs take a second. They rebuild the controller only when the requirements
+or the release change, and load the cluster settings once step 7 has written them.
 
 To move to newer product versions, follow [release resolution](release-resolution.md) first.
 
-### Coming back in a new terminal
-
-Exports last only as long as the terminal that set them. In a new terminal, run
-these from the checkout before any other command in this guide or the
-[Cherry Servers setup](cherry-servers.md); the install lines above need no repeat:
+## 2. Order the rig
 
 ```bash
-umask 077
-export COCO_STATE_DIR="$HOME/.local/state/openshift-confidential-containers"
-source "$COCO_STATE_DIR/controller-venv/bin/activate"
-export PATH="$COCO_STATE_DIR/bin:$PATH"
+make order-rig
 ```
 
-Then set the provider API key. Run this line on its own: it waits silently for the
-key, so pasted together with other lines it reads the next line instead. The length
-it prints is `0` when nothing was read.
+It asks its questions first: which rig to order (the tested plans in stock,
+cheapest first, with their hourly price), which project, which SSH key and where
+your pull secret is. It orders nothing until you type `yes`. Then it runs on its
+own, mostly waiting for Cherry to deliver the servers:
+
+- It orders the AMD node and the helper with the [Terraform in `infra/cherry`](../infra/cherry/).
+- It pins both servers' SSH host keys in `$COCO_STATE_DIR/known_hosts` the first
+  time it reaches them; the later node and network checks use that file.
+- It starts the helper's mirror registry bootstrap.
+- It checks the node's private VLAN, its network bond and its disks. A new node
+  sometimes boots with one bond member missing; it offers the one reboot that fixes it.
+- It waits for the mirror registry, then writes `$COCO_STATE_DIR/rig.yml`, the
+  file every later step reads.
+
+If it stops, fix what it reports and run it again: it skips the stages that are
+done. [Cherry Servers setup](cherry-servers.md) explains what it chooses and how
+to order something else.
+
+> [!IMPORTANT]
+> Step 6 erases the disk that `node_root_device` in the rig file names. It is the
+> disk that holds the original OS's `/boot/efi`, and the file's comments show its
+> serial and the other disks. To install on another disk, change that line.
+
+## 3. Set the BIOS
+
+A new node's BIOS usually has SEV-SNP switched off. Set it through the node's
+browser console, as [Set the BIOS](cherry-servers.md#set-the-bios) shows. You can
+do this while `make order-rig` waits for the mirror; it says when.
+
+When the node's original OS is back up, check that SEV-SNP works:
 
 ```bash
-read -rs CHERRY_SERVERS_API_KEY && export CHERRY_SERVERS_API_KEY
-echo "${#CHERRY_SERVERS_API_KEY}"
+make check-node-snp
 ```
 
-For Terraform, also export `CHERRY_API_KEY` and `TF_DATA_DIR` as in
-[Order the servers](cherry-servers.md#order-the-servers). After step 6, also set
-the cluster variables again. The tunnel keeps running after its terminal closes;
-reopen it only if `get nodes` can't connect (`HELPER` and `NODE_IP` as in step 6):
+It prints the board and BIOS version, checks that the node booted in UEFI mode,
+and runs the [host check](amd-firmware-preflight.md#prove-the-running-host) over
+the pinned SSH connection. The output is also saved in `$COCO_STATE_DIR/evidence`.
+Continue only when it reports `RESULT: SEV-SNP host prerequisites passed`.
 
-```bash
-export KUBECONFIG="$COCO_STATE_DIR/kubeconfig"
-export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
-export TRUSTEE_LAB=1 INSTALL_TOPOLOGY=sno
-oc --context=validation get nodes
-# Only if that can't connect:
-ssh -f -N -L 6443:"$NODE_IP":6443 "$HELPER"
-```
-
-After [Trustee setup](trustee.md#disposable-lab), the lab also needs
-`TRUSTEE_PROFILE=Permissive TEE=snp` and the `MIRROR_CA`, `MIRROR_PASSWORD_FILE`
-and `HWIDS` lines from that page.
-
-## 2. Write the rig file
-
-All site-specific values go in one file outside the checkout:
-
-If you ordered with Terraform, [Cherry Servers setup](cherry-servers.md#order-the-servers)
-already created the file and appended the values Cherry assigned. Otherwise:
-
-```bash
-cp ansible/rig.example.yml "$COCO_STATE_DIR/rig.yml"
-```
-
-Edit `$COCO_STATE_DIR/rig.yml` and replace every `REPLACE_...` value. The file's
-comments say where each one comes from. In short:
-
-| Group | Values |
-|---|---|
-| Helper access | SSH user and key, private and public interface names (public IP from Terraform) |
-| Node identity | SSH user and key for the original OS; a `known_hosts` file that pins both servers (server ID, hostname and project from Terraform) |
-| Node network | Bond and member NIC names and permanent MACs (private addresses and VLAN tag from Terraform) |
-| Install disk | A stable `/dev/disk/by-path/...` path whose serial you have checked |
-| Credentials | Paths to the pull secret and node public key; a fresh `boot_artifacts_token` |
-
-Defaults for everything else (cluster name, DNS names) are in
-[`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml). Its private addresses
-do not apply on Cherry, which assigns them; Terraform supplies the real ones.
-
-Export the provider API key without writing it to your shell history, for example
-with this line, run on its own (it waits silently for the key):
-
-```bash
-read -rs CHERRY_SERVERS_API_KEY && export CHERRY_SERVERS_API_KEY
-```
-
-## 3. Prepare the helper
+## 4. Prepare the helper
 
 ```bash
 bash ansible/up.sh --mode prepare -e "@$COCO_STATE_DIR/rig.yml"
@@ -137,7 +110,7 @@ its registry, and configures private DNS and NTP for the node. It does not touch
 the AMD node. The mirror step is slow on the first run; later runs reuse the
 results as long as the inputs have not changed.
 
-## 4. Build boot files and check the private network
+## 5. Build boot files and check the private network
 
 Read the node's network identity, render the installer configuration and build
 the boot files. Then check from the node's original OS that it can reach the
@@ -157,7 +130,7 @@ the pinned SSH, and replaces any `discovery/node-macs.json` left in
 its original OS before continuing; [troubleshooting](troubleshooting.md#installation)
 lists the usual causes.
 
-## 5. Install OpenShift
+## 6. Install OpenShift
 
 > [!WARNING]
 > This step **erases the AMD node** and installs OpenShift on it.
@@ -167,8 +140,8 @@ bash ansible/up.sh --mode fresh-install -e "@$COCO_STATE_DIR/rig.yml"
 bash ansible/up.sh --mode verify -e "@$COCO_STATE_DIR/rig.yml"
 ```
 
-`fresh-install` stops at a BIOS checkpoint and asks you to type **SNP-SET** once
-the firmware checks have passed. It then checks the node's hardware identity and
+`fresh-install` stops at a BIOS checkpoint and asks you to type **SNP-SET**: do so
+once `make check-node-snp` from step 3 has passed. It then checks the node's hardware identity and
 private network again, asks the provider to reinstall the node from the helper's
 boot files, and waits for the installation. When it finishes it checks the
 OpenShift version and health, applies the mirror configuration and stops serving
@@ -198,7 +171,7 @@ bash ansible/up.sh --mode resume-install -e "@$COCO_STATE_DIR/rig.yml"
 
 This finishes the existing installation without sending a second reinstall request.
 
-## 6. Install the CoCo Operators
+## 7. Install the CoCo Operators
 
 The cluster's kubeconfig is on the helper at
 `/opt/install/cluster-assets/auth/kubeconfig`, and the API is only reachable on
@@ -231,14 +204,22 @@ oc --context=validation get nodes
 ```
 
 The test rig runs Trustee on the same cluster as the workloads, so both contexts
-point at the same cluster:
+point at the same cluster. Save these settings in `lab.env`, which
+`source scripts/env.sh` loads in every new terminal:
 
 ```bash
+cat > "$COCO_STATE_DIR/lab.env" <<EOF
+export KUBECONFIG="$COCO_STATE_DIR/kubeconfig"
 export WORKER_CONTEXT=validation TRUSTEE_CONTEXT=validation
 export TRUSTEE_LAB=1 INSTALL_TOPOLOGY=sno
+EOF
+source "$COCO_STATE_DIR/lab.env"
 make validate-sno-baseline
 make install-coco-operators
 ```
+
+The tunnel keeps running after its terminal closes. If `oc --context=validation get nodes`
+can't connect later, open it again with the `ssh -f -N -L` line above.
 
 The first run stops at each pending InstallPlan (all Subscriptions use Manual
 approval). Check that the plans list the versions in the

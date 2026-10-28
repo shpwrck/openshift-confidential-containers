@@ -36,7 +36,6 @@ locals {
   private_network = {
     for name, addresses in local.ipv4 : name => try(cidrsubnet(addresses.private.cidr, 0, 0), null)
   }
-  # An unknown tag stays a placeholder, which Ansible refuses to install with.
   vlan_tag = try(local.ipv4.node.private.vlan_id > 0 ? tostring(local.ipv4.node.private.vlan_id) : null, null)
 }
 
@@ -49,23 +48,21 @@ output "helper_public_ipv4" {
 }
 
 output "rig_values" {
-  value = join("\n", [
-    "",
-    "# ---- From the Cherry Servers API (terraform output rig_values) ----",
-    "bastion_ansible_host: \"${local.ipv4.helper.public.address}\"",
-    "bastion_public_ipv4_override: \"${local.ipv4.helper.public.address}\"",
-    "node_server_id: \"${var.servers.node.id}\"",
-    "node_provider_hostname: \"${var.servers.node.hostname}\"",
-    "node_provider_project_id: \"${var.project_id}\"",
-    "node_vlan_ip: \"${local.ipv4.node.private.address}\"",
-    "bastion_vlan_ip: \"${local.ipv4.helper.private.address}\"",
-    "machine_network: \"${local.private_network.node}\"",
-    "vlan_cidr: \"${local.private_network.node}\"",
-    "vlan_prefix: ${split("/", local.private_network.node)[1]}",
-    "# Ansible checks this tag against the node's and the helper's VLAN interfaces.",
-    "vlan_vid_override: \"${coalesce(local.vlan_tag, "REPLACE_WITH_VLAN_TAG")}\"",
-    "",
-  ])
+  description = "The values Cherry assigned, for scripts/order-rig.py to write into the rig file."
+  value = {
+    project_id          = tostring(var.project_id)
+    node_id             = var.servers.node.id
+    node_hostname       = var.servers.node.hostname
+    node_public_ipv4    = local.ipv4.node.public.address
+    node_private_ipv4   = local.ipv4.node.private.address
+    helper_id           = var.servers.helper.id
+    helper_hostname     = var.servers.helper.hostname
+    helper_public_ipv4  = local.ipv4.helper.public.address
+    helper_private_ipv4 = local.ipv4.helper.private.address
+    private_network     = local.private_network.node
+    # null when the API reports no tag; the rig file then takes the tag seen on the node.
+    vlan_tag = local.vlan_tag
+  }
 
   precondition {
     condition = alltrue([

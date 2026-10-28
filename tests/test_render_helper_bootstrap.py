@@ -74,6 +74,19 @@ class RenderHelperBootstrap(unittest.TestCase):
     def test_template_takes_inputs_from_jinja_not_unset_shell_variables(self):
         self.assertNotIn('${mirror_registry', TEMPLATE.read_text())
 
+    def test_without_flags_the_release_manifest_pin_is_used(self):
+        pin = json.loads((ROOT / 'install/release-manifest.json').read_text())['tools']['mirrorRegistry']
+        result = subprocess.run([sys.executable, str(SCRIPT), '--cloud-config'], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bootstrap = scripts_of(result.stdout)['/usr/local/bin/bootstrap-mirror.sh']
+        self.assertIn(f'URL="{pin["url"]}"', bootstrap)
+        self.assertIn(f'SHA="{pin["sha256"]}"', bootstrap)
+        # An archive without its checksum, or the reverse, is refused.
+        half = subprocess.run([sys.executable, str(SCRIPT), '--mirror-registry-url', URL],
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(half.returncode, 2, half.stderr)
+        self.assertEqual(half.stdout, '')
+
     def test_rejects_unpinned_or_inconsistent_inputs(self):
         cases = {
             'latest URL': ['--mirror-registry-url', 'https://example.invalid/latest/mirror-registry.tar.gz'],
