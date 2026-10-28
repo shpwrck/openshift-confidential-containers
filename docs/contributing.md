@@ -30,9 +30,11 @@ Chrome or Chromium).
 
 ## Continuous integration
 
-`.github/workflows/scripts-ci.yml` runs `scripts/lint.sh` on every pull request and
-push to `main`: on Linux with Python 3.12 and 3.14, and on macOS with Python 3.12
-(macOS checks the portable workstation scripts under Bash 3.2). A separate job
+`.github/workflows/offline-validation.yml` runs `scripts/lint.sh` on every pull
+request and push to `main`: on Linux with Python 3.12 and 3.14, and on macOS with
+Python 3.12. The macOS job puts `/bin/bash`, the Bash 3.2 that macOS ships, first
+on `PATH`, so every script and the tests that run them use it, as on a
+workstation. Each job takes about four minutes. A separate job
 renders every Mermaid diagram, and another formats, validates and tests the
 [Cherry Servers Terraform](../infra/cherry/) offline with a mocked provider
 (`terraform -chdir=infra/cherry init -backend=false && terraform -chdir=infra/cherry test`

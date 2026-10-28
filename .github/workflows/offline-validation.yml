@@ -1,3 +1,7 @@
+# Offline checks for every pull request and every push to main. They need no
+# cluster, credentials or AMD hardware; `make lint` runs the same checks
+# locally. Only the capability tests on SEV-SNP hardware show that attestation
+# works (docs/capability-status.md).
 name: offline-validation
 on:
   push:
@@ -11,8 +15,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   validation:
-    # Python 3.12 is the oldest supported controller; 3.14 is the newest that
-    # the pinned ansible-core supports. macOS checks the portable workstation scripts.
+    # scripts/lint.sh: shell, policy, manifest, Ansible and doc-link checks and
+    # the unit tests. Linux runs Python 3.12, the oldest supported controller, and
+    # 3.14, the newest the pinned ansible-core supports. macOS runs every script
+    # under the Bash 3.2 that macOS ships, as a workstation would.
     strategy:
       fail-fast: false
       matrix:
@@ -35,22 +41,27 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: requirements-dev.txt
-      - name: Install Python and shell dependencies
+      - name: Install the development tools
         shell: bash
         run: |
           python -m pip install -r requirements-dev.txt
           if [ "$RUNNER_OS" = macOS ]; then brew install shellcheck; else sudo apt-get update && sudo apt-get install -y shellcheck; fi
           python scripts/install-dev-tools.py
           echo "$HOME/.local/state/openshift-confidential-containers/dev-bin" >> "$GITHUB_PATH"
-      - name: Check workstation Bash syntax
+      - name: Use the Bash that ships with macOS
+        # /bin/bash is 3.2. First on PATH, it runs the scripts and the tests that
+        # call them, whatever newer Bash the runner image also has.
+        if: runner.os == 'macOS'
         shell: bash
         run: |
-          set -euo pipefail
-          while IFS= read -r file; do /bin/bash -n "$file"; done < <(find scripts tests -type f -name '*.sh')
-          /bin/bash -n ansible/up.sh
-      - name: Run required offline checks
+          mkdir -p "$RUNNER_TEMP/macos-bash"
+          ln -sf /bin/bash "$RUNNER_TEMP/macos-bash/bash"
+          echo "$RUNNER_TEMP/macos-bash" >> "$GITHUB_PATH"
+      - name: Run the offline checks
         shell: bash
-        run: bash scripts/lint.sh
+        run: |
+          bash --version | head -n 1
+          bash scripts/lint.sh
   terraform:
     # Offline: formats, validates and tests infra/cherry with a mocked provider.
     runs-on: ubuntu-latest

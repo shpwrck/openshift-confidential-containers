@@ -82,6 +82,7 @@ Where a script runs: **controller** is your Linux workstation or jump host,
 | Script | Make target | What it does |
 |---|---|---|
 | `lint.sh` | `lint`, `test` | Every offline check below plus the unit tests in [`tests/`](../tests/README.md), Kustomize renders and Ansible lint |
+| `run-tests.py` | (in `lint`) | Runs the unit test modules side by side, as many at once as there are CPUs, and prints the full output of any that failed |
 | `check-doc-links.py` | (in `lint`) | Local file and heading links in all Markdown |
 | `check-mermaid.py` | (CI only) | Renders every Mermaid diagram; needs Node.js 22+ |
 | `check-coco-workload-labels.sh` | (in `lint`) | Confidential workloads carry the label the Gatekeeper memory guard uses |
