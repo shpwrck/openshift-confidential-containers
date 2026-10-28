@@ -119,6 +119,14 @@ class TrusteeCliTests(unittest.TestCase):
         credential = json.loads(base64.b64decode(state["credential"]["test"]))
         self.assertIn("mirror.rig.local:8443", credential["auths"])
 
+    def test_default_vcek_bundle_is_where_collect_vcek_writes_it(self):
+        # apply-trustee.sh configure calls the seeder without VCEK_BUNDLE.
+        del self.env["VCEK_BUNDLE"]
+        self.env["COCO_STATE_DIR"] = str(self.data)
+        result = self.run_seed()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len([key for key in json.loads((self.data / "state.json").read_text()) if key.startswith("vcek-")]), 1)
+
     def test_measured_renderer_preserves_cpu_checks_and_emits_no_resource_policy(self):
         base, initdata = self.data / "cpu.rego", self.data / "initdata.toml"
         base.write_text(CPU)

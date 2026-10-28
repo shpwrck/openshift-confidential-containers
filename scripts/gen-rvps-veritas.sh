@@ -16,7 +16,7 @@
 # Env:
 #   TEE=snp
 #   OCP_VERSION=<BOM version>                         # repeat with spaces for multiple versions
-#   PULL_SECRET=$HOME/.local/state/coco/pull-secret.json
+#   PULL_SECRET=$COCO_STATE_DIR/credentials/pull-secret.json
 #   INITDATA=$COCO_STATE_DIR/initdata.toml
 #   OUT=$COCO_STATE_DIR/rvps-snp.yaml
 #   DEBUG_IMAGE=<cached-image>                     # NODE mode only, avoids public support-tools
