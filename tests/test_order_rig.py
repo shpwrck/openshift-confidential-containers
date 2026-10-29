@@ -233,6 +233,7 @@ class RigFile(unittest.TestCase):
         self.assertEqual((rig['raw_node_ssh_user'], rig['bastion_ssh_user']), ('root', 'root'))
         self.assertIn('serial 24184896895E', text)
         self.assertIn('Other disk: nvme0n1', text)
+        self.assertIn('can swap after a reboot', text)
 
     def test_mismatched_servers_are_refused(self):
         cases = {
@@ -461,7 +462,7 @@ class WholeRun(unittest.TestCase):
         os.environ['FIXTURE_FIRST_OBSERVATION'] = json.dumps(one_member)
         code, out, err = self.run_order_rig(*self.answers())
         self.assertEqual(code, 1)
-        self.assertIn('enp5s0f1np1 did not join it', out)
+        self.assertIn('enp5s0f1np1 (7c:c2:55:ab:73:7b) did not join it', out)
         self.assertIn('--reboot-node', err)
         self.assertFalse((self.state / 'rig.yml').exists())
         code, out, err = self.run_order_rig(*self.answers('--reboot-node'))

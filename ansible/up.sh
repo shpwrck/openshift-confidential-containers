@@ -108,13 +108,14 @@ require_resolved_release
 if [[ "$MODE" == fresh-install ]]; then
   # The node checks and the one question come first, so the long helper
   # preparation and the install then run without anyone at the terminal.
-  echo "Check the node and confirm its erase before anything is changed"
+  echo "== Check the node and confirm its erase. Nothing is changed yet. =="
   ansible-playbook playbooks/site.yml --tags bios ${EXTRA[@]+"${EXTRA[@]}"}
+  echo "Checks done and the erase confirmed; nothing has changed yet. The rest runs on its own."
 fi
-echo "Prepare the bastion and verify the requested mirror inputs"
+echo "== Prepare the helper: tools, mirror, DNS and NTP =="
 ansible-playbook playbooks/site.yml --tags bastion-prep ${EXTRA[@]+"${EXTRA[@]}"}
 [[ "$MODE" == fresh-install ]] || exit 0
-echo "Fresh installation: the node is reinstalled after its checks pass and you confirm"
+echo "== Install the node: boot files, network check, erase and install (45 to 70 minutes) =="
 ansible-playbook playbooks/site.yml --tags install --skip-tags bios ${EXTRA[@]+"${EXTRA[@]}"} -e install_mode=fresh
 # Close the secret-bearing endpoint as part of successful installation.
 ansible-playbook playbooks/site.yml --tags pxe-stop ${EXTRA[@]+"${EXTRA[@]}"}

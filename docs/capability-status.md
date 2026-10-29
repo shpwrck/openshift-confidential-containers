@@ -32,8 +32,9 @@ make proof-plan
 make test-rung WHICH=all
 ```
 
-`make proof-plan` lists the tests without touching the cluster. The run takes
-about 25 minutes and stops at the first test that does not pass.
+`make proof-plan` lists the tests and marks the ones `WHICH=all` runs, without
+touching the cluster. The run takes about 25 minutes and stops at the first test
+that does not pass.
 
 Each test pod prints PodSecurity `restricted` warnings and a warning about the
 `node-role.kubernetes.io/master` selector when it is created. Both are expected:

@@ -102,10 +102,10 @@ shutil.copyfile(source, args[args.index('-o')+1])
         installed = Path(self.env['BIN_DIR'])
         installed.mkdir()
         write_executable(installed / 'oc', '#!/bin/sh\necho OLD\n')
-        self.assertIn('COCO_TOOLS_CHANGED=1', self.install_tools())
-        self.assertIn('COCO_TOOLS_CHANGED=0', self.install_tools())
+        self.assertIn('Installed and verified', self.install_tools())
+        self.assertIn('tools verified in', self.install_tools())
         (installed / 'oc').write_text('changed after installation')
-        self.assertIn('COCO_TOOLS_CHANGED=1', self.install_tools())
+        self.assertIn('Installed and verified', self.install_tools())
         self.assertIn('Client Version: ' + VERSION, (installed / 'oc').read_text())
 
     def test_tools_bad_checksum_does_not_replace_installed_set(self):
@@ -124,8 +124,8 @@ shutil.copyfile(source, args[args.index('-o')+1])
         (remote / 'oc-mirror.rhel9.tar.gz').unlink()
         self.env['INSTALL_OC_MIRROR'] = '0'
         installed = Path(self.env['BIN_DIR'])
-        self.assertIn('COCO_TOOLS_CHANGED=1', self.install_tools())
-        self.assertIn('COCO_TOOLS_CHANGED=0', self.install_tools())
+        self.assertIn('Installed and verified', self.install_tools())
+        self.assertIn('tools verified in', self.install_tools())
         self.assertEqual(sorted(p.name for p in installed.iterdir() if not p.name.startswith('.')),
                          ['kubectl', 'oc', 'openshift-install'])
         self.assertNotIn('oc-mirror', self.log.read_text())
@@ -140,7 +140,7 @@ shutil.copyfile(source, args[args.index('-o')+1])
         self.assertIn('INSTALL_OC_MIRROR=0', out)
         self.assertFalse((Path(self.env['BIN_DIR']) / 'oc').exists())
         self.env['INSTALL_OC_MIRROR'] = '0'
-        self.assertIn('COCO_TOOLS_CHANGED=1', self.install_tools())
+        self.assertIn('Installed and verified', self.install_tools())
 
     def test_tools_missing_release_never_falls_back_to_latest(self):
         self.tool_fixture()

@@ -136,7 +136,7 @@ you can leave it running. It then:
    anything; [troubleshooting](troubleshooting.md#installation) lists the usual
    causes.
 4. Asks Cherry to reinstall the node from the helper's boot files and waits for
-   the installation, about 70 minutes on the tested rig. To follow it, run
+   the installation, 45 to 70 minutes on the tested rigs. To follow it, run
    `sudo tail -f /opt/install/cluster-assets/.openshift_install.log` on the helper.
 5. Checks the OpenShift version and health, applies the mirror configuration and
    stops serving the boot files.
@@ -198,7 +198,7 @@ table and asks you to type `yes`. Without a terminal, approve them ahead with
 manifest are refused either way. Then it waits for Node Feature Discovery to
 label the node, for the Kata runtime to roll out (the node reboots, and the API
 stops answering for a few minutes) and for the `kata-cc` RuntimeClass to use the
-`kata-snp` handler.
+`kata-snp` handler. It takes about 20 minutes, most of it the rollout and the reboot.
 
 ## Next steps
 

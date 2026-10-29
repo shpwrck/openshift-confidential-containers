@@ -83,7 +83,7 @@ def main():
             in_use = probe.connect_ex(("127.0.0.1", port)) == 0
         if in_use:
             raise Stop(f"something else listens on 127.0.0.1:{port}, perhaps the tunnel of an earlier rig "
-                       f"(pgrep -af 'ssh.*-L 127.0.0.1:{port}' finds it). Stop it, or set API_PORT to a free "
+                       f"(pgrep -af '^ssh .*-L 127.0.0.1:{port}' finds it). Stop it, or set API_PORT to a free "
                        "port, and run make connect again")
         tunnel = subprocess.run([*ssh, "-f", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
                                  "-L", f"127.0.0.1:{port}:{rig['node_vlan_ip']}:6443", helper],
@@ -99,9 +99,10 @@ def main():
         print(f"Opened the tunnel 127.0.0.1:{port} -> {rig['node_vlan_ip']}:6443 through {helper}. "
               "It keeps running after this terminal closes.")
     write_private(state / "lab.env", lab_env(kubeconfig))
-    print(f"Wrote {state / 'lab.env'}.\n")
+    # Flushed so that, piped into a log, these lines still come before the output of oc and the baseline.
+    print(f"Wrote {state / 'lab.env'}.\n", flush=True)
     subprocess.run(["oc", f"--context={CONTEXT}", "get", "nodes"], env=env, check=False)
-    print("\nChecking the cluster; a new install takes a few minutes to settle.")
+    print("\nChecking the cluster; a new install takes a few minutes to settle.", flush=True)
     baseline = subprocess.run(["bash", str(REPO / "scripts/validate-sno-baseline.sh")],
                               env=dict(env, BASELINE_WAIT=os.environ.get("BASELINE_WAIT", "900")))
     if baseline.returncode != 0:

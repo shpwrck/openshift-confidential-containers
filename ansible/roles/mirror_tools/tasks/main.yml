@@ -43,7 +43,8 @@
         BIN_DIR: "{{ local_bin }}"
       become: true
       register: tools_install
-      changed_when: "'COCO_TOOLS_CHANGED=1' in tools_install.stdout"
+      # install-tools.sh prints "tools verified in" when it reuses the set.
+      changed_when: "'Installed and verified' in tools_install.stdout"
   always:
     - name: Remove temporary tool staging directory
       ansible.builtin.file:

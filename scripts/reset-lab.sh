@@ -53,7 +53,7 @@ for ns in "${existing[@]}"; do
     worker_oc label namespace "$ns" "$DISPOSABLE_LABEL=true" >/dev/null
   fi
 done
-ALLOW_DISPOSABLE_UNINSTALL=1 bash "$REPO_ROOT/scripts/uninstall-coco.sh"
+ALLOW_DISPOSABLE_UNINSTALL=1 SHOW_NEXT=0 bash "$REPO_ROOT/scripts/uninstall-coco.sh"
 echo
 echo "== Waiting until everything is gone =="
 bash "$REPO_ROOT/scripts/uninstall-coco.sh" validate

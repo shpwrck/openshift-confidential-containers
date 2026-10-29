@@ -549,8 +549,9 @@ def check_node(rig, values):
     observation = observe_node(rig, values)
     network = network_facts(observation, values["node_private_ipv4"])
     if len(network["ports"]) < 2:
+        loose = ", ".join(f"{name} ({network['loose_macs'][name]})" for name in network["loose_nics"])
         print(f"{network['bond']} has {len(network['ports'])} of its 2 members"
-              + (f"; {', '.join(network['loose_nics'])} did not join it." if network["loose_nics"] else ".")
+              + (f"; {loose} did not join it." if loose else ".")
               + " New Cherry nodes sometimes boot like this, and one reboot fixes it.")
         if not confirm("Reboot the node's original OS now?", given=flag_answer(rig.args.reboot_node), flag="--reboot-node"):
             raise Stop("the install needs both bond members; see docs/troubleshooting.md#installation")
@@ -566,7 +567,7 @@ def check_node(rig, values):
         raise Stop(f"the node's VLAN tag {network['vlan_tag']} differs from the {values['vlan_tag']} Cherry reports")
     disks = disk_facts(observation)
     print(f"Private VLAN {network['vlan_tag']} on {network['vlan_if']}; bond {network['bond']} with "
-          + " and ".join(p["name"] for p in network["ports"]) + ".")
+          + " and ".join(f"{p['name']} ({p['mac']})" for p in network["ports"]) + ".")
     for disk in disks:
         print(f"Disk {disk['name']}: {disk['size_gb']} GB, {disk['model']}, serial {disk['serial']}"
               + (", holds /boot/efi" if disk["holds_efi"] else ""))

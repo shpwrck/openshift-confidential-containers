@@ -407,7 +407,15 @@ def main():
     args = parser.parse_args()
     selected = DEFAULT_CASES if args.case == "all" else [args.case]
     if args.list or args.dry_run:
-        print(json.dumps({"cases": {name: CASES[name] for name in (CASES if args.list else selected)}, "controls": ["positive", "attributable negative", "verified restore", "recovery"], "reusePastProofs": False}, indent=2))
+        names = list(CASES) if args.list else selected
+        print("WHICH=all runs the tests marked *; WHICH=<test> runs any one." if args.list
+              else f"WHICH={args.case} runs:")
+        width = max(map(len, names))
+        for name in names:
+            marker = ("* " if name in DEFAULT_CASES else "  ") if args.list else ""
+            print(f"  {marker}{name:<{width}}  {CASES[name]}")
+        print("Each runs fresh, never reusing a past result: positive → negative → restore → recovery "
+              f"(isolation: {PLANS['isolation']}).")
         return 0
     state = state_directory(REPO) / "proofs" / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8])
     state.mkdir(parents=True, mode=0o700)

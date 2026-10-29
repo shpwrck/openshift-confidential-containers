@@ -214,18 +214,22 @@ It runs these steps in order and names each one as it starts:
 | `images` | Builds and signs the [signed test images](capability-status.md#signed-images) on the helper, which reaches the mirror by name |
 | `configure` | Downloads the restrictive resource policy pinned in the release manifest (the Operator's Permissive policy enforces no appraisal), then publishes it with the references and the synthetic lab resources: registry credential and configuration, image policies, signing key and a sample secret |
 
-Only `references` asks anything. `snp_launch_measurement` is the value Veritas
-calculated for this release and initdata; the firmware levels are the ones this
-node reported. Type `yes` only if they are the levels you approve for this node.
+The whole run takes about 3 minutes on the test rig, and only `references` asks
+anything. `snp_launch_measurement` is the value Veritas calculated for this
+release and initdata; the firmware levels are the ones this node reported. Type `yes` only if they are the levels you approve for this node.
 Without a terminal, approve ahead with `APPROVE_REFERENCES=1 make trustee-lab`.
 
 The `images` step installs Skopeo from the helper's package repositories and the
 Cosign release pinned in the [release manifest](../install/release-manifest.json),
 after checking its SHA-256. It copies the signing key pair and the image digests
 back to `$COCO_STATE_DIR/rung-image-artifacts` and then removes its working
-directory on the helper, key included. The first build creates the key pair with
-a generated password, saved next to it as `cosign-password`. A key pair from an
-earlier manual build needs its password: run with `COSIGN_PASSWORD` set.
+directory on the helper, key included. Two warnings in its output are expected:
+Cosign says the registry login is stored unencrypted (in that working directory),
+and that skipping transparency-log verification is insecure. The lab is offline and
+has no transparency log; the signature is still checked against the key. The
+first build creates the key pair with a generated password, saved next to it as
+`cosign-password`. A key pair from an earlier manual build needs its password:
+run with `COSIGN_PASSWORD` set.
 
 At the end it writes `$COCO_STATE_DIR/trustee-lab.env` with the capability tests'
 settings (node, chip ID, VCEK Secret, mirror CA and image digests), which
