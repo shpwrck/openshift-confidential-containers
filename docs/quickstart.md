@@ -72,9 +72,11 @@ own, mostly waiting for Cherry to deliver the servers:
 - It waits for the mirror registry, then writes `$COCO_STATE_DIR/rig.yml`, the
   file every later step reads.
 
-If it stops, fix what it reports and run it again: it skips the stages that are
-done. [Cherry Servers setup](cherry-servers.md) explains what it chooses and how
-to order something else.
+Delivery usually takes 15 to 30 minutes and sometimes over an hour. If it stops,
+fix what it reports and run it again: it skips the stages that are done, and
+takes over a server that Cherry was still delivering instead of ordering
+another. [Cherry Servers setup](cherry-servers.md) explains what it chooses and
+how to order something else.
 
 > [!IMPORTANT]
 > Step 4 erases the disk that `node_root_device` in the rig file names. It is the

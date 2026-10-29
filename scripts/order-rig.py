@@ -37,6 +37,9 @@ PULL_SECRET_PAGE = "https://console.redhat.com/openshift/install/pull-secret"
 MIRROR_ROOT = "/opt/mirror"
 STAGES = 7
 SWITCH_ERRORS = ("not on the same private network", "report different private VLANs")
+# The hostname defaults in infra/cherry/variables.tf, and the create timeout in main.tf.
+HOSTNAMES = {"node": "sno-coco-node", "helper": "sno-coco-helper"}
+DELIVERY_HOURS = 3
 # Run on the node's original OS (Ubuntu ships python3); prints what the rig file needs.
 OBSERVE_NODE = r'''
 import json, os, socket, subprocess
@@ -355,6 +358,64 @@ def choose(rig, args):
 
 
 # ---- 2. Order ----------------------------------------------------------------
+def wait_for_delivery(rig, role, server):
+    if server.get("state") == "active":
+        return server
+    print(f"Cherry is still delivering the {role} (server {server['id']}, {server.get('state') or server.get('status')}). "
+          f"Waiting for it instead of ordering another, for up to {DELIVERY_HOURS} hours.", flush=True)
+    started, reported = time.monotonic(), 0
+    while True:
+        if server.get("status") == "failed deployment":
+            raise Stop(f"Cherry could not deliver the {role} (server {server['id']}). Delete it in the Cherry portal, "
+                       "then run make order-rig again to order another")
+        minutes = int(time.monotonic() - started) // 60
+        if minutes >= DELIVERY_HOURS * 60:
+            raise Stop(f"Cherry has not delivered the {role} (server {server['id']}) in {DELIVERY_HOURS} hours. "
+                       "Ask Cherry support, or delete it in the Cherry portal and run make order-rig again")
+        if minutes >= reported + 5:
+            print(f"Still waiting for the {role} ({minutes} min)...", flush=True)
+            reported = minutes
+        time.sleep(30)
+        server = rig.cherry.get(f"/servers/{server['id']}")
+        if server.get("state") == "active":
+            print(f"Cherry delivered the {role}.")
+            return server
+
+
+def adopt_servers(rig):
+    """Take over a server Cherry created but Terraform never recorded.
+
+    That happens when terraform apply stops waiting for a slow delivery or is
+    interrupted. Planning again would order a second server and leave the first
+    one billing, so wait for it and import it into the state instead.
+    """
+    _, listed = rig.terraform("state", "list", check=False)
+    missing = [role for role in ("node", "helper") if f"cherryservers_server.{role}" not in listed.split()]
+    if not missing:
+        return
+    project = rig.order["project_id"]
+    servers = rig.cherry.get(f"/projects/{project}/servers")
+    for role in missing:
+        found = [server["id"] for server in servers
+                 if server.get("hostname") == HOSTNAMES[role] and server.get("state") != "terminating"]
+        if not found:
+            continue
+        if len(found) > 1:
+            raise Stop(f"Terraform recorded none of the {len(found)} {role} servers in project {project} "
+                       f"({', '.join(map(str, found))}); delete all but one in the Cherry portal, "
+                       "then run make order-rig again")
+        server = rig.cherry.get(f"/servers/{found[0]}")
+        plan, region = (server.get("plan") or {}).get("slug"), (server.get("region") or {}).get("slug")
+        if (plan, region) != (rig.order[role]["plan"], rig.order["region"]):
+            raise Stop(f"server {found[0]} in project {project} is named {HOSTNAMES[role]} but is a {plan} in {region}, "
+                       f"not the {rig.order[role]['plan']} in {rig.order['region']} ordered here; delete it in the "
+                       "Cherry portal or order into an empty project")
+        server = wait_for_delivery(rig, role, server)
+        print(f"Taking over the {role} (server {server['id']}): Terraform stopped waiting before Cherry delivered it.")
+        rig.terraform("import", "-input=false", "-no-color", f"-var-file={rig.tfvars}",
+                      f"cherryservers_server.{role}", str(server["id"]))
+
+
 def planned_changes(rig):
     _, output = rig.terraform("show", "-json", str(rig.tfplan))
     return [(c["address"], c["change"]["actions"]) for c in json.loads(output).get("resource_changes", [])
@@ -371,6 +432,7 @@ def order_servers(rig):
         print(f"Moved the earlier Terraform variables to {old}.")
     write_private(rig.tfvars, tfvars)
     rig.terraform("init", "-input=false", "-no-color", f"-backend-config=path={rig.state / 'cherry.tfstate'}")
+    adopt_servers(rig)
     replace = []
     for _ in range(2):
         code, output = rig.terraform("plan", "-input=false", "-no-color", "-detailed-exitcode",
@@ -405,7 +467,8 @@ def order_servers(rig):
             verb = "replace" if "delete" in actions else "update" if "update" in actions else "create"
             print(f"  {verb} {what}")
         print(f"\nTogether about {rig.order['price']:.2f} EUR/hour, billed until you retire the rig "
-              "(docs/maintenance.md#retire-the-infrastructure). Delivery takes 15 to 30 minutes.\n")
+              "(docs/maintenance.md#retire-the-infrastructure).\nDelivery usually takes 15 to 30 minutes and "
+              f"sometimes over an hour; Terraform waits up to {DELIVERY_HOURS} hours.\n")
         if ask("Type yes to order", given="yes" if rig.args.confirm_order else None, flag="--confirm-order") != "yes":
             raise Stop("nothing was ordered")
         code, output = rig.terraform("apply", "-input=false", "-no-color", str(rig.tfplan), stream=True, check=False)
@@ -413,6 +476,9 @@ def order_servers(rig):
         if code != 0:
             if any(text in output for text in SWITCH_ERRORS):
                 raise Stop("the servers landed on different switches; run make order-rig again to replace the helper")
+            if "context deadline exceeded" in output:
+                raise Stop(f"Cherry has not delivered a server in {DELIVERY_HOURS} hours. Ask Cherry support about it, "
+                           "then run make order-rig again: it takes over that server instead of ordering another")
             raise Stop("terraform apply failed; fix the cause above and run make order-rig again")
     values = rig.rig_values()
     if not values:

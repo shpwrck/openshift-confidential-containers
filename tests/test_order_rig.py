@@ -267,7 +267,12 @@ command = args[0]
 if command == 'init':
     sys.exit(0)
 if command == 'state':
-    print('cherryservers_server.helper\ncherryservers_server.node' if ordered else '')
+    partial = fixture / 'partial'
+    print('cherryservers_server.helper\ncherryservers_server.node' if ordered else
+          partial.read_text() if partial.exists() else '')
+    sys.exit(0)
+if command == 'import':
+    (fixture / 'ordered').write_text('')
     sys.exit(0)
 replacing = '-replace=cherryservers_server.helper' in args
 if command == 'plan':
@@ -287,6 +292,11 @@ if command == 'show':
     sys.exit(0)
 if command == 'apply':
     print('cherryservers_server.node: Creation complete after 14m2s [id=1047102]')
+    if os.environ.get('FIXTURE_APPLY_TIMEOUT'):
+        # The node is recorded; the helper Cherry is still delivering is not.
+        print('Error: unable to deploy CherryServers server\n\ncontext deadline exceeded')
+        (fixture / 'partial').write_text('cherryservers_ssh_key.rig[0]\ncherryservers_server.node\n')
+        sys.exit(1)
     (fixture / 'ordered').write_text('')
     sys.exit(0)
 if command == 'output':
@@ -366,14 +376,17 @@ class WholeRun(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.api_calls = []
+        self.project_servers, self.server_polls = [], []
 
     def api(self, path, auth=True):
         self.api_calls.append(path)
+        if path.startswith('/servers/'):
+            return self.server_polls.pop(0)
         responses = {
             '/plans': PLANS,
             '/teams': [{'id': 11, 'name': 'Red Hat NA SSA'}],
             '/teams/11/projects': [{'id': 295530, 'name': 'coco'}, {'id': 300001, 'name': 'other'}],
-            '/projects/295530/servers': [],
+            '/projects/295530/servers': self.project_servers,
             '/projects/300001/servers': [{'id': 1}],
             '/ssh-keys': [{'id': 20026, 'key': PUBLIC_KEY}],
         }
@@ -469,6 +482,65 @@ class WholeRun(unittest.TestCase):
         self.assertEqual(code, 0, out + err)
         self.assertIn('replace the helper, 2x-intel-gold-6330', out)
         self.assertIn('-replace=cherryservers_server.helper', (self.fixture / 'terraform.log').read_text())
+
+    def orphaned_helper(self, **fields):
+        order = json.loads((self.state / 'rig-order.json').read_text())
+        return dict({'id': 1047390, 'hostname': 'sno-coco-helper', 'plan': {'slug': order['helper']['plan']},
+                     'region': {'slug': order['region']}, 'state': 'provisioning', 'status': 'unknown'}, **fields)
+
+    def test_a_server_terraform_stopped_waiting_for_is_taken_over_not_ordered_again(self):
+        os.environ['FIXTURE_APPLY_TIMEOUT'] = '1'
+        code, out, err = self.run_order_rig(*self.answers())
+        self.assertEqual(code, 1)
+        self.assertIn('takes over that server instead of ordering another', err)
+        del os.environ['FIXTURE_APPLY_TIMEOUT']
+        # Cherry lists the helper Terraform never recorded, and delivers it two polls later.
+        self.project_servers.append({'id': 1047390, 'hostname': 'sno-coco-helper', 'state': 'provisioning'})
+        self.server_polls.extend([self.orphaned_helper(), self.orphaned_helper(),
+                                  self.orphaned_helper(state='active', status='deployed')])
+        code, out, err = self.run_order_rig()
+        self.assertEqual(code, 0, out + err)
+        self.assertIn('Cherry is still delivering the helper (server 1047390, provisioning)', out)
+        self.assertIn('Taking over the helper (server 1047390)', out)
+        self.assertIn('Both servers are already ordered.', out)
+        log = (self.fixture / 'terraform.log').read_text()
+        self.assertIn(f'import -input=false -no-color -var-file={self.state / "cherry.tfvars"} '
+                      'cherryservers_server.helper 1047390', log)
+        self.assertEqual(log.count('apply '), 1)
+        self.assertEqual(self.server_polls, [])
+        self.assertTrue((self.state / 'rig.yml').is_file())
+
+    def test_a_server_cherry_could_not_deliver_or_another_plan_is_not_taken_over_or_ordered_again(self):
+        os.environ['FIXTURE_APPLY_TIMEOUT'] = '1'
+        self.assertEqual(self.run_order_rig(*self.answers())[0], 1)
+        del os.environ['FIXTURE_APPLY_TIMEOUT']
+        self.project_servers.append({'id': 1047390, 'hostname': 'sno-coco-helper', 'state': 'provisioning'})
+        self.server_polls.append(self.orphaned_helper(status='failed deployment'))
+        code, out, err = self.run_order_rig()
+        self.assertEqual(code, 1)
+        self.assertIn('Cherry could not deliver the helper (server 1047390). Delete it in the Cherry portal', err)
+        log = (self.fixture / 'terraform.log').read_text()
+        self.assertNotIn('import ', log)
+        self.assertEqual(log.count('apply '), 1)
+        # Two unrecorded helpers are not guessed between, and another plan is not taken for the ordered one.
+        self.project_servers.append({'id': 1047391, 'hostname': 'sno-coco-helper', 'state': 'active'})
+        code, out, err = self.run_order_rig()
+        self.assertEqual(code, 1)
+        self.assertIn('(1047390, 1047391); delete all but one', err)
+        del self.project_servers[0]
+        self.server_polls.append(self.orphaned_helper(id=1047391, plan={'slug': 'e5-1620v4'}))
+        code, out, err = self.run_order_rig()
+        self.assertEqual(code, 1)
+        self.assertIn('server 1047391 in project 295530 is named sno-coco-helper but is a e5-1620v4', err)
+        self.assertEqual(self.server_polls, [])
+        self.assertEqual((self.fixture / 'terraform.log').read_text().count('apply '), 1)
+
+    def test_the_hostnames_it_looks_for_are_the_terraform_defaults(self):
+        variables = (ROOT / 'infra/cherry/variables.tf').read_text()
+        for role, hostname in order_rig.HOSTNAMES.items():
+            with self.subTest(role=role):
+                self.assertRegex(variables, rf'variable "{role}_hostname" {{[^}}]*default\s*=\s*"{hostname}"')
+        self.assertIn(f'create = "{order_rig.DELIVERY_HOURS}h"', (ROOT / 'infra/cherry/main.tf').read_text())
 
     def test_the_snp_check_runs_on_the_node_and_keeps_its_output(self):
         code, out, err = self.run_order_rig('check-snp')

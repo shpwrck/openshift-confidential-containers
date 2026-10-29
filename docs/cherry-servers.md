@@ -24,6 +24,13 @@ can be listed in a region with none available.
 `make cherry-plans` shows the offer, with hourly prices in euros, without ordering
 anything.
 
+Terraform waits up to three hours for Cherry to deliver each server. If it stops
+waiting first, or you interrupt `make order-rig`, a server Cherry is still
+delivering is missing from the Terraform state. Run `make order-rig` again: it
+finds that server by its hostname, plan and region, waits for it and imports it
+into the state, so nothing is ordered twice. It does not take over a server whose
+delivery failed; delete that one in the portal first.
+
 Cherry VLANs do not span switches. If the two servers land on different switches,
 `make order-rig` stops and, when you run it again, offers to replace the helper,
 or you can ask Cherry support to move it. Terraform never reinstalls the node

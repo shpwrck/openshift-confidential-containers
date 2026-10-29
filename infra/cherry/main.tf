@@ -12,6 +12,11 @@ locals {
   ssh_key_ids = length(var.ssh_key_ids) > 0 ? var.ssh_key_ids : toset([for key in cherryservers_ssh_key.rig : key.id])
 }
 
+# Cherry usually delivers a server in 15 to 30 minutes, but one helper took more
+# than an hour. Terraform waits up to three hours; a server it stopped waiting
+# for is not in the state, and make order-rig takes it over on its next run.
+# The provider does not read the billing cycle or these timeouts back, so a
+# server taken over with terraform import ignores both instead of being replaced.
 resource "cherryservers_server" "node" {
   project_id  = var.project_id
   region      = var.region
@@ -21,12 +26,13 @@ resource "cherryservers_server" "node" {
   ssh_key_ids = local.ssh_key_ids
   cycle       = var.billing_cycle
   tags        = var.tags
+  timeouts    = { create = "3h" }
 
   lifecycle {
     # Ansible rebuilds this server into OpenShift through the Cherry API, so
     # its image and boot settings drift on purpose. Never let a later apply
     # reinstall it; replace or destroy it explicitly instead.
-    ignore_changes = [image, ipxe, persist_ipxe, user_data, os_partition_size, ssh_key_ids]
+    ignore_changes = [image, ipxe, persist_ipxe, user_data, os_partition_size, ssh_key_ids, cycle, timeouts]
   }
 }
 
@@ -39,7 +45,12 @@ resource "cherryservers_server" "helper" {
   ssh_key_ids = local.ssh_key_ids
   cycle       = var.billing_cycle
   tags        = var.tags
+  timeouts    = { create = "3h" }
   # No user data: Cherry Servers installs neither the order's SSH key nor the
   # private VLAN on a server ordered with it. The mirror bootstrap runs over
   # SSH once the helper is up (docs/cherry-servers.md).
+
+  lifecycle {
+    ignore_changes = [cycle, timeouts]
+  }
 }
