@@ -1,51 +1,54 @@
-# Resolve a release set
+# Move to new product versions
 
-The [manifest](../install/release-manifest.json) is the source of selected versions
-and immutable identities. The checked-in set was resolved with authenticated
-registry access on **October 5, 2026**; its record of the catalog, five bundles,
-related and helper images and the dry-run outcome is kept in Git history
-(see [raw records](validation.md#raw-records)). The later
-[hardware results](validation.md) are separate evidence.
+The [release manifest](../install/release-manifest.json) pins every version and
+image digest the automation installs. It was resolved with authenticated registry
+access on October 5, 2026, and the [hardware runs](validation.md) tested exactly
+that set.
 
-As of October 20, 2026, OSC 1.13.1 and Trustee 1.2.1 are still the newest
-releases. OpenShift 4.20 has newer z-streams (4.20.42 at that date), but moving
-to one means repeating this process and the hardware tests, so the validated
-4.20.39 stays selected until someone does both.
+As of October 20, 2026, OSC 1.13.1 and Trustee 1.2.1 were the newest releases.
+OpenShift 4.20 had newer z-streams (4.20.42), but 4.20.39 stays selected until
+someone repeats this process and a full hardware run.
 
-Use this process when changing versions. Resolution reads registries and writes
-protected external evidence; it does not approve an upgrade or validate hardware.
+```mermaid
+flowchart LR
+  Pick[Pick exact versions from the live support matrix] --> Resolve[Resolve every image to a digest]
+  Resolve --> Files[Update the manifest, image set and Subscriptions]
+  Files --> Check[make preflight and an oc-mirror dry run]
+  Check --> Run[Full quickstart run on a new rig]
+  Run --> Record[Record the run in validation.md]
+```
 
-## Tools and evidence
+Resolving reads registries and writes evidence outside the checkout. It does not
+approve an upgrade or validate hardware; only the full run does.
 
-Use a connected Linux controller with Python/PyYAML, `jq`, the selected `oc` and
-oc-mirror v2, Skopeo and opm. Obtain Skopeo through its
-[distribution package instructions](https://github.com/containers/skopeo/blob/main/install.md)
-and opm through [Red Hat's CLI guide](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/cli_tools/opm-cli).
-Verify downloaded binaries against published checksums.
+## Tools
 
-Keep the authentication file, candidate inputs and captured outputs outside the
-checkout. Set `AUTH_FILE` to the external pull-secret path and `OUT` to a new
-protected evidence directory. Record source commit, input hashes, date and tool versions.
-Never print or hash the credential file into shared evidence.
+A connected Linux controller with Python and PyYAML, `jq`, the pinned `oc` and
+oc-mirror v2, [Skopeo](https://github.com/containers/skopeo/blob/main/install.md)
+and [opm](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/cli_tools/opm-cli).
+Verify downloaded binaries against their published checksums.
+
+Set `AUTH_FILE` to your pull secret and `OUT` to a new evidence directory, both
+outside the checkout. Never print or hash the credential file into shared evidence.
 
 ## Select and verify
 
-1. Check the live target OSC matrix, Operator lifecycle/entitlements and OCP update
-   graph. Choose exact versions deliberately; a channel head is not an upgrade proof.
-2. Fetch the catalog's **raw** manifest with Skopeo, compute its digest, and fetch
-   again by that digest. The bytes/digest must agree. Preserve the top-level index
-   pin; select and independently check the Linux/AMD64 child for rendering.
-3. Render only the pinned catalog with opm and validate its file-based catalog.
-   Confirm exact package, included channel, CSV and `olm.package` version for each selection.
-4. Independently render each pinned bundle. Compare its actual CSV, package/version,
-   dependency properties and related images with the catalog. Decode bundle objects
-   before comparing: catalog and bundle representation properties differ.
-5. Resolve every advertised related image and each helper/diagnostic image by the
-   same raw-manifest/digest-reread method. Check architecture for the deployed images.
-6. Review package/GVK/constraint dependencies and deprecations. Add required packages
-   explicitly: oc-mirror v2 does not infer these dependencies.
+1. Check the live OSC compatibility matrix, Operator lifecycle and entitlements,
+   and the OpenShift update graph. Choose exact versions; a channel head is not
+   an upgrade proof.
+2. Fetch the catalog's **raw** manifest with Skopeo, compute its digest and fetch
+   again by that digest; the bytes must agree. Keep the top-level index pin, and
+   check the Linux/AMD64 child for rendering.
+3. Render only the pinned catalog with opm and validate it. Confirm the package,
+   channel, CSV and version for each Operator.
+4. Render each pinned bundle and compare its CSV, version, dependencies and related
+   images with the catalog. Decode bundle objects before comparing; the two
+   representations differ.
+5. Resolve every related, helper and diagnostic image the same way, and check its
+   architecture.
+6. Add every required dependency explicitly: oc-mirror v2 does not infer them.
 
-A basic registry check is:
+A basic registry check:
 
 ```bash
 skopeo inspect --authfile "$AUTH_FILE" --tls-verify=true --raw \
@@ -53,31 +56,23 @@ skopeo inspect --authfile "$AUTH_FILE" --tls-verify=true --raw \
 skopeo manifest-digest "$OUT/manifest.json"
 ```
 
-Fetch the returned digest reference again and compare raw bytes. Do not reserialize
-JSON before hashing. For the tested opm build, authentication required
-`DOCKER_CONFIG/config.json`; `REGISTRY_AUTH_FILE` alone did not work. Point that
-external config at the existing auth file, then `opm render <pinned-amd64-catalog> -o json`
-and `opm validate <catalog-directory>`.
-
-See [the FBC schema](https://olm.operatorframework.io/docs/reference/file-based-catalogs/)
-and [oc-mirror v2 filtering](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/disconnected_environments/about-installing-oc-mirror-v2)
-for channel/default-channel and exact-version rules.
+Do not reserialize JSON before hashing. The tested opm build read credentials only
+from `DOCKER_CONFIG/config.json`, not `REGISTRY_AUTH_FILE`: point that config at
+your auth file, then run `opm render <pinned-amd64-catalog> -o json` and
+`opm validate <catalog-directory>`. See the
+[file-based catalog schema](https://olm.operatorframework.io/docs/reference/file-based-catalogs/)
+and [oc-mirror v2 filtering](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/disconnected_environments/about-installing-oc-mirror-v2).
 
 ## Update the matching files
 
-| File | Values to keep aligned |
+| File | Keep aligned |
 |---|---|
-| `install/release-manifest.json` | Platform, catalog/bundle/image pins, exact package/channel/CSV/version, complete dependencies, evidence date/hashes. `tools.mirrorRegistry` pins the helper's mirror-registry archive: a versioned URL from <https://mirror.openshift.com/pub/cgw/mirror-registry/> and the SHA-256 from that version's signed `sha256sum.txt` |
-| `install/imageset-config.yaml` | Same catalog/helper images, exact operator version ranges, dependencies and included default channels |
-| `gitops/base/operators/subscriptions.yaml` | Same package/channel/source/startingCSV; keep Manual approval |
-| `gitops/base/gatekeeper/operator.yaml` | Same Gatekeeper selection and Manual approval |
+| `install/release-manifest.json` | Platform, catalog, bundle and image pins, package, channel, CSV and version, dependencies, evidence date. `tools.mirrorRegistry` pins the mirror-registry archive: a versioned URL from <https://mirror.openshift.com/pub/cgw/mirror-registry/> and the SHA-256 from that version's signed `sha256sum.txt` |
+| `install/imageset-config.yaml` | The same catalog and helper images, exact Operator version ranges, dependencies and default channels |
+| `gitops/base/operators/subscriptions.yaml` | The same package, channel, source and `startingCSV`; keep Manual approval |
+| `gitops/base/gatekeeper/operator.yaml` | The same Gatekeeper selection and Manual approval |
 
-Stage candidate manifest/ImageSet files externally and review matching Subscription
-edits. Mark `resolution: verified` only after registry and metadata checks pass.
-Do not change hardware/compatibility/upgrade flags merely because resolution succeeded.
-Confirm Gatekeeper's applicable subscription entitlement separately from registry access.
-
-Run the candidate checks:
+Stage the candidate manifest and image set in `$OUT`, then check them:
 
 ```bash
 IMAGESET_CONFIG="$OUT/imageset-config.resolved.yaml" \
@@ -91,11 +86,11 @@ IMAGESET_CONFIG="$OUT/imageset-config.resolved.yaml" \
 )
 ```
 
-The verifier reads Subscriptions from the checkout. For the tested oc-mirror build,
-unset `REGISTRY_AUTH_FILE` and avoid a destination component literally named `dry-run`.
-Inspect the planned mapping for every required source; an empty cache before the first
-transfer is expected. A dry run does not prove successful mirroring.
+The verifier reads the Subscriptions from the checkout. The tested oc-mirror build
+needs `REGISTRY_AUTH_FILE` unset and a destination not literally named `dry-run`.
+Inspect the planned mapping for every source; a dry run does not prove mirroring.
 
-Review the nonsecret diff and evidence, then update the manifest/ImageSet together
-and run `make preflight`. Verify the real mirror's CatalogSource and package/CSV/bundle
-inventory before installation. Preserve resolution evidence with each validation run.
+Mark `resolution: verified` only after these checks pass, and confirm the
+Gatekeeper entitlement separately. Copy the files into the checkout, run
+`make preflight`, then do a full [quickstart](quickstart.md) run on a new rig and
+add it to [validation results](validation.md).

@@ -1,15 +1,12 @@
 # Cherry Servers setup
 
-The [validation runs](validation.md) used Cherry Servers. `make order-rig`
-([quickstart step 2](quickstart.md#2-order-the-rig)) orders the two servers and
-writes the rig file. This page explains what it chooses, how to set the node's
-BIOS through the Cherry console, and how to order differently.
+Every [validation run](validation.md) used Cherry Servers. This page explains what
+`make order-rig` ([quickstart step 2](quickstart.md#2-order-the-rig)) chooses, how
+to set the node's BIOS through the Cherry console, and how to order differently.
 
-A few Cherry Servers terms first. A **team** is the billing account. A **project**
-inside it holds servers and gives the servers in each region a shared private VLAN.
-A **region** is a data center. A **plan** is a hardware model, and an **image** is the
-operating system Cherry installs on delivery. Plans are ordered from stock, so a plan
-can be listed in a region with none available.
+Cherry terms: a **project** holds servers and gives the servers in each **region**
+(data center) a shared private VLAN. A **plan** is a hardware model, ordered from
+stock, and an **image** is the operating system Cherry installs on delivery.
 
 ## What `make order-rig` chooses
 
@@ -24,18 +21,15 @@ can be listed in a region with none available.
 `make cherry-plans` shows the offer, with hourly prices in euros, without ordering
 anything.
 
-Terraform waits up to three hours for Cherry to deliver each server. If it stops
-waiting first, or you interrupt `make order-rig`, a server Cherry is still
-delivering is missing from the Terraform state. Run `make order-rig` again: it
-finds that server by its hostname, plan and region, waits for it and imports it
-into the state, so nothing is ordered twice. It does not take over a server whose
-delivery failed; delete that one in the portal first.
+Terraform waits up to three hours for each server. If `make order-rig` stops
+before a server arrives, run it again: it finds that server by hostname, plan and
+region, waits for it and adopts it, so nothing is ordered twice. A server whose
+delivery failed is not adopted; delete it in the portal first.
 
 Cherry VLANs do not span switches. If the two servers land on different switches,
-`make order-rig` stops and, when you run it again, offers to replace the helper,
-or you can ask Cherry support to move it. Terraform never reinstalls the node
-after ordering: Ansible rebuilds it into OpenShift through the Cherry API, and the
-configuration ignores that drift.
+`make order-rig` stops; the next run offers to replace the helper, or ask Cherry
+support to move it. Terraform never reinstalls the node: Ansible rebuilds it into
+OpenShift through the Cherry API, and Terraform ignores that change.
 
 ### When no tested node plan is in stock
 
@@ -163,9 +157,9 @@ bond has no public address; only its private VLAN interface gets one.
 
 ## Install
 
-The trial delivered the first boot files to the node over the helper's public IP,
+Every run delivers the first boot files to the node over the helper's public IP,
 protected by a random token in the URL. Everything after that (the installer
-environment, the installed node and the workloads) used only the private VLAN.
+environment, the installed node and the workloads) uses only the private VLAN.
 Booting entirely over the private network from power-on has not been tested.
 Successful installation removes the public boot files;
 [troubleshooting](troubleshooting.md) covers interrupted runs.

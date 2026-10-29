@@ -2,8 +2,8 @@
 
 The repository has validated a disposable AMD SNO lab. Customer installation,
 Restricted HTTPS in a separate Trustee trust domain, HA/DR and upgrades need
-validation in the customer's environment. [The trial record](validation.md)
-states the demonstrated scope.
+validation in the customer's environment. [Validation results](validation.md)
+state the demonstrated scope.
 
 ## Confirm before deployment
 

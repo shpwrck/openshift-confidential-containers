@@ -1,11 +1,10 @@
 # Architecture
 
-A confidential pod runs inside its own small VM on the AMD node. SEV-SNP encrypts
-that VM's memory so the host cannot read it. The VM starts without its secrets:
-it has to prove to Trustee what hardware and software it is running before
-Trustee releases anything, including the credentials it needs to pull its own
-container image. This page shows that exchange, the components involved, the
-test rig the automation builds, and the order of the install and the tests.
+A confidential pod runs inside its own small VM on the AMD node, and SEV-SNP
+encrypts that VM's memory so the host cannot read it. The VM starts without
+secrets: it must prove to Trustee what hardware and software it runs before
+Trustee releases anything, even the credentials to pull its own image. This page
+shows that exchange, the components, the test rig and the install sequence.
 
 ## How a confidential pod gets its secrets
 
@@ -56,12 +55,11 @@ flowchart LR
   KBS -->|Policy-approved resources| Agents
 ```
 
-`WORKER_CONTEXT` and `TRUSTEE_CONTEXT` select the two domains independently, so
-the scripts can drive a worker cluster and a separate Trustee cluster. `kata-cc`
-must resolve to the `kata-snp` handler. The completed trial used a simpler
-layout: Trustee on the same cluster in the Permissive profile over HTTP. The
-separate customer boundary drawn here has not been validated on hardware; see
-[validation results](validation.md).
+This is the customer layout. `WORKER_CONTEXT` and `TRUSTEE_CONTEXT` select the two
+domains, so the scripts can drive a worker cluster and a separate Trustee cluster.
+The validated runs used a simpler layout instead: Trustee on the same cluster, in
+the Permissive profile over HTTP. The separate boundary drawn here has not been
+tested on hardware; see [validation results](validation.md).
 
 ## The test rig
 
@@ -91,37 +89,32 @@ flowchart LR
   Console -->|Private VLAN| OCP
 ```
 
-The node and the helper share a private VLAN (`192.168.66.0/24` by default, set in
-[`ansible/group_vars/all.yml`](../ansible/group_vars/all.yml)). The node's bonded
-network has no public address once OpenShift is installed: it reaches only the
-helper's registry, DNS and NTP. The helper keeps its public interface to stage
-content and serve the first boot, but does not forward traffic from the VLAN to
-the internet. The cluster API is only on the VLAN, so the controller reaches it
-through the helper (for example, an SSH tunnel). The optional `gitops/base/airgap-egress`
-MachineConfig adds a host egress filter on the node.
+The node and the helper share a private VLAN that Cherry assigns. Once OpenShift is
+installed, the node has no public address: it reaches only the helper's registry,
+DNS and NTP. The helper keeps its public interface to mirror content and serve the
+first boot, but forwards nothing from the VLAN to the internet. The cluster API is
+only on the VLAN, so `make connect` reaches it through an SSH tunnel via the
+helper. The optional `gitops/base/airgap-egress` MachineConfig adds a host egress
+filter on the node.
 
 ## Install sequence
 
 ```mermaid
 flowchart TD
-  Inventory[Resolve release inventory] --> Hardware[Verify actual hardware, UEFI and SNP]
-  Hardware --> Helper[Prepare mirror, private DNS and NTP]
-  Helper --> Link{Raw node private-service checks pass?}
-  Link -->|No| Diagnose[Keep provider OS and diagnose networking]
-  Diagnose --> Link
-  Link -->|Yes| Install[Explicit fresh OpenShift install]
-  Install --> Platform[Verify payload, health, installed SNP and isolation]
-  Platform --> Operators[Install checked Operators and scoped Kata runtime]
-  Operators --> Trustee[Bootstrap Trustee and offline collateral]
-  Trustee --> Policy[Calculate references and publish reviewed policies]
-  Policy --> Proof[Run five CPU proofs and network controls]
-  Proof --> Repeat[Remove and reinstall CoCo software; repeat proofs]
+  Order[make order-rig: servers, mirror registry, rig file] --> Hardware[Check the node: identity, UEFI, SEV-SNP, disk]
+  Hardware --> Helper[Prepare the helper: mirror, private DNS and NTP]
+  Helper --> Link{Node reaches the helper over the VLAN?}
+  Link -->|No| Diagnose[Stop before erasing; diagnose the network]
+  Link -->|Yes| Install[Erase the node and install OpenShift]
+  Install --> Platform[Check payload and health; stop serving boot files]
+  Platform --> Operators[make install-coco-operators: checked Operators, Kata runtime]
+  Operators --> Trustee[make trustee-lab: VCEK, references, policies]
+  Trustee --> Proof[make test-rung WHICH=all: five CPU tests and isolation]
 ```
 
 A fresh install replaces the node's operating system; it is not an upgrade path
-for an existing cluster. A successful install also stops serving the boot files.
-The [quickstart](quickstart.md) walks through these steps, and
-[the Ansible README](../ansible/README.md) shows which playbook phase does what.
+for an existing cluster. The [quickstart](quickstart.md) walks through these steps,
+and the [Ansible README](../ansible/README.md) shows which playbook phase does what.
 
 ## Capability test sequence
 
@@ -135,9 +128,6 @@ flowchart TD
   Recover --> Cleanup[Verify cleanup, release lock and record result]
 ```
 
-A denial only counts when Trustee logs a matching, specific refusal for that VM.
-Unrelated errors (DNS, registry, a missing image) and skipped steps cannot pass.
-If restoring the configuration fails, the runner keeps the recovery files and the
-lock so you can inspect them. [Capability tests](capability-status.md) define each
-negative control; [customer planning](customer-planning.md) covers deployment and
-upgrade decisions.
+A denial only counts when Trustee logs a matching refusal for that VM; unrelated
+errors and skipped steps cannot pass. [Capability tests](capability-status.md)
+define each control.

@@ -1,7 +1,23 @@
-# Contributor setup
+# Contributing
 
-Use Python 3.12+ and an external virtual environment. Linux is the provisioning
-controller; CI also checks portable workstation scripts on macOS.
+```mermaid
+flowchart LR
+  Edit[Change a branch] --> Lint[make lint]
+  Lint --> PR[Pull request: CI runs the same checks]
+  PR --> Merge[Merge to main]
+  Merge -.->|changes what runs on hardware| Run[Full quickstart run on a new rig]
+  Run -.-> Record[Record it in validation.md]
+```
+
+The offline checks catch most mistakes, but they cannot test firmware or
+attestation. A change to what runs on the hardware is only proven by a new full
+[quickstart](quickstart.md) run: record it in [validation results](validation.md)
+and, for a new server plan, in [`tested-plans.json`](../infra/cherry/tested-plans.json).
+
+## Set up the checks
+
+Use Python 3.12+ and a virtual environment outside the checkout. Linux is the
+provisioning controller; CI also checks the portable workstation scripts on macOS.
 
 ```bash
 umask 077
@@ -22,8 +38,8 @@ shell, policy, manifest, documentation-link and offline regression checks; the
 Local checks do not validate firmware or attestation.
 
 For documentation-only edits, run `python3 scripts/check-doc-links.py` and
-`git diff --check`. Keep commands aligned with `make help`, link to shared
-instructions rather than copying them, and retain the date/scope of validation claims.
+`git diff --check`. Keep commands aligned with `make help`, link to a guide rather
+than copying its steps, and keep the date and scope on every validation claim.
 If you change a Mermaid diagram, `python3 scripts/check-mermaid.py` renders every
 diagram (it needs Node.js 22+; set `PUPPETEER_EXECUTABLE_PATH` to use an installed
 Chrome or Chromium).
