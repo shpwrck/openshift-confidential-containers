@@ -4,7 +4,7 @@
     {
       "plan": "amd-epyc-9124p",
       "image": "ubuntu_26_04_64bit",
-      "validated": "2026-10-08",
+      "validated": "2026-10-29",
       "hardware": "AMD EPYC 9124, Supermicro H13SST-G, BIOS 3.7"
     },
     {
@@ -18,7 +18,7 @@
     {
       "plan": "2x-intel-gold-6330",
       "image": "almalinux_9_64bit",
-      "validated": "2026-10-28"
+      "validated": "2026-10-29"
     }
   ],
   "untestedNode": {

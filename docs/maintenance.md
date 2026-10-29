@@ -1,106 +1,109 @@
 # Maintenance
 
-Operate only the selected environment, with explicit cluster contexts and
-protected external state. These helpers are not a production backup or upgrade service.
+Everything here assumes a terminal where you ran `source scripts/env.sh` after
+[`make connect`](quickstart.md#5-install-the-coco-operators), on the rig you mean
+to change. These helpers are for test rigs; they are not a production backup or
+upgrade service.
+
+| Task | Command | Details |
+|---|---|---|
+| Reach the cluster again (after a controller restart) | `make connect` | [Quickstart step 5](quickstart.md#5-install-the-coco-operators) |
+| Rerun the tests | `make test-rung WHICH=all` | [Capability tests](capability-status.md) |
+| Put the lab back to plain OpenShift | `make reset-lab` | [Below](#reset-a-disposable-coco-lab) |
+| Refresh a node's certificate after a firmware change | `make collect-vcek`, `make seed-vcek` | [Below](#collateral-and-references) |
+| Publish changed policies or references | `scripts/apply-trustee.sh configure` | [Below](#configuration-refresh) |
+| Move to newer OpenShift, OSC or Trustee | | [Release resolution](release-resolution.md) |
+| Delete the rig | `terraform -chdir=infra/cherry destroy ...` | [Below](#retire-the-infrastructure) |
+
+## Reset a disposable CoCo lab
+
+```mermaid
+flowchart TD
+  Tested[Tested lab] -->|make reset-lab| Plain[Plain OpenShift]
+  Plain -->|make install-coco-operators| Ops[CoCo Operators]
+  Ops -->|make trustee-lab| Lab[Trustee set up]
+  Lab -->|make test-rung WHICH=all| Tested
+```
+
+`make reset-lab` removes the CoCo Operators, Trustee, the test workloads and the
+Kata runtime. It keeps OpenShift, the mirror, the servers and `$COCO_STATE_DIR`,
+including the signing key pair. Copy any proof reports you want to keep first.
+
+```bash
+make reset-lab
+```
+
+It shows the cluster, the node and every namespace it deletes, and asks you to
+type `reset`; without a terminal, use `ALLOW_DISPOSABLE_UNINSTALL=1 make reset-lab`.
+Then it removes the stack, waits until everything is gone and checks the cluster,
+in about 10 minutes. The node reboots when the Kata runtime goes, so a watch error
+while the API is down is expected, and `Waiting:` lines are normal; `FAIL:` only
+appears on a timeout. If it stops, inspect finalizers before retrying; do not
+clear them blindly.
+
+To test again from scratch, run quickstart steps
+[5](quickstart.md#5-install-the-coco-operators) to
+[7](quickstart.md#7-run-the-capability-tests): `make install-coco-operators`,
+`make trustee-lab`, `source scripts/env.sh`, `make test-rung WHICH=all`.
+
+`make reset-lab` only runs on the lab (`TRUSTEE_LAB=1`, one context for workloads
+and Trustee, as `lab.env` sets). On any other cluster, use `make uninstall-coco`:
+it removes only namespaces that already carry the `coco.openshift.io/disposable=true`
+label, so label only namespaces the test owns.
 
 ## Collateral and references
 
-Recollect VCEK material after firmware/TCB changes or allocation changes. An unchanged
-HWID alone does not establish that an older certificate matches the current TCB.
-The collector records source identity, certificate validity and hashes.
+Recollect a node's VCEK after a firmware or TCB change, or on a new server: an
+unchanged chip ID alone does not mean an older certificate still matches.
 
 ```bash
-make collect-vcek NODE='<actual-worker>'
-```
-
-If the worker is disconnected, transfer the collected URL bundle to a connected
-controller and run `scripts/collect-vcek.sh --download`. For a raw SNP report, use
-`--from-report <report-file>`. Carry the reviewed bundle back through the approved
-transfer process. Publish separately with an explicit Trustee context:
-
-```bash
+make collect-vcek NODE='<worker-node>'
 make seed-vcek
 ```
 
-Use `VCEK_BUNDLE` for the protected bundle path. Bootstrap/configure Trustee after
-publication so the correct worker cache entries are mounted. Check expiry and the
-current host/TCB before reuse; collection does not renew collateral automatically.
+On a disconnected controller, run `scripts/collect-vcek.sh --download` on a
+connected machine and carry the bundle back (`--from-report <file>` takes a raw SNP
+report). `VCEK_BUNDLE` selects the bundle path. Bootstrap or configure Trustee
+afterwards so the new certificate is mounted. Collection does not renew anything
+on its own; check expiry before reuse.
 
-Recalculate launch references after guest/release/runtime command-line changes.
-Rebind initdata after any byte change, including policy or certificate changes.
-Use [Trustee setup](trustee.md), preserve CPU/hardware checks, and run the
-relevant positive/negative/recovery proofs. Reference expiry is deliberate;
-extending it requires renewed review, not a documentation date change.
+Recalculate the launch measurement after any change to the guest image, release or
+kernel command line, and rebind initdata after any byte change, including policy
+or certificate changes. Then rerun the affected tests. On the lab,
+`make trustee-lab` does all of this; elsewhere follow [Trustee setup](trustee.md#by-hand).
+Reference values expire on purpose; extending one needs a new review.
 
 ## Configuration refresh
 
-Use `scripts/apply-trustee.sh configure` for approved policy/reference/resource changes.
-It waits for actual serving configuration. After a separately applied CPU ConfigMap,
-refresh with the actual names:
+`scripts/apply-trustee.sh configure` publishes approved policy, reference and
+resource changes and waits until Trustee serves them. After applying a CPU policy
+ConfigMap yourself, refresh Trustee:
 
 ```bash
 python3 scripts/refresh-trustee.py --context "$TRUSTEE_CONTEXT" \
   --namespace trustee-operator-system --trustee-name trustee-config
 ```
 
-The refresh verifies ownership, replacement pod UIDs and current mounts. Changing
-a ConfigMap or running `oc rollout restart` alone does not prove that Trustee serves it.
-TLS/signer rotation and pruning resource references require their own reviewed
-procedure; configure does not perform those operations.
-
-## Reset a disposable CoCo lab
-
-This puts the test rig back to plain OpenShift: it removes the CoCo Operators,
-Trustee, the test workloads and the Kata runtime, and keeps OpenShift, the mirror,
-the servers and `$COCO_STATE_DIR`. Back up any Trustee configuration, Secrets and
-proof evidence you want to keep first. In a terminal where you ran
-`source scripts/env.sh` after [`make connect`](quickstart.md#5-install-the-coco-operators):
-
-```bash
-make reset-lab
-```
-
-It shows the context, the API address, the node and every namespace it deletes,
-and asks you to type `reset`; without a terminal, approve ahead with
-`ALLOW_DISPOSABLE_UNINSTALL=1 make reset-lab`. Then it marks those namespaces with
-`coco.openshift.io/disposable=true`, removes the stack, waits until everything is
-gone and checks the cluster again, in about 10 minutes. Removing the Kata runtime
-reboots the node, so a watch error or two while the API is down is expected. The
-removal check prints `Waiting:` for what is left meanwhile; `FAIL:` only appears
-if it times out.
-
-`make reset-lab` refuses to run without the lab settings from `lab.env`
-(`TRUSTEE_LAB=1` and the same context for workloads and Trustee). On any other
-cluster, use `make uninstall-coco` directly: it removes only namespaces that
-already carry the disposable label, so label only namespaces the test owns.
-
-The reset keeps each controller until its operands finish deletion. If it stops,
-inspect finalizers and reconciliation before retrying; do not clear them blindly.
-Reinstall with `make install-coco-operators`, then run `make trustee-lab`,
-`source scripts/env.sh` and `make test-rung WHICH=all` again
-([Trustee setup](trustee.md#disposable-lab), [capability tests](capability-status.md)).
-The signing key pair in `$COCO_STATE_DIR` from the first build is used again.
-`make test-rung WHICH=all` runs fresh proofs; it does not reset anything.
+It replaces the Operator-owned pods and checks their new UIDs and mounts.
+Changing a ConfigMap or running `oc rollout restart` alone does not prove that
+Trustee serves it. Rotating TLS or signing keys and pruning resources need their
+own reviewed procedure.
 
 ## Retire the infrastructure
 
-Close boot publication once no accepted install needs it. Back up keys, registry
-configuration, installer assets, Trustee state and evidence outside Git. Verify
-archive hashes and recovery limits before deleting resources.
-
-Delete only the intended provider objects and confirm absence through fresh inventory
-reads. Power-off or failed SSH is not proof of deletion. Keep the provider ownership and retirement records.
-
+Copy anything you want to keep (proof reports in `$COCO_STATE_DIR/proofs`,
+evidence) before you delete the servers; the cluster and the mirror go with them.
 If you ordered with `make order-rig`, Terraform deletes exactly the servers it
 created, and the SSH key if it added one; a key your account already had stays.
-Run this in a terminal where you ran `source scripts/env.sh`. The plan lists the
-two servers; type `yes` to delete them, then confirm in the Cherry portal or API
-that both servers are gone:
 
 ```bash
 terraform -chdir=infra/cherry destroy -var-file="$COCO_STATE_DIR/cherry.tfvars"
 ```
 
-A script that cannot type `yes` adds `-auto-approve` instead. Then stop the
-`make connect` tunnel to the deleted helper: `pgrep -af '^ssh .*-L 127.0.0.1:6443'`
-shows its process ID, and `kill <ID>` stops it.
+Type `yes` when the plan lists the two servers (a script adds `-auto-approve`
+instead). Then check in the Cherry portal or API that the project has no servers
+left: a power-off or a failed SSH login does not prove deletion.
+
+Last, stop the `make connect` tunnel to the deleted helper:
+`pgrep -af '^ssh .*-L 127.0.0.1:6443'` shows its process ID, and `kill <ID>`
+stops it.

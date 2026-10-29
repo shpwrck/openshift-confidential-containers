@@ -1,8 +1,24 @@
 # Troubleshooting
 
-Start with the last successful checkpoint. Keep logs and recovery files in protected
-external storage; they can contain credentials or workload data. Use explicit worker
-and Trustee contexts, and correlate the same pod UID/IP and time window across logs.
+Every step can be rerun: fix what it reports and run it again. Keep logs and
+recovery files in `COCO_STATE_DIR`; they can contain credentials or workload data.
+
+## Common problems
+
+| Symptom | Fix |
+|---|---|
+| `make order-rig` stops, or a server takes over an hour | Run it again. It skips what is done, takes over a server Cherry is still delivering, and offers to restart a failed helper bootstrap after showing its log. |
+| The controller stopped during the OpenShift install | `bash ansible/up.sh --mode resume-install`. The install carries on without the controller; this waits for it without a second reinstall. |
+| `oc` cannot reach the cluster | `make connect` reopens the tunnel, for example after the controller restarts. |
+| `make connect` says something else listens on 127.0.0.1:6443 | A tunnel from an earlier rig: `pgrep -af '^ssh .*-L 127.0.0.1:6443'`, then `kill <ID>`, or set `API_PORT` to a free port. |
+| `make trustee-lab` stops at a step | Fix the cause and run `make trustee-lab FROM=<step>`. |
+| A capability test fails | See [failed proof](#failed-proof-or-stale-configuration) below. |
+| The install stopped at the public console step | Close the boot files with the `pxe-stop` command [below](#installation), then rerun only that step (see the command after this table). |
+
+```bash
+ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" ansible-playbook \
+  ansible/playbooks/site.yml --tags public-console -e "@$COCO_STATE_DIR/rig.yml"
+```
 
 ## Installation
 
@@ -13,12 +29,10 @@ and Trustee contexts, and correlate the same pod UID/IP and time window across l
 | Render says the discovery cache is for different machines | `COCO_STATE_DIR/discovery/node-macs.json` is from an earlier rig. `up.sh --mode fresh-install` discovers before it renders; when you run `ansible-playbook` with the `render` tag yourself, add `discover` to the tags. Discovery only reads the node. |
 | Helper ready but node cannot reach it | Keep the raw provider OS. Verify VLAN wire tag, actual NIC/bond members, direct route, ARP, registry TLS, DNS and NTP from the node. |
 | New Cherry node's bond has one member | `/sys/class/net/bond0/bonding/slaves` lists one port and another keeps its kernel name (for example `enp5s0f0np0`): netplan's rename by MAC missed it on the first boot, so it never joined `bond0`. `make order-rig` offers the one reboot of the original OS that fixes this; the installer requires both members. In a rig file written by hand, name the ports as netplan does, since the installer binds names to MACs. |
-| `make order-rig` stops | Fix what it reports and run it again; it skips the stages that are done. A helper bootstrap that failed shows its log, and the next run offers to start it again. |
 | Registry TLS fails | Check hostname/SAN, validity, server leaf/intermediates and trusted CA. Keep verification enabled. Preparation can repair the known malformed mirror-registry leaf while preserving its CA/key. |
 | Mirror transfer fails | Check external auth, disk space and exact selected ImageSet. A completion marker only applies to unchanged inputs. |
 | Install wait cannot find API | Verify `api`/`api-int` DNS from both node and helper before diagnosing payload health. |
 | Rebuild result is ambiguous | Inspect provider state and the protected request journal before retrying. Do not regenerate assets to erase the request. |
-| Controller stopped after accepted rebuild | Use `--mode resume-install` with unchanged inputs and accepted journal. It sends no new rebuild. |
 | CSV/InstallPlan mismatch | Compare actual catalog, CSV, bundle digest and `bundleLookups` with the release manifest; do not approve an unrelated plan. |
 | MCP degraded or runtime wrong | Stop the rollout. Inspect MCO/operator logs and NFD labels; `kata-cc` must use `kata-snp`. Do not hand-label hardware to hide discovery failure. |
 
@@ -39,8 +53,9 @@ Confirm the old endpoint is unreachable without printing its token. Only the qua
 
 ## A confidential workload will not start
 
-Check pod/admission events, then Trustee and registry logs for the same attempt.
-A `DeadlineExceeded` or `ttrpc` message alone does not identify the failed component.
+Check pod and admission events, then the Trustee and registry logs for the same
+attempt, matching the pod UID and time window. A `DeadlineExceeded` or `ttrpc`
+message alone does not identify the failed component.
 
 ```bash
 oc --context="$WORKER_CONTEXT" -n coco-validation describe pod '<pod>'

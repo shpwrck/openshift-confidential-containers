@@ -1,8 +1,9 @@
 # Guest registry access
 
-A confidential pod pulls its workload image inside the VM. Configure **both**
-host and guest registry access: the cluster's mirror resources and pull secret do
-not supply the guest's registry credentials, remaps or CA.
+A confidential pod pulls its workload image inside the VM, so the cluster's mirror
+configuration and pull secret do not reach it. The VM gets its registry
+credentials, mirror remaps and CA from Trustee and initdata instead. On the lab,
+`make trustee-lab` sets this up; this page is for a customer registry.
 
 ## Required guest inputs
 
@@ -47,10 +48,8 @@ curl --cacert "$COCO_STATE_DIR/mirror-ca.pem" \
   https://registry.example.internal:8443/v2/
 ```
 
-A trusted `401` from `/v2/` establishes TLS reachability, not authenticated image pull.
-Guest trust is distinct from host trust; each must pass. The historical multi-certificate
-array comparison did not complete a valid hardware control matrix, so no new runtime
-claim is made for that experiment.
+A trusted `401` from `/v2/` shows TLS reachability, not an authenticated pull.
+Guest trust is separate from host trust; both must pass.
 
 Cluster DNS must resolve the registry and KBS names from ordinary pods and guests.
 The maintained lab renderer can configure its explicit DNS forwarder; customer
@@ -63,8 +62,7 @@ customer's Artifactory Docker endpoint. Stage the required digests in local repo
 an upstream-backed repository can still fail on an offline cache miss. Inspect registry
 request logs to distinguish authentication, policy denial and missing manifests.
 
-Artifactory was not validated in the October 8 trial. Prepare customer resources
-out of band in Restricted Trustee; the synthetic lab seeder is not a customer
-credential tool. Test a positive pull before drawing conclusions from a negative one.
+Artifactory has not been tested. Prepare customer resources out of band in
+Restricted Trustee; the lab's synthetic resources are not a customer credential tool. Test a positive pull before drawing conclusions from a negative one.
 See [signed-image tests](capability-status.md#signed-images) and
 [troubleshooting](troubleshooting.md) for the acceptance checks.

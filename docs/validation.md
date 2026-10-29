@@ -1,97 +1,94 @@
 # Validation results
 
-This page records what has actually been tested, when, and on what. Read it
-before you rely on a claim elsewhere in the repository. Nothing here is a live
-environment: the hardware used for the trial was deleted after it passed.
+What has been tested, when and on what. Read this before you rely on a claim
+elsewhere. Nothing here is a live environment: every rig was deleted after its run.
 
-## Summary
+## Runs
 
-| | |
+| Date | Rig (Cherry Servers) | How it ran | Result |
+|---|---|---|---|
+| **October 29, 2026** | AMD EPYC 9124 node, Intel Xeon Gold 6330 helper, US-Chicago | A fresh run from these docs only, with the one-command steps of the [quickstart](quickstart.md) | All six tests passed, then passed again after `make reset-lab` and a CoCo reinstall. Rig deleted. |
+| October 28, 2026 | AMD EPYC 9254 node, Intel Xeon Gold 6330 helper, US-Chicago | From the docs by hand; each gap found was fixed in the repository | The five CPU tests and isolation passed twice, with a reset between. Rig deleted. |
+| October 8, 2026 | AMD EPYC 9124 node, AlmaLinux 9.8 helper | The first trial | The five CPU tests and isolation passed twice, with a clean CoCo reinstall between. Rig deleted. |
+
+All three runs used the same release and the same layout: single-node OpenShift
+with Trustee on the same cluster, in the Permissive profile over HTTP, with the
+restrictive resource policy enforcing.
+
+## Tested release and hardware
+
+| Component | Version |
 |---|---|
-| Last hardware validation | October 8, 2026, on Cherry Servers bare metal |
-| Release tested | OpenShift 4.20.39, OSC 1.13.1, Trustee 1.2.1 (the pins in the [release manifest](../install/release-manifest.json)) |
-| Topology | Single-node OpenShift with Trustee on the same cluster, Permissive profile over HTTP |
-| Passed | Fresh install, all five CPU capability tests, network isolation, and the same tests again after removing and reinstalling the CoCo software |
-| Not tested | Encrypted images, Trustee in a separate cluster, Restricted (HTTPS) Trustee on hardware, upgrades, private boot from power-on |
-
-## Tested release and environment
-
-| Component | Observed version |
-|---|---|
-| OpenShift | 4.20.39, exact payload in the [manifest](../install/release-manifest.json) |
+| OpenShift | 4.20.39 (exact payload in the [release manifest](../install/release-manifest.json)); RHCOS 9.6.20260914-0, kernel 5.14.0-570.141.1.el9_6 |
 | OSC / Trustee | 1.13.1 / 1.2.1 |
-| NFD | 4.20.0-202609201357 |
-| cert-manager / Gatekeeper | 1.20.1 / 3.21.1 |
-| Registry / coco-tools | mirror-registry 2.0.12 / 0.5.1 |
-| Node | AMD EPYC 9124, Supermicro H13SST-G, BIOS 3.7, UEFI |
-| Installed OS | RHCOS 9.6.20260914-0, kernel 5.14.0-570.141.1.el9_6 |
-| Helper | AlmaLinux 9.8 (a compatibility test; Red Hat supports RHEL for the mirror registry) |
+| NFD / cert-manager / Gatekeeper | 4.20.0-202609201357 / 1.20.1 / 3.21.1 |
+| Mirror registry / coco-tools | 2.0.12 / 0.5.1 |
+| Node | Supermicro H13SST-G, BIOS 3.7, UEFI, with an EPYC 9124 or 9254 |
+| Helper | AlmaLinux 9. Cherry offers no RHEL image; Red Hat supports the mirror registry on RHEL only. |
 
-All 34 core ClusterOperators were healthy, the node and MachineConfigPool converged,
-and all five selected Operator CSVs succeeded. `kata-cc` used handler `kata-snp`.
-SEV-SNP checks passed on the provider's original OS, in the installer environment,
-on the installed node and after the Kata rollout.
+The plans that passed are in [`infra/cherry/tested-plans.json`](../infra/cherry/tested-plans.json);
+`make order-rig` offers them first.
 
-## Results
+## What the tests showed
 
-| Check | Outcome |
+| Test | Shown on the rig |
 |---|---|
-| Release identities and mirror selection (October 5) | Authenticated catalog, bundle and image resolution and an oc-mirror dry run passed. |
-| Fresh OpenShift platform and runtime | Exact payload, Operator versions, offline guest attestation and isolation passed. |
-| Five CPU capability tests | Secret gate, initdata tamper, launch-reference removal from RVPS, signed versus unsigned images, and wrong-VCEK denial each passed allow, deny and recovery. See [capability tests](capability-status.md). |
-| Clean CoCo software repeat | Removed and recreated six Operator and operand namespaces, reinstalled CoCo and reran all five tests plus isolation without manual repairs. |
-| Retirement | Fresh provider reads confirmed both servers, the SSH key and the project were deleted. |
+| `rung-kbs` | The workload's secret only reaches it inside the confidential runtime. |
+| `rung-initdata` | Trustee refuses a VM whose initdata changed by one comment. |
+| `rung-rvps` | Trustee refuses a VM when the approved launch measurement is removed. |
+| `rung-signed` | The VM pulls a signed image and refuses an unsigned one under the same key policy. |
+| `air-gap` | Trustee refuses a VM when the node's AMD certificate (VCEK) is replaced with a wrong one. |
+| `isolation` | The node, an ordinary pod and a confidential VM reach the private registry but no public address or name, and `oc exec` into the VM is refused. |
 
-The software repeat used source commit `d5915bda5c9e43edfcfa599b837a22a9cbe30e1f`.
-It kept OpenShift, the mirror and the servers; it was not a second full install.
-One boot recorded a 60-second NetworkManager wait timeout followed by normal
-CRI-O, kubelet and API recovery; its cause was not established.
+Each test passed its allow, deny, restore and recovery controls. A denial only
+counted when Trustee logged a matching refusal for that VM. [Capability tests](capability-status.md)
+describes the controls.
 
-Fresh host, ordinary-pod and confidential-guest TCP and DNS probes found public
-egress blocked while private registry TLS worked. A deliberately reachable private
-destination confirmed the guest probe could detect a working path. Administrator
-exec into the guest stayed denied. Network isolation is a separate check from the
-wrong-VCEK attestation test.
+The SEV-SNP host check passed on every node before its install; in the first trial
+it also passed in the installer environment, on the installed node and after the
+Kata rollout. The cluster checks passed each time, and `kata-cc` used the
+`kata-snp` handler.
+
+## Timing on October 29
+
+| Step | Time |
+|---|---|
+| Order the rig | 1 h 45 min, of which 60 min was a helper Cherry was slow to deliver; the node took 15 min |
+| Prepare the helper and mirror | 27 min |
+| Install OpenShift | 47 min from the reinstall request |
+| Install the CoCo Operators | 18 min, and 16 min in round 2 |
+| Set up Trustee | 3 min, and 2 min in round 2 |
+| Capability tests | 23 min each round |
+| Reset the lab | 10 min |
+| Delete the rig | under 1 min |
+
+The controller restarted in the middle of the install. `bash ansible/up.sh --mode resume-install`
+finished it without a second reinstall.
 
 ## Limits
 
-- Trustee ran on the same cluster in the **Permissive profile over HTTP**, with the
-  vendor's restrictive resource policy enforcing hardware, launch and configuration
-  checks. A separate Trustee cluster, Restricted HTTPS mode, a customer agent policy,
-  HA/DR and upgrades were not validated on hardware.
-- The first iPXE boot used a public, token-protected URL on the helper. Isolation
-  passed from the installer environment onward; private boot from power-on was not tested.
-- Encrypted images were not tested. Intel and GPU configurations are out of scope.
+- Trustee ran on the same cluster in the **Permissive profile over HTTP**. A
+  separate Trustee cluster, Restricted HTTPS mode, a customer agent policy, HA/DR
+  and upgrades were not tested on hardware.
+- The first boot of the node used a public, token-protected URL on the helper.
+  Isolation held from the installer environment onward; a fully private boot from
+  power-on was not tested.
+- Encrypted images and Artifactory were not tested. Intel and GPU configurations
+  are out of scope.
 - Using AlmaLinux on the helper does not establish Red Hat support for that choice.
 
-## Raw records
+## Evidence
 
-The trial's machine-readable records (identifiers, hashes and outcomes, no
-credentials) were removed from the working tree on October 20, 2026 to keep the
-repository current. They remain in Git history:
-
-```bash
-git show 62d59de:docs/validation/                         # list the records
-git show 62d59de:docs/validation/cherry-cpu-proofs-2026-10-08.json
-```
-
-| Record | Contents |
-|---|---|
-| `release-resolution-2026-10-05.json` | Catalog, bundle and image resolution behind the release manifest |
-| `cherry-qualification-2026-10-08.json` | Platform install and hardware qualification |
-| `cherry-cpu-proofs-2026-10-08.json` | The five capability tests |
-| `cherry-software-repeat-2026-10-08.json` | The clean CoCo software repeat |
-| `cherry-retirement-2026-10-08.json` | Teardown and backup confirmation |
-| `aws-amd-boot-modes-2026-10-08.json` | Why AWS bare metal was ruled out |
-
-Raw logs, credentials, installer assets and recovery files were never committed,
-and the private backup of the trial is not part of this repository. A new run
-needs new inputs and produces its own evidence outside the checkout.
+Each run writes its own evidence outside the checkout, in `COCO_STATE_DIR`: the
+host checks in `evidence/` and one report per test run in `proofs/<run>/results.json`
+(release identities, policy hashes, pod UIDs and the result of every control).
+Reports hold no credentials. Raw logs, credentials and installer assets are never
+committed, and no run's evidence is part of this repository; a new run needs new
+inputs and produces its own.
 
 ## Provider history
 
-An earlier attempt on Latitude.sh (October 5, 2026) was abandoned before an
-OpenShift install because its private network could not meet the isolation
-requirement. Cherry Servers' private VLAN with LACP bonding did. AWS bare-metal
-AMD instance types were ruled out because they only offered legacy BIOS boot,
-and OSC 1.13 requires UEFI.
+An attempt on Latitude.sh (October 5, 2026) stopped before the install: its private
+network could not meet the isolation requirement. Cherry Servers' private VLAN
+with LACP bonding did. AWS bare-metal AMD instances were ruled out because they
+offered only legacy BIOS boot, and OSC 1.13 requires UEFI.

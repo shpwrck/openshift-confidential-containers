@@ -1,121 +1,95 @@
 # OpenShift Confidential Containers on AMD SEV-SNP
 
-This repository installs and tests **confidential containers (CoCo)** on a
-single-node OpenShift cluster running on AMD SEV-SNP bare metal, in a
-disconnected (air-gapped) network. A confidential container runs inside its own
-small, hardware-encrypted VM. Before the VM receives any secrets, it must prove
-to a separate service (Trustee) that it is running the expected software on
-genuine AMD hardware.
+This repository builds a disconnected single-node OpenShift cluster on AMD
+SEV-SNP bare metal, installs confidential containers (CoCo) on it and proves that
+their security controls work.
+
+A confidential container runs inside its own hardware-encrypted VM. The VM gets no
+secrets, not even the credentials to pull its own image, until it proves to
+Trustee that it runs the approved software on genuine AMD hardware.
 
 ```mermaid
 flowchart LR
-  Pod[Confidential pod] -->|runs inside| VM[Encrypted SEV-SNP VM on the AMD node]
-  VM -->|proves its hardware and software| Trustee
-  Trustee -->|releases secrets only if the proof passes| VM
+  Pod[Confidential pod] -->|runs inside| VM[Encrypted SEV-SNP VM]
+  VM -->|1. proves its hardware and software| Trustee
+  Trustee -->|2. releases secrets only if the proof passes| VM
 ```
 
-The [architecture overview](docs/architecture.md) shows the full exchange.
-
-The repository gives you:
-
-- Ansible automation that turns two supplied bare-metal servers (a helper and an
-  AMD node) into a disconnected single-node OpenShift cluster.
-- Scripts and manifests that install OpenShift sandboxed containers (OSC), the
-  Red Hat build of Trustee, and the supporting Operators.
-- A test runner that proves the security controls work: each test runs a
-  workload that should succeed, changes one thing, checks that the change is
-  rejected, then restores and checks recovery.
-
-## Current status
+## Status
 
 | | |
 |---|---|
-| Validated release | OpenShift 4.20.39, OSC 1.13.1, Trustee 1.2.1 (exact pins in the [release manifest](install/release-manifest.json)) |
-| Last hardware validation | October 8, 2026, on Cherry Servers (AMD EPYC 9124). See [validation results](docs/validation.md). |
-| Live environment | None. The test servers were deleted after validation. You need new hardware to run anything beyond the offline checks. |
+| Release | OpenShift 4.20.39, OSC 1.13.1, Trustee 1.2.1 (exact pins in the [release manifest](install/release-manifest.json)) |
+| Last full run | October 29, 2026, on new Cherry Servers hardware, following these docs only. Every test passed twice, with a reset between. See [validation results](docs/validation.md). |
+| Live environment | None. Each run orders its own servers and deletes them at the end. |
 
-What passed: offline attestation, secret release, measured-initdata and
-launch-reference enforcement, signed-image verification and network isolation,
-both on the first install and after removing and reinstalling the CoCo software.
+**Proven on the test rig:** Trustee releases secrets only to a VM whose hardware,
+launch measurement and configuration (initdata) match the approved values; the VM
+runs only signed images; and neither the node, an ordinary pod nor a confidential
+VM can reach the internet.
 
-What has **not** been validated: encrypted container images, a Trustee running
-in a separate cluster (the customer layout), Restricted HTTPS mode for Trustee,
-upgrades of an existing deployment, and fully private boot from power-on.
+**Not proven:** encrypted images, Trustee in a separate cluster (the customer
+layout), Trustee in Restricted HTTPS mode, upgrades of an existing deployment, and
+a fully private boot from power-on.
+
+## Choose your path
+
+| I want to | Start here |
+|---|---|
+| **Run it**: order a rig, install, test, delete | [Quickstart](docs/quickstart.md) (about 3 hours and 4 EUR of server time) |
+| **Maintain it**: rerun the tests, reset the lab, refresh certificates, move to new versions | [Maintenance](docs/maintenance.md) |
+| **Share it**: explain it, demo it, hand it over, change it | [Share this repository](docs/sharing.md) |
+
+Every guide is listed in the [documentation index](docs/README.md).
+
+## The whole run
+
+```bash
+source scripts/env.sh                      # 1. set up this controller
+make order-rig                             # 2. order the AMD node and the helper
+                                           # 3. switch on SEV-SNP in the node's BIOS (by hand)
+bash ansible/up.sh --mode fresh-install    # 4. install OpenShift (erases the node's disk)
+make connect && source scripts/env.sh
+make install-coco-operators                # 5. install the CoCo Operators
+make trustee-lab && source scripts/env.sh  # 6. set up Trustee
+make test-rung WHICH=all                   # 7. prove the security controls
+terraform -chdir=infra/cherry destroy -var-file="$COCO_STATE_DIR/cherry.tfvars"   # 8. delete the rig
+```
+
+The [quickstart](docs/quickstart.md) explains each step, what it asks and how long
+it takes. When something fails, see [troubleshooting](docs/troubleshooting.md).
 
 ## What you need
 
-- **A Linux controller** (your workstation or a jump host) with Bash, Python 3.12+,
-  `jq`, SSH, Ansible and Terraform. Everything is driven from here.
-- **Two bare-metal servers on the same private VLAN**:
-  - an AMD EPYC node with SEV-SNP support and UEFI boot (this becomes OpenShift), and
-  - a helper running RHEL 9 (it hosts the mirror registry, DNS and NTP; the trial
-    used AlmaLinux 9, which Red Hat does not support for the mirror registry).
-- **Console access to the AMD node's BIOS** to turn on SEV-SNP.
-- **A Red Hat pull secret** with access to OpenShift and the OSC/Trustee Operators.
+- A Linux controller (your workstation) with Bash, Python 3.12+, `curl`, `jq`,
+  `make`, OpenSSH, Terraform 1.9+ and Podman.
+- A [Cherry Servers](https://portal.cherryservers.com/) account with an empty
+  project and an API key. The automation orders an AMD EPYC node and a helper
+  server there. Another provider needs changes to the ordering, discovery and
+  reinstall steps.
+- An SSH key pair and your Red Hat
+  [pull secret](https://console.redhat.com/openshift/install/pull-secret).
 
-The automation was built and tested against Cherry Servers. Another provider
-will need changes to the discovery and reinstall steps in
-[`ansible/`](ansible/README.md).
-
-## How to run it
-
-Follow these guides in order. Each one ends where the next begins.
-
-1. **[Order the rig](docs/quickstart.md#2-order-the-rig)**: `source scripts/env.sh`
-   sets up the controller, and `make order-rig` orders the node and the helper on
-   Cherry Servers, starts the helper's mirror registry and writes your rig file.
-2. **[Set the BIOS](docs/quickstart.md#3-set-the-bios)**: switch on SEV-SNP in the
-   node's console.
-3. **[Install OpenShift and the CoCo Operators](docs/quickstart.md#4-install-openshift)**:
-   `bash ansible/up.sh --mode fresh-install` checks the node, asks once before it
-   erases it, then prepares the helper and installs the node. `make connect` reaches
-   the cluster, and `make install-coco-operators` adds the Operators after one approval.
-4. **[Set up Trustee](docs/trustee.md#disposable-lab)**: `make trustee-lab`
-   collects the node's AMD certificate, calculates the reference values, asks you
-   to approve them once and publishes the attestation policies. On the lab it also
-   gives the confidential VM access to the private registry; elsewhere,
-   [configure guest image pulls](docs/guest-images.md) yourself.
-5. **[Run the capability tests](docs/capability-status.md)**: `make test-rung WHICH=all`
-   proves that each security control allows the right workload and denies a
-   tampered one, then checks network isolation.
-
-When something fails, see [troubleshooting](docs/troubleshooting.md). The
-[documentation index](docs/README.md) lists every guide, and the
-[architecture overview](docs/architecture.md) has diagrams of the components.
-
-### Checks you can run without hardware
-
-```bash
-make help           # list every command
-make check-release  # check the release files agree with each other
-make preflight      # also require every image and tool to be pinned
-make proof-plan     # list the capability tests
-make lint           # run all offline checks (see docs/contributing.md for tools)
-```
+Without hardware, `make lint` runs every offline check and `make help` lists all
+commands.
 
 ## Repository layout
 
 | Directory | Contents |
 |---|---|
+| [`docs/`](docs/README.md) | The guides and the dated validation results |
 | [`install/`](install/README.md) | Release manifest (exact versions and digests) and the oc-mirror image set |
-| [`infra/cherry/`](infra/cherry/README.md) | Terraform that orders the node and the helper on Cherry Servers |
-| [`ansible/`](ansible/README.md) | Helper preparation and OpenShift installation |
-| [`gitops/`](gitops/README.md) | Kustomize manifests for the Operators, Kata runtime, Trustee and test workloads |
-| [`scripts/`](scripts/README.md) | Install steps, Trustee configuration, image signing and the test runner |
+| [`infra/cherry/`](infra/cherry/README.md) | Terraform that orders the node and the helper |
+| [`ansible/`](ansible/README.md) | Helper preparation and the OpenShift install |
+| [`gitops/`](gitops/README.md) | Manifests for the Operators, Kata runtime, Trustee and test workloads |
+| [`scripts/`](scripts/README.md) | Install steps, Trustee setup, image signing and the test runner |
 | [`tests/`](tests/README.md) | Offline regression tests (no cluster or hardware needed) |
-| [`docs/`](docs/README.md) | Guides and the dated validation results |
 
-## Keep secrets out of the checkout
+## Secrets stay outside the checkout
 
-Pull secrets, SSH keys, kubeconfigs, signing keys and test evidence must live
-outside this directory. The scripts refuse to write them inside the checkout.
-By default they use:
-
-```text
-$HOME/.local/state/openshift-confidential-containers
-```
-
-Set `COCO_STATE_DIR` to use a different location.
+Pull secrets, SSH keys, kubeconfigs, signing keys and test evidence live in
+`COCO_STATE_DIR`, by default `~/.local/state/openshift-confidential-containers`.
+The scripts refuse to write them inside the checkout.
 
 ## Glossary
 
@@ -123,16 +97,16 @@ Set `COCO_STATE_DIR` to use a different location.
 |---|---|
 | **CoCo** | Confidential containers: pods that run inside a hardware-encrypted VM. |
 | **OSC** | OpenShift sandboxed containers, the Red Hat Operator that installs Kata and CoCo. |
-| **Kata, `kata-cc`, `kata-snp`** | Kata Containers runs each pod in a VM. `kata-cc` is the RuntimeClass for confidential pods; it must use the `kata-snp` handler on AMD. |
+| **Kata, `kata-cc`, `kata-snp`** | Kata Containers runs each pod in a VM. `kata-cc` is the RuntimeClass for confidential pods; on AMD it must use the `kata-snp` handler. |
 | **SEV-SNP** | AMD Secure Encrypted Virtualization with Secure Nested Paging, the hardware feature that encrypts and isolates the VM. |
 | **Trustee, KBS** | Trustee checks the VM's attestation evidence. Its Key Broker Service (KBS) releases secrets only to VMs that pass. |
 | **Attestation** | The VM proving to Trustee what hardware and software it is running. |
 | **VCEK** | The AMD certificate for one specific chip. Trustee needs it to check that node's evidence offline. |
-| **RVPS, reference values** | The approved launch measurements and firmware levels that Trustee compares the evidence against. |
+| **RVPS, reference values** | The approved launch measurement and firmware levels that Trustee compares the evidence against. |
 | **initdata** | Configuration handed to the VM at launch (Trustee URL, certificates, policies). Its hash is measured, so any change is detectable. |
 | **SNO** | Single-node OpenShift. |
-| **Rig** | The pair of servers (helper and AMD node) used for one install. |
+| **Rig** | The pair of servers (helper and AMD node) used for one run. |
 | **Helper, bastion** | The server that hosts the mirror registry, DNS, NTP and boot files. Both names appear in the code. |
-| **Controller** | The Linux machine you run Ansible and the scripts from. |
+| **Controller** | The Linux machine you run everything from. |
 | **Rung** | The code's name for one capability test, for example `rung-kbs` or `rung-signed`. |
-| **Disposable lab** | A test cluster where Trustee runs on the same cluster as the workloads in Permissive mode (`TRUSTEE_LAB=1`). Not a customer layout. |
+| **Lab** | The test rig's layout: Trustee on the same cluster as the workloads, in the Permissive profile (`TRUSTEE_LAB=1`). Not a customer layout. |

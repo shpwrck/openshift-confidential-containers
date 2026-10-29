@@ -1,9 +1,12 @@
 # AMD firmware preflight
 
-Check these before a node is erased. A plan name, CPU flag, saved BIOS
-selection or `/dev/sev` alone does not prove working SEV-SNP. On a rig ordered
-with `make order-rig`, the install runs the identity, boot-mode and host checks
-itself before it asks to erase the node; the firmware security review stays yours.
+Use this page for a board or provider that has not been tested. On a rig ordered
+with `make order-rig`, `make check-node-snp` and the install already run the
+identity, boot-mode and SEV-SNP checks before anything is erased; only the
+firmware security review below stays yours.
+
+A plan name, a CPU flag, a saved BIOS setting or `/dev/sev` alone does not prove
+working SEV-SNP.
 
 ## Identify the delivered machine
 
@@ -51,10 +54,10 @@ Check the delivered model's vendor advisories and running firmware/microcode/TCB
 A functional SNP pass does not establish that known vulnerabilities are fixed;
 BIOS version numbers cannot be compared across different boards.
 
-A prior H12SSW-NTR/EPYC 7313P allocation failed to reserve RMP despite saved SNP
-settings. A later H13 with old firmware initialized SNP but remained below published
-security fixes (H13SST-G, BIOS 1.6, on an earlier provider in October 2026). Have the provider update or replace unsuitable hardware
-using its supported recovery procedure; this repository does not flash firmware.
+An H12SSW-NTR with an EPYC 7313P failed to reserve the RMP table despite saved SNP
+settings. An H13SST-G with BIOS 1.6 (on another provider, October 2026) initialized
+SNP but lacked published security fixes. Have the provider update or replace such
+hardware; this repository does not flash firmware.
 
 ## Prove the running host
 
