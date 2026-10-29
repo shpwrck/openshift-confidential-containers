@@ -201,6 +201,10 @@ main() {
   wait_until "runtime handler" runtime_ready
   wait_until "KataConfig and selected nodes remain converged" kata_ready
   echo "Worker installation complete; this does not establish attestation or image-policy proof."
-  echo "Next: prepare $TEE endorsements, deploy Trustee in its explicit context, then run named proofs."
+  if [[ "${TRUSTEE_LAB:-0}" == 1 ]]; then
+    echo "Next: make trustee-lab (docs/trustee.md#disposable-lab), then the capability tests."
+  else
+    echo "Next: set up Trustee (docs/trustee.md), then run the capability tests (docs/capability-status.md)."
+  fi
 }
 [[ "${BASH_SOURCE[0]}" != "$0" ]] || main "$@"

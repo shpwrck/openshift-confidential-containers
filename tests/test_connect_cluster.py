@@ -9,6 +9,8 @@ from pathlib import Path
 import shutil
 import socket
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -157,6 +159,23 @@ class ConnectClusterTests(unittest.TestCase):
         self.assertIn("Opened the tunnel", out)
         self.assertIn("\nConnected. In this terminal, run: source scripts/env.sh\n", out)
         self.assertIn("SNO baseline validation OK", out)
+
+    def test_piped_output_keeps_its_order(self):
+        # A log or a remote session reads the output through a pipe, where Python buffers its own lines.
+        shutil.copy(ROOT / "scripts/connect-cluster.py", self.repo / "scripts/connect-cluster.py")
+        shutil.copytree(ROOT / "scripts/lib", self.repo / "scripts/lib", ignore=shutil.ignore_patterns("__pycache__"))
+        (self.state / "rig.yml").write_text(yaml.safe_dump(self.rig))
+        environment = {**os.environ, "PATH": f"{self.fake}:{os.environ['PATH']}", "COCO_STATE_DIR": str(self.state),
+                       "FAKE_DIR": str(self.fake), "API_PORT": str(self.port), "HOME": str(self.tmp)}
+        environment.pop("PYTHONUNBUFFERED", None)
+        (self.fake / "tunnel-open").touch()
+        result = subprocess.run([sys.executable, str(self.repo / "scripts/connect-cluster.py")], env=environment,
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        lines = [line for line in result.stdout.splitlines() if line]
+        order = [next(i for i, line in enumerate(lines) if line.startswith(start))
+                 for start in ("Wrote", "NAME", "Checking the cluster", "SNO baseline validation OK", "Connected.")]
+        self.assertEqual(sorted(order), order, result.stdout)
 
     def test_an_open_tunnel_is_reused(self):
         (self.fake / "tunnel-open").touch()

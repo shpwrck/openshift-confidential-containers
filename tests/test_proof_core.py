@@ -194,6 +194,14 @@ class ProofRestorationOrder(unittest.TestCase):
         self.assertNotIn("positive-recovery", events)
         self.assertEqual(runner.evidence["restoration"], "FAIL")
 
+    def test_the_plan_marks_the_tests_all_runs(self):
+        out = io.StringIO()
+        with patch.object(sys, "argv", ["run-proofs.py", "--list"]), contextlib.redirect_stdout(out):
+            self.assertEqual(0, suite.main())
+        marked = {line.split()[1] for line in out.getvalue().splitlines() if line.startswith("  * ")}
+        self.assertEqual(set(suite.DEFAULT_CASES), marked)
+        self.assertIn("    rung-encrypted  ", out.getvalue())
+
     def test_cleanup_failure_is_failed_report_with_lock_retained(self):
         runner, edit, _ = self.fixture()
         runner.preflight = Mock(return_value={"fixture": True})

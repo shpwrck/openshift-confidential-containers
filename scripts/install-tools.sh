@@ -69,7 +69,6 @@ for binary in "${binaries[@]}"; do
 done
 if [[ "$reusable" == 1 ]]; then
   echo "OpenShift $OCP_VERSION tools verified in $BIN_DIR"
-  echo "COCO_TOOLS_CHANGED=0"
   exit 0
 fi
 for archive in "${archives[@]}"; do
@@ -99,4 +98,3 @@ done
 cp "$TMP/manifest" "$marker.new"
 mv -f "$marker.new" "$marker"
 echo "Installed and verified OpenShift $OCP_VERSION tools in $BIN_DIR"
-echo "COCO_TOOLS_CHANGED=1"

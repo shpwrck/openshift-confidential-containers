@@ -102,7 +102,10 @@ def main():
     width = max(len(row[0]) for row in rows)
     for name, value, expiration, source in rows:
         print(f"{name:<{width}}  {value}  (expires {expiration}; {source})")
-    print(f"Wrote {args.out}. Review every value above before Trustee configure; generating it does not approve it.")
+    if os.environ.get("SHOW_NEXT") == "0":  # make trustee-lab asks for the approval itself.
+        print(f"Wrote {args.out}.")
+    else:
+        print(f"Wrote {args.out}. Review every value above before Trustee configure; generating it does not approve it.")
     return 0
 
 

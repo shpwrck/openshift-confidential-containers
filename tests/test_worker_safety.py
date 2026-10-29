@@ -254,6 +254,9 @@ class WorkerSafetyTests(unittest.TestCase):
         self.assertEqual([["label", "namespace", "openshift-nfd", "coco.openshift.io/disposable=true"],
                           ["label", "namespace", "cert-manager", "coco.openshift.io/disposable=true"]], labels)
         self.assertIn(["delete", "namespace", "openshift-nfd", "--ignore-not-found", "--wait=false"], calls)
+        self.assertIn("Deleting namespace openshift-nfd with its Subscriptions, InstallPlans and CSVs", result.stdout)
+        # It runs the validation itself, so the hint for a manual uninstall stays quiet.
+        self.assertNotIn("Run validate-coco-uninstalled", result.stdout)
         self.assertIn("CoCo uninstall validation OK", result.stdout)
         self.assertIn("SNO baseline validation OK", result.stdout)
         self.assertTrue(result.stdout.rstrip().endswith("Install again with: make install-coco-operators"), result.stdout)

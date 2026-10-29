@@ -97,7 +97,7 @@ if [[ "$1" != --seed ]]; then
 fi
 ''',
     "scripts/apply-trustee.sh": '''#!/usr/bin/env bash
-echo "apply-trustee $1 NS=$NS HWIDS=$HWIDS PROFILE=$TRUSTEE_PROFILE LAB=$TRUSTEE_LAB POLICY=${TRUSTEE_RESOURCE_POLICY_FILE:-} RVPS=${TRUSTEE_RVPS_FILE:-} RESOURCES=${KBS_RESOURCE_NAMES:-} SIGNED=${RUNG_SIGNED_IMAGE:-} PUB=${RUNG_SIGNED_COSIGN_PUB:-} MIRROR_CA=$MIRROR_CA MIRROR_PASSWORD_FILE=$MIRROR_PASSWORD_FILE" >> "$FAKE_DIR/calls"
+echo "apply-trustee $1 NS=$NS HWIDS=$HWIDS PROFILE=$TRUSTEE_PROFILE LAB=$TRUSTEE_LAB POLICY=${TRUSTEE_RESOURCE_POLICY_FILE:-} RVPS=${TRUSTEE_RVPS_FILE:-} RESOURCES=${KBS_RESOURCE_NAMES:-} SIGNED=${RUNG_SIGNED_IMAGE:-} PUB=${RUNG_SIGNED_COSIGN_PUB:-} MIRROR_CA=$MIRROR_CA MIRROR_PASSWORD_FILE=$MIRROR_PASSWORD_FILE SHOW_NEXT=${SHOW_NEXT:-}" >> "$FAKE_DIR/calls"
 ''',
     "scripts/verify-release.py": '''import os, sys
 open(os.environ["FAKE_DIR"] + "/calls", "a").write("verify-release " + " ".join(sys.argv[1:]) + "\\n")
@@ -114,7 +114,7 @@ echo "veritas NODE=[$NODE] PULL_SECRET=$PULL_SECRET INITDATA=$INITDATA CMDLINE=$
 echo "generated" > "$OUT"
 ''',
     "scripts/review-references.py": '''import os, sys
-open(os.environ["FAKE_DIR"] + "/calls", "a").write(f"review {' '.join(sys.argv[1:])} HWIDS={os.environ['HWIDS']}\\n")
+open(os.environ["FAKE_DIR"] + "/calls", "a").write(f"review {' '.join(sys.argv[1:])} HWIDS={os.environ['HWIDS']} SHOW_NEXT={os.environ.get('SHOW_NEXT', '')}\\n")
 open(sys.argv[2], "w").write("reviewed\\n")
 print("snp_launch_measurement  [\\"fixture\\"]  (expires 2027-01-01; Veritas)")
 ''',
@@ -201,6 +201,8 @@ class TrusteeLabTests(unittest.TestCase):
         trustee = self.text_calls("apply-trustee")
         self.assertEqual(2, len(trustee))
         self.assertTrue(trustee[0].startswith(f"apply-trustee bootstrap NS=trustee-operator-system HWIDS={HWID} PROFILE=Permissive LAB=1"))
+        # The lab runs the next steps itself, so the bootstrap's hint for a manual run stays quiet.
+        self.assertTrue(trustee[0].endswith(" SHOW_NEXT=0"), trustee[0])
         for part in (f"POLICY={self.state / 'resource-policy.rego'}", f"RVPS={self.state / 'rvps-reviewed.yaml'}",
                      "RESOURCES=regcred attestation-cert attestation-status sample credential security-policy registry-configuration sig-public-key",
                      f"SIGNED={SIGNED['digest_ref']}", f"PUB={self.state / 'rung-image-artifacts/cosign.pub'}",
@@ -224,8 +226,9 @@ class TrusteeLabTests(unittest.TestCase):
                       "\n".join(self.text_calls("podman")))
         self.assertEqual([f"veritas NODE=[] PULL_SECRET={self.tmp / 'pull-secret.json'} INITDATA={self.state / 'initdata.toml'} CMDLINE={CMDLINE}"],
                          self.text_calls("veritas"))
-        self.assertEqual([f"review {self.state / 'rvps-generated.yaml'} {self.state / 'rvps-reviewed.yaml'} --drop init_data HWIDS={HWID}"],
+        self.assertEqual([f"review {self.state / 'rvps-generated.yaml'} {self.state / 'rvps-reviewed.yaml'} --drop init_data HWIDS={HWID} SHOW_NEXT=0"],
                          self.text_calls("review"))
+        self.assertIn("Approved ahead with APPROVE_REFERENCES=1.", out)
 
         env = (self.state / "trustee-lab.env").read_text()
         for line in ("export COCO_DISPOSABLE_TEST=1", "export TRUSTEE_PROFILE=Permissive", f"export HWIDS={HWID}",

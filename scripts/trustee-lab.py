@@ -87,6 +87,7 @@ class Lab:
     # ---- helpers ---------------------------------------------------------
     def run(self, command, what, input=None, capture=False, **env):
         """Run a command with the lab settings; stop with `what` when it fails."""
+        sys.stdout.flush()  # Keeps this script's lines ahead of the command's output in a piped log.
         result = subprocess.run(command, cwd=REPO, env={**self.env, **env}, input=input,
                                 stdout=subprocess.PIPE if capture else None)
         if result.returncode != 0:
@@ -148,7 +149,7 @@ class Lab:
     def bootstrap(self):
         self.run([sys.executable, "scripts/verify-release.py", "--require-resolved", "--tee", "snp"], "the release check")
         self.run(["bash", "scripts/apply-trustee.sh", "bootstrap"], "the Trustee bootstrap", NS=TRUSTEE_NS,
-                 HWIDS=self.hwid())
+                 HWIDS=self.hwid(), SHOW_NEXT="0")
         if self.oc("get", "namespace", WORKLOAD_NS, "--ignore-not-found", "-o", "name").stdout.strip() == b"":
             self.oc("create", "namespace", WORKLOAD_NS)
         # The capability tests and make reset-lab act only on namespaces carrying this label.
@@ -218,12 +219,14 @@ class Lab:
         reviewed = self.files["rvps-reviewed.yaml"]
         self.run([sys.executable, "scripts/review-references.py",
                   str(self.need(self.files["rvps-generated.yaml"], "veritas")), str(reviewed), "--drop", "init_data"],
-                 "building the reference set", HWIDS=self.hwid())
+                 "building the reference set", HWIDS=self.hwid(), SHOW_NEXT="0")
         print()
         print("Trustee releases secrets only to guests that match these values. snp_launch_measurement is")
         print("the one Veritas calculated for this release and initdata; the four firmware levels are the")
         print("ones in this node's VCEK request. Approve them only for this node.")
-        if self.env.get("APPROVE_REFERENCES") != "1":
+        if self.env.get("APPROVE_REFERENCES") == "1":
+            print("Approved ahead with APPROVE_REFERENCES=1.")
+        else:
             if not sys.stdin.isatty():
                 reviewed.unlink()
                 raise Stop("without a terminal, set APPROVE_REFERENCES=1 to approve the reference values")

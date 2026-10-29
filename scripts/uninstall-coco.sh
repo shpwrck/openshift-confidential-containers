@@ -113,14 +113,17 @@ uninstall() {
   for ns in "${target_namespaces[@]}"; do
     object="$(get_object namespaces "$ns")" || die "failed to inspect namespace $ns"
     [[ -n "$object" ]] || continue
-    # All these namespaces passed the explicit disposable label guard above.
-    worker_oc -n "$ns" delete subscriptions.operators.coreos.com --all --ignore-not-found --wait=false
-    worker_oc -n "$ns" delete installplans.operators.coreos.com --all --ignore-not-found --wait=false
-    worker_oc -n "$ns" delete clusterserviceversions.operators.coreos.com --all --ignore-not-found --wait=false
-    worker_oc delete namespace "$ns" --ignore-not-found --wait=false
+    # All these namespaces passed the explicit disposable label guard above. One line per namespace:
+    # OLM copies an all-namespaces Operator's CSV into every namespace, so oc would list it in each.
+    echo "Deleting namespace $ns with its Subscriptions, InstallPlans and CSVs"
+    worker_oc -n "$ns" delete subscriptions.operators.coreos.com --all --ignore-not-found --wait=false >/dev/null
+    worker_oc -n "$ns" delete installplans.operators.coreos.com --all --ignore-not-found --wait=false >/dev/null
+    worker_oc -n "$ns" delete clusterserviceversions.operators.coreos.com --all --ignore-not-found --wait=false >/dev/null
+    worker_oc delete namespace "$ns" --ignore-not-found --wait=false >/dev/null
   done
   echo "Disposable stack deletion requested. Controllers finalized operands before namespace deletion."
-  echo "Run validate-coco-uninstalled for convergence; no finalizers are cleared unless FORCE_FINALIZERS=1."
+  # make reset-lab sets SHOW_NEXT=0: it runs the validation itself.
+  [[ "${SHOW_NEXT:-1}" == 0 ]] || echo "Run validate-coco-uninstalled for convergence; no finalizers are cleared unless FORCE_FINALIZERS=1."
 }
 
 validate_once() {

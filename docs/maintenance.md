@@ -61,11 +61,13 @@ make reset-lab
 ```
 
 It shows the context, the API address, the node and every namespace it deletes,
-and asks you to type `reset`. Then it marks those namespaces with
+and asks you to type `reset`; without a terminal, approve ahead with
+`ALLOW_DISPOSABLE_UNINSTALL=1 make reset-lab`. Then it marks those namespaces with
 `coco.openshift.io/disposable=true`, removes the stack, waits until everything is
-gone and checks the cluster again. Removing the Kata runtime reboots the node, so
-a watch error or two while the API is down is expected. The removal check prints
-`Waiting:` for what is left meanwhile; `FAIL:` only appears if it times out.
+gone and checks the cluster again, in about 10 minutes. Removing the Kata runtime
+reboots the node, so a watch error or two while the API is down is expected. The
+removal check prints `Waiting:` for what is left meanwhile; `FAIL:` only appears
+if it times out.
 
 `make reset-lab` refuses to run without the lab settings from `lab.env`
 (`TRUSTEE_LAB=1` and the same context for workloads and Trustee). On any other
@@ -89,11 +91,16 @@ archive hashes and recovery limits before deleting resources.
 Delete only the intended provider objects and confirm absence through fresh inventory
 reads. Power-off or failed SSH is not proof of deletion. Keep the provider ownership and retirement records.
 
-If you ordered with `make order-rig`, Terraform deletes exactly the servers and SSH
-key it created. Run this in a terminal where you ran `source scripts/env.sh`. The
-plan lists the two servers; type `yes` to delete them, then confirm in the Cherry
-portal or API that both servers are gone:
+If you ordered with `make order-rig`, Terraform deletes exactly the servers it
+created, and the SSH key if it added one; a key your account already had stays.
+Run this in a terminal where you ran `source scripts/env.sh`. The plan lists the
+two servers; type `yes` to delete them, then confirm in the Cherry portal or API
+that both servers are gone:
 
 ```bash
 terraform -chdir=infra/cherry destroy -var-file="$COCO_STATE_DIR/cherry.tfvars"
 ```
+
+A script that cannot type `yes` adds `-auto-approve` instead. Then stop the
+`make connect` tunnel to the deleted helper: `pgrep -af '^ssh .*-L 127.0.0.1:6443'`
+shows its process ID, and `kill <ID>` stops it.

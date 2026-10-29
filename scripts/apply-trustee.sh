@@ -155,4 +155,5 @@ python3 "$REPO_ROOT/scripts/refresh-trustee.py" --context "$refresh_context" \
 # Recheck migration/ownership after all updates. Hardware allow/deny tests remain separate.
 generated_ready || die "generated resource ownership changed during configuration"
 echo "Trustee $ACTION complete: profile=$TRUSTEE_PROFILE context=${TRUSTEE_CONTEXT:-current} name=$TRUSTEE_NAME"
-[[ "$ACTION" != bootstrap ]] || echo "Next: freeze workload initdata, generate references, then configure approved policy and resources."
+# make trustee-lab sets SHOW_NEXT=0: it runs the next steps itself.
+[[ "$ACTION" != bootstrap || "${SHOW_NEXT:-1}" == 0 ]] || echo "Next: freeze workload initdata, generate references, then configure approved policy and resources."

@@ -180,8 +180,10 @@ def network_facts(observation, private_ipv4):
     loose = sorted(link["ifname"] for link in links.values()
                    if link.get("link_type") == "ether" and not link.get("master") and link["ifname"] != bond_name
                    and not link.get("linkinfo") and not link["ifname"].startswith("enx"))
+    # A port that missed the bond can come back under another name after a reboot; its MAC stays.
+    loose_macs = {name: (links[name].get("permaddr") or links[name].get("address") or "").lower() for name in loose}
     return {"vlan_if": vlan_if, "vlan_tag": str(info.get("info_data", {}).get("id", "")), "bond": bond_name,
-            "bond_mac": _mac(bond.get("address")), "ports": ports, "loose_nics": loose}
+            "bond_mac": _mac(bond.get("address")), "ports": ports, "loose_nics": loose, "loose_macs": loose_macs}
 
 
 def _walk(device):
@@ -285,6 +287,8 @@ def render_rig_file(values, node, helper_env, access, token, written):
         'node_external_mac: ""',
         "",
         "# ---- Install disk: the install ERASES it ------------------------------------",
+        "# Kernel names such as nvme0n1 are this boot's and can swap after a reboot;",
+        "# the serials and the by-path names do not.",
         f"# {disk['name']}, {disk['size_gb']} GB, {disk['model'] or 'unknown model'}, serial {disk['serial'] or 'unknown'}"
         + ("; it holds the original OS's /boot/efi." if disk["holds_efi"] else "."),
     ]
