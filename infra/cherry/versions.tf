@@ -4,7 +4,7 @@ terraform {
   required_providers {
     cherryservers = {
       source  = "cherryservers/cherryservers"
-      version = "1.6.0"
+      version = "1.6.1"
     }
   }
 
